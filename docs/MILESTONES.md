@@ -134,7 +134,7 @@ A session type for reviewing code: the main view is a diff of the staged changes
 Converge on a clean, sleek, long-term interface now that every surface exists. Two phases, with a review stop between them.
 
 **Phase 1: review and target design** (designer-led)
-- Inventory every screen and state as screenshots: empty app, project and session list, streaming turn, tool details, thread panel (new, active, running), selection popover and markers, threads overview, plan, sign-in, errors and notices, light and dark.
+- Inventory every screen and state as screenshots: empty app, project and session list (including imported sessions), streaming turn, tool details, status line, queued and steering messages, thread panel (new, active, running), selection popover and markers, threads overview, plan, search, review sessions (diff viewer, line threads, general conversation), settings, sign-in, notifications, errors and notices.
 - List what is inconsistent, cluttered or unclear.
 - **Brand identity:** a logo and wordmark for Gloss, an app icon (with the sizes and formats Windows, macOS and Linux need), a brand color, typography, and the overall visual style (the "margin note" idea is a natural starting point).
 - **Live up to the name:** the interface should feel glossy: a slightly translucent window with sheen and depth, not flat panels. Electron 44 offers native materials for this: `backgroundMaterial` (`mica`, `acrylic`) on Windows 11 and `vibrancy` on macOS; Linux gets a solid fallback. Text must stay readable (AA contrast over the material), and transparency is turned off when the OS asks for reduced transparency.
