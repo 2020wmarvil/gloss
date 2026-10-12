@@ -31,18 +31,20 @@ export function ThreadPanel({ open, panel, label, runningThread, notices, onSend
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  // Quote the anchor as rendered markdown when it can be found; otherwise its stored text.
+  // Quote a list item as rendered markdown when it can be found; a selection
+  // (which may cut through markup) as its plain text.
   const anchorMessage = open.messages.find((m) => m.id === panel.anchorMessageId)
-  let quote = panel.anchor.text
+  let quote = panel.anchor.kind === 'selection' ? `“${panel.anchor.text}”` : panel.anchor.text
   if (anchorMessage && panel.anchor.kind === 'listItem') {
     const span = listItemSpans(anchorMessage.text)[panel.anchor.path[0]]
     if (span) quote = itemSource(anchorMessage.text, span)
   }
+  const isSelection = panel.anchor.kind === 'selection'
 
   return (
     <aside className="thread-panel" aria-label="Thread">
       <header>
-        <h2>Thread</h2>
+        <h2>{isSelection && panel.threadId === null ? 'New thread' : 'Thread'}</h2>
         <span className="mono">{label}</span>
         {runningHere && <span className="status">Agent is working…</span>}
         <button className="close" onClick={onClose} aria-label="Close thread" title="Close (Esc)">
@@ -50,12 +52,16 @@ export function ThreadPanel({ open, panel, label, runningThread, notices, onSend
         </button>
       </header>
       <blockquote className="anchor-quote">
-        <Markdown text={quote} />
+        {isSelection ? <p className="selection-quote">{quote}</p> : <Markdown text={quote} />}
       </blockquote>
       <Log
         className="thread-log"
         items={panel.threadId === null ? [] : logItems(open, notices, panel.threadId)}
-        empty={<p className="muted empty">No replies yet. Your first message starts a thread on this item.</p>}
+        empty={
+          <p className="muted empty">
+            No replies yet. Your first message starts a thread on this {isSelection ? 'selection' : 'item'}.
+          </p>
+        }
         renderAgent={(m) => <Markdown text={m.text} />}
       />
       <Composer

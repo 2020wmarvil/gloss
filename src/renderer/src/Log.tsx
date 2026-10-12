@@ -61,7 +61,7 @@ export function Log({ items, className, empty, renderAgent }: Props): React.JSX.
                   {item.message.text}
                 </div>
               ) : (
-                <div key={item.message.id} className="agent">
+                <div key={item.message.id} className="agent" data-message-id={item.message.id}>
                   {renderAgent(item.message)}
                 </div>
               )

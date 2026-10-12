@@ -35,11 +35,15 @@ describe('Markdown', () => {
     const html = renderToStaticMarkup(
       <Markdown
         text={md}
-        items={{
+        anchors={{
           replyCount: (i) => (i === 1 ? 3 : 0),
           activeIndex: 1,
           runningIndex: null,
-          onOpen: () => {}
+          onOpenItem: () => {},
+          marks: [],
+          threadCount: () => 0,
+          runningThread: null,
+          onOpenThread: () => {}
         }}
       />
     )
@@ -49,8 +53,8 @@ describe('Markdown', () => {
     expect(html).toContain('3 replies')
     expect(html).toContain('class="anchor-item active"')
     expect(html).toContain('<span class="anchor-marker" aria-hidden="true">•</span>')
-    // The nested item is a plain list item.
-    expect(html).toContain('<li>nested</li>')
+    // The nested item is a plain list item (its text wrapped in source spans).
+    expect(html).toMatch(/<li><span><span data-src="\d+" data-src-end="\d+">nested<\/span><\/span><\/li>/)
   })
 
   it('never loads images', () => {

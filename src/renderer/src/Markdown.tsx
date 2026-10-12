@@ -4,6 +4,7 @@
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { itemMarker, listItemSpans, type ListItemSpan } from './anchors'
+import { remarkSourceSpans, type Mark } from './sourceSpans'
 
 type Node = { type: string; children?: Node[] }
 
@@ -32,14 +33,20 @@ const baseComponents: Components = {
   img: ({ alt }) => <span className="md-image">[image{alt ? `: ${alt}` : ''}]</span>
 }
 
-/** Reply affordances on a message's top-level list items. */
-export type ItemAnchors = {
-  /** Replies in the thread on each item, by item index. */
+/** Thread anchors in one agent message: reply affordances, marked selections. */
+export type MessageAnchors = {
+  /** Replies in the thread on each top-level list item, by item index. */
   replyCount(index: number): number
   activeIndex: number | null
   /** The item whose thread has a running turn. */
   runningIndex: number | null
-  onOpen(span: ListItemSpan): void
+  onOpenItem(span: ListItemSpan): void
+  /** Selection anchors (and a draft one) to mark. */
+  marks: Mark[]
+  /** Replies in a thread, by thread id. */
+  threadCount(threadId: string): number
+  runningThread: string | null
+  onOpenThread(threadId: string): void
 }
 
 const replyIcon = (
@@ -48,7 +55,7 @@ const replyIcon = (
   </svg>
 )
 
-function itemComponents(text: string, anchors: ItemAnchors): Components {
+function anchorComponents(text: string, anchors: MessageAnchors): Components {
   const byStart = new Map(listItemSpans(text).map((s) => [s.start, s]))
   return {
     ...baseComponents,
@@ -70,7 +77,7 @@ function itemComponents(text: string, anchors: ItemAnchors): Components {
             <button
               className={count > 0 ? 'badge' : 'reply'}
               aria-label={count > 0 ? `Open thread on item ${n}` : `Reply to item ${n}`}
-              onClick={() => anchors.onOpen(span)}
+              onClick={() => anchors.onOpenItem(span)}
             >
               {running ? <span className="running-dot" aria-label="Running" /> : replyIcon}
               <span>{count > 0 ? `${count} ${count === 1 ? 'reply' : 'replies'}` : 'Reply'}</span>
@@ -78,16 +85,57 @@ function itemComponents(text: string, anchors: ItemAnchors): Components {
           </div>
         </li>
       )
+    },
+    span: ({ node, className, children, ...props }) => {
+      const threadId = (props as Record<string, unknown>)['data-thread'] as string | undefined
+      const classes = className?.split(' ') ?? []
+      if (threadId && classes.includes('anchor-chip')) {
+        const count = anchors.threadCount(threadId)
+        return (
+          <button
+            type="button"
+            className="anchor-chip"
+            aria-label={`Open thread, ${count} ${count === 1 ? 'reply' : 'replies'}`}
+            onClick={() => anchors.onOpenThread(threadId)}
+          >
+            {anchors.runningThread === threadId ? <span className="running-dot" aria-label="Running" /> : replyIcon}
+            {count}
+          </button>
+        )
+      }
+      if (threadId && classes.includes('anchored')) {
+        return (
+          <span
+            {...props}
+            className={className}
+            onClick={() => {
+              // A click opens the thread; a drag that selects text does not.
+              if (window.getSelection()?.isCollapsed !== false) anchors.onOpenThread(threadId)
+            }}
+          >
+            {children}
+          </span>
+        )
+      }
+      return (
+        <span {...props} className={className}>
+          {children}
+        </span>
+      )
     }
   }
 }
 
-export function Markdown({ text, items }: { text: string; items?: ItemAnchors }): React.JSX.Element {
+export function Markdown({ text, anchors }: { text: string; anchors?: MessageAnchors }): React.JSX.Element {
   return (
-    <div className={items ? 'md anchored' : 'md'}>
+    <div className={anchors ? 'md with-anchors' : 'md'}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkHtmlAsText]}
-        components={items ? itemComponents(text, items) : baseComponents}
+        remarkPlugins={
+          anchors
+            ? [remarkGfm, remarkHtmlAsText, [remarkSourceSpans, { marks: anchors.marks }]]
+            : [remarkGfm, remarkHtmlAsText]
+        }
+        components={anchors ? anchorComponents(text, anchors) : baseComponents}
       >
         {text}
       </ReactMarkdown>
