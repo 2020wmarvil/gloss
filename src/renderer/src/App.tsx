@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GlossEvent, Settings } from '@shared/ipc'
 import type { AgentInfo, Anchor, AuthMethodInfo, Message, Session, Thread, ToolCall } from '@shared/types'
+import { truncate } from '@shared/wire'
 import { itemLabel, listItemSpans, type ListItemSpan } from './anchors'
 import { Conversation } from './Conversation'
 import type { Notice } from './Log'
 import { Sidebar } from './Sidebar'
+import type { SourceSelection } from './SelectionPopover'
 import { SignInDialog } from './SignInDialog'
 import { ThreadPanel } from './ThreadPanel'
 
@@ -34,14 +36,14 @@ function errorText(err: unknown): string {
   return message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 }
 
-/** A short name for an anchor, e.g. "item 2". */
+/** A short name for an anchor: "item 2", or the quoted start of a selection. */
 function anchorLabel(open: OpenSession, anchorMessageId: string, anchor: Anchor): string {
   if (anchor.kind === 'listItem') {
     const message = open.messages.find((m) => m.id === anchorMessageId)
     const span = message ? listItemSpans(message.text)[anchor.path[0]] : undefined
     return `item ${message && span ? itemLabel(message.text, span) : anchor.path[0] + 1}`
   }
-  return 'selection'
+  return `“${truncate(anchor.text, 32)}”`
 }
 
 export function App(): React.JSX.Element {
@@ -197,6 +199,22 @@ export function App(): React.JSX.Element {
     )
   }
 
+  function openSelection(message: Message, selection: SourceSelection): void {
+    if (!open) return
+    const existing = open.threads.find(
+      (t) =>
+        t.anchorMessageId === message.id &&
+        t.anchor.kind === 'selection' &&
+        t.anchor.start === selection.start &&
+        t.anchor.end === selection.end
+    )
+    setPanel(
+      existing
+        ? { anchorMessageId: message.id, anchor: existing.anchor, threadId: existing.id }
+        : { anchorMessageId: message.id, anchor: { kind: 'selection', ...selection }, threadId: null }
+    )
+  }
+
   function openThread(threadId: string): void {
     const t = open?.threads.find((x) => x.id === threadId)
     if (t) setPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id })
@@ -260,6 +278,7 @@ export function App(): React.JSX.Element {
           onSend={(text) => void send(text, null)}
           onCancel={() => void window.gloss.cancel(open.session.id)}
           onOpenItem={openItem}
+          onOpenSelection={openSelection}
           onOpenThread={openThread}
         />
       ) : (
@@ -276,7 +295,13 @@ export function App(): React.JSX.Element {
         <ThreadPanel
           open={open}
           panel={panel}
-          label={anchorLabel(open, panel.anchorMessageId, panel.anchor)}
+          label={
+            panel.anchor.kind === 'selection'
+              ? panel.threadId === null
+                ? 'from selection'
+                : 'selection'
+              : anchorLabel(open, panel.anchorMessageId, panel.anchor)
+          }
           runningThread={runningThread}
           notices={sessionNotices}
           onSend={(text) => void send(text, panel)}

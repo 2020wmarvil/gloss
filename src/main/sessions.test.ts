@@ -439,6 +439,20 @@ describe('SessionManager', () => {
       expect(manager.openSession(sessionId).threads).toHaveLength(2)
     })
 
+    it('anchors threads to selections by source offsets', async () => {
+      const { sessionId, reviewId } = await reviewed()
+      const start = REVIEW.indexOf('races')
+      const anchor = { kind: 'selection' as const, start, end: start + 'races the write'.length, text: 'races the write' }
+      const thread = manager.createThread(sessionId, reviewId, anchor)
+      expect(thread.anchor).toEqual(anchor)
+      expect(manager.createThread(sessionId, reviewId, anchor).id).toBe(thread.id)
+      expect(manager.createThread(sessionId, reviewId, { ...anchor, end: anchor.end + 1 }).id).not.toBe(thread.id)
+      expect(() => manager.createThread(sessionId, reviewId, { ...anchor, end: start })).toThrow(/Invalid/)
+
+      await manager.send(sessionId, 'why?', thread.id)
+      expect(state.prompts.at(-1)).toBe('[re: "races the write"]\nwhy?')
+    })
+
     it('only anchors threads to agent messages in the same session', async () => {
       const { sessionId, reviewId } = await reviewed()
       const userMessage = manager.openSession(sessionId).messages.find((m) => m.role === 'user')!

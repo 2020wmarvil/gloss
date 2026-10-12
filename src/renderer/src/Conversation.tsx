@@ -1,10 +1,14 @@
 // The main thread: messages and tool calls with threadId == null.
+import { useRef } from 'react'
 import type { Message, Thread } from '@shared/types'
 import type { OpenSession, Panel } from './App'
 import type { ListItemSpan } from './anchors'
 import { Composer } from './Composer'
 import { Log, logItems, type Notice } from './Log'
 import { Markdown } from './Markdown'
+import { SelectionPopover, type SourceSelection } from './SelectionPopover'
+import { resolveSelection } from './source'
+import type { Mark } from './sourceSpans'
 
 type Props = {
   open: OpenSession
@@ -18,6 +22,7 @@ type Props = {
   onSend(text: string): void
   onCancel(): void
   onOpenItem(message: Message, span: ListItemSpan): void
+  onOpenSelection(message: Message, selection: SourceSelection): void
   onOpenThread(threadId: string): void
 }
 
@@ -25,6 +30,7 @@ export function Conversation(props: Props): React.JSX.Element {
   const { open, agentName, runningThread, notices, panel } = props
   const { session } = open
   const running = runningThread !== undefined
+  const mainRef = useRef<HTMLElement>(null)
 
   const replyCounts = new Map<string, number>()
   for (const m of open.messages) {
@@ -34,6 +40,20 @@ export function Conversation(props: Props): React.JSX.Element {
     open.threads.find(
       (t) => t.anchorMessageId === messageId && t.anchor.kind === 'listItem' && t.anchor.path[0] === index
     )
+
+  /** Selection anchors in a message, re-found by text if their offsets no longer match. */
+  function marksFor(message: Message): Mark[] {
+    const marks: Mark[] = []
+    for (const t of open.threads) {
+      if (t.anchorMessageId !== message.id || t.anchor.kind !== 'selection') continue
+      const r = resolveSelection(message.text, t.anchor)
+      if (r) marks.push({ ...r, threadId: t.id, ...(panel?.threadId === t.id ? { className: 'active' } : {}) })
+    }
+    if (panel && panel.threadId === null && panel.anchorMessageId === message.id && panel.anchor.kind === 'selection') {
+      marks.push({ start: panel.anchor.start, end: panel.anchor.end, threadId: null })
+    }
+    return marks
+  }
 
   function renderAgent(message: Message): React.JSX.Element {
     const activeIndex =
@@ -48,21 +68,25 @@ export function Conversation(props: Props): React.JSX.Element {
     return (
       <Markdown
         text={message.text}
-        items={{
+        anchors={{
           replyCount: (index) => {
             const t = itemThread(message.id, index)
             return t ? (replyCounts.get(t.id) ?? 0) : 0
           },
           activeIndex,
           runningIndex,
-          onOpen: (span) => props.onOpenItem(message, span)
+          onOpenItem: (span) => props.onOpenItem(message, span),
+          marks: marksFor(message),
+          threadCount: (threadId) => replyCounts.get(threadId) ?? 0,
+          runningThread: runningThread ?? null,
+          onOpenThread: props.onOpenThread
         }}
       />
     )
   }
 
   return (
-    <main className="conversation">
+    <main className="conversation" ref={mainRef}>
       <header>
         <h1>{session.title}</h1>
         <span className="mono" title={session.cwd}>
@@ -73,7 +97,7 @@ export function Conversation(props: Props): React.JSX.Element {
             <span className="status">Agent is working…</span>
           ) : (
             <button className="status link" onClick={() => props.onOpenThread(runningThread)}>
-              Agent is replying in {props.runningLabel ?? 'a thread'}…
+              Agent is working in {props.runningLabel ?? 'a thread'}
             </button>
           ))}
       </header>
@@ -91,6 +115,7 @@ export function Conversation(props: Props): React.JSX.Element {
         onSend={props.onSend}
         onCancel={props.onCancel}
       />
+      <SelectionPopover scope={mainRef} messages={open.messages} onReply={props.onOpenSelection} />
     </main>
   )
 }
