@@ -86,6 +86,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - Inventory every screen and state as screenshots: empty app, project and session list, streaming turn, tool details, thread panel (new, active, running), selection popover and markers, threads overview, plan, sign-in, errors and notices, light and dark.
 - List what is inconsistent, cluttered or unclear.
 - **Brand identity:** a logo and wordmark for Gloss, an app icon (with the sizes and formats Windows, macOS and Linux need), a brand color, typography, and the overall visual style (the "margin note" idea is a natural starting point).
+- **Live up to the name:** the interface should feel glossy: a slightly translucent window with sheen and depth, not flat panels. Electron 44 offers native materials for this: `backgroundMaterial` (`mica`, `acrylic`) on Windows 11 and `vibrancy` on macOS; Linux gets a solid fallback. Text must stay readable (AA contrast over the material), and transparency is turned off when the OS asks for reduced transparency.
 - Define a small design system: color, type scale, spacing, radii, elevation and motion tokens for light and dark, an icon set, and the core components (buttons, chips and badges, inputs, panels, list rows, popovers).
 - Updated mocks in `docs/mocks/` for the target interface. These replace the M1-era mocks as the reference.
 
