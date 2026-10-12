@@ -10,6 +10,10 @@ const api: GlossApi = {
     create: (cwd, agentId) => ipcRenderer.invoke(IPC.sessionsCreate, cwd, agentId),
     open: (id) => ipcRenderer.invoke(IPC.sessionsOpen, id)
   },
+  threads: {
+    create: (sessionId, anchorMessageId, anchor) =>
+      ipcRenderer.invoke(IPC.threadsCreate, sessionId, anchorMessageId, anchor)
+  },
   send: (sessionId, text, threadId) => ipcRenderer.invoke(IPC.send, sessionId, text, threadId),
   cancel: (sessionId) => ipcRenderer.invoke(IPC.cancel, sessionId),
   auth: {

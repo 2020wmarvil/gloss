@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC, type GlossEvent } from '../shared/ipc'
+import type { Anchor } from '../shared/types'
 import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, listAgents } from './agents'
 import { Store } from './db'
@@ -71,6 +72,18 @@ function str(value: unknown, name: string): string {
   return value
 }
 
+function anchorArg(value: unknown): Anchor {
+  const a = value as Partial<Record<string, unknown>> | null
+  if (!a || typeof a.text !== 'string') throw new Error('Invalid anchor')
+  if (a.kind === 'listItem' && Array.isArray(a.path) && a.path.every((n) => typeof n === 'number')) {
+    return { kind: 'listItem', path: a.path as number[], text: a.text }
+  }
+  if (a.kind === 'selection' && typeof a.start === 'number' && typeof a.end === 'number') {
+    return { kind: 'selection', start: a.start, end: a.end, text: a.text }
+  }
+  throw new Error('Invalid anchor')
+}
+
 function registerIpc(manager: SessionManager): void {
   ipcMain.handle(IPC.agentsList, () => listAgents())
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
@@ -78,6 +91,9 @@ function registerIpc(manager: SessionManager): void {
     manager.createSession(str(cwd, 'cwd'), str(agentId, 'agentId'))
   )
   ipcMain.handle(IPC.sessionsOpen, (_e, id: unknown) => manager.openSession(str(id, 'id')))
+  ipcMain.handle(IPC.threadsCreate, (_e, sessionId: unknown, anchorMessageId: unknown, anchor: unknown) =>
+    manager.createThread(str(sessionId, 'sessionId'), str(anchorMessageId, 'anchorMessageId'), anchorArg(anchor))
+  )
   ipcMain.handle(IPC.send, (_e, sessionId: unknown, text: unknown, threadId: unknown) =>
     manager.send(
       str(sessionId, 'sessionId'),

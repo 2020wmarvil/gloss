@@ -12,7 +12,7 @@ The agent still sees one linear conversation. Threads are just how Gloss shows i
 
 ## Status
 
-**M2 (linear chat).** Sessions in a project folder, streamed markdown replies, tool-call rows, cancel, persistence across restarts with the agent resuming where it left off, and in-app sign-in. Threads come in M3. See [`docs/MILESTONES.md`](docs/MILESTONES.md).
+**M3 (list-item threads).** Reply to any top-level list item in an agent's answer as its own thread, in a side panel, while the main conversation stays short. Also: sessions in a project folder, streamed markdown replies, tool-call rows, cancel, persistence across restarts with the agent resuming where it left off, and in-app sign-in. Threads on arbitrary text selections come in M4. See [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
 Not yet: approving tool calls. Until M5, Gloss declines any tool call the agent asks permission for (reading and searching files usually doesn't need permission; editing files and running commands does) and says so in the conversation.
 
@@ -29,6 +29,12 @@ npm run dev
 ```
 
 The first run downloads the Electron binary. Click **New session**, pick a project folder, and message the agent. Enter sends; Shift+Enter adds a new line.
+
+### Threads
+
+Hover a numbered or bulleted item in the agent's answer and click **Reply** to open a thread on it in the side panel. Your first message creates the thread; after that the item shows a reply count you can click to reopen it. Esc or × closes the panel.
+
+Threads exist only in Gloss. The agent sees one conversation: a message sent from a thread is prefixed with `[re: "<the item's text>"]` (shown under the thread's composer) and its reply is shown in that thread. One turn runs at a time; while it runs, the header says which thread it belongs to.
 
 ### Dev model toggle
 
@@ -57,7 +63,9 @@ src/
     terminal.ts   Runs terminal sign-in commands in a terminal window
   preload/    contextBridge API exposed to the renderer as window.gloss
   renderer/   React UI; talks to main only through window.gloss
-  shared/     Types shared across processes (data model, IPC contract)
+    anchors.ts    Finds top-level list items in an agent message's markdown source
+    ThreadPanel.tsx  The thread side panel
+  shared/     Types shared across processes (data model, IPC contract, wire format)
 docs/
   SPEC.md         The design
   MILESTONES.md   Build order

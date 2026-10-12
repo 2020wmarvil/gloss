@@ -1,44 +1,65 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { Message, ToolCall } from '@shared/types'
-import type { OpenSession } from './App'
+// The main thread: messages and tool calls with threadId == null.
+import type { Message, Thread } from '@shared/types'
+import type { OpenSession, Panel } from './App'
+import type { ListItemSpan } from './anchors'
+import { Composer } from './Composer'
+import { Log, logItems, type Notice } from './Log'
 import { Markdown } from './Markdown'
-
-/** A transient, client-side note shown in the log (not part of the conversation). */
-export type Notice = { id: string; text: string; afterSeq: number }
-
-type Item =
-  | { kind: 'message'; seq: number; message: Message }
-  | { kind: 'tool'; seq: number; toolCall: ToolCall }
-  | { kind: 'notice'; seq: number; notice: Notice }
 
 type Props = {
   open: OpenSession
   agentName: string
-  running: boolean
+  /** threadId of the running turn; undefined when idle. */
+  runningThread: string | null | undefined
   notices: Notice[]
+  panel: Panel | null
+  /** Label of the thread whose turn is running, e.g. "item 2". */
+  runningLabel: string | null
   onSend(text: string): void
   onCancel(): void
+  onOpenItem(message: Message, span: ListItemSpan): void
+  onOpenThread(threadId: string): void
 }
 
-export function Conversation({ open, agentName, running, notices, onSend, onCancel }: Props): React.JSX.Element {
+export function Conversation(props: Props): React.JSX.Element {
+  const { open, agentName, runningThread, notices, panel } = props
   const { session } = open
-  // Main thread only: threadId == null.
-  const items: Item[] = [
-    ...open.messages
-      .filter((m) => m.threadId === null)
-      .map((m): Item => ({ kind: 'message', seq: m.seq, message: m })),
-    ...open.toolCalls
-      .filter((t) => t.threadId === null)
-      .map((t): Item => ({ kind: 'tool', seq: t.messageSeq, toolCall: t })),
-    ...notices.map((n): Item => ({ kind: 'notice', seq: n.afterSeq + 0.5, notice: n }))
-  ].sort((a, b) => a.seq - b.seq)
+  const running = runningThread !== undefined
 
-  const logRef = useRef<HTMLDivElement>(null)
-  const stickToBottom = useRef(true)
-  useLayoutEffect(() => {
-    const el = logRef.current
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
-  })
+  const replyCounts = new Map<string, number>()
+  for (const m of open.messages) {
+    if (m.threadId !== null) replyCounts.set(m.threadId, (replyCounts.get(m.threadId) ?? 0) + 1)
+  }
+  const itemThread = (messageId: string, index: number): Thread | undefined =>
+    open.threads.find(
+      (t) => t.anchorMessageId === messageId && t.anchor.kind === 'listItem' && t.anchor.path[0] === index
+    )
+
+  function renderAgent(message: Message): React.JSX.Element {
+    const activeIndex =
+      panel?.anchorMessageId === message.id && panel.anchor.kind === 'listItem'
+        ? panel.anchor.path[0]
+        : null
+    const runningThreadRow = open.threads.find((t) => t.id === runningThread)
+    const runningIndex =
+      runningThreadRow?.anchorMessageId === message.id && runningThreadRow.anchor.kind === 'listItem'
+        ? runningThreadRow.anchor.path[0]
+        : null
+    return (
+      <Markdown
+        text={message.text}
+        items={{
+          replyCount: (index) => {
+            const t = itemThread(message.id, index)
+            return t ? (replyCounts.get(t.id) ?? 0) : 0
+          },
+          activeIndex,
+          runningIndex,
+          onOpen: (span) => props.onOpenItem(message, span)
+        }}
+      />
+    )
+  }
 
   return (
     <main className="conversation">
@@ -47,107 +68,29 @@ export function Conversation({ open, agentName, running, notices, onSend, onCanc
         <span className="mono" title={session.cwd}>
           {agentName} · {session.cwd}
         </span>
-        {running && <span className="status">Agent is working…</span>}
+        {running &&
+          (runningThread === null ? (
+            <span className="status">Agent is working…</span>
+          ) : (
+            <button className="status link" onClick={() => props.onOpenThread(runningThread)}>
+              Agent is replying in {props.runningLabel ?? 'a thread'}…
+            </button>
+          ))}
       </header>
-      <div
-        className="log-scroll"
-        ref={logRef}
-        onScroll={(e) => {
-          const el = e.currentTarget
-          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-        }}
-      >
-        <div className="log">
-          {items.length === 0 && <p className="muted">Send a message to start.</p>}
-          {items.map((item) => {
-            switch (item.kind) {
-              case 'message':
-                return item.message.role === 'user' ? (
-                  <div key={item.message.id} className="you">
-                    {item.message.text}
-                  </div>
-                ) : (
-                  <div key={item.message.id} className="agent">
-                    <Markdown text={item.message.text} />
-                  </div>
-                )
-              case 'tool':
-                return <ToolRow key={item.toolCall.id} toolCall={item.toolCall} />
-              case 'notice':
-                return (
-                  <p key={item.notice.id} className="notice">
-                    {item.notice.text}
-                  </p>
-                )
-            }
-          })}
-        </div>
-      </div>
-      <Composer running={running} onSend={onSend} onCancel={onCancel} />
+      <Log
+        className="log"
+        items={logItems(open, notices, null)}
+        empty={<p className="muted">Send a message to start.</p>}
+        renderAgent={renderAgent}
+      />
+      <Composer
+        className="composer"
+        placeholder="Message the agent"
+        running={running}
+        autoFocus={panel === null}
+        onSend={props.onSend}
+        onCancel={props.onCancel}
+      />
     </main>
-  )
-}
-
-function ToolRow({ toolCall }: { toolCall: ToolCall }): React.JSX.Element {
-  return (
-    <div className={`tool status-${toolCall.status}`}>
-      <span className="tool-dot" aria-hidden />
-      <span className="tool-title">{toolCall.title}</span>
-      <span className="tool-status">{toolCall.status.replace('_', ' ')}</span>
-    </div>
-  )
-}
-
-function Composer({
-  running,
-  onSend,
-  onCancel
-}: {
-  running: boolean
-  onSend(text: string): void
-  onCancel(): void
-}): React.JSX.Element {
-  const [text, setText] = useState('')
-  const ref = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    if (!running) ref.current?.focus()
-  }, [running])
-
-  function submit(): void {
-    const trimmed = text.trim()
-    if (!trimmed || running) return
-    onSend(trimmed)
-    setText('')
-  }
-
-  return (
-    <div className="composer">
-      <div className="box">
-        <textarea
-          ref={ref}
-          rows={Math.min(8, Math.max(1, text.split('\n').length))}
-          placeholder="Message the agent"
-          aria-label="Message the agent"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              submit()
-            }
-          }}
-        />
-        {running ? (
-          <button className="cancel" onClick={onCancel}>
-            Cancel
-          </button>
-        ) : (
-          <button className="primary send" onClick={submit} disabled={!text.trim()}>
-            Send
-          </button>
-        )}
-      </div>
-    </div>
   )
 }

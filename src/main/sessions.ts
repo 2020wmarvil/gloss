@@ -3,7 +3,8 @@
 import { randomUUID } from 'node:crypto'
 import type * as acp from '@agentclientprotocol/sdk'
 import type { GlossEvent, SessionView, TurnResult } from '../shared/ipc'
-import type { AuthMethodInfo, Message, Session } from '../shared/types'
+import type { Anchor, AuthMethodInfo, Message, Session, Thread } from '../shared/types'
+import { wireText } from '../shared/wire'
 import { AgentConnection, isAuthRequired, type AgentHandlers } from './acp'
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
@@ -287,8 +288,45 @@ export class SessionManager {
       session,
       messages: this.deps.store.listMessages(id),
       toolCalls: this.deps.store.listToolCalls(id),
+      threads: this.deps.store.listThreads(id),
       turn: turn ? { threadId: turn.threadId } : null
     }
+  }
+
+  // Threads
+
+  createThread(sessionId: string, anchorMessageId: string, anchor: Anchor): Thread {
+    this.session(sessionId)
+    const message = this.deps.store.getMessage(anchorMessageId)
+    if (!message || message.sessionId !== sessionId || message.role !== 'agent') {
+      throw new Error('Threads can only be anchored to an agent message in this session.')
+    }
+    const valid =
+      anchor.kind === 'listItem'
+        ? anchor.path.length > 0 && anchor.path.every((i) => Number.isInteger(i) && i >= 0)
+        : Number.isInteger(anchor.start) && Number.isInteger(anchor.end) && anchor.start < anchor.end
+    if (!valid || typeof anchor.text !== 'string' || anchor.text.trim() === '') {
+      throw new Error('Invalid thread anchor.')
+    }
+    const existing = this.deps.store
+      .listThreads(sessionId)
+      .find((t) => t.anchorMessageId === anchorMessageId && sameAnchor(t.anchor, anchor))
+    if (existing) return existing
+
+    const thread: Thread = {
+      id: randomUUID(),
+      sessionId,
+      anchorMessageId,
+      anchor: normalizeAnchor(anchor),
+      createdAt: this.now()
+    }
+    this.deps.store.insertThread(thread)
+    this.deps.emit({ type: 'thread', thread })
+    return thread
+  }
+
+  private notice(sessionId: string, threadId: string | null, text: string): void {
+    this.deps.emit({ type: 'notice', sessionId, threadId, text })
   }
 
   /** Makes the session's ACP session live on `conn`: session/load, or a new session if that fails. */
@@ -318,11 +356,11 @@ export class SessionManager {
     this.byAcpId.set(session.acpSessionId, session.id)
     rt.attachedTo = conn
     this.deps.emit({ type: 'session', session })
-    this.deps.emit({
-      type: 'notice',
+    this.notice(
       sessionId,
-      text: 'Started a new agent session. The agent could not resume the previous one, so it does not remember the earlier messages shown here.'
-    })
+      rt.turn?.threadId ?? null,
+      'Started a new agent session. The agent could not resume the previous one, so it does not remember the earlier messages shown here.'
+    )
     return session.acpSessionId
   }
 
@@ -332,9 +370,14 @@ export class SessionManager {
     let session = this.session(sessionId)
     const rt = this.runtime(sessionId)
     if (rt.turn) throw new Error('A turn is already running in this session.')
-    if (threadId !== null) throw new Error('Threads are not supported yet.')
+    let anchorText: string | null = null
+    if (threadId !== null) {
+      const thread = this.deps.store.getThread(threadId)
+      if (!thread || thread.sessionId !== sessionId) throw new Error(`Unknown thread ${threadId}`)
+      anchorText = thread.anchor.text
+    }
 
-    const wire = text
+    const wire = wireText(text, anchorText)
     const isFirst = this.deps.store.countUserMessages(sessionId) === 0
     const message: Message = {
       id: randomUUID(),
@@ -379,7 +422,7 @@ export class SessionManager {
     } finally {
       rt.turn = undefined
     }
-    this.deps.emit({ type: 'turnEnd', sessionId, ...result })
+    this.deps.emit({ type: 'turnEnd', sessionId, threadId, ...result })
     return result
   }
 
@@ -480,17 +523,32 @@ export class SessionManager {
     // Approvals arrive in M5. Until then, decline and tell the user.
     const sessionId = this.byAcpId.get(req.sessionId)
     if (sessionId) {
-      this.deps.emit({
-        type: 'notice',
+      this.notice(
         sessionId,
-        text: `Declined the agent's request to run "${req.toolCall.title ?? 'a tool'}". Approving tool calls is not supported yet.`
-      })
+        this.runtimes.get(sessionId)?.turn?.threadId ?? null,
+        `Declined the agent's request to run "${req.toolCall.title ?? 'a tool'}". Approving tool calls is not supported yet.`
+      )
     }
     const reject = req.options.find((o) => o.kind === 'reject_once')
     return reject
       ? { outcome: { outcome: 'selected', optionId: reject.optionId } }
       : { outcome: { outcome: 'cancelled' } }
   }
+}
+
+function sameAnchor(a: Anchor, b: Anchor): boolean {
+  if (a.kind === 'listItem' && b.kind === 'listItem') {
+    return a.path.length === b.path.length && a.path.every((v, i) => v === b.path[i])
+  }
+  if (a.kind === 'selection' && b.kind === 'selection') return a.start === b.start && a.end === b.end
+  return false
+}
+
+/** Keeps only the anchor's known fields (it comes from the renderer). */
+function normalizeAnchor(a: Anchor): Anchor {
+  return a.kind === 'listItem'
+    ? { kind: 'listItem', path: [...a.path], text: a.text }
+    : { kind: 'selection', start: a.start, end: a.end, text: a.text }
 }
 
 function toAuthMethodInfo(m: acp.AuthMethod): AuthMethodInfo {

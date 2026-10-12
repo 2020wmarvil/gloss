@@ -30,6 +30,29 @@ describe('Markdown', () => {
     expect(html).toContain('target="_blank"')
   })
 
+  it('adds reply affordances to top-level list items only', () => {
+    const md = 'Intro\n\n1. First\n   - nested\n2. Second\n\n- Third\n'
+    const html = renderToStaticMarkup(
+      <Markdown
+        text={md}
+        items={{
+          replyCount: (i) => (i === 1 ? 3 : 0),
+          activeIndex: 1,
+          runningIndex: null,
+          onOpen: () => {}
+        }}
+      />
+    )
+    expect(html.match(/class="anchor-item/g)).toHaveLength(3)
+    expect(html).toContain('aria-label="Reply to item 1"')
+    expect(html).toContain('aria-label="Open thread on item 2"')
+    expect(html).toContain('3 replies')
+    expect(html).toContain('class="anchor-item active"')
+    expect(html).toContain('<span class="anchor-marker" aria-hidden="true">•</span>')
+    // The nested item is a plain list item.
+    expect(html).toContain('<li>nested</li>')
+  })
+
   it('never loads images', () => {
     const html = render('![tracker](https://example.com/pixel.png)')
     expect(html).not.toContain('<img')
