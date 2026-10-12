@@ -22,7 +22,18 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - Developer is on Windows; keep scripts cross-platform (no bash-only npm scripts).
 
 ## Commands
-_To be filled in during M1 (dev, build, lint, test)._
+- `npm run dev`: run with hot reload
+- `npm run build`: typecheck + build to `out/`
+- `npm run typecheck`, `npm run lint`, `npm test` (Vitest)
+
+## Verified external APIs (M1)
+- ACP SDK `@agentclientprotocol/sdk@1.8.0` is ESM-only; use `acp.client({...}).onNotification/onRequest(...).connect(ndJsonStream(...))`, then `conn.agent.request(methods.agent.*)`. It is bundled into the CJS main build (see `electron.vite.config.ts`).
+- Claude adapter: `@agentclientprotocol/claude-agent-acp` (the `@zed-industries/*` packages are deprecated). Entrypoint `dist/index.js`, run with Electron's Node via `ELECTRON_RUN_AS_NODE=1`. It reads `ANTHROPIC_MODEL` and advertises `loadSession: true`.
+- Electron 44 ships Node 24.21: `node:sqlite` works unflagged (SQLite 3.53), so no `better-sqlite3`.
+- electron-vite 5 needs Vite 7 (so `@vitejs/plugin-react@5`). typescript-eslint needs TypeScript < 6.1, so TS is pinned to 5.9.
+
+## Git
+- Work on `dev`; open one PR per milestone against `main`.
 
 ## Dev model
 Run the agent with `ANTHROPIC_MODEL=haiku` during development via the app's dev toggle.
