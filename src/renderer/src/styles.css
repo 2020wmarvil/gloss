@@ -532,3 +532,202 @@ button.primary {
   border-radius: 8px;
   background: var(--panel);
 }
+
+/* List-item anchors (top-level items of agent messages in the main view) */
+
+/* Rendered as cards with the marker drawn inside each row (.anchor-marker). */
+.md.anchored > ol,
+.md.anchored > ul {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.md li.anchor-item {
+  margin: 0;
+  border-bottom: 1px solid #eeece6;
+}
+
+.md li.anchor-item:last-child {
+  border-bottom: 0;
+}
+
+li.anchor-item:hover {
+  background: #fbfaf7;
+}
+
+li.anchor-item.active {
+  background: #f6f7fc;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.anchor-marker {
+  flex: 0 0 24px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  padding-top: 2px;
+}
+
+.anchor-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 12px 12px 16px;
+}
+
+.anchor-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.anchor-body > :last-child {
+  margin-bottom: 0;
+}
+
+.anchor-row .badge,
+.anchor-row .reply {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  border-radius: 999px;
+}
+
+.anchor-row .badge {
+  border: 0;
+  background: #eef1fa;
+  color: #2a3f7a;
+  font-weight: 500;
+}
+
+li.anchor-item.active .badge {
+  background: var(--accent);
+  color: #fff;
+}
+
+.anchor-row .reply {
+  border: 1px solid #d6d3ca;
+  border-radius: 6px;
+  background: var(--panel);
+  color: #3a3833;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+li.anchor-item:hover .reply,
+li.anchor-item.active .reply,
+.anchor-row .reply:focus-visible {
+  opacity: 1;
+}
+
+.anchor-row .running-dot {
+  background: currentColor;
+}
+
+/* Header status that opens the running thread */
+
+button.status.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-decoration: underline dotted;
+}
+
+/* Thread panel */
+
+.thread-panel {
+  flex: 0 0 420px;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+}
+
+.thread-panel header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.thread-panel h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.thread-panel .status {
+  margin-left: 0;
+}
+
+.thread-panel .close {
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+}
+
+.thread-panel .close:hover {
+  background: var(--chip);
+}
+
+.anchor-quote {
+  margin: 16px 20px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f3f1eb;
+  font-size: 14px;
+  color: #3a3833;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.thread-log {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 14px;
+}
+
+.thread-log .you {
+  max-width: 85%;
+  padding: 8px 12px;
+}
+
+.thread-log .empty {
+  margin: 0;
+  font-size: 14px;
+}
+
+.thread-composer {
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.thread-composer .box {
+  padding: 6px 6px 6px 12px;
+  font-size: 14px;
+}
+
+.wire {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

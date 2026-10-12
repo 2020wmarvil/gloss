@@ -11,6 +11,7 @@ type Script = (ctx: {
   text: string
   say(text: string, messageId?: string): Promise<void>
   update(update: acp.SessionUpdate): Promise<void>
+  requestPermission(title: string): Promise<acp.RequestPermissionResponse>
   cancelled: Promise<void>
 }) => Promise<acp.StopReason>
 
@@ -100,6 +101,15 @@ function agentApp(state: FakeAgent): acp.AgentApp {
             content: { type: 'text', text: t },
             ...(messageId ? { messageId } : {})
           }),
+        requestPermission: (title) =>
+          ctx.client.request(acp.methods.client.session.requestPermission, {
+            sessionId,
+            toolCall: { toolCallId: 'perm', title },
+            options: [
+              { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+              { optionId: 'deny', name: 'Deny', kind: 'reject_once' }
+            ]
+          }),
         cancelled
       })
       return { stopReason }
@@ -160,7 +170,12 @@ describe('SessionManager', () => {
 
     const types = events.map((e) => e.type)
     expect(types.indexOf('turnStart')).toBeLessThan(types.indexOf('turnEnd'))
-    expect(events.at(-1)).toEqual({ type: 'turnEnd', sessionId: session.id, stopReason: 'end_turn' })
+    expect(events.at(-1)).toEqual({
+      type: 'turnEnd',
+      sessionId: session.id,
+      threadId: null,
+      stopReason: 'end_turn'
+    })
   })
 
   it('orders text and tool calls in one sequence, splitting text at tool calls', async () => {
@@ -348,5 +363,106 @@ describe('SessionManager', () => {
     const result = await manager.send(session.id, 'hi', null)
     expect(result.error).toMatch(/Authentication required/)
     expect(events.some((e) => e.type === 'authRequired')).toBe(false)
+  })
+
+  describe('threads', () => {
+    const REVIEW = '1. **Cache invalidation races the write path**\n2. **N+1 query** in GET /orders\n'
+
+    async function reviewed(): Promise<{ sessionId: string; reviewId: string }> {
+      state.script = async ({ say }) => {
+        await say(REVIEW)
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'Review it', null)
+      const review = manager.openSession(session.id).messages.find((m) => m.role === 'agent')!
+      return { sessionId: session.id, reviewId: review.id }
+    }
+
+    it('tags thread messages on the wire and routes the reply into the thread', async () => {
+      const { sessionId, reviewId } = await reviewed()
+      const thread = manager.createThread(sessionId, reviewId, {
+        kind: 'listItem',
+        path: [1],
+        text: 'N+1 query in GET /orders'
+      })
+      expect(events).toContainEqual({ type: 'thread', thread })
+
+      state.script = async ({ say, update }) => {
+        await say('It is hot on the dashboard.')
+        await update({ sessionUpdate: 'tool_call', toolCallId: 'q', title: 'Grep orders', status: 'completed' })
+        await say('Batch it.')
+        return 'end_turn'
+      }
+      await expect(manager.send(sessionId, 'Is this hot?', thread.id)).resolves.toEqual({ stopReason: 'end_turn' })
+
+      expect(state.prompts.at(-1)).toBe('[re: "N+1 query in GET /orders"]\nIs this hot?')
+      expect(events).toContainEqual({ type: 'turnStart', sessionId, threadId: thread.id })
+      expect(events.at(-1)).toMatchObject({ type: 'turnEnd', threadId: thread.id })
+
+      const view = manager.openSession(sessionId)
+      expect(view.threads).toEqual([thread])
+      const inThread = view.messages.filter((m) => m.threadId === thread.id)
+      expect(inThread.map((m) => [m.role, m.text])).toEqual([
+        ['user', 'Is this hot?'],
+        ['agent', 'It is hot on the dashboard.'],
+        ['agent', 'Batch it.']
+      ])
+      expect(inThread[0].wireText).toBe('[re: "N+1 query in GET /orders"]\nIs this hot?')
+      expect(view.toolCalls.map((t) => [t.id, t.threadId])).toEqual([['q', thread.id]])
+      // The main thread is unchanged.
+      expect(view.messages.filter((m) => m.threadId === null)).toHaveLength(2)
+
+      // Back in the main thread, messages are sent untagged.
+      await manager.send(sessionId, 'ok, do 1 and 2', null)
+      expect(state.prompts.at(-1)).toBe('ok, do 1 and 2')
+    })
+
+    it('truncates long anchors in the wire tag', async () => {
+      const { sessionId, reviewId } = await reviewed()
+      const long = 'word '.repeat(40)
+      const thread = manager.createThread(sessionId, reviewId, { kind: 'listItem', path: [0], text: long })
+      await manager.send(sessionId, 'why?', thread.id)
+      const tag = state.prompts.at(-1)!.split('\n')[0]
+      expect(tag).toMatch(/^\[re: "(word ){15}word…"\]$/)
+      expect(tag.length).toBeLessThanOrEqual('[re: ""]'.length + 80)
+    })
+
+    it('returns the existing thread for the same anchor', async () => {
+      const { sessionId, reviewId } = await reviewed()
+      const anchor = { kind: 'listItem' as const, path: [0], text: 'Cache invalidation' }
+      const a = manager.createThread(sessionId, reviewId, anchor)
+      const b = manager.createThread(sessionId, reviewId, anchor)
+      const c = manager.createThread(sessionId, reviewId, { ...anchor, path: [1] })
+      expect(b).toEqual(a)
+      expect(c.id).not.toBe(a.id)
+      expect(manager.openSession(sessionId).threads).toHaveLength(2)
+    })
+
+    it('only anchors threads to agent messages in the same session', async () => {
+      const { sessionId, reviewId } = await reviewed()
+      const userMessage = manager.openSession(sessionId).messages.find((m) => m.role === 'user')!
+      const anchor = { kind: 'listItem' as const, path: [0], text: 'x' }
+      expect(() => manager.createThread(sessionId, userMessage.id, anchor)).toThrow(/agent message/)
+      const other = await manager.createSession('/other', 'fake')
+      expect(() => manager.createThread(other.id, reviewId, anchor)).toThrow(/agent message/)
+      expect(() => manager.createThread(sessionId, reviewId, { ...anchor, text: ' ' })).toThrow(/Invalid/)
+      await expect(manager.send(sessionId, 'hi', 'no-such-thread')).rejects.toThrow(/Unknown thread/)
+    })
+
+    it('shows notices in the thread whose turn produced them', async () => {
+      const { sessionId, reviewId } = await reviewed()
+      const thread = manager.createThread(sessionId, reviewId, { kind: 'listItem', path: [0], text: 'Cache' })
+      let outcome: acp.RequestPermissionResponse | undefined
+      state.script = async ({ requestPermission }) => {
+        outcome = await requestPermission('Edit orders.ts')
+        return 'end_turn'
+      }
+      await manager.send(sessionId, 'fix it', thread.id)
+      expect(outcome).toEqual({ outcome: { outcome: 'selected', optionId: 'deny' } })
+      expect(events).toContainEqual(
+        expect.objectContaining({ type: 'notice', sessionId, threadId: thread.id })
+      )
+    })
   })
 })

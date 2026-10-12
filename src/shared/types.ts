@@ -38,6 +38,21 @@ export type ToolCall = {
   content?: unknown
 }
 
+export type Anchor =
+  /** path [2] = the 3rd top-level list item of the message. */
+  | { kind: 'listItem'; path: number[]; text: string }
+  /** Offsets into the message's source markdown. */
+  | { kind: 'selection'; start: number; end: number; text: string }
+
+export type Thread = {
+  id: string
+  sessionId: string
+  /** The agent message the anchor lives in (any thread). */
+  anchorMessageId: string
+  anchor: Anchor
+  createdAt: number
+}
+
 export type AgentInfo = { id: string; name: string }
 
 export type AuthMethodInfo = {

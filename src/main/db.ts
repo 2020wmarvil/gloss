@@ -1,6 +1,6 @@
 // SQLite persistence (node:sqlite). The app's DB is always the display state.
 import { DatabaseSync } from 'node:sqlite'
-import type { Message, Session, ToolCall } from '../shared/types'
+import type { Anchor, Message, Session, Thread, ToolCall } from '../shared/types'
 
 // Append-only. Each entry upgrades the schema by one version (PRAGMA user_version).
 const MIGRATIONS = [
@@ -35,6 +35,16 @@ const MIGRATIONS = [
     content     TEXT,
     PRIMARY KEY (session_id, id)
   );
+  `,
+  `
+  CREATE TABLE threads (
+    id                TEXT PRIMARY KEY,
+    session_id        TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    anchor_message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    anchor            TEXT NOT NULL,
+    created_at        INTEGER NOT NULL
+  );
+  CREATE INDEX threads_by_session ON threads (session_id);
   `
 ]
 
@@ -77,6 +87,16 @@ function toToolCall(r: Row): ToolCall {
   if (r.kind != null) t.kind = r.kind as string
   if (r.content != null) t.content = JSON.parse(r.content as string)
   return t
+}
+
+function toThread(r: Row): Thread {
+  return {
+    id: r.id as string,
+    sessionId: r.session_id as string,
+    anchorMessageId: r.anchor_message_id as string,
+    anchor: JSON.parse(r.anchor as string) as Anchor,
+    createdAt: Number(r.created_at)
+  }
 }
 
 export class Store {
@@ -190,6 +210,11 @@ export class Store {
       .map((r) => toMessage(r as Row))
   }
 
+  getMessage(id: string): Message | undefined {
+    const r = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id)
+    return r ? toMessage(r as Row) : undefined
+  }
+
   countUserMessages(sessionId: string): number {
     const r = this.db
       .prepare("SELECT COUNT(*) AS n FROM messages WHERE session_id = ? AND role = 'user'")
@@ -232,5 +257,27 @@ export class Store {
       .prepare('SELECT * FROM tool_calls WHERE session_id = ? ORDER BY message_seq')
       .all(sessionId)
       .map((r) => toToolCall(r as Row))
+  }
+
+  // Threads
+
+  insertThread(t: Thread): void {
+    this.db
+      .prepare(
+        'INSERT INTO threads (id, session_id, anchor_message_id, anchor, created_at) VALUES (?, ?, ?, ?, ?)'
+      )
+      .run(t.id, t.sessionId, t.anchorMessageId, JSON.stringify(t.anchor), t.createdAt)
+  }
+
+  getThread(id: string): Thread | undefined {
+    const r = this.db.prepare('SELECT * FROM threads WHERE id = ?').get(id)
+    return r ? toThread(r as Row) : undefined
+  }
+
+  listThreads(sessionId: string): Thread[] {
+    return this.db
+      .prepare('SELECT * FROM threads WHERE session_id = ? ORDER BY created_at, rowid')
+      .all(sessionId)
+      .map((r) => toThread(r as Row))
   }
 }
