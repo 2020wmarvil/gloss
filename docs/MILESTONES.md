@@ -48,9 +48,22 @@ Build in order. Stop at the end of each milestone, show what works and how to tr
 
 # Roadmap 2
 
-M1–M5 built the design in `SPEC.md`. These milestones make Gloss a daily driver, take threads further, converge on a long-term interface, add a second agent, and ship it. Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1–M5 built the design in `SPEC.md`. These milestones add settings, make Gloss a daily driver, take threads further, converge on a long-term interface, add a second agent, and ship it. Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
-## M6 — Daily driver
+## M6 — Settings
+A home for Gloss's settings, editable by hand (and by agents) as well as in the app.
+
+- **One `settings.json`** in Gloss's data folder (never in a project): global settings at the top level, per-project settings under `projects`, keyed by folder path.
+- **A JSON Schema** next to it, so editors autocomplete and validate it and an agent can read what is allowed.
+- **Live reload:** the main process watches the file and applies changes without a restart. Invalid JSON or values keep the last good settings and show what is wrong; nothing is reset or overwritten.
+- **Settings screen** (from the sidebar, or `Ctrl+,`): global and current-project sections, the file's path, and "Open in editor". Saving from the screen writes the file, keeping unknown keys.
+- Validated and owned by the main process; the renderer reads and writes through the IPC API.
+- Move the dev model (Haiku) toggle into it.
+- Later milestones add their own sections (M7: default model, status line items; M9: theme, transparency; M10: default agent, MCP servers; M11: updates). No section appears before its feature exists.
+
+**Done when:** a setting changed in the screen shows up in the file, a change made in an editor (or by an agent) shows up in the app without a restart, and a broken edit is reported without losing the previous settings.
+
+## M7 — Daily driver
 - **Session management:** rename and delete sessions. Deleting removes the session, its messages, tool calls and threads from the DB, and deletes the agent's own copy (`session/delete` when the agent advertises it; Claude Code keeps transcripts under `~/.claude/projects`).
 - **Projects and existing sessions:** sessions are grouped by folder (a project). Opening a project lists the agent's existing sessions for that folder (`session/list` with `cwd`, when advertised) alongside Gloss's own. Opening one Gloss hasn't seen imports it: a Gloss session is created for it and its display state is built from the `session/load` replay (user and agent messages, tool calls), all in the main thread. Sidebar layout needs a design pass.
 - **Tool-call details:** a tool row expands to show what the agent did: the command and its output, a file edit as a diff, other content as text. Collapsed by default.
@@ -73,13 +86,13 @@ M1–M5 built the design in `SPEC.md`. These milestones make Gloss a daily drive
 
 **Done when:** you can use Gloss for a day of real work without reaching for the terminal: open a project and pick up a session you started in the `claude` CLI, clean up and rename sessions, see what a command printed or what an edit changed, switch models, see when context is filling up and run `/compact`, and paste a screenshot.
 
-## M7 — Threads, further
-- **Threads overview:** a per-session list of all threads (anchor quote, reply count, last activity, running indicator). Clicking one opens it in the panel. Placement needs a design pass before M7 starts.
+## M8 — Threads, further
+- **Threads overview:** a per-session list of all threads (anchor quote, reply count, last activity, running indicator). Clicking one opens it in the panel. Placement needs a design pass before M8 starts.
 - **Agent plan:** `plan` updates render as a checklist (pending / in progress / done) in the thread whose turn produced them, updated in place as the agent works. Persisted, so it survives a restart.
 
 **Done when:** in a session with several threads, any thread can be found and opened from the overview, and an agent's plan is visible and updates live in the thread it belongs to.
 
-## M8 — UX review
+## M9 — UX review
 Converge on a clean, sleek, long-term interface now that every surface exists. Two phases, with a review stop between them.
 
 **Phase 1: review and target design** (designer-led)
@@ -94,12 +107,12 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
 - **Dark mode**, following the system setting, built on the dark tokens.
 - Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected.
-- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M10 installers.
+- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M11 installers.
 - Polish: empty, loading and error states; window title.
 
 **Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
 
-## M9 — A second agent
+## M10 — A second agent
 - Add Codex to the agent table via its ACP adapter (`@zed-industries/codex-acp` at the time of writing; verify the package, entrypoint and Windows support first).
 - **New session** lets you pick the agent. The session list and header show which agent a session uses.
 - Everything agent-specific stays in its `AgentConfig` entry: sign-in, bypass mode, model options and threads must work with no code paths for one agent.
@@ -107,7 +120,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 **Done when:** a session with the second agent works end to end, including sign-in, threads and resume (or the lost-context notice if it can't resume).
 
-## M10 — Shipping
+## M11 — Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
 - **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
 - **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
@@ -117,9 +130,9 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 **Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place.
 
 ## Design passes needed
-- **M6:** sidebar with projects (folders) and their sessions, including the agent's existing sessions not yet opened in Gloss.
-- **M7:** where the threads overview lives (a sidebar section under the session, or a header button that opens a list in the side panel).
-- These are deliberately light: enough to build M6 and M7. M8 revisits everything as a whole.
+- **M7:** sidebar with projects (folders) and their sessions, including the agent's existing sessions not yet opened in Gloss.
+- **M8:** where the threads overview lives (a sidebar section under the session, or a header button that opens a list in the side panel).
+- These are deliberately light: enough to build M7 and M8. M9 revisits everything as a whole.
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
