@@ -47,7 +47,14 @@ export function Conversation(props: Props): React.JSX.Element {
     for (const t of open.threads) {
       if (t.anchorMessageId !== message.id || t.anchor.kind !== 'selection') continue
       const r = resolveSelection(message.text, t.anchor)
-      if (r) marks.push({ ...r, threadId: t.id, ...(panel?.threadId === t.id ? { className: 'active' } : {}) })
+      if (r) {
+        marks.push({
+          ...r,
+          threadId: t.id,
+          title: t.anchor.text,
+          ...(panel?.threadId === t.id ? { className: 'active' } : {})
+        })
+      }
     }
     if (panel && panel.threadId === null && panel.anchorMessageId === message.id && panel.anchor.kind === 'selection') {
       marks.push({ start: panel.anchor.start, end: panel.anchor.end, threadId: null })

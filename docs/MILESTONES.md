@@ -37,8 +37,9 @@ Build in order. Stop at the end of each milestone, show what works and how to tr
 
 **Done when:** threads can be started from arbitrary prose or code spans and reopened from their inline markers.
 
-## M5 — Permissions
-- `session/request_permission` shown as an inline approval in the thread the turn belongs to, with the agent's offered options.
-- Pending permission requests answered with `cancelled` on cancel.
+## M5 — Misc
+- Drop permission prompts (SPEC → Permissions): switch sessions to the agent's bypass mode when it has one, and auto-approve permission requests.
+- CI: GitHub Actions running typecheck, lint, tests and the build on Windows and Linux for pull requests and `main`.
+- Selection-anchor chips that end inside code are placed after it: after inline code, in a row below a code block.
 
-**Done when:** an agent tool call that needs approval can be approved or rejected from inside a thread.
+**Done when:** the agent edits files and runs commands without prompts, and CI passes on the PR.

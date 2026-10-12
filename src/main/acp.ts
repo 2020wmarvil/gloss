@@ -126,6 +126,10 @@ export class AgentConnection {
     })
   }
 
+  async setMode(sessionId: string, modeId: string): Promise<void> {
+    await this.conn.agent.request(acp.methods.agent.session.setMode, { sessionId, modeId })
+  }
+
   prompt(sessionId: string, text: string): Promise<acp.PromptResponse> {
     return this.conn.agent.request(acp.methods.agent.session.prompt, {
       sessionId,

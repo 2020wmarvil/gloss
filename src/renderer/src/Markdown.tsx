@@ -95,6 +95,7 @@ function anchorComponents(text: string, anchors: MessageAnchors): Components {
           <button
             type="button"
             className="anchor-chip"
+            title={typeof props.title === 'string' ? `“${props.title}”` : undefined}
             aria-label={`Open thread, ${count} ${count === 1 ? 'reply' : 'replies'}`}
             onClick={() => anchors.onOpenThread(threadId)}
           >

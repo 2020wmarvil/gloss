@@ -110,13 +110,19 @@ on session/update:
   anything else        → ignore for v1
 
 on session/request_permission:
-  show approval prompt in currentThread with the offered options
-  respond { outcome: { outcome: 'selected', optionId } }
+  auto-approve (see Permissions): respond { outcome: { outcome: 'selected', optionId: <allow option> } }
 
 cancel():
-  notify session/cancel; answer any pending permission request with { outcome: { outcome: 'cancelled' } }
+  notify session/cancel
   pending prompt resolves with stopReason 'cancelled'
 ```
+
+### Permissions
+
+Gloss runs agents without permission prompts. There is no approval UI.
+
+- **Bypass mode.** An agent config may name the agent's session mode that skips permission checks (`bypassModeId`; Claude Code: `bypassPermissions`). After `session/new` and `session/load`, if the agent reports that mode among its `modes.availableModes` and it isn't current, Gloss calls `session/set_mode` with it. This is best effort: if the mode isn't offered or the call fails, Gloss logs it and relies on auto-approval.
+- **Auto-approval.** Every `session/request_permission` is answered with the agent's `allow_once` option, or `allow_always` if that is the only allow option. `allow_once` is preferred because "always" can make the agent persist a rule (Claude Code writes it to the project's settings). With no allow option, the answer is `cancelled`.
 
 Rendering:
 - **Main view:** messages and tool calls with `threadId == null`, in `seq` order. Each anchor in an agent message is decorated with its thread's reply count.
@@ -151,7 +157,7 @@ First agent: **Claude Code via its ACP adapter** (the Claude Agent SDK adapter, 
 Agent config is a small table so more agents can be added later:
 
 ```ts
-type AgentConfig = { id: string; name: string; command: string; args: string[]; env?: Record<string,string> }
+type AgentConfig = { id: string; name: string; command: string; args: string[]; env?: Record<string,string>; bypassModeId?: string }
 ```
 
 ### Dev model
@@ -165,8 +171,7 @@ In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its env
   - `sessions.list() / sessions.create(cwd, agentId) / sessions.open(id)`
   - `send(sessionId, text, threadId | null)`, `cancel(sessionId)`
   - `threads.create(sessionId, anchorMessageId, anchor)`
-  - `permission.respond(requestId, optionId)`
-  - an event stream: message/tool-call upserts, turn start/end, permission requests
+  - an event stream: message/tool-call upserts, turn start/end
 - **Renderer** only renders. Framework is the implementer's choice (React is fine).
 - **Security:** agent output is untrusted (it can contain text from files and web pages). `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, expose only the IPC API via `contextBridge`, and **sanitize rendered markdown** (no raw HTML, safe link handling: open external links in the system browser).
 - **Persistence:** SQLite. Prefer the built-in `node:sqlite` if the Electron version's Node supports it; otherwise `better-sqlite3` with `electron-rebuild`.
