@@ -74,15 +74,17 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 **Phase 1: review and target design** (designer-led)
 - Inventory every screen and state as screenshots: empty app, project and session list, streaming turn, tool details, thread panel (new, active, running), selection popover and markers, threads overview, plan, sign-in, errors and notices, light and dark.
 - List what is inconsistent, cluttered or unclear.
+- **Brand identity:** a logo and wordmark for Gloss, an app icon (with the sizes and formats Windows, macOS and Linux need), a brand color, typography, and the overall visual style (the "margin note" idea is a natural starting point).
 - Define a small design system: color, type scale, spacing, radii, elevation and motion tokens for light and dark, an icon set, and the core components (buttons, chips and badges, inputs, panels, list rows, popovers).
 - Updated mocks in `docs/mocks/` for the target interface. These replace the M1-era mocks as the reference.
 
 **Phase 2: implementation**
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
 - Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected.
-- Polish: empty, loading and error states; window title and app icon.
+- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M10 installers.
+- Polish: empty, loading and error states; window title.
 
-**Done when:** every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
+**Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
 
 ## M9 — A second agent
 - Add Codex to the agent table via its ACP adapter (`@zed-industries/codex-acp` at the time of writing; verify the package, entrypoint and Windows support first).
