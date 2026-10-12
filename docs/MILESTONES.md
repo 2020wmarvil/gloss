@@ -59,8 +59,18 @@ M1–M5 built the design in `SPEC.md`. These milestones make Gloss a daily drive
 - **Slash commands:** the composer autocompletes the agent's `available_commands_update` list after `/`.
 - **Attachments:** paste or drop images; attach files as embedded context. Only what the agent's `promptCapabilities` allow.
 - **Keyboard shortcuts:** new session, next/previous session, focus composer, close panel.
+- **Status line** at the bottom of the conversation, for the open session:
+  - context usage (a meter and percentage, from the agent's `usage_update` used/size)
+  - session cost (from `usage_update`)
+  - model (from the model config option; clicking it opens the model picker)
+  - permission mode: "bypass", or a warning when the agent refused bypass and Gloss is auto-approving
+  - git branch of the session folder, with a dirty marker (the main process runs `git`; hidden outside a repo)
+  - the session folder (moved here from the header)
+  - turn state, e.g. "Working in item 2" (moved here from the header; click to open that thread)
 
-**Done when:** you can use Gloss for a day of real work without reaching for the terminal: open a project and pick up a session you started in the `claude` CLI, clean up and rename sessions, see what a command printed or what an edit changed, switch models, run `/compact`, and paste a screenshot.
+  Agent-agnostic: everything but the git branch comes from ACP. Not Claude Code's configurable `statusLine` command.
+
+**Done when:** you can use Gloss for a day of real work without reaching for the terminal: open a project and pick up a session you started in the `claude` CLI, clean up and rename sessions, see what a command printed or what an edit changed, switch models, see when context is filling up and run `/compact`, and paste a screenshot.
 
 ## M7 — Threads, further
 - **Threads overview:** a per-session list of all threads (anchor quote, reply count, last activity, running indicator). Clicking one opens it in the panel. Placement needs a design pass before M7 starts.
