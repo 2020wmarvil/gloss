@@ -134,6 +134,18 @@ Lifecycle:
 4. Turns via `session/prompt` as above.
 5. On app restart: if the agent advertised `loadSession`, use `session/load` to resume; otherwise start a new ACP session and show a notice that the agent lost context. The app's own DB is always the display state.
 
+### Authentication
+
+Agent-agnostic, driven entirely by ACP. No agent-specific login code.
+
+- In `initialize`, advertise `clientCapabilities.auth.terminal: true`. Keep the agent's `authMethods` from the response.
+- A request failing with ACP's `auth_required` error (JSON-RPC code `-32000`), from `session/new`, `session/load` or `session/prompt`, shows a "Sign in" prompt listing the agent's `authMethods` by `name` and `description`.
+- Running a method depends on its kind:
+  - **Agent method** (no `type`): call `authenticate({ methodId })`. The agent handles the login.
+  - **Terminal method** (`type: 'terminal'`): run the agent's own `command` with the method's `args` appended and its `env` merged in, in a visible system terminal window. The login may be interactive, and Gloss has no embedded terminal. Wait for it to exit.
+- After a method succeeds, retry the request that failed. If the agent offers no methods, show the error text.
+- If the agent never reports `auth_required`, there is no sign-in UI.
+
 First agent: **Claude Code via its ACP adapter** (the Claude Agent SDK adapter, originally from Zed). Verify the current package name and entrypoint before wiring it up.
 
 Agent config is a small table so more agents can be added later:

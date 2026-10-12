@@ -16,8 +16,9 @@ Build in order. Stop at the end of each milestone, show what works and how to tr
 - SQLite persistence for sessions, messages, tool calls. Reopening the app shows past sessions.
 - Send disabled while a turn runs; Cancel button that sends `session/cancel`.
 - Resume via `session/load` when supported; otherwise a clear "new agent session" notice.
+- Agent-agnostic sign-in from ACP `authMethods` when a request fails with `auth_required` (see SPEC → Authentication).
 
-**Done when:** a normal multi-turn session with Claude Code works end to end and survives an app restart (display at minimum).
+**Done when:** a normal multi-turn session with Claude Code works end to end and survives an app restart (display at minimum), and an expired login can be fixed from inside the app.
 
 ## M3 — List-item threads (the core feature)
 - Top-level list items in agent messages get a hover "Reply" button; items with a thread show a reply-count badge.
