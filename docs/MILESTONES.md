@@ -48,7 +48,7 @@ Build in order. Stop at the end of each milestone, show what works and how to tr
 
 # Roadmap 2
 
-M1–M5 built the design in `SPEC.md`. These milestones add settings, make Gloss a daily driver, take threads further, add code review sessions, converge on a long-term interface, add a second agent, and ship it. Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1–M5 built the design in `SPEC.md`. These milestones add settings, make Gloss a daily driver, take threads further, add code review sessions, converge on a long-term interface, add a second agent, and ship it; then future work. Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M6 — Settings
 A home for Gloss's settings, editable by hand (and by agents) as well as in the app.
@@ -160,12 +160,39 @@ An opt-in alternative to view-only threads: a thread runs its own agent session 
 
 **Done when:** with either mode on, a thread runs as its own agent, can run while the main thread works, and resolving it brings its summary into the main session.
 
+## M14 — Visual feedback (experimental, future)
+Point at things visually to give the agent feedback. Expect to iterate on this continuously based on use; the first version is deliberately small.
+
+**First version: capture, then annotate**
+- A palette (shortcut, or from the composer) captures a region, a window or the screen (Electron `desktopCapturer`), then opens it in a Gloss annotation canvas.
+- Tools: numbered **pins** with a short note each, pen, highlighter, box, arrow; undo.
+- Sent to the agent as the flattened image plus a numbered text list of the pins and notes ("1: …", "2: …"). Numbered marks follow Set-of-Mark prompting: models refer to labeled marks far more reliably than to free-form circles.
+- **Pins are anchors:** each pin can be opened into a thread, like list items, selections and diff lines.
+- Privacy: default to region or single-window capture, and always show exactly what will be sent before sending.
+- Needs M7 attachments (the agent must accept images).
+
+**Done when:** you can capture part of the screen, mark it up with pins and drawings, send it, get a response that refers to your marks, and discuss a single pin in its own thread.
+
+**Possible directions** (to try based on use, not commitments)
+- Live drawing over the screen (a transparent always-on-top overlay) instead of capture first.
+- Voice narration while drawing, sent with a timeline aligning what was said with what was drawn.
+- Element picking for web apps: select a DOM element in a running page and send its selector, styles and source location (stagewise / React Grab style), not just pixels.
+- Annotating Gloss's own content (messages, diffs) as images.
+- A blank canvas for sketching mockups and diagrams.
+- Several images in one message: before and after, or a sequence of steps.
+- Short screen recordings for interactions and animations.
+- The agent annotates back: it returns a screenshot with its own numbered marks.
+- Verify loop: after a fix, re-capture the same region and compare with the original.
+- Automatic marks: segment the capture and number regions so you only pick the ones you mean.
+- An MCP tool so the agent can ask you for a screenshot of something.
+
 ## Design passes needed
 - **M7:** sidebar with projects (folders) and their sessions, including the agent's existing sessions not yet opened in Gloss.
 - **M8:** where the threads overview lives (a sidebar section under the session, or a header button that opens a list in the side panel).
 - **M9:** the diff viewer layout, line Reply affordances and range selection, where the general conversation sits, and how agent-opened threads look.
 - The M7–M9 passes are deliberately light: enough to build them. M10 revisits everything as a whole.
 - **M13:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
+- **M14:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
