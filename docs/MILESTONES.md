@@ -48,7 +48,7 @@ Build in order. Stop at the end of each milestone, show what works and how to tr
 
 # Roadmap 2
 
-M1–M5 built the design in `SPEC.md`. These milestones add settings, make Gloss a daily driver, take threads further, converge on a long-term interface, add a second agent, and ship it. Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1–M5 built the design in `SPEC.md`. These milestones add settings, make Gloss a daily driver, take threads further, add code review sessions, converge on a long-term interface, add a second agent, and ship it. Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M6 — Settings
 A home for Gloss's settings, editable by hand (and by agents) as well as in the app.
@@ -59,7 +59,7 @@ A home for Gloss's settings, editable by hand (and by agents) as well as in the 
 - **Settings screen** (from the sidebar, or `Ctrl+,`): global and current-project sections, the file's path, and "Open in editor". Saving from the screen writes the file, keeping unknown keys.
 - Validated and owned by the main process; the renderer reads and writes through the IPC API.
 - Move the dev model (Haiku) toggle into it.
-- Later milestones add their own sections (M7: default model, status line items; M9: theme, transparency; M10: default agent, MCP servers; M11: updates). No section appears before its feature exists.
+- Later milestones add their own sections (M7: default model, status line items; M10: theme, transparency; M11: default agent, MCP servers; M12: updates). No section appears before its feature exists.
 
 **Done when:** a setting changed in the screen shows up in the file, a change made in an editor (or by an agent) shows up in the app without a restart, and a broken edit is reported without losing the previous settings.
 
@@ -92,7 +92,24 @@ A home for Gloss's settings, editable by hand (and by agents) as well as in the 
 
 **Done when:** in a session with several threads, any thread can be found and opened from the overview, and an agent's plan is visible and updates live in the thread it belongs to.
 
-## M9 — UX review
+## M9 — Review sessions
+A session type for reviewing code: the main view is a diff of the staged changes, and threads hang off lines of it. To the agent it is still one linear session.
+
+- **Start a review** from a project ("Review staged changes"). The session list shows review sessions distinctly.
+- **Diff viewer:** file list plus hunks of `git diff --staged` (read by the main process), syntax highlighted with M7's highlighter, usable on large diffs.
+- **Line anchors:** a new anchor kind for a line or line range of the diff (file, side, line range, and the lines' text). Hover a line for Reply; select lines to reply to a range. Threads open in the side panel as today.
+- **Wire format:** thread messages are tagged with the location, e.g. `[re: src/orders.ts:42 "cache.invalidate(id)"]`. At the start, Gloss tells the agent what is under review.
+- **General conversation:** a collapsible main thread beside the diff for the change as a whole.
+- **Refresh:** when the staged diff changes, it is re-read and each thread's lines are re-found by their text (as M4 does for selections). Threads whose lines are gone are marked outdated.
+- **Agent first pass** (phase 2): "Review" asks the agent for its findings in a structured form (file, line range, comment); Gloss opens one thread per finding at its lines.
+- The threads overview (M8) doubles as the list of review comments.
+- Update `SPEC.md` with the review session type and the line anchor.
+
+**Done when:** you can stage changes, open a review, discuss individual lines and ranges in threads and the whole change in the general thread, ask the agent for a first pass that lands as line threads, and see threads survive a re-stage (or be marked outdated).
+
+**Decide during development:** how the agent's own fixes appear. They change files, so they show up as unstaged changes: show unstaged changes alongside the staged diff (distinguished), or keep them out until staged.
+
+## M10 — UX review
 Converge on a clean, sleek, long-term interface now that every surface exists. Two phases, with a review stop between them.
 
 **Phase 1: review and target design** (designer-led)
@@ -107,12 +124,12 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
 - **Dark mode**, following the system setting, built on the dark tokens.
 - Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected.
-- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M11 installers.
+- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M12 installers.
 - Polish: empty, loading and error states; window title.
 
 **Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
 
-## M10 — A second agent
+## M11 — A second agent
 - Add Codex to the agent table via its ACP adapter (`@zed-industries/codex-acp` at the time of writing; verify the package, entrypoint and Windows support first).
 - **New session** lets you pick the agent. The session list and header show which agent a session uses.
 - Everything agent-specific stays in its `AgentConfig` entry: sign-in, bypass mode, model options and threads must work with no code paths for one agent.
@@ -120,7 +137,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 **Done when:** a session with the second agent works end to end, including sign-in, threads and resume (or the lost-context notice if it can't resume).
 
-## M11 — Shipping
+## M12 — Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
 - **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
 - **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
@@ -129,7 +146,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 **Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place.
 
-## M12 — Sub-agent threads (future)
+## M13 — Sub-agent threads (future)
 An opt-in alternative to view-only threads: a thread runs its own agent session instead of being tagged into the main one. Changes the core idea in `SPEC.md` (update it in this milestone).
 
 - **Thread mode setting** (M6 settings, global with a per-project override): `view-only` (default, today's behavior), `fresh` or `fork`.
@@ -146,8 +163,10 @@ An opt-in alternative to view-only threads: a thread runs its own agent session 
 ## Design passes needed
 - **M7:** sidebar with projects (folders) and their sessions, including the agent's existing sessions not yet opened in Gloss.
 - **M8:** where the threads overview lives (a sidebar section under the session, or a header button that opens a list in the side panel).
-- These are deliberately light: enough to build M7 and M8. M9 revisits everything as a whole.
-- **M12:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
+- **M9:** the diff viewer layout, line Reply affordances and range selection, where the general conversation sits, and how agent-opened threads look.
+- The M7–M9 passes are deliberately light: enough to build them. M10 revisits everything as a whole.
+- **M13:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
+- Review sessions on other bases: unstaged changes, the current branch vs. `main`, a commit range (M9 starts with staged changes; keep the line anchor base-agnostic).
