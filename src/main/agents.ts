@@ -26,9 +26,21 @@ function claudeAgent(): AgentConfig {
   }
 }
 
+const AGENTS: Record<string, () => AgentConfig> = {
+  claude: claudeAgent
+}
+
 export function getAgentConfig(id: string): AgentConfig {
-  if (id === 'claude') return claudeAgent()
-  throw new Error(`Unknown agent: ${id}`)
+  const make = AGENTS[id]
+  if (!make) throw new Error(`Unknown agent: ${id}`)
+  return make()
+}
+
+export function listAgents(): { id: string; name: string }[] {
+  return Object.values(AGENTS).map((make) => {
+    const { id, name } = make()
+    return { id, name }
+  })
 }
 
 /** Environment for a spawned agent process. */
