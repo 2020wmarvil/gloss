@@ -51,24 +51,25 @@ Build in order. Stop at the end of each milestone, show what works and how to tr
 M1–M5 built the design in `SPEC.md`. These milestones make Gloss a daily driver, take threads further, add a second agent, and ship it. Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M6 — Daily driver
-- **Session management:** rename and delete sessions. Deleting removes the session, its messages, tool calls and threads from the DB, and closes its live ACP session (`session/close` when the agent advertises it). Whether it also deletes the agent's own copy is an open question below.
+- **Session management:** rename and delete sessions. Deleting removes the session, its messages, tool calls and threads from the DB, and deletes the agent's own copy (`session/delete` when the agent advertises it; Claude Code keeps transcripts under `~/.claude/projects`).
+- **Projects and existing sessions:** sessions are grouped by folder (a project). Opening a project lists the agent's existing sessions for that folder (`session/list` with `cwd`, when advertised) alongside Gloss's own. Opening one Gloss hasn't seen imports it: a Gloss session is created for it and its display state is built from the `session/load` replay (user and agent messages, tool calls), all in the main thread. Sidebar layout needs a design pass.
 - **Tool-call details:** a tool row expands to show what the agent did: the command and its output, a file edit as a diff, other content as text. Collapsed by default.
-- **Code blocks:** syntax highlighting and a copy button.
+- **Code blocks:** syntax highlighting and a copy button. Highlighter: Shiki with its JavaScript regex engine (no WebAssembly, so the CSP stays as is), common languages preloaded and others loaded on demand; fall back to highlight.js via lowlight if Shiki's async loading fights streaming. Highlight tokens must carry source offsets so selection anchors in code keep working.
 - **Model picker:** per session, from the agent's `configOptions` with category `model`, set via `session/set_config_option`. The dev toggle (Haiku) still overrides it while on.
 - **Slash commands:** the composer autocompletes the agent's `available_commands_update` list after `/`.
 - **Attachments:** paste or drop images; attach files as embedded context. Only what the agent's `promptCapabilities` allow.
 - **Dark mode** (follows the system) and **keyboard shortcuts**: new session, next/previous session, focus composer, close panel.
 
-**Done when:** you can use Gloss for a day of real work without reaching for the terminal: clean up and rename sessions, see what a command printed or what an edit changed, switch models, run `/compact`, and paste a screenshot.
+**Done when:** you can use Gloss for a day of real work without reaching for the terminal: open a project and pick up a session you started in the `claude` CLI, clean up and rename sessions, see what a command printed or what an edit changed, switch models, run `/compact`, and paste a screenshot.
 
 ## M7 — Threads, further
-- **Threads overview:** a per-session list of all threads (anchor quote, reply count, last activity, running indicator). Clicking one opens it in the panel. Threads whose anchor text is gone are listed too.
+- **Threads overview:** a per-session list of all threads (anchor quote, reply count, last activity, running indicator). Clicking one opens it in the panel. Placement needs a design pass before M7 starts.
 - **Agent plan:** `plan` updates render as a checklist (pending / in progress / done) in the thread whose turn produced them, updated in place as the agent works. Persisted, so it survives a restart.
 
 **Done when:** in a session with several threads, any thread can be found and opened from the overview, and an agent's plan is visible and updates live in the thread it belongs to.
 
 ## M8 — A second agent
-- Add one more ACP agent to the agent table (candidate: Codex via `@zed-industries/codex-acp`, or Gemini CLI's ACP mode; verify which works best on Windows).
+- Add Codex to the agent table via its ACP adapter (`@zed-industries/codex-acp` at the time of writing; verify the package, entrypoint and Windows support first).
 - **New session** lets you pick the agent. The session list and header show which agent a session uses.
 - Everything agent-specific stays in its `AgentConfig` entry: sign-in, bypass mode, model options and threads must work with no code paths for one agent.
 
@@ -79,12 +80,13 @@ M1–M5 built the design in `SPEC.md`. These milestones make Gloss a daily drive
 - **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
 - **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
 - README: how to install, and how to cut a release.
+- Installers ship unsigned for now (Windows SmartScreen will warn: "More info → Run anyway").
 
 **Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place.
 
-## Open questions (decide before each milestone starts)
-- **M6:** should deleting a session also delete the agent's own copy of it (Claude Code keeps transcripts under `~/.claude/projects`), or only Gloss's?
-- **M6:** which syntax highlighter (bundle size vs. language coverage)?
-- **M7:** where does the overview live: a section in the sidebar under the session, or a header button that opens a list in the side panel?
-- **M8:** which second agent?
-- **M9:** code signing. Unsigned Windows installers trigger SmartScreen warnings for colleagues; a certificate costs money. Ship unsigned at first?
+## Design passes needed
+- **M6:** sidebar with projects (folders) and their sessions, including the agent's existing sessions not yet opened in Gloss.
+- **M7:** where the threads overview lives (a sidebar section under the session, or a header button that opens a list in the side panel).
+
+## Todo
+- Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
