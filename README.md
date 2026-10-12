@@ -4,7 +4,7 @@
 
 *Goodbye, Long Off-topic Scrolling Sessions.*
 
-A desktop GUI for coding agents (Claude Code first, anything that speaks the [Agent Client Protocol](https://agentclientprotocol.com) later) that lets you reply to a single point in an agent's answer as its own thread, without scrolling past forty turns about item 1 to find item 2 again.
+A desktop GUI for coding agents (using [Agent Client Protocol](https://agentclientprotocol.com) later) that lets you reply to a single point in an agent's answer as its own thread, without scrolling past forty turns about item 1 to find item 2 again.
 
 The agent still sees one linear conversation. Threads are just how Gloss shows it to you.
 
