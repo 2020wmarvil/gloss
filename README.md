@@ -12,9 +12,9 @@ The agent still sees one linear conversation. Threads are just how Gloss shows i
 
 ## Status
 
-**M4 (selection anchors).** Reply to any top-level list item, or to any text you select (prose or code), in an agent's answer as its own thread, in a side panel, while the main conversation stays short. Also: sessions in a project folder, streamed markdown replies, tool-call rows, cancel, persistence across restarts with the agent resuming where it left off, and in-app sign-in. Approving tool calls comes in M5. See [`docs/MILESTONES.md`](docs/MILESTONES.md).
+**M5 (misc).** Reply to any top-level list item, or to any text you select (prose or code), in an agent's answer as its own thread, in a side panel, while the main conversation stays short. Also: sessions in a project folder, streamed markdown replies, tool-call rows, cancel, persistence across restarts with the agent resuming where it left off, in-app sign-in, and CI. See [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
-Not yet: approving tool calls. Until M5, Gloss declines any tool call the agent asks permission for (reading and searching files usually doesn't need permission; editing files and running commands does) and says so in the conversation.
+**No permission prompts.** Gloss runs the agent in its bypass-permissions mode and approves any permission request it still gets. The agent can edit any file and run any command it decides to, in the session's folder and beyond, without asking. Only use it where you're comfortable with that.
 
 ## Requirements
 

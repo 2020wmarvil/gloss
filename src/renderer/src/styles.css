@@ -773,10 +773,6 @@ button.status.link {
   background: currentColor;
 }
 
-pre .anchor-chip {
-  vertical-align: 0;
-}
-
 .selection-popover {
   position: fixed;
   z-index: 10;
@@ -820,4 +816,16 @@ pre .anchor-chip {
 
 .selection-quote {
   margin: 0;
+}
+
+/* Chips for anchors that end inside a code block sit in a row under it. */
+.anchor-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: -4px 0 10px;
+}
+
+.anchor-chips .anchor-chip {
+  margin-left: 0;
 }

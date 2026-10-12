@@ -119,6 +119,31 @@ describe('marks', () => {
     expect(mapped(select('on every', 'reconnect')).slice).toBe('on every\nreconnect')
   })
 
+  it('puts chips after inline code and below code blocks, not inside them', () => {
+    const inline = MD.indexOf('retry()')
+    const block = MD.indexOf('code line')
+    render([
+      { start: inline, end: inline + 5, threadId: 'inline', title: 'retry' },
+      { start: block, end: block + 4, threadId: 'block', title: 'code' }
+    ])
+    const inlineChip = root.querySelector('[aria-label^="Open thread"]')!
+    expect(inlineChip.closest('code')).toBeNull()
+    expect(inlineChip.parentElement?.previousElementSibling?.tagName).toBe('CODE')
+    expect(inlineChip.getAttribute('title')).toBe('“retry”')
+
+    const chips = root.querySelectorAll('button.anchor-chip')
+    const blockChip = chips[chips.length - 1]
+    expect(blockChip.closest('pre')).toBeNull()
+    expect(blockChip.parentElement?.className).toBe('anchor-chips')
+    expect(blockChip.parentElement?.previousElementSibling?.tagName).toBe('PRE')
+
+    // The marks themselves stay inside the code.
+    expect(root.querySelector('code .anchored[data-thread="inline"]')?.textContent).toBe('retry')
+    expect(root.querySelector('pre .anchored[data-thread="block"]')?.textContent).toBe('code')
+    // Chips are not message text, so selections still map cleanly.
+    expect(mapped(select('so', 'never')).slice).toBe('so `retry()` never')
+  })
+
   it('highlights a draft anchor without a chip', () => {
     const start = MD.indexOf('First')
     render([{ start, end: start + 5, threadId: null }])

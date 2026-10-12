@@ -264,7 +264,9 @@ export class SessionManager {
     let conn!: AgentConnection
     const res = await this.withAgent(agentId, async (c) => {
       conn = c
-      return c.newSession(cwd)
+      const created = await c.newSession(cwd)
+      await this.enterBypassMode(agentId, c, created.sessionId, created.modes)
+      return created
     })
     const session: Session = {
       id: randomUUID(),
@@ -339,7 +341,8 @@ export class SessionManager {
       rt.loading = true
       this.byAcpId.set(session.acpSessionId, session.id)
       try {
-        await conn.loadSession(session.acpSessionId, session.cwd)
+        const loaded = await conn.loadSession(session.acpSessionId, session.cwd)
+        await this.enterBypassMode(session.agentId, conn, session.acpSessionId, loaded.modes)
         rt.attachedTo = conn
         return session.acpSessionId
       } catch (err) {
@@ -351,6 +354,7 @@ export class SessionManager {
     }
 
     const res = await conn.newSession(session.cwd)
+    await this.enterBypassMode(session.agentId, conn, res.sessionId, res.modes)
     this.byAcpId.delete(session.acpSessionId)
     session = this.deps.store.updateSession(session.id, { acpSessionId: res.sessionId })
     this.byAcpId.set(session.acpSessionId, session.id)
@@ -362,6 +366,29 @@ export class SessionManager {
       'Started a new agent session. The agent could not resume the previous one, so it does not remember the earlier messages shown here.'
     )
     return session.acpSessionId
+  }
+
+  /**
+   * Switches an ACP session to the agent's bypass-permissions mode when the
+   * agent offers it. Best effort: permission requests are auto-approved anyway.
+   */
+  private async enterBypassMode(
+    agentId: string,
+    conn: AgentConnection,
+    acpSessionId: string,
+    modes: acp.SessionModeState | null | undefined
+  ): Promise<void> {
+    const modeId = this.deps.getAgentConfig(agentId).bypassModeId
+    if (!modeId || !modes || modes.currentModeId === modeId) return
+    if (!modes.availableModes.some((m) => m.id === modeId)) {
+      console.warn(`[gloss] ${agentId} does not offer mode "${modeId}" here; auto-approving permission requests instead.`)
+      return
+    }
+    try {
+      await conn.setMode(acpSessionId, modeId)
+    } catch (err) {
+      console.warn(`[gloss] could not switch to mode "${modeId}":`, errorMessage(err))
+    }
   }
 
   // Turns
@@ -520,19 +547,16 @@ export class SessionManager {
   }
 
   private async onPermission(req: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
-    // Approvals arrive in M5. Until then, decline and tell the user.
-    const sessionId = this.byAcpId.get(req.sessionId)
-    if (sessionId) {
-      this.notice(
-        sessionId,
-        this.runtimes.get(sessionId)?.turn?.threadId ?? null,
-        `Declined the agent's request to run "${req.toolCall.title ?? 'a tool'}". Approving tool calls is not supported yet.`
-      )
+    // Gloss runs agents without permission prompts (SPEC → Permissions): approve
+    // every request. Prefer "allow once": "allow always" can make the agent save
+    // a rule (e.g. into the project's settings).
+    const allow =
+      req.options.find((o) => o.kind === 'allow_once') ?? req.options.find((o) => o.kind === 'allow_always')
+    if (!allow) {
+      console.warn(`[gloss] permission request for "${req.toolCall.title ?? 'a tool'}" has no allow option`)
+      return { outcome: { outcome: 'cancelled' } }
     }
-    const reject = req.options.find((o) => o.kind === 'reject_once')
-    return reject
-      ? { outcome: { outcome: 'selected', optionId: reject.optionId } }
-      : { outcome: { outcome: 'cancelled' } }
+    return { outcome: { outcome: 'selected', optionId: allow.optionId } }
   }
 }
 

@@ -11,7 +11,7 @@ type Script = (ctx: {
   text: string
   say(text: string, messageId?: string): Promise<void>
   update(update: acp.SessionUpdate): Promise<void>
-  requestPermission(title: string): Promise<acp.RequestPermissionResponse>
+  requestPermission(title: string, options?: acp.PermissionOption[]): Promise<acp.RequestPermissionResponse>
   cancelled: Promise<void>
 }) => Promise<acp.StopReason>
 
@@ -25,6 +25,12 @@ type FakeAgent = {
   loads: string[]
   authenticated: string[]
   connections: number
+  /** Session modes reported by session/new and session/load; null = the agent has none. */
+  modes: acp.SessionModeState | null
+  /** session/set_mode calls, as "sessionId:modeId". */
+  modeChanges: string[]
+  /** session/set_mode fails. */
+  refuseModes: boolean
   script: Script
 }
 
@@ -38,6 +44,9 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
     loads: [],
     authenticated: [],
     connections: 0,
+    modes: null,
+    modeChanges: [],
+    refuseModes: false,
     script: async ({ say }) => {
       await say('Hello')
       await say(' world')
@@ -66,7 +75,12 @@ function agentApp(state: FakeAgent): acp.AgentApp {
     .onRequest(acp.methods.agent.session.new, () => {
       const sessionId = `acp-${state.connections}-${next++}`
       state.sessions.add(sessionId)
-      return { sessionId }
+      return { sessionId, modes: state.modes }
+    })
+    .onRequest(acp.methods.agent.session.setMode, (ctx) => {
+      if (state.refuseModes) throw acp.RequestError.internalError(undefined, 'mode refused')
+      state.modeChanges.push(`${ctx.params.sessionId}:${ctx.params.modeId}`)
+      return {}
     })
     .onRequest(acp.methods.agent.session.load, async (ctx) => {
       const { sessionId } = ctx.params
@@ -77,7 +91,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
         sessionId,
         update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } }
       })
-      return {}
+      return { modes: state.modes }
     })
     .onNotification(acp.methods.agent.session.cancel, (ctx) => {
       cancels.get(ctx.params.sessionId)?.()
@@ -101,11 +115,12 @@ function agentApp(state: FakeAgent): acp.AgentApp {
             content: { type: 'text', text: t },
             ...(messageId ? { messageId } : {})
           }),
-        requestPermission: (title) =>
+        requestPermission: (title, options) =>
           ctx.client.request(acp.methods.client.session.requestPermission, {
             sessionId,
             toolCall: { toolCallId: 'perm', title },
-            options: [
+            options: options ?? [
+              { optionId: 'always', name: 'Always allow', kind: 'allow_always' },
               { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
               { optionId: 'deny', name: 'Deny', kind: 'reject_once' }
             ]
@@ -116,7 +131,21 @@ function agentApp(state: FakeAgent): acp.AgentApp {
     })
 }
 
-const config: AgentConfig = { id: 'fake', name: 'Fake Agent', command: 'fake-agent', args: ['--acp'] }
+const config: AgentConfig = {
+  id: 'fake',
+  name: 'Fake Agent',
+  command: 'fake-agent',
+  args: ['--acp'],
+  bypassModeId: 'bypass'
+}
+
+const MODES: acp.SessionModeState = {
+  currentModeId: 'default',
+  availableModes: [
+    { id: 'default', name: 'Default' },
+    { id: 'bypass', name: 'Bypass permissions' }
+  ]
+}
 
 describe('SessionManager', () => {
   let store: Store
@@ -465,18 +494,69 @@ describe('SessionManager', () => {
     })
 
     it('shows notices in the thread whose turn produced them', async () => {
+      state.loadSession = false
       const { sessionId, reviewId } = await reviewed()
       const thread = manager.createThread(sessionId, reviewId, { kind: 'listItem', path: [0], text: 'Cache' })
-      let outcome: acp.RequestPermissionResponse | undefined
-      state.script = async ({ requestPermission }) => {
-        outcome = await requestPermission('Edit orders.ts')
-        return 'end_turn'
-      }
+      await manager.dispose()
+      manager = makeManager()
+      // The agent cannot resume, so the "lost context" notice comes from this thread's turn.
       await manager.send(sessionId, 'fix it', thread.id)
-      expect(outcome).toEqual({ outcome: { outcome: 'selected', optionId: 'deny' } })
       expect(events).toContainEqual(
         expect.objectContaining({ type: 'notice', sessionId, threadId: thread.id })
       )
+    })
+  })
+
+  describe('permissions', () => {
+    it('switches new and resumed sessions to the bypass mode', async () => {
+      state.modes = MODES
+      const session = await manager.createSession('/w', 'fake')
+      expect(state.modeChanges).toEqual([`${session.acpSessionId}:bypass`])
+
+      await manager.dispose()
+      manager = makeManager()
+      await manager.send(session.id, 'hi', null)
+      expect(state.modeChanges).toEqual([`${session.acpSessionId}:bypass`, `${session.acpSessionId}:bypass`])
+    })
+
+    it('leaves the mode alone when it is already set or not offered', async () => {
+      state.modes = { ...MODES, currentModeId: 'bypass' }
+      await manager.createSession('/a', 'fake')
+      state.modes = { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Default' }] }
+      await manager.createSession('/b', 'fake')
+      state.modes = null
+      await manager.createSession('/c', 'fake')
+      expect(state.modeChanges).toEqual([])
+    })
+
+    it('still works when the agent refuses the bypass mode', async () => {
+      state.modes = MODES
+      state.refuseModes = true
+      const session = await manager.createSession('/w', 'fake')
+      await expect(manager.send(session.id, 'hi', null)).resolves.toEqual({ stopReason: 'end_turn' })
+    })
+
+    it('approves permission requests, preferring allow once', async () => {
+      const outcomes: acp.RequestPermissionResponse[] = []
+      state.script = async ({ requestPermission }) => {
+        outcomes.push(await requestPermission('Edit orders.ts'))
+        outcomes.push(
+          await requestPermission('Run tests', [
+            { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+            { optionId: 'always', name: 'Always', kind: 'allow_always' }
+          ])
+        )
+        outcomes.push(await requestPermission('Odd', [{ optionId: 'deny', name: 'Deny', kind: 'reject_once' }]))
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'fix it', null)
+      expect(outcomes).toEqual([
+        { outcome: { outcome: 'selected', optionId: 'allow' } },
+        { outcome: { outcome: 'selected', optionId: 'always' } },
+        { outcome: { outcome: 'cancelled' } }
+      ])
+      expect(events.some((e) => e.type === 'notice')).toBe(false)
     })
   })
 })

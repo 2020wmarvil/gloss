@@ -6,6 +6,11 @@ export type AgentConfig = {
   command: string
   args: string[]
   env?: Record<string, string>
+  /**
+   * The agent's session mode that skips permission prompts, if it has one.
+   * Gloss switches every session to it (SPEC → Permissions).
+   */
+  bypassModeId?: string
 }
 
 /** The model the dev toggle selects. The Claude adapter reads ANTHROPIC_MODEL. */
@@ -22,7 +27,8 @@ function claudeAgent(): AgentConfig {
     name: 'Claude Code',
     command: process.execPath,
     args: [require.resolve('@agentclientprotocol/claude-agent-acp/dist/index.js')],
-    env: { ELECTRON_RUN_AS_NODE: '1' }
+    env: { ELECTRON_RUN_AS_NODE: '1' },
+    bypassModeId: 'bypassPermissions'
   }
 }
 

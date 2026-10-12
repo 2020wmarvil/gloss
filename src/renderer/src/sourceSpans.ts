@@ -14,6 +14,8 @@ export type Mark = {
   threadId: string | null
   /** Extra classes, e.g. "active". */
   className?: string
+  /** Tooltip for the chip (the anchored text). */
+  title?: string
 }
 
 type TextNode = { type: 'text' | 'inlineCode' | 'code'; value: string; position?: Nodes['position']; data?: Record<string, unknown> }
@@ -25,16 +27,27 @@ export function remarkSourceSpans(options: { marks: Mark[] }) {
   return (tree: Root, file: { value: unknown }): void => {
     const source = String(file.value)
 
-    const runs: { node: TextNode; offsets: number[] }[] = []
-    const walk = (node: Nodes): void => {
+    type Parent = { children: Nodes[] }
+    const runs: { node: TextNode; offsets: number[]; parent: Parent | null }[] = []
+    const walk = (node: Nodes, parent: Parent | null): void => {
       if (TEXT_TYPES.has(node.type) && 'value' in node) {
         const offsets = nodeOffsets(source, node)
-        if (offsets) runs.push({ node: node as TextNode, offsets })
+        if (offsets) runs.push({ node: node as TextNode, offsets, parent })
         return
       }
-      if ('children' in node) for (const child of node.children) walk(child as Nodes)
+      if ('children' in node) for (const child of node.children) walk(child as Nodes, node as Parent)
     }
-    walk(tree)
+    walk(tree, null)
+
+    const chip = (m: Mark): ElementContent => ({
+      type: 'element',
+      tagName: 'span',
+      properties: { className: ['anchor-chip'], dataThread: m.threadId, ...(m.title ? { title: m.title } : {}) },
+      children: []
+    })
+    // Chips for anchors ending inside code go after the code, not inside it:
+    // right after inline code, in a row below a code block.
+    const after: { parent: Parent; node: TextNode; chips: ElementContent[] }[] = []
 
     // The innermost (shortest) mark covering a source offset.
     const markAt = (o: number): Mark | null => {
@@ -53,8 +66,9 @@ export function remarkSourceSpans(options: { marks: Mark[] }) {
       })
     )
 
-    runs.forEach(({ node, offsets }, r) => {
+    runs.forEach(({ node, offsets, parent }, r) => {
       const children: ElementContent[] = []
+      const outside: ElementContent[] = []
       let i0 = 0
       for (let i = 1; i <= offsets.length; i++) {
         if (i < offsets.length && markAt(offsets[i]) === markAt(offsets[i0])) continue
@@ -76,21 +90,29 @@ export function remarkSourceSpans(options: { marks: Mark[] }) {
         })
         for (const m of marks) {
           if (m.threadId && lastChar.get(m) === `${r}:${i - 1}`) {
-            children.push({
-              type: 'element',
-              tagName: 'span',
-              properties: { className: ['anchor-chip'], dataThread: m.threadId },
-              children: []
-            })
+            ;(node.type === 'text' || !parent ? children : outside).push(chip(m))
           }
         }
         i0 = i
       }
+      if (outside.length > 0 && parent) after.push({ parent, node, chips: outside })
       node.data = {
         ...node.data,
         ...(node.type === 'text' ? { hName: 'span' } : {}),
         hChildren: children
       }
     })
+
+    for (const { parent, node, chips } of after.reverse()) {
+      const index = parent.children.indexOf(node as Nodes)
+      const holder = {
+        type: 'text',
+        value: '',
+        data: node.type === 'code'
+          ? { hName: 'div', hProperties: { className: ['anchor-chips'] }, hChildren: chips }
+          : { hName: 'span', hChildren: chips }
+      } as unknown as Nodes
+      parent.children.splice(index + 1, 0, holder)
+    }
   }
 }
