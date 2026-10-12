@@ -58,7 +58,7 @@ M1–M5 built the design in `SPEC.md`. These milestones make Gloss a daily drive
 - **Model picker:** per session, from the agent's `configOptions` with category `model`, set via `session/set_config_option`. The dev toggle (Haiku) still overrides it while on.
 - **Slash commands:** the composer autocompletes the agent's `available_commands_update` list after `/`.
 - **Attachments:** paste or drop images; attach files as embedded context. Only what the agent's `promptCapabilities` allow.
-- **Dark mode** (follows the system) and **keyboard shortcuts**: new session, next/previous session, focus composer, close panel.
+- **Keyboard shortcuts:** new session, next/previous session, focus composer, close panel.
 
 **Done when:** you can use Gloss for a day of real work without reaching for the terminal: open a project and pick up a session you started in the `claude` CLI, clean up and rename sessions, see what a command printed or what an edit changed, switch models, run `/compact`, and paste a screenshot.
 
@@ -80,6 +80,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 **Phase 2: implementation**
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
+- **Dark mode**, following the system setting, built on the dark tokens.
 - Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected.
 - Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M10 installers.
 - Polish: empty, loading and error states; window title.
