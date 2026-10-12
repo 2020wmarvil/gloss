@@ -43,3 +43,48 @@ Build in order. Stop at the end of each milestone, show what works and how to tr
 - Selection-anchor chips that end inside code are placed after it: after inline code, in a row below a code block.
 
 **Done when:** the agent edits files and runs commands without prompts, and CI passes on the PR.
+
+---
+
+# Roadmap 2
+
+M1–M5 built the design in `SPEC.md`. These milestones make Gloss a daily driver, take threads further, add a second agent, and ship it. Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+
+## M6 — Daily driver
+- **Session management:** rename and delete sessions. Deleting removes the session, its messages, tool calls and threads from the DB, and closes its live ACP session (`session/close` when the agent advertises it). Whether it also deletes the agent's own copy is an open question below.
+- **Tool-call details:** a tool row expands to show what the agent did: the command and its output, a file edit as a diff, other content as text. Collapsed by default.
+- **Code blocks:** syntax highlighting and a copy button.
+- **Model picker:** per session, from the agent's `configOptions` with category `model`, set via `session/set_config_option`. The dev toggle (Haiku) still overrides it while on.
+- **Slash commands:** the composer autocompletes the agent's `available_commands_update` list after `/`.
+- **Attachments:** paste or drop images; attach files as embedded context. Only what the agent's `promptCapabilities` allow.
+- **Dark mode** (follows the system) and **keyboard shortcuts**: new session, next/previous session, focus composer, close panel.
+
+**Done when:** you can use Gloss for a day of real work without reaching for the terminal: clean up and rename sessions, see what a command printed or what an edit changed, switch models, run `/compact`, and paste a screenshot.
+
+## M7 — Threads, further
+- **Threads overview:** a per-session list of all threads (anchor quote, reply count, last activity, running indicator). Clicking one opens it in the panel. Threads whose anchor text is gone are listed too.
+- **Agent plan:** `plan` updates render as a checklist (pending / in progress / done) in the thread whose turn produced them, updated in place as the agent works. Persisted, so it survives a restart.
+
+**Done when:** in a session with several threads, any thread can be found and opened from the overview, and an agent's plan is visible and updates live in the thread it belongs to.
+
+## M8 — A second agent
+- Add one more ACP agent to the agent table (candidate: Codex via `@zed-industries/codex-acp`, or Gemini CLI's ACP mode; verify which works best on Windows).
+- **New session** lets you pick the agent. The session list and header show which agent a session uses.
+- Everything agent-specific stays in its `AgentConfig` entry: sign-in, bypass mode, model options and threads must work with no code paths for one agent.
+
+**Done when:** a session with the second agent works end to end, including sign-in, threads and resume (or the lost-context notice if it can't resume).
+
+## M9 — Shipping
+- **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
+- **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
+- **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
+- README: how to install, and how to cut a release.
+
+**Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place.
+
+## Open questions (decide before each milestone starts)
+- **M6:** should deleting a session also delete the agent's own copy of it (Claude Code keeps transcripts under `~/.claude/projects`), or only Gloss's?
+- **M6:** which syntax highlighter (bundle size vs. language coverage)?
+- **M7:** where does the overview live: a section in the sidebar under the session, or a header button that opens a list in the side panel?
+- **M8:** which second agent?
+- **M9:** code signing. Unsigned Windows installers trigger SmartScreen warnings for colleagues; a certificate costs money. Ship unsigned at first?

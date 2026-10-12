@@ -185,7 +185,9 @@ See `docs/mocks/`:
 
 The mocks show layout and interaction, not a final visual design.
 
-## Out of scope (do not build)
+## Not part of the design (do not build)
+
+These are deliberate omissions, not deferred work.
 
 - Resolve / close / archive state on threads
 - Forking a thread into its own agent session
