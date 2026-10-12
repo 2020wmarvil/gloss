@@ -1,4 +1,4 @@
-// One ACP connection to one spawned agent process.
+// One ACP connection to one agent (a spawned process, or an in-process agent in tests).
 import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import { createInterface } from 'node:readline'
@@ -10,16 +10,29 @@ export type AgentHandlers = {
   onPermission(request: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse>
   /** A line the agent wrote to stderr. */
   onStderr(line: string): void
-  onExit(code: number | null, signal: NodeJS.Signals | null): void
+  /** The connection closed (agent exited, or dispose() was called). */
+  onClosed(): void
+}
+
+/** ACP's auth_required error code. */
+const AUTH_REQUIRED = acp.RequestError.authRequired().code
+
+export function isAuthRequired(err: unknown): boolean {
+  return (
+    typeof err === 'object' && err !== null && (err as { code?: unknown }).code === AUTH_REQUIRED
+  )
 }
 
 export class AgentConnection {
+  private closed = false
+
   private constructor(
-    private readonly child: ChildProcess,
     private readonly conn: acp.ClientConnection,
-    readonly init: acp.InitializeResponse
+    readonly init: acp.InitializeResponse,
+    private readonly child?: ChildProcess
   ) {}
 
+  /** Spawns the agent's ACP entrypoint and initializes the connection. */
   static async start(
     config: AgentConfig,
     env: NodeJS.ProcessEnv,
@@ -35,42 +48,82 @@ export class AgentConnection {
       child.once('error', reject)
     })
     createInterface({ input: child.stderr! }).on('line', handlers.onStderr)
-
     const stream = acp.ndJsonStream(
       Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>,
       Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>
     )
-    const conn = acp
+    child.once('exit', (code, signal) => {
+      handlers.onStderr(`[agent exited: code ${code}, signal ${signal}]`)
+    })
+    try {
+      await spawned
+    } catch (err) {
+      child.kill()
+      throw err
+    }
+    return AgentConnection.open(stream, handlers, child)
+  }
+
+  /** Connects to an ACP stream or an in-process agent app and initializes. */
+  static async open(
+    target: acp.Stream | acp.AgentApp,
+    handlers: AgentHandlers,
+    child?: ChildProcess
+  ): Promise<AgentConnection> {
+    const app = acp
       .client({ name: 'gloss' })
       .onNotification(acp.methods.client.session.update, (ctx) => handlers.onUpdate(ctx.params))
       .onRequest(acp.methods.client.session.requestPermission, (ctx) =>
         handlers.onPermission(ctx.params)
       )
-      .connect(stream)
-
-    child.once('exit', (code, signal) => {
+    const conn = target instanceof acp.AgentApp ? app.connect(target) : app.connect(target)
+    child?.once('exit', (code, signal) =>
       conn.close(new Error(`Agent process exited (code ${code}, signal ${signal})`))
-      handlers.onExit(code, signal)
-    })
-
+    )
     try {
-      await spawned
       // No fs or terminal client capabilities in v1: the agent uses its own tools.
+      // auth.terminal: we can run terminal sign-in methods (SPEC → Authentication).
       const init = await conn.agent.request(acp.methods.agent.initialize, {
         protocolVersion: acp.PROTOCOL_VERSION,
-        clientCapabilities: {},
+        clientCapabilities: { auth: { terminal: true } },
         clientInfo: { name: 'gloss', title: 'Gloss', version: '0.1.0' }
       })
-      return new AgentConnection(child, conn, init)
+      const connection = new AgentConnection(conn, init, child)
+      const onClosed = (): void => {
+        connection.closed = true
+        handlers.onClosed()
+      }
+      conn.closed.then(onClosed, onClosed)
+      return connection
     } catch (err) {
       conn.close(err)
-      child.kill()
+      child?.kill()
       throw err
     }
   }
 
+  get isClosed(): boolean {
+    return this.closed
+  }
+
+  get authMethods(): acp.AuthMethod[] {
+    return this.init.authMethods ?? []
+  }
+
+  get canLoadSession(): boolean {
+    return this.init.agentCapabilities?.loadSession === true
+  }
+
   newSession(cwd: string): Promise<acp.NewSessionResponse> {
     return this.conn.agent.request(acp.methods.agent.session.new, { cwd, mcpServers: [] })
+  }
+
+  loadSession(sessionId: string, cwd: string): Promise<acp.LoadSessionResponse> {
+    return this.conn.agent.request(acp.methods.agent.session.load, {
+      sessionId,
+      cwd,
+      mcpServers: []
+    })
   }
 
   prompt(sessionId: string, text: string): Promise<acp.PromptResponse> {
@@ -84,8 +137,12 @@ export class AgentConnection {
     return this.conn.agent.notify(acp.methods.agent.session.cancel, { sessionId })
   }
 
+  async authenticate(methodId: string): Promise<void> {
+    await this.conn.agent.request(acp.methods.agent.authenticate, { methodId })
+  }
+
   dispose(): void {
     this.conn.close()
-    if (this.child.exitCode === null) this.child.kill()
+    if (this.child && this.child.exitCode === null) this.child.kill()
   }
 }
