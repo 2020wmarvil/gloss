@@ -69,6 +69,7 @@ M1–M5 built the design in `SPEC.md`. These milestones make Gloss a daily drive
   - turn state, e.g. "Working in item 2" (moved here from the header; click to open that thread)
 
   Agent-agnostic: everything but the git branch comes from ACP. Not Claude Code's configurable `statusLine` command.
+- **Agent extensions:** the agent already loads its own plugins, skills and MCP servers (the Claude adapter reads user, project and local settings). Make them visible: their slash commands appear in the autocomplete, and a session view lists what the agent loaded, including MCP server status where the agent reports it (Claude Code answers `/mcp`). Gloss does not install or configure them.
 
 **Done when:** you can use Gloss for a day of real work without reaching for the terminal: open a project and pick up a session you started in the `claude` CLI, clean up and rename sessions, see what a command printed or what an edit changed, switch models, see when context is filling up and run `/compact`, and paste a screenshot.
 
@@ -101,6 +102,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - Add Codex to the agent table via its ACP adapter (`@zed-industries/codex-acp` at the time of writing; verify the package, entrypoint and Windows support first).
 - **New session** lets you pick the agent. The session list and header show which agent a session uses.
 - Everything agent-specific stays in its `AgentConfig` entry: sign-in, bypass mode, model options and threads must work with no code paths for one agent.
+- **Gloss-managed MCP servers:** a per-project list of MCP servers in Gloss, passed to whichever agent a session uses via ACP's `mcpServers` in `session/new` and `session/load` (today Gloss sends an empty list), so Claude Code and Codex get the same tools without configuring each separately. Only transports the agent advertises in `mcpCapabilities`.
 
 **Done when:** a session with the second agent works end to end, including sign-in, threads and resume (or the lost-context notice if it can't resume).
 
