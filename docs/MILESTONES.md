@@ -48,7 +48,7 @@ Build in order. Stop at the end of each milestone, show what works and how to tr
 
 # Roadmap 2
 
-M1–M5 built the design in `SPEC.md`. These milestones make Gloss a daily driver, take threads further, add a second agent, and ship it. Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1–M5 built the design in `SPEC.md`. These milestones make Gloss a daily driver, take threads further, converge on a long-term interface, add a second agent, and ship it. Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M6 — Daily driver
 - **Session management:** rename and delete sessions. Deleting removes the session, its messages, tool calls and threads from the DB, and deletes the agent's own copy (`session/delete` when the agent advertises it; Claude Code keeps transcripts under `~/.claude/projects`).
@@ -68,14 +68,30 @@ M1–M5 built the design in `SPEC.md`. These milestones make Gloss a daily drive
 
 **Done when:** in a session with several threads, any thread can be found and opened from the overview, and an agent's plan is visible and updates live in the thread it belongs to.
 
-## M8 — A second agent
+## M8 — UX review
+Converge on a clean, sleek, long-term interface now that every surface exists. Two phases, with a review stop between them.
+
+**Phase 1: review and target design** (designer-led)
+- Inventory every screen and state as screenshots: empty app, project and session list, streaming turn, tool details, thread panel (new, active, running), selection popover and markers, threads overview, plan, sign-in, errors and notices, light and dark.
+- List what is inconsistent, cluttered or unclear.
+- Define a small design system: color, type scale, spacing, radii, elevation and motion tokens for light and dark, an icon set, and the core components (buttons, chips and badges, inputs, panels, list rows, popovers).
+- Updated mocks in `docs/mocks/` for the target interface. These replace the M1-era mocks as the reference.
+
+**Phase 2: implementation**
+- Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
+- Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected.
+- Polish: empty, loading and error states; window title and app icon.
+
+**Done when:** every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
+
+## M9 — A second agent
 - Add Codex to the agent table via its ACP adapter (`@zed-industries/codex-acp` at the time of writing; verify the package, entrypoint and Windows support first).
 - **New session** lets you pick the agent. The session list and header show which agent a session uses.
 - Everything agent-specific stays in its `AgentConfig` entry: sign-in, bypass mode, model options and threads must work with no code paths for one agent.
 
 **Done when:** a session with the second agent works end to end, including sign-in, threads and resume (or the lost-context notice if it can't resume).
 
-## M9 — Shipping
+## M10 — Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
 - **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
 - **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
@@ -87,6 +103,7 @@ M1–M5 built the design in `SPEC.md`. These milestones make Gloss a daily drive
 ## Design passes needed
 - **M6:** sidebar with projects (folders) and their sessions, including the agent's existing sessions not yet opened in Gloss.
 - **M7:** where the threads overview lives (a sidebar section under the session, or a header button that opens a list in the side panel).
+- These are deliberately light: enough to build M6 and M7. M8 revisits everything as a whole.
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
