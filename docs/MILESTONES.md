@@ -129,10 +129,25 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 **Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place.
 
+## M12 — Sub-agent threads (future)
+An opt-in alternative to view-only threads: a thread runs its own agent session instead of being tagged into the main one. Changes the core idea in `SPEC.md` (update it in this milestone).
+
+- **Thread mode setting** (M6 settings, global with a per-project override): `view-only` (default, today's behavior), `fresh` or `fork`.
+  - **fresh:** a new agent session that starts with only the anchor text (plus the user's message). Cheap.
+  - **fork:** `session/fork` of the main session at the moment the thread is created, so the sub-agent has the full context. Costs about as much as the main session.
+  Both exist so they can be compared in practice. Each thread shows its mode.
+- Each sub-agent thread has its own ACP session (stored on the Thread), resumed like any session. Turns in different sessions can run at the same time; Send is disabled per session, not everywhere. No file locking: as with several CLI sessions side by side, the user keeps their edits apart.
+- **Resolve:** a sub-agent thread can be resolved. The sub-agent is asked for a compact summary of its conclusions, which is sent to the main session (shown in the main thread as the thread's result). A resolved thread is marked as such.
+- **Cost is visible:** each sub-agent thread's context and cost appear in the status line when it is open, and in the threads overview.
+- If the mode is `fork` and the agent does not advertise `session/fork` (it is optional in ACP), creating the thread fails with a visible error. No silent fallback.
+
+**Done when:** with either mode on, a thread runs as its own agent, can run while the main thread works, and resolving it brings its summary into the main session.
+
 ## Design passes needed
 - **M7:** sidebar with projects (folders) and their sessions, including the agent's existing sessions not yet opened in Gloss.
 - **M8:** where the threads overview lives (a sidebar section under the session, or a header button that opens a list in the side panel).
 - These are deliberately light: enough to build M7 and M8. M9 revisits everything as a whole.
+- **M12:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.

@@ -11,7 +11,7 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 
 ## How to work
 - Do one milestone at a time. At the end of each, stop: summarize what works, how to run it, and anything that deviated from the spec. Wait for review.
-- Respect the **Not part of the design** list in the spec. Don't add features from it, even if they seem easy.
+- Build what the spec and the current milestone describe. Don't add features beyond them, even if they seem easy; propose them instead.
 - Verify external APIs before relying on them: the ACP TypeScript SDK (`@agentclientprotocol/sdk`) client API, the Claude Code ACP adapter's package name and entrypoint, and whether this Electron version's Node has `node:sqlite`. Check docs or source; don't guess.
 - Keep agent/ACP/DB logic in the main process. The renderer talks to it only through the preload IPC API.
 - Never relax the Electron security settings in the spec to make something work.
