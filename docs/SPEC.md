@@ -38,7 +38,14 @@ User message in a thread is sent to the agent as:
 <user's text>
 ```
 
-Main-thread messages are sent unchanged. The UI shows the user's text without the tag; the tag is stored in `wireText`.
+Main-thread messages are sent unchanged, except the first one after a thread: when the user's previous message in the session was in a thread, the main message is sent as
+
+```
+[main]
+<user's text>
+```
+
+so the agent doesn't read it as continuing that thread. The UI shows the user's text without the tag; the tag is stored in `wireText`.
 
 ## Data model
 
@@ -113,7 +120,8 @@ Notes:
 send(text, threadId?):
   if a turn is running: queue.push({text, threadId, attachments}); return   (see Composer → Queue)
   t = threads[threadId]
-  wire = t ? `[re: "${truncate(t.anchor.text, 80)}"]\n${text}` : text
+  wire = t ? `[re: "${truncate(t.anchor.text, 80)}"]\n${text}`
+           : lastUserMessage()?.threadId != null ? `[main]\n${text}` : text
   insert Message{role:'user', text, wireText: wire, threadId, seq: next()}
   currentThread = threadId
   { stopReason } = await acp.prompt(sessionId, [{type:'text', text: wire}, ...attachmentBlocks])

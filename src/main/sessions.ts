@@ -795,7 +795,7 @@ export class SessionManager {
   ): Promise<TurnResult> {
     this.session(sessionId)
     if (isClear(text, attachments)) return this.send(sessionId, text, threadId, attachments)
-    const wire = wireText(text, this.anchorText(sessionId, threadId))
+    const wire = this.wire(sessionId, text, threadId)
     const rt = this.runtime(sessionId)
     const turn = rt.turn
     if (!turn) return this.runTurn(sessionId, text, threadId, attachments)
@@ -859,6 +859,12 @@ export class SessionManager {
     if (!turn.agentMessage && !turn.afterToolCall) Object.assign(turn, before)
   }
 
+  /** What to send for a new user message (SPEC → Wire format). Call it before the message is stored. */
+  private wire(sessionId: string, text: string, threadId: string | null): string {
+    const afterThread = threadId === null && (this.deps.store.lastUserMessage(sessionId)?.threadId ?? null) !== null
+    return wireText(text, this.anchorText(sessionId, threadId), afterThread)
+  }
+
   /** The anchor text of a thread in the session (for the wire tag), or null for the main thread. */
   private anchorText(sessionId: string, threadId: string | null): string | null {
     if (threadId === null) return null
@@ -876,7 +882,7 @@ export class SessionManager {
     let session = this.session(sessionId)
     const rt = this.runtime(sessionId)
     if (rt.turn) throw new Error('A turn is already running in this session.')
-    const wire = wireText(text, this.anchorText(sessionId, threadId))
+    const wire = this.wire(sessionId, text, threadId)
     // Only a session still named after its folder takes its title from the first message.
     const retitle = this.deps.store.countUserMessages(sessionId) === 0 && session.title === folderName(session.cwd)
     const message: Message = {

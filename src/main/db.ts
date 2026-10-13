@@ -294,6 +294,14 @@ export class Store {
     return r ? toMessage(r as Row) : undefined
   }
 
+  /** The session's latest user message. */
+  lastUserMessage(sessionId: string): Message | undefined {
+    const r = this.db
+      .prepare("SELECT * FROM messages WHERE session_id = ? AND role = 'user' ORDER BY seq DESC LIMIT 1")
+      .get(sessionId)
+    return r ? toMessage(r as Row) : undefined
+  }
+
   countUserMessages(sessionId: string): number {
     const r = this.db
       .prepare("SELECT COUNT(*) AS n FROM messages WHERE session_id = ? AND role = 'user'")
