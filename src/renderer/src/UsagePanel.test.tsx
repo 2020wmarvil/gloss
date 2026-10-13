@@ -94,7 +94,7 @@ describe('effort picker', () => {
     }
     act(() => root!.render(<StatusLine {...props} live={live} onSetChoice={onSetChoice} />))
     const labels = [...document.querySelectorAll('.popover-anchor > button')].map((b) => b.textContent)
-    expect(labels.slice(-3)).toEqual(['Opus', 'Medium effort', 'Extensions'])
+    expect(labels.slice(-3)).toEqual(['Opus', 'Medium', 'Extensions'])
     await click('button[title="Effort"]')
     expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual(['Medium', 'High'])
     await click('[role="option"]:not([aria-selected="true"])')
