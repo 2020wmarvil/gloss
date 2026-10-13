@@ -43,7 +43,8 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - Its model is the config option with `category: "model"`; `session/set_config_option` takes `{ sessionId, configId, value }`. The model chosen in a session persists in its transcript across `session/load`.
 - It sends `available_commands_update` right after `session/new`, possibly before the response, so updates for an unknown ACP session id are buffered.
 - Without the client `terminal` capability, a command's output arrives as `content` text in a console code block; edits arrive as `diff` content.
-- `/mcp` is a prompt the adapter answers itself with a markdown list of server statuses.
+- `/mcp` is a prompt the adapter answers itself with a markdown list of server statuses. So is `/usage` (plan limits, cost).
+- Plan limits: the adapter forwards Claude Code's `rate_limit_event` as `usage_update._meta["_claude/rateLimit"]` (SDKRateLimitInfo), only after the turn has token usage. A real event far from the limit has no `utilization`: `{"status":"allowed","resetsAt":<unix s>,"rateLimitType":"five_hour",...}`. The scale of `utilization` is undocumented; Gloss treats values up to 1 as a fraction.
 
 ## Git
 - Work on `dev`; open one PR per milestone against `main`.

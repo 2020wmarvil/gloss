@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import type { GitStatus } from '@shared/ipc'
 import { folderName } from '@shared/paths'
-import type { Session, SessionLive, SlashCommand } from '@shared/types'
+import type { RateLimit, Session, SessionLive, SlashCommand } from '@shared/types'
 import { Popover } from './Popover'
 
 type Props = {
@@ -30,6 +30,59 @@ function formatCost(cost: { amount: number; currency: string }): string {
 
 function formatTokens(n: number): string {
   return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
+}
+
+const WINDOW_LABELS: Record<string, [short: string, long: string]> = {
+  five_hour: ['5h', '5-hour limit'],
+  seven_day: ['week', 'weekly limit'],
+  seven_day_opus: ['week (Opus)', 'weekly Opus limit'],
+  seven_day_sonnet: ['week (Sonnet)', 'weekly Sonnet limit'],
+  seven_day_overage_included: ['week', 'weekly limit'],
+  overage: ['extra', 'extra usage']
+}
+
+function formatReset(ms: number): string {
+  const d = new Date(ms)
+  const sameDay = d.toDateString() === new Date().toDateString()
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return sameDay ? time : `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`
+}
+
+/** One plan usage window: "5h ok", "5h 82%", or "5h limit · resets 3:40 PM". */
+function RateLimitItem({ limit, onClick }: { limit: RateLimit; onClick?(): void }): React.JSX.Element {
+  const [short, long] = WINDOW_LABELS[limit.window] ?? [limit.window, limit.window.replace(/_/g, ' ')]
+  const reset = limit.resetsAt ? formatReset(limit.resetsAt) : null
+  const text =
+    limit.status === 'rejected'
+      ? `${short} limit${reset ? ` · resets ${reset}` : ''}`
+      : limit.utilization !== undefined
+        ? `${short} ${limit.utilization}%`
+        : `${short} ok`
+  const title = [
+    `Claude ${long}: ${
+      limit.status === 'rejected'
+        ? 'reached'
+        : limit.utilization !== undefined
+          ? `${limit.utilization}% used`
+          : limit.status === 'warning'
+            ? 'getting close'
+            : 'within the limit'
+    }.`,
+    reset ? `Resets ${reset}.` : '',
+    onClick ? 'Click to run /usage for details.' : ''
+  ]
+    .filter(Boolean)
+    .join(' ')
+  const className = `status-item${limit.status === 'rejected' ? ' error' : limit.status === 'warning' ? ' warn' : ''}`
+  return onClick ? (
+    <button className={className} title={title} onClick={onClick}>
+      {text}
+    </button>
+  ) : (
+    <span className={className} title={title}>
+      {text}
+    </span>
+  )
 }
 
 /** Commands grouped for the extensions panel: MCP prompts are named "mcp:<server>:<prompt>". */
@@ -79,6 +132,13 @@ export function StatusLine(props: Props): React.JSX.Element {
           {formatCost(usage.cost)}
         </span>
       )}
+      {live.rateLimits.map((l) => (
+        <RateLimitItem
+          key={l.window}
+          limit={l}
+          onClick={live.commands.some((c) => c.name === 'usage') ? () => props.onCommand('/usage') : undefined}
+        />
+      ))}
 
       {model &&
         (devModel ? (

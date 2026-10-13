@@ -11,6 +11,7 @@ import type {
   AuthMethodInfo,
   Message,
   Project,
+  RateLimit,
   Session,
   SessionLive,
   Thread
@@ -68,6 +69,7 @@ function emptyLive(): SessionLive {
     model: null,
     commands: [],
     usage: null,
+    rateLimits: [],
     permissions: null,
     accepts: { image: false, file: false }
   }
@@ -753,10 +755,12 @@ export class SessionManager {
     const sessionId = this.byAcpId.get(n.sessionId)
 
     // What the agent reports about the session, at any time.
-    const live = liveUpdate(u)
+    const pending = this.pendingLive.get(n.sessionId)
+    const current = sessionId ? this.runtime(sessionId).live.rateLimits : (pending?.rateLimits ?? [])
+    const live = liveUpdate(u, current)
     if (live) {
       if (sessionId) this.setLive(sessionId, live)
-      else this.pendingLive.set(n.sessionId, { ...this.pendingLive.get(n.sessionId), ...live })
+      else this.pendingLive.set(n.sessionId, { ...pending, ...live })
       return
     }
     if (!sessionId) return
@@ -921,8 +925,32 @@ function toAuthMethodInfo(m: acp.AuthMethod): AuthMethodInfo {
   }
 }
 
-/** The session state an update reports, if it is one of those. */
-function liveUpdate(u: acp.SessionUpdate): Partial<SessionLive> | null {
+/**
+ * A plan usage window from Claude Code's rate-limit info, which the Claude adapter
+ * attaches to usage updates as `_meta["_claude/rateLimit"]` (the Agent SDK's
+ * SDKRateLimitInfo). Null if there is none or it isn't recognizable.
+ */
+export function claudeRateLimit(meta: unknown): RateLimit | null {
+  const info = (meta as Record<string, unknown> | null | undefined)?.['_claude/rateLimit'] as
+    | Record<string, unknown>
+    | undefined
+  if (!info || typeof info.rateLimitType !== 'string') return null
+  const status = info.status === 'rejected' ? 'rejected' : info.status === 'allowed_warning' ? 'warning' : 'allowed'
+  const limit: RateLimit = { window: info.rateLimitType, status }
+  if (typeof info.utilization === 'number' && Number.isFinite(info.utilization)) {
+    // Undocumented scale: treat values up to 1 as a fraction.
+    const pct = info.utilization <= 1 ? info.utilization * 100 : info.utilization
+    limit.utilization = Math.max(0, Math.min(100, Math.round(pct)))
+  }
+  if (typeof info.resetsAt === 'number' && Number.isFinite(info.resetsAt)) {
+    // Unix seconds.
+    limit.resetsAt = info.resetsAt * 1000
+  }
+  return limit
+}
+
+/** The session state an update reports, if it is one of those. `rateLimits` is the current list, to merge into. */
+function liveUpdate(u: acp.SessionUpdate, rateLimits: RateLimit[]): Partial<SessionLive> | null {
   switch (u.sessionUpdate) {
     case 'available_commands_update':
       return {
@@ -932,14 +960,17 @@ function liveUpdate(u: acp.SessionUpdate): Partial<SessionLive> | null {
           ...(c.input?.hint ? { hint: c.input.hint } : {})
         }))
       }
-    case 'usage_update':
+    case 'usage_update': {
+      const limit = claudeRateLimit(u._meta)
       return {
         usage: {
           used: u.used,
           size: u.size,
           ...(u.cost ? { cost: { amount: u.cost.amount, currency: u.cost.currency } } : {})
-        }
+        },
+        ...(limit ? { rateLimits: [...rateLimits.filter((l) => l.window !== limit.window), limit] } : {})
       }
+    }
     case 'config_option_update':
       return { model: modelOption(u.configOptions) }
     default:

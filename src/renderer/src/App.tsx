@@ -43,6 +43,7 @@ const NO_LIVE: SessionLive = {
   model: null,
   commands: [],
   usage: null,
+  rateLimits: [],
   permissions: null,
   accepts: { image: false, file: false }
 }

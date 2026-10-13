@@ -76,6 +76,17 @@ export type ModelOption = { value: string; name: string; description?: string }
 
 export type SlashCommand = { name: string; description: string; hint?: string }
 
+/** One plan usage window, e.g. Claude's 5-hour or weekly limit. */
+export type RateLimit = {
+  /** The agent's name for the window, e.g. "five_hour", "seven_day", "seven_day_opus". */
+  window: string
+  status: 'allowed' | 'warning' | 'rejected'
+  /** Percent used, when the agent says (Claude Code only does near the limit). */
+  utilization?: number
+  /** When the window resets, ms since the epoch. */
+  resetsAt?: number
+}
+
 /** What the agent reports about a session while it is attached: shown in the status line. */
 export type SessionLive = {
   /** The session's ACP session is live on a running agent. */
@@ -85,6 +96,8 @@ export type SessionLive = {
   commands: SlashCommand[]
   /** Context window use, from the agent's usage updates. */
   usage: { used: number; size: number; cost?: { amount: number; currency: string } } | null
+  /** Plan usage limits, per window, when the agent reports them (Claude Code does, in usage updates). */
+  rateLimits: RateLimit[]
   /** 'bypass': the agent's bypass mode is on. 'auto': Gloss auto-approves permission requests instead. */
   permissions: 'bypass' | 'auto' | null
   /** What the agent accepts in a prompt besides text. */

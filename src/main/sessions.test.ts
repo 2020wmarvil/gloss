@@ -826,10 +826,34 @@ describe('SessionManager', () => {
         },
         commands: [{ name: 'compact', description: 'Compact the context', hint: '[focus]' }],
         usage: { used: 50_000, size: 200_000, cost: { amount: 0.12, currency: 'USD' } },
+        rateLimits: [],
         permissions: 'auto',
         accepts: { image: true, file: true }
       })
       expect(events).toContainEqual(expect.objectContaining({ type: 'live', sessionId: session.id }))
+    })
+
+    it("tracks Claude Code's plan limits per window from usage updates", async () => {
+      const usage = (info: Record<string, unknown>): acp.SessionUpdate => ({
+        sessionUpdate: 'usage_update',
+        used: 1000,
+        size: 200_000,
+        _meta: { '_claude/rateLimit': info }
+      })
+      state.script = async ({ update }) => {
+        await update(usage({ status: 'allowed', rateLimitType: 'five_hour', resetsAt: 1_791_873_000 }))
+        await update(usage({ status: 'allowed_warning', rateLimitType: 'seven_day', utilization: 0.82 }))
+        await update(usage({ status: 'rejected', rateLimitType: 'five_hour', resetsAt: 1_791_873_000, utilization: 100 }))
+        // Usage updates without rate-limit info keep what is known.
+        await update({ sessionUpdate: 'usage_update', used: 2000, size: 200_000 })
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'hi', null)
+      expect(manager.openSession(session.id).live.rateLimits).toEqual([
+        { window: 'seven_day', status: 'warning', utilization: 82 },
+        { window: 'five_hour', status: 'rejected', utilization: 100, resetsAt: 1_791_873_000_000 }
+      ])
     })
 
     it('resumes a session on the agent when it is opened', async () => {
