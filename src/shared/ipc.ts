@@ -123,8 +123,11 @@ export type GlossApi = {
     list(): Promise<Session[]>
     /** Starts an agent session in `cwd`. Rejects if the agent can't start one. */
     create(cwd: string, agentId: string): Promise<Session>
-    /** Opens one of the agent's sessions in Gloss: its history becomes the log, placed in threads by its tags. */
-    import(cwd: string, agentId: string, acpSessionId: string, title: string): Promise<Session>
+    /**
+     * Opens one of the agent's sessions in Gloss: its history becomes the log, placed in threads by its tags.
+     * `listedAt` (the agent's `updatedAt` in its listing) stands in for when it was made, so it keeps its place.
+     */
+    import(cwd: string, agentId: string, acpSessionId: string, title: string, listedAt?: string): Promise<Session>
     /** Its log and threads. Also resumes the session on the agent in the background, for the status line. */
     open(id: string): Promise<SessionView>
     /** Reloads the session if the agent's copy changed elsewhere (SPEC → Shared sessions). */

@@ -365,17 +365,28 @@ export class SessionManager {
     return created
   }
 
-  /** Imports one of the agent's sessions: a Gloss session whose main thread is built from the session/load replay. */
-  async importSession(cwd: string, agentId: string, acpSessionId: string, title: string): Promise<Session> {
+  /**
+   * Imports one of the agent's sessions: a Gloss session whose log is built from the
+   * session/load replay. The agent doesn't say when it was made, so `listedAt` (its
+   * updatedAt in the listing) stands in, keeping its place in the session list.
+   */
+  async importSession(
+    cwd: string,
+    agentId: string,
+    acpSessionId: string,
+    title: string,
+    listedAt?: string
+  ): Promise<Session> {
     const existing = this.deps.store.getSessionByAcpId(agentId, acpSessionId)
     if (existing) return existing
+    const listed = listedAt ? Date.parse(listedAt) : NaN
     const session: Session = {
       id: randomUUID(),
       agentId,
       acpSessionId,
       cwd,
       title: title.trim() || folderName(cwd),
-      createdAt: this.now()
+      createdAt: Number.isFinite(listed) ? listed : this.now()
     }
     const { store } = this.deps
     store.insertSession(session)

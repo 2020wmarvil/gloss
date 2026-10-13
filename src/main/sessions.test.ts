@@ -1314,6 +1314,12 @@ describe('SessionManager', () => {
       expect(manager.openSession(session.id).messages.map((m) => m.text).slice(-2)).toEqual(['next', 'Hello world'])
     })
 
+    it('dates an imported session by its listed time, so it keeps its place', async () => {
+      state.sessions.add('cli-2')
+      const listed = await manager.importSession('/w', 'fake', 'cli-2', 'Listed', '2026-10-05T00:00:00Z')
+      expect(listed.createdAt).toBe(Date.parse('2026-10-05T00:00:00Z'))
+    })
+
     it('removes a failed import', async () => {
       await expect(manager.importSession('/w', 'fake', 'missing', 'Gone')).rejects.toThrow()
       expect(manager.listSessions()).toEqual([])

@@ -229,13 +229,16 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
     manager.createSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
   )
-  ipcMain.handle(IPC.sessionsImport, (_e, cwd: unknown, agentId: unknown, acpSessionId: unknown, title: unknown) =>
-    manager.importSession(
-      folderArg(cwd, 'cwd'),
-      str(agentId, 'agentId'),
-      str(acpSessionId, 'acpSessionId'),
-      str(title, 'title')
-    )
+  ipcMain.handle(
+    IPC.sessionsImport,
+    (_e, cwd: unknown, agentId: unknown, acpSessionId: unknown, title: unknown, listedAt: unknown) =>
+      manager.importSession(
+        folderArg(cwd, 'cwd'),
+        str(agentId, 'agentId'),
+        str(acpSessionId, 'acpSessionId'),
+        str(title, 'title'),
+        typeof listedAt === 'string' ? listedAt : undefined
+      )
   )
   ipcMain.handle(IPC.sessionsOpen, (_e, id: unknown) => manager.openSession(str(id, 'id')))
   ipcMain.handle(IPC.sessionsRefresh, (_e, id: unknown) => manager.refreshSession(str(id, 'id')))
@@ -313,7 +316,7 @@ app.whenReady().then(() => {
   const settingsFile = new SettingsFile({
     dir: dataDir,
     // The cheap dev model is on by default in development, off in packaged builds.
-    defaults: { devModel: !app.isPackaged, theme: 'system' },
+    defaults: { devModel: !app.isPackaged, theme: 'system', sessionOrder: 'created' },
     onChange(next, prev) {
       emit({ type: 'settings', state: next })
       // Agents restart with the new model; busy ones once their turn ends.

@@ -2,6 +2,7 @@
 // the project's sessions, Gloss's and the agent's own (SPEC → Projects and sessions).
 import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
+import type { SessionOrder } from '@shared/settings'
 import type { AgentSession, Project, Session } from '@shared/types'
 
 type Props = {
@@ -15,6 +16,8 @@ type Props = {
   running: Record<string, string | null>
   /** The agent's sessions in the project that Gloss has no record of; null while loading. */
   agentSessions: AgentSession[] | null
+  /** Newest first, or most recent activity first (the `sessionOrder` setting). */
+  order: SessionOrder
   agentSessionsError: string | null
   /** The agent session being imported. */
   importing: string | null
@@ -84,9 +87,16 @@ export function Sidebar(props: Props): React.JSX.Element {
   const sessions = project ? props.sessions.filter((s) => sameFolder(s.cwd, project.path)) : []
   const isRunningIn = (p: Project): boolean =>
     props.sessions.some((s) => s.id in running && sameFolder(s.cwd, p.path))
-  // Gloss's sessions and the agent's own, most recent activity first.
+  // Gloss's sessions and the agent's own, newest or most recently active first. The
+  // agent doesn't say when its own sessions began, so they go by their last activity.
   const rows: Row[] = [
-    ...sessions.map((session): Row => ({ kind: 'gloss', session, at: session.activeAt ?? session.createdAt })),
+    ...sessions.map(
+      (session): Row => ({
+        kind: 'gloss',
+        session,
+        at: props.order === 'activity' ? (session.activeAt ?? session.createdAt) : session.createdAt
+      })
+    ),
     ...(agentSessions ?? []).map((agent): Row => ({
       kind: 'agent',
       agent,

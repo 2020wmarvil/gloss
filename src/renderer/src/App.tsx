@@ -427,7 +427,7 @@ export function App(): React.JSX.Element {
     setSidebarError(null)
     setImporting(a.acpSessionId)
     try {
-      const session = await window.gloss.sessions.import(projectPath, agent.id, a.acpSessionId, a.title)
+      const session = await window.gloss.sessions.import(projectPath, agent.id, a.acpSessionId, a.title, a.updatedAt)
       setAgentSessions((all) => ({
         ...all,
         [projectPath]: (all[projectPath] ?? []).filter((x) => x.acpSessionId !== a.acpSessionId)
@@ -637,6 +637,7 @@ export function App(): React.JSX.Element {
         openId={sessionId ?? null}
         running={running}
         agentSessions={projectPath ? (agentSessions[projectPath] ?? null) : []}
+        order={settings?.global.sessionOrder ?? 'created'}
         agentSessionsError={agentSessionsError}
         importing={importing}
         creating={creating}
