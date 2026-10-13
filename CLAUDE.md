@@ -46,6 +46,11 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - `/mcp` is a prompt the adapter answers itself with a markdown list of server statuses. So is `/usage` (plan limits, cost).
 - Plan limits: the adapter forwards Claude Code's `rate_limit_event` as `usage_update._meta["_claude/rateLimit"]` (SDKRateLimitInfo), only after the turn has token usage. A real event far from the limit has no `utilization`: `{"status":"allowed","resetsAt":<unix s>,"rateLimitType":"five_hour",...}`. The scale of `utilization` is undocumented; Gloss treats values up to 1 as a fraction.
 
+## Verified external APIs (M8)
+- Steering: the Claude adapter (0.89) advertises `_meta: { steering: { supported: true } }` at the top level of the `initialize` response and serves the extension request `_session/steering` `{ sessionId, prompt: ContentBlock[], _meta?: { steering: { idleBehavior: "promptRequired" } } }` → `{ outcome: "injected" | "promptRequired" | "startedNewTurn" }`. Without the `promptRequired` opt-in, steering an idle session starts a detached turn; Gloss always opts in.
+- An injected message runs inside the pending `session/prompt`: its output streams as normal `session/update`s and that prompt's response comes once it is answered. The adapter doesn't echo it as a `user_message_chunk`.
+- The SDK sends custom methods with `conn.agent.request(method, params)`; an in-process agent registers one with `.onRequest(method, { parse }, handler)` (a parser is required).
+
 ## Git
 - Work on `dev`; open one PR per milestone against `main`.
 

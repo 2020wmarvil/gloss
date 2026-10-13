@@ -44,8 +44,11 @@ export type SessionView = {
 
 export type GitStatus = { branch: string; dirty: boolean }
 
-/** `queued`: a turn was running, so the message was queued instead of sent. */
-export type TurnResult = { stopReason?: string; error?: string; queued?: true }
+/**
+ * `queued`: a turn was running, so the message was queued instead of sent.
+ * `steered`: the message was injected into the running turn.
+ */
+export type TurnResult = { stopReason?: string; error?: string; queued?: true; steered?: true }
 
 export type AuthResult = { ok: true } | { ok: false; error: string }
 
@@ -56,6 +59,8 @@ export type GlossEvent =
   /** The user clicked a notification: show this session (and thread). */
   | { type: 'reveal'; sessionId: string; threadId: string | null }
   | { type: 'message'; message: Message }
+  /** A steered message that didn't get into the turn (SPEC → Steer). */
+  | { type: 'messageDeleted'; sessionId: string; messageId: string }
   | { type: 'toolCall'; toolCall: ToolCall }
   | { type: 'thread'; thread: Thread }
   | { type: 'turnStart'; sessionId: string; threadId: string | null }
@@ -115,6 +120,11 @@ export type GlossApi = {
   }
   /** Resolves when the turn ends, or right away with `queued` if a turn is running (SPEC → Queue). */
   send(sessionId: string, text: string, threadId: string | null, attachments: Attachment[]): Promise<TurnResult>
+  /**
+   * Injects a message into the running turn, which must be in `threadId` (SPEC → Steer).
+   * Sent as usual when idle; queued first if the turn is just ending.
+   */
+  steer(sessionId: string, text: string, threadId: string | null, attachments: Attachment[]): Promise<TurnResult>
   cancel(sessionId: string): Promise<void>
   queue: {
     /** Replaces a queued message's text. Rejects if it has already been sent. */
@@ -160,6 +170,7 @@ export const IPC = {
   gitStatus: 'gloss:git:status',
   threadsCreate: 'gloss:threads:create',
   send: 'gloss:send',
+  steer: 'gloss:steer',
   cancel: 'gloss:cancel',
   queueEdit: 'gloss:queue:edit',
   queueRemove: 'gloss:queue:remove',

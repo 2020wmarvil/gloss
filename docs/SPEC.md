@@ -13,7 +13,7 @@ The agent sees **one linear session**. Threads exist only in the UI.
 
 - Each message is tagged with a `threadId` (`null` = main thread). The UI groups messages by it.
 - A message sent from a thread is prefixed with a short tag quoting the anchor, so the agent knows what it refers to. This automates what the user does today by copy-pasting the bullet point.
-- The agent's reply is routed to the thread the last prompt came from. Turns are sequential (a message sent during a turn waits in a queue until it ends), so routing is unambiguous.
+- The agent's reply is routed to the thread the last prompt came from. Turns are sequential (a message sent during a turn waits in a queue until it ends, or steers the turn from the thread it runs in), so routing is unambiguous.
 
 Consequences, all intended:
 - No forking, no merging, no summaries. The agent has everything that happened in every thread in its context.
@@ -67,6 +67,7 @@ type Message = {
   threadId: string | null    // null = main thread
   acpMessageId?: string      // ACP messageId for agent chunks, when provided
   attachments?: Attachment[] // user messages: images and files sent with it
+  steered?: boolean          // user messages: injected into a running turn (see Composer → Steer)
 }
 
 type ToolCall = {             // rendered inline in whichever thread it belongs to
@@ -121,6 +122,14 @@ on session/update:
 
 on session/request_permission:
   auto-approve (see Permissions): respond { outcome: { outcome: 'selected', optionId: <allow option> } }
+
+steer(text, threadId):                                   (see Composer → Steer)
+  if no turn is running: send(text, threadId); return
+  require threadId == currentThread
+  insert Message{role:'user', text, wireText, threadId, steered: true, seq: next()}
+  the next agent chunk starts a new agent Message
+  outcome = await _session/steering(sessionId, prompt, idleBehavior 'promptRequired')
+  outcome == 'promptRequired' → delete that Message; queue it first
 
 cancel():
   notify session/cancel
@@ -190,7 +199,7 @@ In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its env
 - **Main process** owns everything agent-related: spawning, the ACP connection, persistence. Exposes a narrow IPC API to the renderer:
   - `projects.list() / projects.open() / projects.agentSessions(path, agentId)`
   - `sessions.list() / sessions.create(cwd, agentId) / sessions.import(cwd, agentId, acpSessionId, title) / sessions.open(id) / sessions.rename(id, title) / sessions.delete(id) / sessions.setModel(id, value) / sessions.copyMarkdown(id, threadId) / sessions.saveMarkdown(id, threadId)`
-  - `send(sessionId, text, threadId | null, attachments)` (queues while a turn runs), `cancel(sessionId)`, `queue.edit(sessionId, id, text) / queue.remove(sessionId, id) / queue.resume(sessionId)`
+  - `send(sessionId, text, threadId | null, attachments)` (queues while a turn runs), `steer(sessionId, text, threadId | null, attachments)`, `cancel(sessionId)`, `queue.edit(sessionId, id, text) / queue.remove(sessionId, id) / queue.resume(sessionId)`
   - `git.status(cwd)`
   - `threads.create(sessionId, anchorMessageId, anchor)`
   - `settings.get() / settings.update(patch) / settings.openFile()`
@@ -226,13 +235,14 @@ The sidebar (`docs/mocks/sidebar-switcher.html`) shows one project at a time:
 
 - **Slash commands:** typing `/` at the start offers the agent's `available_commands_update` list (name, argument hint, description), filtered by prefix. Arrow keys move, Enter or Tab completes, Escape dismisses. Enter on an exact match sends it.
 - **Queue:** while a turn runs, the composer stays usable: its button reads **Queue** (next to Cancel) and a message sent then is queued instead of sent. Queued messages are listed above the composer of the thread they were written in, each with Edit (in place) and Remove, and run in that thread. When a turn ends normally (`end_turn`), the next queued message is sent straight away. A cancelled, failed or cut-short turn pauses the queue: the composer and status line show "paused" with **Resume**, and a message sent while paused and idle goes out right away; the queue moves on again after the next turn that ends normally. Removing the last queued message clears the pause. The queue is kept by the main process in memory, so it works for sessions that aren't open but is lost when Gloss quits. Works with any agent (no steering).
+- **Steer:** while a turn runs, the composer of the thread it runs in also has **Steer** (`Ctrl+Enter`), which injects the message into the running turn instead of queueing it ("skip the tests"). Offered only when the agent advertises it: the Claude adapter's `_session/steering` extension (`_meta.steering.supported` in `initialize`). Gloss records the message first (marked "steered" in the log) so the agent's answer lands below it, then sends it with `idleBehavior: "promptRequired"`; if the turn ended before it got in, the message is taken back and goes to the front of the queue. Other threads can only queue while a turn runs, so the reply stays in the thread it belongs to.
 - **Attachments:** paste or drop images and files on the composer, or pick them with **+**. Images become ACP `image` blocks; text files become embedded `resource` blocks (with a `file://` URI when the file has a path). Only what the agent's `promptCapabilities` allow (`image`, `embeddedContext`); the **+** button and drops are off otherwise. Limits: images 10 MB, files 1 MB and text only. Attachments show as thumbnails or names in the composer and in the sent message.
 
 ## Status line
 
 A line under the composer for the open session. Everything but the git branch comes from ACP:
 
-- turn state ("Working…", or "Working in item 2", which opens that thread); "Agent not running" when the session isn't resumed
+- turn state ("Working…", or "Working in item 2", which opens that thread), with "(steered)" once the user's latest message steered it; "Agent not running" when the session isn't resumed
 - queued messages: "2 queued", or "2 queued, paused · Resume" (amber; clicking resumes)
 - context use: a meter and percentage of the window, from `usage_update` `used`/`size` (amber from 80%)
 - session cost, from `usage_update` `cost`

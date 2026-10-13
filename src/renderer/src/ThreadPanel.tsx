@@ -22,6 +22,8 @@ type Props = {
   /** Messages queued from this thread. */
   queue: ComposerQueue
   onSend(text: string, attachments: Attachment[]): void
+  /** Injects the message into the running turn (when it runs in this thread). */
+  onSteer(text: string, attachments: Attachment[]): void
   onCancel(): void
   onClose(): void
   onCopyMarkdown(threadId: string): void
@@ -97,6 +99,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         accepts={live.accepts}
         queue={props.queue}
         onSend={onSend}
+        onSteer={live.steering && runningHere ? props.onSteer : undefined}
         onCancel={onCancel}
         footer={<div className="mono wire">sent as: {wireTag(panel.anchor.text)} …</div>}
       />

@@ -14,6 +14,8 @@ type Props = {
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
   runningLabel: string | null
+  /** The running turn was steered: the user's latest message went into it. */
+  steered: boolean
   queue: MessageQueue
   onResumeQueue(): void
   onOpenThread(threadId: string): void
@@ -119,10 +121,11 @@ export function StatusLine(props: Props): React.JSX.Element {
     <div className="status-line" role="status">
       {runningThread !== undefined &&
         (runningThread === null ? (
-          <span className="status-item working">Working…</span>
+          <span className="status-item working">Working…{props.steered && ' (steered)'}</span>
         ) : (
           <button className="status-item working link" onClick={() => props.onOpenThread(runningThread)}>
             Working in {props.runningLabel ?? 'a thread'}
+            {props.steered && ' (steered)'}
           </button>
         ))}
       {!live.attached && runningThread === undefined && <span className="status-item muted">Agent not running</span>}

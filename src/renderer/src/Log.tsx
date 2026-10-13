@@ -58,7 +58,12 @@ export function Log({ items, className, empty, renderAgent }: Props): React.JSX.
           switch (item.kind) {
             case 'message':
               return item.message.role === 'user' ? (
-                <div key={item.message.id} className="you">
+                <div key={item.message.id} className={item.message.steered ? 'you steered' : 'you'}>
+                  {item.message.steered && (
+                    <span className="steered-label" title="Sent into the running turn">
+                      steered
+                    </span>
+                  )}
                   {item.message.attachments && item.message.attachments.length > 0 && (
                     <ul className="attachments sent">
                       {item.message.attachments.map((a, i) => (

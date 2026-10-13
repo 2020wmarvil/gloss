@@ -18,7 +18,7 @@ import type {
   Thread
 } from '../shared/types'
 import { wireText } from '../shared/wire'
-import { AgentConnection, isAuthRequired, isResourceNotFound, type AgentHandlers } from './acp'
+import { AgentConnection, isAuthRequired, isResourceNotFound, type AgentHandlers, type SteerOutcome } from './acp'
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
 import { samePath } from './settings'
@@ -74,7 +74,8 @@ function emptyLive(): SessionLive {
     usage: null,
     rateLimits: [],
     permissions: null,
-    accepts: { image: false, file: false }
+    accepts: { image: false, file: false },
+    steering: false
   }
 }
 
@@ -678,7 +679,8 @@ export class SessionManager {
       attached: true,
       model,
       permissions,
-      accepts: { image: caps.image === true, file: caps.embeddedContext === true }
+      accepts: { image: caps.image === true, file: caps.embeddedContext === true },
+      steering: conn.canSteer
     })
   }
 
@@ -705,6 +707,82 @@ export class SessionManager {
       return { queued: true }
     }
     return this.runTurn(sessionId, text, threadId, attachments)
+  }
+
+  /**
+   * Injects a message into the running turn (SPEC → Steer), in the thread the
+   * turn runs in, so its reply is routed there too. When the session is idle it
+   * is sent as usual; when the turn is ending or hasn't reached the agent yet, it
+   * goes to the front of the queue.
+   */
+  async steer(
+    sessionId: string,
+    text: string,
+    threadId: string | null,
+    attachments: Attachment[] = []
+  ): Promise<TurnResult> {
+    this.session(sessionId)
+    const wire = wireText(text, this.anchorText(sessionId, threadId))
+    const rt = this.runtime(sessionId)
+    const turn = rt.turn
+    if (!turn) return this.runTurn(sessionId, text, threadId, attachments)
+    if (turn.threadId !== threadId) {
+      throw new Error('Only the thread the agent is working in can be steered. Queue the message instead.')
+    }
+    const conn = rt.attachedTo
+    if (conn && !conn.canSteer) throw new Error("The agent can't take a message during a turn. Queue it instead.")
+
+    const toQueue = (): TurnResult => {
+      // Nothing reached the agent: send it next.
+      this.setQueue(sessionId, {
+        ...rt.queue,
+        items: [{ id: randomUUID(), threadId, text, attachments }, ...rt.queue.items]
+      })
+      this.drain(sessionId)
+      return { queued: true }
+    }
+    if (!conn || rt.loading || turn.cancelled) return toQueue()
+    const prompt = promptBlocks(wire, attachments, conn.promptCapabilities)
+
+    // Recorded before it is sent: the agent may start answering before it replies.
+    const message: Message = {
+      id: randomUUID(),
+      sessionId,
+      seq: this.deps.store.nextSeq(sessionId),
+      role: 'user',
+      text,
+      wireText: wire,
+      threadId,
+      ...(attachments.length > 0 ? { attachments } : {}),
+      steered: true
+    }
+    this.deps.store.insertMessage(message)
+    this.deps.emit({ type: 'message', message })
+    // The agent's answer to it starts a new message below it.
+    const before = { agentMessage: turn.agentMessage, afterToolCall: turn.afterToolCall }
+    turn.agentMessage = undefined
+    turn.afterToolCall = false
+
+    let outcome: SteerOutcome
+    try {
+      outcome = await conn.steer(this.session(sessionId).acpSessionId, prompt)
+    } catch (err) {
+      this.unsteer(message, turn, before)
+      throw err
+    }
+    if (outcome === 'promptRequired') {
+      this.unsteer(message, turn, before)
+      return toQueue()
+    }
+    return { steered: true }
+  }
+
+  /** Takes back a steered message that didn't get into the turn. */
+  private unsteer(message: Message, turn: Turn, before: Pick<Turn, 'agentMessage' | 'afterToolCall'>): void {
+    this.deps.store.deleteMessage(message.id)
+    this.deps.emit({ type: 'messageDeleted', sessionId: message.sessionId, messageId: message.id })
+    // Nothing was written since: keep appending to the message it interrupted.
+    if (!turn.agentMessage && !turn.afterToolCall) Object.assign(turn, before)
   }
 
   /** The anchor text of a thread in the session (for the wire tag), or null for the main thread. */

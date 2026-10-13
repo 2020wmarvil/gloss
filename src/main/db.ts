@@ -53,6 +53,9 @@ const MIGRATIONS = [
     path     TEXT PRIMARY KEY,
     added_at INTEGER NOT NULL
   );
+  `,
+  `
+  ALTER TABLE messages ADD COLUMN steered INTEGER;
   `
 ]
 
@@ -82,6 +85,7 @@ function toMessage(r: Row): Message {
   if (r.wire_text != null) m.wireText = r.wire_text as string
   if (r.acp_message_id != null) m.acpMessageId = r.acp_message_id as string
   if (r.attachments != null) m.attachments = JSON.parse(r.attachments as string) as Attachment[]
+  if (r.steered) m.steered = true
   return m
 }
 
@@ -209,8 +213,8 @@ export class Store {
   insertMessage(m: Message): void {
     this.db
       .prepare(
-        `INSERT INTO messages (id, session_id, seq, role, text, wire_text, thread_id, acp_message_id, attachments)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO messages (id, session_id, seq, role, text, wire_text, thread_id, acp_message_id, attachments, steered)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         m.id,
@@ -221,8 +225,13 @@ export class Store {
         m.wireText ?? null,
         m.threadId,
         m.acpMessageId ?? null,
-        m.attachments ? JSON.stringify(m.attachments) : null
+        m.attachments ? JSON.stringify(m.attachments) : null,
+        m.steered ? 1 : null
       )
+  }
+
+  deleteMessage(id: string): void {
+    this.db.prepare('DELETE FROM messages WHERE id = ?').run(id)
   }
 
   updateMessageText(id: string, text: string): void {
