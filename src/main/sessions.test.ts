@@ -49,6 +49,8 @@ type FakeAgent = {
   cwds: Map<string, string>
   /** session/load fails with an internal error. */
   failLoad: boolean
+  /** session/load fails as Codex's does while another Codex client holds the session. */
+  loadInUse: boolean
   /** Advertise session/list, session/delete and session/close. */
   canList: boolean
   canDelete: boolean
@@ -96,6 +98,7 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
     clock: 0,
     cwds: new Map(),
     failLoad: false,
+    loadInUse: false,
     canList: false,
     canDelete: false,
     canClose: false,
@@ -229,6 +232,12 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       const { sessionId } = ctx.params
       state.loads.push(sessionId)
       if (state.failLoad) throw acp.RequestError.internalError(undefined, 'transcript unreadable')
+      if (state.loadInUse) {
+        throw acp.RequestError.invalidRequest(
+          { reason: 'thread_active_writer', threadId: sessionId },
+          'This Codex session is in use by another Codex client.'
+        )
+      }
       if (!state.sessions.has(sessionId)) throw acp.RequestError.resourceNotFound(sessionId)
       // Replay history, as the Claude adapter does.
       const history = state.history.get(sessionId) ?? state.transcripts.get(sessionId) ?? []
@@ -323,7 +332,7 @@ describe('SessionManager', () => {
       agentEnv: () => ({ FAKE: '1' }),
       connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
       runInTerminal: runInTerminal as never,
-      devModel: () => devModel,
+      devModel: (agentId) => devModel && agentId !== 'second',
       now: () => 1000
     })
   }
@@ -1325,6 +1334,18 @@ describe('SessionManager', () => {
       expect(manager.listSessions()).toEqual([])
     })
 
+    it('asks to quit Codex when another Codex client holds the session', async () => {
+      state.sessions.add('cli-1')
+      state.loadInUse = true
+      await expect(manager.importSession('/w', 'fake', 'cli-1', 'Busy')).rejects.toThrow(
+        /^This session is open in Codex\. Quit Codex to continue here\.$/
+      )
+      expect(manager.listSessions()).toEqual([])
+
+      state.loadInUse = false
+      expect((await manager.importSession('/w', 'fake', 'cli-1', 'Busy')).acpSessionId).toBe('cli-1')
+    })
+
     it("deletes the agent's copy of a listed session it can't load", async () => {
       state.canDelete = true
       await expect(manager.importSession('/w', 'fake', 'stub', 'Gone')).rejects.toThrow(/no conversation left/)
@@ -1421,6 +1442,18 @@ describe('SessionManager', () => {
       expect(store.getSession(session.id)?.model).toBe('opus')
 
       // The agent forgets it (a fresh process); Gloss sets it again when resuming.
+      state.configOptions = [MODEL]
+      await manager.dispose()
+      manager = makeManager()
+      await manager.send(session.id, 'hi', null)
+      expect(state.configChanges).toEqual([`${session.acpSessionId}:model=opus`, `${session.acpSessionId}:model=opus`])
+    })
+
+    it('keeps model selection and resume available for an agent without a dev override', async () => {
+      devModel = true
+      state.configOptions = [MODEL]
+      const session = await manager.createSession('/w', 'second')
+      await manager.setModel(session.id, 'opus')
       state.configOptions = [MODEL]
       await manager.dispose()
       manager = makeManager()
@@ -1667,6 +1700,17 @@ describe('SessionManager', () => {
       state.failLoad = true
       const result = await manager.send(session.id, 'again', null)
       expect(result.error).toMatch(/couldn't resume it: .*transcript unreadable/)
+      expect(store.getSession(session.id)?.acpSessionId).toBe(session.acpSessionId)
+    })
+
+    it('asks to quit Codex instead of starting a new session when Codex holds it', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'hi', null)
+      await manager.dispose()
+      manager = makeManager()
+      state.loadInUse = true
+      const result = await manager.send(session.id, 'again', null)
+      expect(result.error).toBe('This session is open in Codex. Quit Codex to continue here.')
       expect(store.getSession(session.id)?.acpSessionId).toBe(session.acpSessionId)
     })
 

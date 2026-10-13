@@ -53,7 +53,7 @@ so the agent doesn't read it as continuing that thread. It takes the thread tag'
 ```ts
 type Session = {
   id: string
-  agentId: string            // which agent config, e.g. 'claude'
+  agentId: string            // which agent config, e.g. 'claude' or 'codex'
   acpSessionId: string       // the ACP session id
   cwd: string                // its project (folder)
   title: string              // renamed in Gloss (titleSet), else the agent's title (session/list), else the first message or folder name
@@ -194,17 +194,19 @@ Agent-agnostic, driven entirely by ACP. No agent-specific login code.
 - After a method succeeds, retry the request that failed. If the agent offers no methods, show the error text.
 - If the agent never reports `auth_required`, there is no sign-in UI.
 
-First agent: **Claude Code via its ACP adapter** (the Claude Agent SDK adapter, originally from Zed). Verify the current package name and entrypoint before wiring it up.
+Supported agents: **Claude Code** via `@agentclientprotocol/claude-agent-acp`, and **Codex** via `@agentclientprotocol/codex-acp`. Both adapters run on Electron's Node runtime; the Codex adapter includes its native CLI and uses the existing Codex login. Codex's bypass mode is `agent-full-access`. Sign-in, model selection, steering, threading and resume use the same ACP paths for both agents.
+
+The sidebar's agent picker controls new sessions and which agent's external sessions are listed. Gloss sessions from both agents remain visible with agent labels; the open session's header identifies its agent. A session keeps its original agent. Cross-agent handoff and Gloss-managed MCP configuration are deferred to the remaining M13 work.
 
 Agent config is a small table so more agents can be added later:
 
 ```ts
-type AgentConfig = { id: string; name: string; command: string; args: string[]; env?: Record<string,string>; bypassModeId?: string }
+type AgentConfig = { id: string; name: string; command: string; args: string[]; env?: Record<string,string>; devModelEnv?: Record<string,string>; bypassModeId?: string }
 ```
 
 ### Dev model
 
-In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its environment so test prompts are cheap. It is a global setting (`devModel`, see Settings), on by default in development builds and off in packaged ones, not a per-project setting. Changing it restarts the agents (busy ones once their turn ends). Judge the threading UX on the normal model; Haiku produces shorter, less list-heavy answers.
+In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its environment so test prompts are cheap. It is a global setting (`devModel`, see Settings), on by default in development builds and off in packaged ones, not a per-project setting. Changing it restarts the agents (busy ones once their turn ends). Only agents with `devModelEnv` use the override; Codex model selection stays available when Haiku is on. Judge the threading UX on the normal model; Haiku produces shorter, less list-heavy answers.
 
 ## Settings
 
@@ -214,7 +216,7 @@ In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its env
 - **Live reload:** the main process watches the folder (editors often replace the file) and applies changes without a restart. If the file has invalid JSON or values, or is deleted, Gloss keeps the last good settings and shows what is wrong (on the settings screen, and a mark on the sidebar's Settings button). It never resets or overwrites the file because of a bad edit.
 - **Settings screen** (the sidebar's Settings button, or `Ctrl+,`; Esc or Done closes it): the file's path with "Open in editor" (the system's app for `.json`), then a Global section and a Project section for the open session's folder. Changes save immediately: only the changed keys are written, everything else in the file is kept. Saving is refused while the file isn't valid JSON.
 - Each feature adds its own fields when it lands; no field appears before its feature exists.
-- **Fields so far:** `devModel` (see Dev model), `theme`: `system` (default, follows the OS and updates live), `light` or `dark`, and `sessionOrder`: `created` (default, newest first) or `activity` (see Projects and sessions). The renderer sets `data-theme` on the document; the dark palette is provisional until the M12 design system.
+- **Fields so far:** `defaultAgent`: `claude` (default) or `codex`, used for the initial sidebar agent selection, `devModel` (see Dev model), `theme`: `system` (default, follows the OS and updates live), `light` or `dark`, and `sessionOrder`: `created` (default, newest first) or `activity` (see Projects and sessions). The renderer sets `data-theme` on the document; the dark palette is provisional until the M12 design system.
 
 ## Stack
 

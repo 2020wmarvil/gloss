@@ -23,7 +23,7 @@ import type {
   ToolCall
 } from '../shared/types'
 import { wireText } from '../shared/wire'
-import { AgentConnection, isAuthRequired, isResourceNotFound, type AgentHandlers, type SteerOutcome } from './acp'
+import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, type AgentHandlers, type SteerOutcome } from './acp'
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
 import { samePath } from './settings'
@@ -40,7 +40,7 @@ export type SessionManagerDeps = {
   connect(config: AgentConfig, env: NodeJS.ProcessEnv, handlers: AgentHandlers): Promise<AgentConnection>
   runInTerminal: TerminalRunner
   /** The dev model (Haiku) is on: it overrides the model picked per session. */
-  devModel?(): boolean
+  devModel?(agentId: string): boolean
   now?(): number
 }
 
@@ -565,7 +565,7 @@ export class SessionManager {
   /** Picks the session's model via the agent's model config option. */
   async setModel(id: string, value: string): Promise<void> {
     const session = this.session(id)
-    if (this.deps.devModel?.()) throw new Error('The dev model is on. Turn it off in Settings to pick a model.')
+    if (this.deps.devModel?.(session.agentId)) throw new Error('The dev model is on. Turn it off in Settings to pick a model.')
     await this.withAgent(session.agentId, async (conn) => {
       const acpSessionId = await this.attach(id, conn)
       const model = this.runtime(id).live.model
@@ -724,6 +724,7 @@ export class SessionManager {
     try {
       loaded = await conn.loadSession(session.acpSessionId, session.cwd)
     } catch (err) {
+      if (isSessionInUse(err)) throw new Error('This session is open in Codex. Quit Codex to continue here.', { cause: err })
       if (isAuthRequired(err) || rt.importing) throw err
       if (!isResourceNotFound(err)) {
         console.error(`[gloss] session/load failed for ${sessionId}:`, errorMessage(err))
@@ -992,7 +993,7 @@ export class SessionManager {
       wanted &&
       model &&
       model.current !== wanted &&
-      !this.deps.devModel?.() &&
+      !this.deps.devModel?.(session.agentId) &&
       model.options.some((o) => o.value === wanted)
     ) {
       try {

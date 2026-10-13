@@ -64,6 +64,10 @@ const NO_LIVE: SessionLive = {
   steering: false
 }
 
+function agentSessionsKey(path: string, id: string): string {
+  return `${path}\0${id}`
+}
+
 const NO_QUEUE: MessageQueue = { items: [], paused: false }
 
 /** Most recent activity first, as the main process lists them. */
@@ -93,12 +97,13 @@ export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [agents, setAgents] = useState<AgentInfo[]>([])
+  const [chosenAgent, setChosenAgent] = useState<string | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
-  /** Project path → the agent's sessions there that Gloss has no record of. */
+  /** Project path and agent id → the agent's sessions there that Gloss has no record of. */
   const [agentSessions, setAgentSessions] = useState<Record<string, AgentSession[]>>({})
-  const [agentSessionsError, setAgentSessionsError] = useState<string | null>(null)
+  const [agentSessionErrors, setAgentSessionErrors] = useState<Record<string, string | null>>({})
   const [importing, setImporting] = useState<string | null>(null)
   const [open, setOpen] = useState<OpenSession | null>(null)
   /** The thread in the side panel; null shows the threads overview. */
@@ -126,7 +131,7 @@ export function App(): React.JSX.Element {
   /** "cwd\0branch" → its pull request, so switching sessions shows it straight away. */
   const prCache = useRef(new Map<string, PullRequest | null>())
   const project = projects.find((p) => projectPath !== null && sameFolder(p.path, projectPath)) ?? null
-  const agent = agents[0]
+  const agent = settings ? agents.find((a) => a.id === (chosenAgent ?? settings.global.defaultAgent)) ?? agents[0] : undefined
 
   /** Opens a thread in the side panel, expanding it. */
   const showPanel = useCallback(
@@ -186,13 +191,14 @@ export function App(): React.JSX.Element {
   const loadAgentSessions = useCallback(
     async (path: string) => {
       if (!agent) return
-      setAgentSessionsError(null)
+      const key = agentSessionsKey(path, agent.id)
+      setAgentSessionErrors((all) => ({ ...all, [key]: null }))
       try {
         const list = await window.gloss.projects.agentSessions(path, agent.id)
-        setAgentSessions((all) => ({ ...all, [path]: list }))
+        setAgentSessions((all) => ({ ...all, [key]: list }))
       } catch (err) {
-        setAgentSessionsError(`Couldn't list the agent's sessions: ${errorText(err)}`)
-        setAgentSessions((all) => ({ ...all, [path]: [] }))
+        setAgentSessionErrors((all) => ({ ...all, [key]: `Couldn't list ${agent.name} sessions: ${errorText(err)}` }))
+        setAgentSessions((all) => ({ ...all, [key]: [] }))
       }
     },
     [agent]
@@ -430,7 +436,7 @@ export function App(): React.JSX.Element {
       const session = await window.gloss.sessions.import(projectPath, agent.id, a.acpSessionId, a.title, a.updatedAt)
       setAgentSessions((all) => ({
         ...all,
-        [projectPath]: (all[projectPath] ?? []).filter((x) => x.acpSessionId !== a.acpSessionId)
+        [agentSessionsKey(projectPath, agent.id)]: (all[agentSessionsKey(projectPath, agent.id)] ?? []).filter((x) => x.acpSessionId !== a.acpSessionId)
       }))
       await selectSession(session.id)
     } catch (err) {
@@ -467,7 +473,9 @@ export function App(): React.JSX.Element {
       setSessions(list)
       setAgentSessions((all) => {
         const next = { ...all }
-        delete next[path]
+        for (const key of Object.keys(next)) {
+          if (key.startsWith(`${path}\0`)) delete next[key]
+        }
         return next
       })
       // Show the next project, or nothing.
@@ -620,7 +628,7 @@ export function App(): React.JSX.Element {
     onRemove: (itemId) => window.gloss.queue.remove(id, itemId),
     onResume: () => window.gloss.queue.resume(id)
   })
-  const devModel = settings?.global.devModel ?? false
+  const devModel = (settings?.global.devModel ?? false) && !!agents.find((a) => a.id === open?.session.agentId)?.hasDevModel
   // Dragged widths, kept within what the window has room for now.
   const sidebarLimit = sidebarLimits(windowWidth)
   const sidebarWidth = sidebarStored === null ? null : clampWidth(sidebarStored, sidebarLimit)
@@ -630,15 +638,18 @@ export function App(): React.JSX.Element {
   return (
     <div className="app">
       <Sidebar
+        agents={agents}
+        selectedAgent={agent?.id ?? ''}
+        onSelectAgent={setChosenAgent}
         width={sidebarWidth}
         projects={projects}
         project={project}
         sessions={sessions}
         openId={sessionId ?? null}
         running={running}
-        agentSessions={projectPath ? (agentSessions[projectPath] ?? null) : []}
+        agentSessions={projectPath ? (agentSessions[agentSessionsKey(projectPath, agent?.id ?? '')] ?? null) : []}
         order={settings?.global.sessionOrder ?? 'created'}
-        agentSessionsError={agentSessionsError}
+        agentSessionsError={projectPath && agent ? agentSessionErrors[agentSessionsKey(projectPath, agent.id)] ?? null : null}
         importing={importing}
         creating={creating}
         createError={sidebarError}

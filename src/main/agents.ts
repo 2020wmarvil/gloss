@@ -6,6 +6,8 @@ export type AgentConfig = {
   command: string
   args: string[]
   env?: Record<string, string>
+  /** Optional model override applied only to this agent when the dev toggle is on. */
+  devModelEnv?: Record<string, string>
   /**
    * The agent's session mode that skips permission prompts, if it has one.
    * Gloss switches every session to it (SPEC → Permissions).
@@ -30,12 +32,21 @@ function claudeAgent(): AgentConfig {
     command: process.execPath,
     args: [require.resolve('@agentclientprotocol/claude-agent-acp/dist/index.js')],
     env: { ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
+    devModelEnv: { ANTHROPIC_MODEL: DEV_MODEL },
     bypassModeId: 'bypassPermissions'
   }
 }
 
 const AGENTS: Record<string, () => AgentConfig> = {
-  claude: claudeAgent
+  claude: claudeAgent,
+  codex: () => ({
+    id: 'codex',
+    name: 'Codex',
+    command: process.execPath,
+    args: [require.resolve('@agentclientprotocol/codex-acp/dist/index.js')],
+    env: { ELECTRON_RUN_AS_NODE: '1' },
+    bypassModeId: 'agent-full-access'
+  })
 }
 
 export function getAgentConfig(id: string): AgentConfig {
@@ -44,10 +55,10 @@ export function getAgentConfig(id: string): AgentConfig {
   return make()
 }
 
-export function listAgents(): { id: string; name: string }[] {
+export function listAgents(): { id: string; name: string; hasDevModel: boolean }[] {
   return Object.values(AGENTS).map((make) => {
-    const { id, name } = make()
-    return { id, name }
+    const { id, name, devModelEnv } = make()
+    return { id, name, hasDevModel: !!devModelEnv }
   })
 }
 
@@ -58,6 +69,6 @@ export function agentEnv(
   base: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...base, ...config.env }
-  if (opts.devModel) env.ANTHROPIC_MODEL = DEV_MODEL
+  if (opts.devModel) Object.assign(env, config.devModelEnv)
   return env
 }

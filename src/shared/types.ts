@@ -108,7 +108,7 @@ export type Thread = {
   createdAt: number
 }
 
-export type AgentInfo = { id: string; name: string }
+export type AgentInfo = { id: string; name: string; hasDevModel?: boolean }
 
 /** A folder Gloss groups sessions by. */
 export type Project = { path: string; name: string }

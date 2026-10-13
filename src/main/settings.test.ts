@@ -5,13 +5,19 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { SettingsState } from '../shared/ipc'
 import { parseSettings, patchArg, samePath, SettingsFile } from './settings'
 
-const defaults = { devModel: false, theme: 'system' as const, sessionOrder: 'created' as const }
+const defaults = { defaultAgent: 'claude' as const, devModel: false, theme: 'system' as const, sessionOrder: 'created' as const }
 
 describe('parseSettings', () => {
+  it('accepts Codex as the default agent and rejects unknown agents', () => {
+    expect(parseSettings('{"defaultAgent":"codex"}', defaults)).toMatchObject({
+      ok: true, global: { defaultAgent: 'codex' }
+    })
+    expect(() => patchArg({ global: { defaultAgent: 'unknown' } })).toThrow(/defaultAgent/)
+  })
   it('fills in defaults and ignores unknown keys', () => {
     expect(parseSettings('{"$schema": "x", "future": 1}', defaults)).toEqual({
       ok: true,
-      global: { devModel: false, theme: 'system', sessionOrder: 'created' },
+      global: { defaultAgent: 'claude', devModel: false, theme: 'system', sessionOrder: 'created' },
       projects: {}
     })
   })
@@ -27,7 +33,7 @@ describe('parseSettings', () => {
   it('reads known values and projects', () => {
     expect(parseSettings('{"devModel": true, "projects": {"C:\\\\a": {"x": 1}}}', defaults)).toEqual({
       ok: true,
-      global: { devModel: true, theme: 'system', sessionOrder: 'created' },
+      global: { defaultAgent: 'claude', devModel: true, theme: 'system', sessionOrder: 'created' },
       projects: { 'C:\\a': {} }
     })
   })
@@ -94,8 +100,8 @@ describe('SettingsFile', () => {
 
   it('creates the file and its schema on first load', () => {
     const state = file.load()
-    expect(state).toEqual({ path: path(), global: { devModel: false, theme: 'system', sessionOrder: 'created' }, projects: {}, error: null })
-    expect(onDisk()).toEqual({ $schema: './settings.schema.json', devModel: false, theme: 'system', sessionOrder: 'created' })
+    expect(state).toEqual({ path: path(), global: { defaultAgent: 'claude', devModel: false, theme: 'system', sessionOrder: 'created' }, projects: {}, error: null })
+    expect(onDisk()).toEqual({ $schema: './settings.schema.json', defaultAgent: 'claude', devModel: false, theme: 'system', sessionOrder: 'created' })
     const schema = JSON.parse(readFileSync(join(dir, 'settings.schema.json'), 'utf8')) as {
       properties: Record<string, { type: string; default?: unknown; enum?: unknown[] }>
     }

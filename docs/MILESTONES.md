@@ -163,13 +163,18 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 **Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
 
-## M13 — A second agent
-- Add Codex to the agent table via its ACP adapter (`@zed-industries/codex-acp` at the time of writing; verify the package, entrypoint and Windows support first).
-- **New session** lets you pick the agent. The session list and header show which agent a session uses.
-- Everything agent-specific stays in its `AgentConfig` entry: sign-in, bypass mode, model options and threads must work with no code paths for one agent.
-- **Gloss-managed MCP servers:** a per-project list of MCP servers in Gloss, passed to whichever agent a session uses via ACP's `mcpServers` in `session/new` and `session/load` (today Gloss sends an empty list), so Claude Code and Codex get the same tools without configuring each separately. Only transports the agent advertises in `mcpCapabilities`.
+## M13 - Multiple agents
 
-**Done when:** a session with the second agent works end to end, including sign-in, threads and resume (or the lost-context notice if it can't resume).
+**Pulled forward: Codex support (first PR).** New Codex sessions, agent selection, session labels, a default-agent setting, and the existing threading, sign-in, model and resume flows. Uses `@agentclientprotocol/codex-acp` with its bundled Codex CLI. Agent-specific launch and bypass settings stay in `AgentConfig`. Existing Claude conversations remain with Claude.
+
+Remaining work for M13, in separate PRs:
+
+- **Gloss-managed MCP servers:** a per-project list of MCP servers passed through ACP's `mcpServers` in `session/new` and `session/load`, so agents share tools. Only transports the selected agent advertises are allowed.
+- **Continue with another agent:** an explicit action such as "Continue this conversation with Codex" or "Continue this thread with Claude Code". Create a new session for the destination agent, seeded with a reviewable summary and selected conversation or thread context. Preserve and link back to the original session. This is a context handoff, not a conversion of the original agent's session history. Design the context preview and selection before implementation.
+
+**Codex support is done when:** a new Codex session works end to end, including sign-in, threads, model selection and resume (or a lost-context notice if resume is unavailable).
+
+**M13 is done when:** shared MCP configuration works across agents and a user can review and hand off a conversation or thread to another agent without changing the original.
 
 ## M14 — Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.

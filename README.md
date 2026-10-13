@@ -4,7 +4,7 @@
 
 *Goodbye, Long Off-topic Scrolling Sessions.*
 
-A desktop GUI for coding agents (using [Agent Client Protocol](https://agentclientprotocol.com) later) that lets you reply to a single point in an agent's answer as its own thread, without scrolling past forty turns about item 1 to find item 2 again.
+A desktop GUI for coding agents (using [Agent Client Protocol](https://agentclientprotocol.com)) that lets you reply to a single point in an agent's answer as its own thread, without scrolling past forty turns about item 1 to find item 2 again.
 
 The agent still sees one linear conversation. Threads are just how Gloss shows it to you.
 
@@ -12,14 +12,15 @@ The agent still sees one linear conversation. Threads are just how Gloss shows i
 
 ## Status
 
-**M5 (misc).** Reply to any top-level list item, or to any text you select (prose or code), in an agent's answer as its own thread, in a side panel, while the main conversation stays short. Also: sessions in a project folder, streamed markdown replies, tool-call rows, cancel, persistence across restarts with the agent resuming where it left off, in-app sign-in, and CI. See [`docs/MILESTONES.md`](docs/MILESTONES.md).
+**Claude Code and Codex support.** Reply to any top-level list item, or to any text you select (prose or code), in an agent's answer as its own thread, in a side panel, while the main conversation stays short. Also: sessions in a project folder, streamed markdown replies, tool-call rows, cancel, persistence across restarts with the agent resuming where it left off, in-app sign-in, and CI. See [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
 **No permission prompts.** Gloss runs the agent in its bypass-permissions mode and approves any permission request it still gets. The agent can edit any file and run any command it decides to, in the session's folder and beyond, without asking. Only use it where you're comfortable with that.
 
 ## Requirements
 
 - Node.js 22 or newer and npm (for development only; the agent runs on Electron's bundled Node).
-- A Claude account. If the agent isn't signed in, Gloss shows a **Sign in** dialog with the agent's own sign-in options and opens a terminal window to complete it. It uses the same login as the `claude` command, so if `claude` already works, you're set.
+- A Claude account for Claude Code, or a ChatGPT account with Codex access for Codex. Codex uses the existing Codex login; otherwise choose **ChatGPT** in the sign-in dialog to sign in through your browser. The adapter includes the Codex CLI, so no separate CLI install is needed.
+- For Claude Code: If the agent isn't signed in, Gloss shows a **Sign in** dialog with the agent's own sign-in options and opens a terminal window to complete it. It uses the same login as the `claude` command, so if `claude` already works, you're set.
 
 ## Getting started
 
@@ -28,7 +29,7 @@ npm install
 npm run dev
 ```
 
-The first run downloads the Electron binary. Click **New session**, pick a project folder, and message the agent. Enter sends; Shift+Enter adds a new line.
+The first run downloads the Electron binary. Open a project folder, choose **Claude Code** or **Codex** in the sidebar, then click **New session**. Set **Default agent** in Settings to choose the initial selection. Existing sessions keep their agent. Enter sends; Shift+Enter adds a new line.
 
 ### Threads
 
@@ -40,7 +41,7 @@ Threads exist only in Gloss. The agent sees one conversation: a message sent fro
 
 ### Dev model toggle
 
-**Dev model (Haiku)**, at the bottom of the sidebar, runs the agent with `ANTHROPIC_MODEL=haiku` so test prompts are cheap. It is on by default in development and stored in `settings.json` in Electron's user-data folder. Changing it restarts idle agents; a running turn finishes on the old model. Judge the threading UX on the normal model; Haiku gives shorter, less list-heavy answers.
+**Dev model (Haiku)**, in Settings, runs Claude Code with `ANTHROPIC_MODEL=haiku` so test prompts are cheap. It is on by default in development and stored in `settings.json` in Electron's user-data folder. Changing it restarts idle agents; a running turn finishes on the old model. It does not override Codex models. Judge the threading UX on the normal model; Haiku gives shorter, less list-heavy answers.
 
 ## Scripts
 
