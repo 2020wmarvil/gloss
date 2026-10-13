@@ -184,14 +184,3 @@ See `docs/mocks/`:
 - `selection-anchor.html` — the selection popover and a new thread started from a selection, plus an existing inline anchor (dotted underline + count chip).
 
 The mocks show layout and interaction, not a final visual design.
-
-## Out of scope (do not build)
-
-- Resolve / close / archive state on threads
-- Forking a thread into its own agent session
-- Nested threads (data model allows it; UI doesn't)
-- Cross-thread links or mentions
-- Injected reminders to the agent about open items
-- Parallel turns across threads
-- Multiple agents in one session
-- Client-side `fs` / `terminal` ACP capabilities
