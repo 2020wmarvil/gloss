@@ -13,7 +13,7 @@ The agent sees **one linear session**. Threads exist only in the UI.
 
 - Each message is tagged with a `threadId` (`null` = main thread). The UI groups messages by it.
 - A message sent from a thread is prefixed with a short tag quoting the anchor, so the agent knows what it refers to. This automates what the user does today by copy-pasting the bullet point.
-- The agent's reply is routed to the thread the last prompt came from. Turns are sequential (Send is disabled during a turn), so routing is unambiguous.
+- The agent's reply is routed to the thread the last prompt came from. Turns are sequential (a message sent during a turn waits in a queue until it ends), so routing is unambiguous.
 
 Consequences, all intended:
 - No forking, no merging, no summaries. The agent has everything that happened in every thread in its context.
@@ -101,13 +101,14 @@ Notes:
 
 ```
 send(text, threadId?):
+  if a turn is running: queue.push({text, threadId, attachments}); return   (see Composer → Queue)
   t = threads[threadId]
   wire = t ? `[re: "${truncate(t.anchor.text, 80)}"]\n${text}` : text
   insert Message{role:'user', text, wireText: wire, threadId, seq: next()}
   currentThread = threadId
-  ui.sendDisabled = true
   { stopReason } = await acp.prompt(sessionId, [{type:'text', text: wire}, ...attachmentBlocks])
-  ui.sendDisabled = false
+  if queue not empty:
+    stopReason == 'end_turn' ? send(queue.shift()) : pause the queue
 
 on session/update:
   agent_message_chunk  → append to the current agent Message (group by messageId if present,
@@ -136,7 +137,7 @@ Gloss runs agents without permission prompts. There is no approval UI.
 Rendering:
 - **Main view:** messages and tool calls with `threadId == null`, in `seq` order. Each anchor in an agent message is decorated with its thread's reply count.
 - **Thread panel:** a quote of the anchor text, then messages and tool calls with `threadId == t.id` in `seq` order, then a composer.
-- Send is disabled everywhere while a turn is running. Show which thread is running.
+- While a turn is running, sending from any composer queues the message (see Composer → Queue). Show which thread is running.
 
 ## Agent integration: ACP
 
@@ -181,20 +182,21 @@ In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its env
 - **Live reload:** the main process watches the folder (editors often replace the file) and applies changes without a restart. If the file has invalid JSON or values, or is deleted, Gloss keeps the last good settings and shows what is wrong (on the settings screen, and a mark on the sidebar's Settings button). It never resets or overwrites the file because of a bad edit.
 - **Settings screen** (the sidebar's Settings button, or `Ctrl+,`; Esc or Done closes it): the file's path with "Open in editor" (the system's app for `.json`), then a Global section and a Project section for the open session's folder. Changes save immediately: only the changed keys are written, everything else in the file is kept. Saving is refused while the file isn't valid JSON.
 - Each feature adds its own fields when it lands; no field appears before its feature exists.
-
 - **Fields so far:** `devModel` (see Dev model) and `theme`: `system` (default, follows the OS and updates live), `light` or `dark`. The renderer sets `data-theme` on the document; the dark palette is provisional until the M12 design system.
+
 ## Stack
 
 - **Electron**, built with `electron-vite`, TypeScript throughout.
 - **Main process** owns everything agent-related: spawning, the ACP connection, persistence. Exposes a narrow IPC API to the renderer:
   - `projects.list() / projects.open() / projects.agentSessions(path, agentId)`
   - `sessions.list() / sessions.create(cwd, agentId) / sessions.import(cwd, agentId, acpSessionId, title) / sessions.open(id) / sessions.rename(id, title) / sessions.delete(id) / sessions.setModel(id, value) / sessions.copyMarkdown(id, threadId) / sessions.saveMarkdown(id, threadId)`
-  - `send(sessionId, text, threadId | null, attachments)`, `cancel(sessionId)`
+  - `send(sessionId, text, threadId | null, attachments)` (queues while a turn runs), `cancel(sessionId)`, `queue.edit(sessionId, id, text) / queue.remove(sessionId, id) / queue.resume(sessionId)`
   - `git.status(cwd)`
   - `threads.create(sessionId, anchorMessageId, anchor)`
   - `settings.get() / settings.update(patch) / settings.openFile()`
-  - an event stream: message/tool-call upserts, turn start/end, session upserts and deletes, live session state, notification clicks, settings changes
+  - an event stream: message/tool-call upserts, turn start/end, session upserts and deletes, live session state, queue changes, notification clicks, settings changes
 - **Renderer** only renders. Framework is the implementer's choice (React is fine).
+- **No menu bar** on Windows and Linux (`Menu.setApplicationMenu(null)`). The default menu's zoom shortcuts (`Ctrl+=`, `Ctrl+-`, `Ctrl+0`) are kept, plus DevTools (`F12`, `Ctrl+Shift+I`) and reload (`Ctrl+R`) in development. macOS keeps the default menu: it lives in the system menu bar, and copy and paste need its Edit menu.
 - **Security:** agent output is untrusted (it can contain text from files and web pages). `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, expose only the IPC API via `contextBridge`, and **sanitize rendered markdown** (no raw HTML, safe link handling: open external links in the system browser).
 - **Persistence:** SQLite. Prefer the built-in `node:sqlite` if the Electron version's Node supports it; otherwise `better-sqlite3` with `electron-rebuild`.
 - Target platform: Windows first (the developer's machine); don't do anything that prevents macOS/Linux.
@@ -214,6 +216,7 @@ The sidebar (`docs/mocks/sidebar-switcher.html`) shows one project at a time:
 
 ## Conversation view
 
+- **Layout:** the log, composer and status line share one centered column that grows with the pane (820px up to 1080px), and the conversation text grows from 15px to 16px and 17px on wide panes (markdown sizes are relative to it). The thread panel grows with the window too (420px up to 600px).
 - **Header:** the session title and the agent name. A session is exported from its sidebar menu; the thread panel has an **Export** menu for one thread.
 - **Export format:** `# Title`, then each message as `**You**` / `**Agent**` and its text, tool calls as `_Tool: title (status)_`, attachments named; for a whole session, each thread with replies follows under `## Thread: “anchor”` with the anchor quoted.
 - **Tool calls** show as one row (title, status), collapsed. Clicking expands what the agent did, from the tool call's ACP `content`: a command's full text and its output (the Claude adapter sends output as a console code block when the client has no terminal capability), a file edit (`diff` content) as a unified line diff with unchanged stretches collapsed to 3 lines of context, other content as markdown.
@@ -222,6 +225,7 @@ The sidebar (`docs/mocks/sidebar-switcher.html`) shows one project at a time:
 ## Composer
 
 - **Slash commands:** typing `/` at the start offers the agent's `available_commands_update` list (name, argument hint, description), filtered by prefix. Arrow keys move, Enter or Tab completes, Escape dismisses. Enter on an exact match sends it.
+- **Queue:** while a turn runs, the composer stays usable: its button reads **Queue** (next to Cancel) and a message sent then is queued instead of sent. Queued messages are listed above the composer of the thread they were written in, each with Edit (in place) and Remove, and run in that thread. When a turn ends normally (`end_turn`), the next queued message is sent straight away. A cancelled, failed or cut-short turn pauses the queue: the composer and status line show "paused" with **Resume**, and a message sent while paused and idle goes out right away; the queue moves on again after the next turn that ends normally. Removing the last queued message clears the pause. The queue is kept by the main process in memory, so it works for sessions that aren't open but is lost when Gloss quits. Works with any agent (no steering).
 - **Attachments:** paste or drop images and files on the composer, or pick them with **+**. Images become ACP `image` blocks; text files become embedded `resource` blocks (with a `file://` URI when the file has a path). Only what the agent's `promptCapabilities` allow (`image`, `embeddedContext`); the **+** button and drops are off otherwise. Limits: images 10 MB, files 1 MB and text only. Attachments show as thumbnails or names in the composer and in the sent message.
 
 ## Status line
@@ -229,10 +233,11 @@ The sidebar (`docs/mocks/sidebar-switcher.html`) shows one project at a time:
 A line under the composer for the open session. Everything but the git branch comes from ACP:
 
 - turn state ("Working…", or "Working in item 2", which opens that thread); "Agent not running" when the session isn't resumed
+- queued messages: "2 queued", or "2 queued, paused · Resume" (amber; clicking resumes)
 - context use: a meter and percentage of the window, from `usage_update` `used`/`size` (amber from 80%)
 - session cost, from `usage_update` `cost`
 - plan usage limits, Claude Code only: the Claude adapter attaches Claude Code's rate-limit info to `usage_update` as `_meta["_claude/rateLimit"]` (`rateLimitType`, `status`, optional `utilization`, `resetsAt` in Unix seconds), one window per update. Gloss keeps the latest per window and shows each: "5h ok" (Claude Code reports no percentage far from the limit), "5h 82%" (amber when warned), or "5h limit · resets 3:40 PM" (red when reached). The tooltip has the reset time; clicking runs `/usage` for the full breakdown. Agents that don't send it show nothing.
-- model: the agent's config option with category `model`; clicking opens a picker that calls `session/set_config_option`. The choice is saved on the session and re-applied when it is resumed. While the dev model is on, this shows "Haiku (dev)" and can't be changed.
+- model: the agent's config option with category `model`, shown by name, except that a `default` option shows its description, which names the model it stands for (Claude Code's "Default (recommended)" shows as e.g. "Opus 5.5"); clicking opens a picker that calls `session/set_config_option`. The choice is saved on the session and re-applied when it is resumed. While the dev model is on, this shows "Haiku (dev)" and can't be changed.
 - permission mode: "bypass", or "auto-approving" (a warning) when the agent didn't switch to its bypass mode
 - **Extensions:** what the agent loaded, from its commands: commands and skills, and MCP prompts (`mcp:<server>:<prompt>`). When the agent has an `/mcp` command, "Show MCP server status" sends it in the main thread (Claude Code answers with each server's status). Gloss doesn't install or configure extensions.
 - the git branch of the session folder with `*` when the tree is dirty (`git status --porcelain --branch` in the main process; hidden outside a repo; refreshed when a session opens and after each turn)
@@ -244,7 +249,7 @@ A line under the composer for the open session. Everything but the git branch co
 
 ## Notifications
 
-When a turn ends or fails while the Gloss window isn't focused, Gloss shows an OS notification (session title; "The agent finished", "The agent replied in a thread" or the error). Cancelled turns don't notify. Clicking it focuses the window and opens the session and thread. Unseen finishes also set the dock badge where the OS has one (macOS, some Linux docks) and flash the taskbar button on Windows; focusing the window clears them. Windows needs an AppUserModelID for notifications to show.
+When a turn ends or fails while the Gloss window isn't focused, Gloss shows an OS notification (session title; "The agent finished", "The agent replied in a thread" or the error). Cancelled turns don't notify, and neither does a turn whose queued follow-up starts straight away. Clicking it focuses the window and opens the session and thread. Unseen finishes also set the dock badge where the OS has one (macOS, some Linux docks) and flash the taskbar button on Windows; focusing the window clears them. Windows needs an AppUserModelID for notifications to show.
 
 ## UX reference
 

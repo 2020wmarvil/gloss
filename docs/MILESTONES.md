@@ -91,7 +91,7 @@ A home for Gloss's settings, editable by hand (and by agents) as well as in the 
 ## M8 — Queue and steer
 Stop waiting for a turn to end before you can say something.
 
-- **Queue:** while a turn runs, the composer stays usable; a message sent then is queued (shown as pending, editable and removable) and sent when the turn ends, in order. Handled by Gloss, so it works with any agent. A queued message keeps its thread: it runs in the thread it was written in.
+- **Queue:** while a turn runs, the composer stays usable; a message sent then is queued (shown as pending, editable and removable) and sent when the turn ends, in order. Handled by Gloss, so it works with any agent. A queued message keeps its thread: it runs in the thread it was written in. *Landed early, before M8 (SPEC → Composer → Queue); M8 is left with steering.*
 - **Steer:** inject a message into the running turn ("skip the tests", "use the existing helper") when the agent supports it. The Claude adapter advertises a `_session/steering` extension in `initialize`; verify its request shape first. Offered only when the agent advertises steering; otherwise only queueing is available.
 - The running turn's thread, the queue and any steering are visible in the status line and thread panel.
 

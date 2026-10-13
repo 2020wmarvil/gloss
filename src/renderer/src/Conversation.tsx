@@ -1,10 +1,10 @@
 // The main thread: messages and tool calls with threadId == null.
 import { useRef } from 'react'
 import type { GitStatus } from '@shared/ipc'
-import type { Attachment, Message, SessionLive, Thread } from '@shared/types'
+import type { Attachment, Message, MessageQueue, SessionLive, Thread } from '@shared/types'
 import type { OpenSession, Panel } from './App'
 import type { ListItemSpan } from './anchors'
-import { Composer } from './Composer'
+import { Composer, type ComposerQueue } from './Composer'
 
 import { Log, logItems, type Notice } from './Log'
 import { Markdown } from './Markdown'
@@ -25,6 +25,10 @@ type Props = {
   panel: Panel | null
   /** Label of the thread whose turn is running, e.g. "item 2". */
   runningLabel: string | null
+  /** The whole session's queue, for the status line. */
+  queue: MessageQueue
+  /** The main thread's part of it, for the composer. */
+  composerQueue: ComposerQueue
   onSend(text: string, attachments: Attachment[]): void
   onCancel(): void
   onSetModel(value: string): Promise<void>
@@ -119,6 +123,7 @@ export function Conversation(props: Props): React.JSX.Element {
         primary={panel === null}
         commands={live.commands}
         accepts={live.accepts}
+        queue={props.composerQueue}
         onSend={props.onSend}
         onCancel={props.onCancel}
       />
@@ -129,6 +134,8 @@ export function Conversation(props: Props): React.JSX.Element {
         devModel={props.devModel}
         runningThread={runningThread}
         runningLabel={props.runningLabel}
+        queue={props.queue}
+        onResumeQueue={() => void props.composerQueue.onResume()}
         onOpenThread={props.onOpenThread}
         onSetModel={props.onSetModel}
         onCommand={(text) => props.onSend(text, [])}

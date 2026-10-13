@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import type { GitStatus } from '@shared/ipc'
 import { folderName } from '@shared/paths'
-import type { RateLimit, Session, SessionLive, SlashCommand } from '@shared/types'
+import type { MessageQueue, ModelOption, RateLimit, Session, SessionLive, SlashCommand } from '@shared/types'
 import { Popover } from './Popover'
 
 type Props = {
@@ -14,6 +14,8 @@ type Props = {
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
   runningLabel: string | null
+  queue: MessageQueue
+  onResumeQueue(): void
   onOpenThread(threadId: string): void
   onSetModel(value: string): Promise<void>
   /** Sends a slash command as a message in the main thread. */
@@ -95,6 +97,15 @@ function groupCommands(commands: SlashCommand[]): { title: string; commands: Sla
   ].filter((g) => g.commands.length > 0)
 }
 
+/**
+ * What the status line calls a model: its name, except for an agent's `default`
+ * option, whose description names the model it stands for (Claude Code:
+ * "Default (recommended)", described as "Opus 5.5").
+ */
+export function modelLabel(option: ModelOption): string {
+  return option.value === 'default' && option.description ? option.description : option.name
+}
+
 export function StatusLine(props: Props): React.JSX.Element {
   const { session, live, git, devModel, runningThread } = props
   const [modelError, setModelError] = useState<string | null>(null)
@@ -115,6 +126,14 @@ export function StatusLine(props: Props): React.JSX.Element {
           </button>
         ))}
       {!live.attached && runningThread === undefined && <span className="status-item muted">Agent not running</span>}
+      {props.queue.items.length > 0 &&
+        (props.queue.paused ? (
+          <button className="status-item warn" onClick={props.onResumeQueue} title="Send the next queued message">
+            {props.queue.items.length} queued, paused · Resume
+          </button>
+        ) : (
+          <span className="status-item">{props.queue.items.length} queued</span>
+        ))}
 
       {pct !== null && usage && (
         <span
@@ -146,7 +165,7 @@ export function StatusLine(props: Props): React.JSX.Element {
             Haiku (dev)
           </span>
         ) : (
-          <Popover label={current?.name ?? model.current} title="Model">
+          <Popover label={current ? modelLabel(current) : model.current} title="Model">
             {(close) => (
               <ul className="option-list" role="listbox" aria-label="Model">
                 {model.options.map((o) => (

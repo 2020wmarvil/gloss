@@ -4,7 +4,7 @@ import type { Attachment, SessionLive } from '@shared/types'
 import { wireTag } from '@shared/wire'
 import type { OpenSession, Panel } from './App'
 import { itemSource, listItemSpans } from './anchors'
-import { Composer } from './Composer'
+import { Composer, type ComposerQueue } from './Composer'
 import { ExportMenu } from './ExportMenu'
 import { Log, logItems, type Notice } from './Log'
 import { Markdown } from './Markdown'
@@ -17,6 +17,8 @@ type Props = {
   runningThread: string | null | undefined
   notices: Notice[]
   live: SessionLive
+  /** Messages queued from this thread. */
+  queue: ComposerQueue
   onSend(text: string, attachments: Attachment[]): void
   onCancel(): void
   onClose(): void
@@ -87,6 +89,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         primary
         commands={live.commands}
         accepts={live.accepts}
+        queue={props.queue}
         onSend={onSend}
         onCancel={onCancel}
         footer={<div className="mono wire">sent as: {wireTag(panel.anchor.text)} …</div>}

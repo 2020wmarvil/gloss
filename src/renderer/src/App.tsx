@@ -8,7 +8,9 @@ import type {
   Attachment,
   AuthMethodInfo,
   Message,
+  MessageQueue,
   Project,
+  QueuedMessage,
   Session,
   SessionLive,
   Thread,
@@ -16,7 +18,7 @@ import type {
 } from '@shared/types'
 import { truncate } from '@shared/wire'
 import { itemLabel, listItemSpans, type ListItemSpan } from './anchors'
-import { FOCUS_COMPOSER } from './Composer'
+import { FOCUS_COMPOSER, type ComposerQueue } from './Composer'
 import { errorText } from './errors'
 import { Conversation } from './Conversation'
 import type { Notice } from './Log'
@@ -48,6 +50,8 @@ const NO_LIVE: SessionLive = {
   permissions: null,
   accepts: { image: false, file: false }
 }
+
+const NO_QUEUE: MessageQueue = { items: [], paused: false }
 
 function upsert<T extends { id: string }>(list: T[], item: T): T[] {
   const i = list.findIndex((x) => x.id === item.id)
@@ -84,6 +88,7 @@ export function App(): React.JSX.Element {
   const [running, setRunning] = useState<Record<string, string | null>>({})
   const [notices, setNotices] = useState<Record<string, Notice[]>>({})
   const [lives, setLives] = useState<Record<string, SessionLive>>({})
+  const [queues, setQueues] = useState<Record<string, MessageQueue>>({})
   const [git, setGit] = useState<GitStatus | null>(null)
   const [signIn, setSignIn] = useState<SignInRequest | null>(null)
   const [creating, setCreating] = useState(false)
@@ -149,6 +154,7 @@ export function App(): React.JSX.Element {
       openCwd.current = view.session.cwd
       setProjectPath(view.session.cwd)
       setLives((l) => ({ ...l, [id]: view.live }))
+      setQueues((q) => ({ ...q, [id]: view.queue }))
       setRunning((r) => {
         const next = { ...r }
         if (view.turn) next[id] = view.turn.threadId
@@ -195,6 +201,9 @@ export function App(): React.JSX.Element {
           break
         case 'live':
           setLives((l) => ({ ...l, [event.sessionId]: event.live }))
+          break
+        case 'queue':
+          setQueues((q) => ({ ...q, [event.sessionId]: event.queue }))
           break
         case 'reveal':
           void selectSession(event.sessionId, event.threadId)
@@ -470,6 +479,15 @@ export function App(): React.JSX.Element {
   const runningThreadRow = open?.threads.find((t) => t.id === runningThread)
   const sessionNotices = sessionId ? (notices[sessionId] ?? []) : []
   const live = (sessionId && lives[sessionId]) || NO_LIVE
+  const queue = (sessionId && queues[sessionId]) || NO_QUEUE
+  /** Part of the session's queue (one thread's messages) with the queue's actions, for a composer. */
+  const composerQueue = (id: string, items: QueuedMessage[]): ComposerQueue => ({
+    items,
+    paused: queue.paused,
+    onEdit: (itemId, text) => window.gloss.queue.edit(id, itemId, text),
+    onRemove: (itemId) => window.gloss.queue.remove(id, itemId),
+    onResume: () => window.gloss.queue.resume(id)
+  })
   const devModel = settings?.global.devModel ?? false
 
   return (
@@ -523,6 +541,11 @@ export function App(): React.JSX.Element {
           }
           notices={sessionNotices}
           panel={panel}
+          queue={queue}
+          composerQueue={composerQueue(
+            open.session.id,
+            queue.items.filter((q) => q.threadId === null)
+          )}
           onSend={(text, attachments) => void send(text, attachments, null)}
           onCancel={() => void window.gloss.cancel(open.session.id)}
           onSetModel={(value) => window.gloss.sessions.setModel(open.session.id, value)}
@@ -566,6 +589,11 @@ export function App(): React.JSX.Element {
           runningThread={runningThread}
           notices={sessionNotices}
           live={live}
+          // A thread that doesn't exist yet has nothing queued.
+          queue={composerQueue(
+            open.session.id,
+            panel.threadId === null ? [] : queue.items.filter((q) => q.threadId === panel.threadId)
+          )}
           onSend={(text, attachments) => void send(text, attachments, panel)}
           onCancel={() => void window.gloss.cancel(open.session.id)}
           onClose={() => setPanel(null)}
