@@ -1,4 +1,4 @@
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as acp from '@agentclientprotocol/sdk'
 import type { GlossEvent } from '../shared/ipc'
@@ -6,6 +6,7 @@ import { AgentConnection } from './acp'
 import type { AgentConfig } from './agents'
 import { Store } from './db'
 import { SessionManager } from './sessions'
+import { wireTag } from '../shared/wire'
 
 type Script = (ctx: {
   sessionId: string
@@ -34,12 +35,26 @@ type FakeAgent = {
   modeChanges: string[]
   /** session/set_mode fails. */
   refuseModes: boolean
-  /** History replayed by session/load, per session; default: one agent chunk "REPLAY". */
+  /**
+   * Each session's saved history, like Claude Code's transcript: prompts, steered
+   * messages and what the script sends. session/load replays it.
+   */
+  transcripts: Map<string, acp.SessionUpdate[]>
+  /** History replayed by session/load instead of the transcript, per session. */
   history: Map<string, acp.SessionUpdate[]>
-  /** Advertise session/list and session/delete. */
+  /** Each session's last change (session/list `updatedAt`), from a clock that ticks on every change. */
+  updatedAt: Map<string, string>
+  clock: number
+  /** Each session's folder, for session/list. */
+  cwds: Map<string, string>
+  /** session/load fails with an internal error. */
+  failLoad: boolean
+  /** Advertise session/list, session/delete and session/close. */
   canList: boolean
   canDelete: boolean
-  /** Sessions returned by session/list (filtered by cwd). */
+  canClose: boolean
+  closes: string[]
+  /** Sessions returned by session/list (filtered by cwd), besides those with a transcript. */
   listed: acp.SessionInfo[]
   deleted: string[]
   /** session/delete fails. */
@@ -75,9 +90,16 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
     modes: null,
     modeChanges: [],
     refuseModes: false,
+    transcripts: new Map(),
     history: new Map(),
+    updatedAt: new Map(),
+    clock: 0,
+    cwds: new Map(),
+    failLoad: false,
     canList: false,
     canDelete: false,
+    canClose: false,
+    closes: [],
     listed: [],
     deleted: [],
     refuseDelete: false,
@@ -98,8 +120,36 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
   }
 }
 
+/** Records a change to a session's saved history, as the agent would. */
+function touch(state: FakeAgent, sessionId: string): void {
+  state.clock++
+  state.updatedAt.set(sessionId, new Date(Date.UTC(2026, 9, 1) + state.clock * 1000).toISOString())
+}
+
+function save(state: FakeAgent, sessionId: string, ...updates: acp.SessionUpdate[]): void {
+  state.transcripts.set(sessionId, [...(state.transcripts.get(sessionId) ?? []), ...updates])
+  touch(state, sessionId)
+}
+
+/** A prompt as the Claude adapter saves it: text, then each file as a link and its context, images as they are. */
+function userChunks(prompt: acp.ContentBlock[], messageId: string): acp.SessionUpdate[] {
+  return prompt.flatMap((b): acp.SessionUpdate[] => {
+    const chunk = (content: acp.ContentBlock): acp.SessionUpdate => ({ sessionUpdate: 'user_message_chunk', content, messageId })
+    if (b.type === 'resource' && 'text' in b.resource) {
+      const { uri, text } = b.resource
+      const name = decodeURIComponent(uri.split('/').pop() ?? uri)
+      return [
+        chunk({ type: 'text', text: `[@${name}](${uri})` }),
+        chunk({ type: 'text', text: `\n<context ref="${uri}">\n${text}\n</context>` })
+      ]
+    }
+    return [chunk(b)]
+  })
+}
+
 function agentApp(state: FakeAgent): acp.AgentApp {
   state.connections++
+  let userMessages = 0
   const cancels = new Map<string, () => void>()
   /** Running turns' steer listeners, by session. */
   const steerTo = new Map<string, (text: string) => void>()
@@ -113,7 +163,8 @@ function agentApp(state: FakeAgent): acp.AgentApp {
         promptCapabilities: state.promptCapabilities,
         sessionCapabilities: {
           ...(state.canList ? { list: {} } : {}),
-          ...(state.canDelete ? { delete: {} } : {})
+          ...(state.canDelete ? { delete: {} } : {}),
+          ...(state.canClose ? { close: {} } : {})
         }
       },
       authMethods: state.authMethods,
@@ -124,12 +175,20 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       const deliver = steerTo.get(sessionId)
       if (!deliver || state.turnEnding) return { outcome: 'promptRequired', reason: 'noRunningTurn' }
       state.steers.push(prompt)
+      save(state, sessionId, ...userChunks(prompt, `u-${state.connections}-${userMessages++}`))
       deliver(prompt[0]?.type === 'text' ? prompt[0].text : '')
       return { outcome: 'injected' }
     })
-    .onRequest(acp.methods.agent.session.list, (ctx) => ({
-      sessions: state.listed.filter((s) => s.cwd === ctx.params.cwd)
-    }))
+    .onRequest(acp.methods.agent.session.list, (ctx) => {
+      const saved = [...state.transcripts.keys()]
+        .filter((id) => state.sessions.has(id) && !state.listed.some((s) => s.sessionId === id))
+        .map((id): acp.SessionInfo => ({ sessionId: id, cwd: state.cwds.get(id) ?? '', updatedAt: state.updatedAt.get(id) }))
+      return { sessions: [...state.listed, ...saved].filter((s) => s.cwd === ctx.params.cwd) }
+    })
+    .onRequest(acp.methods.agent.session.close, (ctx) => {
+      state.closes.push(ctx.params.sessionId)
+      return {}
+    })
     .onRequest(acp.methods.agent.session.delete, (ctx) => {
       if (state.refuseDelete) throw acp.RequestError.internalError()
       state.deleted.push(ctx.params.sessionId)
@@ -152,6 +211,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
     .onRequest(acp.methods.agent.session.new, async (ctx) => {
       const sessionId = `acp-${state.connections}-${next++}`
       state.sessions.add(sessionId)
+      state.cwds.set(sessionId, ctx.params.cwd)
       if (state.commands.length > 0) {
         await ctx.client.notify(acp.methods.client.session.update, {
           sessionId,
@@ -168,14 +228,15 @@ function agentApp(state: FakeAgent): acp.AgentApp {
     .onRequest(acp.methods.agent.session.load, async (ctx) => {
       const { sessionId } = ctx.params
       state.loads.push(sessionId)
+      if (state.failLoad) throw acp.RequestError.internalError(undefined, 'transcript unreadable')
       if (!state.sessions.has(sessionId)) throw acp.RequestError.resourceNotFound(sessionId)
       // Replay history, as the Claude adapter does.
-      const history = state.history.get(sessionId) ?? [
-        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } }
-      ]
+      const history = state.history.get(sessionId) ?? state.transcripts.get(sessionId) ?? []
       for (const update of history) {
         await ctx.client.notify(acp.methods.client.session.update, { sessionId, update })
       }
+      // Claude Code writes to the transcript when it resumes a session.
+      if (state.transcripts.has(sessionId)) touch(state, sessionId)
       return { modes: state.modes, configOptions: state.configOptions }
     })
     .onNotification(acp.methods.agent.session.cancel, (ctx) => {
@@ -188,8 +249,11 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       const text = block?.type === 'text' ? block.text : ''
       state.prompts.push(text)
       state.promptBlocks.push(ctx.params.prompt)
-      const update = (u: acp.SessionUpdate): Promise<void> =>
-        ctx.client.notify(acp.methods.client.session.update, { sessionId, update: u })
+      save(state, sessionId, ...userChunks(ctx.params.prompt, `u-${state.connections}-${userMessages++}`))
+      const update = (u: acp.SessionUpdate): Promise<void> => {
+        if (u.sessionUpdate !== 'usage_update' && u.sessionUpdate !== 'available_commands_update') save(state, sessionId, u)
+        return ctx.client.notify(acp.methods.client.session.update, { sessionId, update: u })
+      }
       const cancelled = new Promise<void>((resolve) => cancels.set(sessionId, resolve))
       const steered: string[] = []
       let waiting: ((text: string) => void) | undefined
@@ -649,7 +713,7 @@ describe('SessionManager', () => {
     expect(state.loads).toEqual([session.acpSessionId])
   })
 
-  it('resumes with session/load after a restart and ignores the replay', async () => {
+  it('resumes with session/load after a restart, keeping the log', async () => {
     const session = await manager.createSession('/w', 'fake')
     await manager.send(session.id, 'first', null)
     await manager.dispose()
@@ -1395,6 +1459,220 @@ describe('SessionManager', () => {
       ])
       expect(result.error).toMatch(/images/)
       expect(state.prompts).toEqual([])
+    })
+  })
+
+  describe('shared sessions', () => {
+    /** A turn taken in the agent's CLI: saved to the session's history, unseen by Gloss. */
+    function cliTurn(acpSessionId: string, text: string, reply: string): void {
+      state.clock++
+      save(
+        state,
+        acpSessionId,
+        { sessionUpdate: 'user_message_chunk', content: { type: 'text', text }, messageId: `cli-u${state.clock}` },
+        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: reply }, messageId: `cli-a${state.clock}` }
+      )
+    }
+
+    beforeEach(() => {
+      state.canList = true
+      state.canClose = true
+      let n = 0
+      // Like Claude Code, answers carry a message id that the replay repeats.
+      state.script = async ({ say, text }) => {
+        await say(`Re: ${text.split('\n').pop()}`, `a${++n}`)
+        return 'end_turn'
+      }
+    })
+
+    it('pulls in turns taken in the CLI before the next prompt, keeping ids and threads', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'first', null)
+      const answer = manager.openSession(session.id).messages[1]
+      const thread = manager.createThread(session.id, answer.id, { kind: 'selection', start: 0, end: 3, text: 'Re:' })
+      await manager.send(session.id, 'in thread', thread.id)
+      const before = manager.openSession(session.id).messages
+
+      cliTurn(session.acpSessionId, 'from the cli', 'cli answer')
+      cliTurn(session.acpSessionId, `${wireTag('Re:')}\nback in the thread`, 'thread answer')
+      const changed = state.updatedAt.get(session.acpSessionId)!
+      await manager.send(session.id, 'next', null)
+
+      expect(state.closes).toEqual([session.acpSessionId])
+      expect(state.loads).toEqual([session.acpSessionId])
+      const view = manager.openSession(session.id)
+      expect(view.messages.map((m) => [m.seq, m.text, m.threadId])).toEqual([
+        [0, 'first', null],
+        [1, 'Re: first', null],
+        [2, 'in thread', thread.id],
+        [3, 'Re: in thread', thread.id],
+        [4, 'from the cli', null],
+        [5, 'cli answer', null],
+        [6, 'back in the thread', thread.id],
+        [7, 'thread answer', thread.id],
+        [8, 'next', null],
+        [9, 'Re: next', null]
+      ])
+      expect(view.messages.slice(0, 4).map((m) => m.id)).toEqual(before.map((m) => m.id))
+      expect(view.threads).toEqual([thread])
+      // Messages from elsewhere are timed by the agent's last change before the load.
+      expect(view.messages[4].createdAt).toBe(Date.parse(changed))
+      expect(events).toContainEqual({ type: 'sessionSynced', sessionId: session.id })
+    })
+
+    it("doesn't reload when nothing changed elsewhere", async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'one', null)
+      await manager.send(session.id, 'two', null)
+      await manager.refreshSession(session.id)
+      expect(state.closes).toEqual([])
+      expect(state.loads).toEqual([])
+    })
+
+    it('reloads an open session when its history changed elsewhere, but not during a turn', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'one', null)
+      cliTurn(session.acpSessionId, 'from the cli', 'cli answer')
+      await manager.refreshSession(session.id)
+      expect(manager.openSession(session.id).messages.map((m) => m.text)).toEqual([
+        'one',
+        'Re: one',
+        'from the cli',
+        'cli answer'
+      ])
+
+      let release!: () => void
+      const gate = new Promise<void>((r) => (release = r))
+      state.script = async ({ say }) => {
+        await gate
+        await say('done', 'a-late')
+        return 'end_turn'
+      }
+      const turn = manager.send(session.id, 'slow', null)
+      await vi.waitFor(() => expect(state.prompts.at(-1)).toBe('slow'))
+      state.clock++
+      touch(state, session.acpSessionId)
+      await manager.refreshSession(session.id)
+      expect(state.closes).toEqual([session.acpSessionId])
+      release()
+      await turn
+    })
+
+    it('keeps the history before a compaction, which the replay no longer has', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'one', null)
+      await manager.send(session.id, 'two', null)
+      // After a compaction, Claude Code's history starts at its summary.
+      state.transcripts.set(session.acpSessionId, [
+        {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: 'This session is being continued from a previous conversation that ran out of context.' },
+          messageId: 'summary'
+        },
+        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Re: two' }, messageId: 'a2' }
+      ])
+      cliTurn(session.acpSessionId, 'three', 'Re: three')
+      await manager.refreshSession(session.id)
+      expect(manager.openSession(session.id).messages.map((m) => m.text)).toEqual([
+        'one',
+        'Re: one',
+        'two',
+        'Re: two',
+        'three',
+        'Re: three'
+      ])
+    })
+
+    it("skips Claude Code's marker of a cancelled turn", async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'one', null)
+      save(state, session.acpSessionId, {
+        sessionUpdate: 'user_message_chunk',
+        content: { type: 'text', text: '[Request interrupted by user]' },
+        messageId: 'marker'
+      })
+      cliTurn(session.acpSessionId, 'go on', 'going')
+      await manager.refreshSession(session.id)
+      expect(manager.openSession(session.id).messages.map((m) => m.text)).toEqual(['one', 'Re: one', 'go on', 'going'])
+    })
+
+    it('removes what the agent no longer has, with the threads anchored there', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'one', null)
+      const kept = state.transcripts.get(session.acpSessionId)!
+      await manager.send(session.id, 'two', null)
+      const answer = manager.openSession(session.id).messages[3]
+      manager.createThread(session.id, answer.id, { kind: 'selection', start: 0, end: 3, text: 'Re:' })
+      // Rewound in the CLI to after the first turn, then continued.
+      state.transcripts.set(session.acpSessionId, kept)
+      cliTurn(session.acpSessionId, 'instead', 'other answer')
+      await manager.refreshSession(session.id)
+      const view = manager.openSession(session.id)
+      expect(view.messages.map((m) => m.text)).toEqual(['one', 'Re: one', 'instead', 'other answer'])
+      expect(view.threads).toEqual([])
+    })
+
+    it('reads attached files back from the replay and keeps the ones Gloss sent', async () => {
+      state.promptCapabilities = { embeddedContext: true }
+      const file = { kind: 'file' as const, name: 'notes.md', path: fileURLToPath(pathToFileURL('/w/notes.md')), text: '# Notes' }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'look', null, [file])
+      cliTurn(session.acpSessionId, 'more', 'ok')
+      await manager.refreshSession(session.id)
+      expect(manager.openSession(session.id).messages.map((m) => [m.text, m.attachments])).toEqual([
+        ['look', [file]],
+        ['Re: look', undefined],
+        ['more', undefined],
+        ['ok', undefined]
+      ])
+
+      // Opened fresh from the agent's copy, the file comes back from the replay.
+      state.sessions.add('cli-1')
+      state.history.set('cli-1', state.transcripts.get(session.acpSessionId)!)
+      const imported = await manager.importSession('/w', 'fake', 'cli-1', 'Copy')
+      const look = manager.openSession(imported.id).messages[0]
+      expect([look.text, look.attachments]).toEqual(['look', [{ kind: 'file', name: 'notes.md', path: file.path, text: '# Notes' }]])
+    })
+
+    it('deletes a session the agent no longer has, unless it never had a message', async () => {
+      const used = await manager.createSession('/w', 'fake')
+      await manager.send(used.id, 'hi', null)
+      const unused = await manager.createSession('/w', 'fake')
+      state.sessions.clear()
+      await manager.dispose()
+      manager = makeManager()
+
+      manager.openSession(used.id)
+      await vi.waitFor(() =>
+        expect(events).toContainEqual({ type: 'sessionDeleted', sessionId: used.id, deletedOutside: { title: 'hi' } })
+      )
+      expect(store.getSession(used.id)).toBeUndefined()
+
+      await expect(manager.send(unused.id, 'hello', null)).resolves.toEqual({ stopReason: 'end_turn' })
+      expect(store.getSession(unused.id)?.acpSessionId).not.toBe(unused.acpSessionId)
+      expect(events.some((e) => e.type === 'notice')).toBe(false)
+    })
+
+    it('reports other load failures instead of starting a new agent session', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'hi', null)
+      await manager.dispose()
+      manager = makeManager()
+      state.failLoad = true
+      const result = await manager.send(session.id, 'again', null)
+      expect(result.error).toMatch(/couldn't resume it: .*transcript unreadable/)
+      expect(store.getSession(session.id)?.acpSessionId).toBe(session.acpSessionId)
+    })
+
+    it("takes the agent's title unless the session was renamed in Gloss", async () => {
+      const session = await manager.createSession('/w', 'fake')
+      state.listed = [{ sessionId: session.acpSessionId, cwd: '/w', title: 'Fix the  build' }]
+      await manager.agentSessions('/w', 'fake')
+      expect(store.getSession(session.id)?.title).toBe('Fix the build')
+      manager.renameSession(session.id, 'Mine')
+      state.listed = [{ sessionId: session.acpSessionId, cwd: '/w', title: 'Something else' }]
+      await manager.agentSessions('/w', 'fake')
+      expect(store.getSession(session.id)?.title).toBe('Mine')
     })
   })
 })

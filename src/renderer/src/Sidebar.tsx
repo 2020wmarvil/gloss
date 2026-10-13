@@ -1,5 +1,5 @@
-// The sidebar (docs/mocks/sidebar-switcher.html): a project switcher, the project's
-// Gloss sessions, then the agent's sessions in that folder not yet in Gloss.
+// The sidebar (docs/mocks/sidebar-switcher.html): a project switcher and one list of
+// the project's sessions, Gloss's and the agent's own (SPEC → Projects and sessions).
 import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import type { AgentSession, Project, Session } from '@shared/types'
@@ -13,7 +13,7 @@ type Props = {
   sessions: Session[]
   openId: string | null
   running: Record<string, string | null>
-  /** The agent's sessions in the project not yet in Gloss; null while loading. */
+  /** The agent's sessions in the project that Gloss has no record of; null while loading. */
   agentSessions: AgentSession[] | null
   agentSessionsError: string | null
   /** The agent session being imported. */
@@ -36,8 +36,6 @@ type Props = {
   onSettings(): void
 }
 
-const AGENT_SESSIONS_SHOWN = 5
-
 /** "now", "5m", "3h", "2d", "3w", "4mo". */
 export function ago(time: number, now = Date.now()): string {
   const m = Math.max(0, Math.round((now - time) / 60_000))
@@ -51,6 +49,10 @@ export function ago(time: number, now = Date.now()): string {
   return `${Math.round(d / 30)}mo`
 }
 
+type Row =
+  | { kind: 'gloss'; session: Session; at: number }
+  | { kind: 'agent'; agent: AgentSession; at: number }
+
 export function Sidebar(props: Props): React.JSX.Element {
   const { project, openId, running, agentSessions } = props
   const [switcherOpen, setSwitcherOpen] = useState(false)
@@ -59,10 +61,6 @@ export function Sidebar(props: Props): React.JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState<
     { kind: 'session'; session: Session } | { kind: 'project'; project: Project; sessions: number } | null
   >(null)
-  const [showAll, setShowAll] = useState(false)
-
-  useEffect(() => setShowAll(false), [project?.path])
-
   // Clicks elsewhere and Escape close the menus.
   useEffect(() => {
     if (!switcherOpen && menuFor === null) return
@@ -86,7 +84,69 @@ export function Sidebar(props: Props): React.JSX.Element {
   const sessions = project ? props.sessions.filter((s) => sameFolder(s.cwd, project.path)) : []
   const isRunningIn = (p: Project): boolean =>
     props.sessions.some((s) => s.id in running && sameFolder(s.cwd, p.path))
-  const shownAgent = agentSessions && (showAll ? agentSessions : agentSessions.slice(0, AGENT_SESSIONS_SHOWN))
+  // Gloss's sessions and the agent's own, most recent activity first.
+  const rows: Row[] = [
+    ...sessions.map((session): Row => ({ kind: 'gloss', session, at: session.activeAt ?? session.createdAt })),
+    ...(agentSessions ?? []).map((agent): Row => ({
+      kind: 'agent',
+      agent,
+      at: agent.updatedAt ? Date.parse(agent.updatedAt) || 0 : 0
+    }))
+  ].sort((a, b) => b.at - a.at)
+
+  const sessionRow = (s: Session, at: number): React.JSX.Element =>
+    renaming === s.id ? (
+      <RenameInput
+        title={s.title}
+        onDone={(title) => {
+          setRenaming(null)
+          if (title !== null && title !== s.title) props.onRename(s.id, title)
+        }}
+      />
+    ) : (
+      <div
+        className={`session-row${s.id === openId ? ' on' : ''}`}
+        role="button"
+        tabIndex={0}
+        title={s.title}
+        onClick={() => props.onSelect(s.id)}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setMenuFor(s.id)
+          setSwitcherOpen(false)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') props.onSelect(s.id)
+          if (e.key === 'F2') setRenaming(s.id)
+        }}
+      >
+        <span className="session-title" onDoubleClick={() => setRenaming(s.id)}>
+          {s.title}
+        </span>
+        {s.id in running ? <span className="running-dot" aria-label="Running" /> : <span className="when">{ago(at)}</span>}
+        {menuFor === s.id && (
+          <div className="menu row-actions" role="menu" onClick={(e) => e.stopPropagation()}>
+            <button role="menuitem" onClick={() => (setMenuFor(null), setRenaming(s.id))}>
+              Rename
+            </button>
+            <button role="menuitem" onClick={() => (setMenuFor(null), props.onCopyMarkdown(s.id))}>
+              Copy as markdown
+            </button>
+            <button role="menuitem" onClick={() => (setMenuFor(null), props.onSaveMarkdown(s.id))}>
+              Save as markdown…
+            </button>
+            <button
+              role="menuitem"
+              className="danger"
+              onClick={() => (setMenuFor(null), setConfirmDelete({ kind: 'session', session: s }))}
+            >
+              Delete…
+            </button>
+          </div>
+        )}
+      </div>
+    )
 
   return (
     <nav className="sidebar" style={props.width === null ? undefined : { flexBasis: props.width }}>
@@ -169,106 +229,28 @@ export function Sidebar(props: Props): React.JSX.Element {
           <>
             <div className="label">Sessions</div>
             <ul className="session-list">
-              {sessions.length === 0 && <li className="sidebar-empty">No Gloss sessions yet</li>}
-              {sessions.map((s) => (
-                <li key={s.id}>
-                  {renaming === s.id ? (
-                    <RenameInput
-                      title={s.title}
-                      onDone={(title) => {
-                        setRenaming(null)
-                        if (title !== null && title !== s.title) props.onRename(s.id, title)
-                      }}
-                    />
-                  ) : (
-                    <div
-                      className={`session-row${s.id === openId ? ' on' : ''}`}
-                      role="button"
-                      tabIndex={0}
-                      title={s.title}
-                      onClick={() => props.onSelect(s.id)}
-                      onContextMenu={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        setMenuFor(s.id)
-                        setSwitcherOpen(false)
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') props.onSelect(s.id)
-                        if (e.key === 'F2') setRenaming(s.id)
-                      }}
+              {rows.length === 0 && <li className="sidebar-empty">No sessions yet</li>}
+              {rows.map((row) =>
+                row.kind === 'agent' ? (
+                  <li key={row.agent.acpSessionId}>
+                    <button
+                      className="session-row agent"
+                      title={`${row.agent.title}\nStarted outside Gloss: open it here`}
+                      disabled={props.importing !== null}
+                      onClick={() => props.onImport(row.agent)}
                     >
-                      <span className="session-title" onDoubleClick={() => setRenaming(s.id)}>
-                        {s.title}
+                      <span className="session-title">{row.agent.title}</span>
+                      <span className="when">
+                        {props.importing === row.agent.acpSessionId ? 'Opening…' : row.at ? ago(row.at) : ''}
                       </span>
-                      {s.id in running ? (
-                        <span className="running-dot" aria-label="Running" />
-                      ) : (
-                        <span className="when">{ago(s.createdAt)}</span>
-                      )}
-                      {menuFor === s.id && (
-                        <div className="menu row-actions" role="menu" onClick={(e) => e.stopPropagation()}>
-                          <button role="menuitem" onClick={() => (setMenuFor(null), setRenaming(s.id))}>
-                            Rename
-                          </button>
-                          <button role="menuitem" onClick={() => (setMenuFor(null), props.onCopyMarkdown(s.id))}>
-                            Copy as markdown
-                          </button>
-                          <button role="menuitem" onClick={() => (setMenuFor(null), props.onSaveMarkdown(s.id))}>
-                            Save as markdown…
-                          </button>
-                          <button
-                            role="menuitem"
-                            className="danger"
-                            onClick={() => (setMenuFor(null), setConfirmDelete({ kind: 'session', session: s }))}
-                          >
-                            Delete…
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </li>
-              ))}
+                    </button>
+                  </li>
+                ) : (
+                  <li key={row.session.id}>{sessionRow(row.session, row.at)}</li>
+                )
+              )}
+              {props.agentSessionsError && <li className="sidebar-error">{props.agentSessionsError}</li>}
             </ul>
-
-            {(props.agentSessionsError || (shownAgent && shownAgent.length > 0)) && (
-              <>
-                <div className="label">Not in Gloss yet</div>
-                <ul className="session-list">
-                  {props.agentSessionsError ? (
-                    <li className="sidebar-error">{props.agentSessionsError}</li>
-                  ) : (
-                    (shownAgent ?? []).map((a) => (
-                      <li key={a.acpSessionId}>
-                        <button
-                          className="session-row agent"
-                          title={`${a.title}\nOpen in Gloss (imports its history)`}
-                          disabled={props.importing !== null}
-                          onClick={() => props.onImport(a)}
-                        >
-                          <span className="session-title">{a.title}</span>
-                          <span className="when">
-                            {props.importing === a.acpSessionId
-                              ? 'Opening…'
-                              : a.updatedAt
-                                ? ago(Date.parse(a.updatedAt))
-                                : ''}
-                          </span>
-                        </button>
-                      </li>
-                    ))
-                  )}
-                  {agentSessions && !showAll && agentSessions.length > AGENT_SESSIONS_SHOWN && (
-                    <li>
-                      <button className="show-more" onClick={() => setShowAll(true)}>
-                        Show {agentSessions.length - AGENT_SESSIONS_SHOWN} more
-                      </button>
-                    </li>
-                  )}
-                </ul>
-              </>
-            )}
           </>
         )}
       </div>
@@ -301,7 +283,7 @@ export function Sidebar(props: Props): React.JSX.Element {
               <p className="muted">
                 This removes the project from Gloss and deletes{' '}
                 {confirmDelete.sessions === 0
-                  ? 'nothing else: it has no Gloss sessions'
+                  ? 'nothing else: none of its sessions were opened in Gloss'
                   : confirmDelete.sessions === 1
                     ? "its session, with its messages, threads and the agent's own copy"
                     : `its ${confirmDelete.sessions} sessions, with their messages, threads and the agent's own copies`}

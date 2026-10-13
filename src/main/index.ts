@@ -238,6 +238,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     )
   )
   ipcMain.handle(IPC.sessionsOpen, (_e, id: unknown) => manager.openSession(str(id, 'id')))
+  ipcMain.handle(IPC.sessionsRefresh, (_e, id: unknown) => manager.refreshSession(str(id, 'id')))
   ipcMain.handle(IPC.sessionsRename, (_e, id: unknown, title: unknown) =>
     manager.renameSession(str(id, 'id'), str(title, 'title'))
   )

@@ -63,6 +63,11 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - The Claude adapter (0.89) advertises `sessionCapabilities.close`; SDK 1.8.0 has `methods.agent.session.close`. A `session/load` of a session the adapter already holds re-reads the transcript and replays it, but keeps the running Claude process when the params are unchanged, so the model doesn't see turns added elsewhere. `session/close` then `session/load` starts a fresh process that does (tested with `claude -p --resume` turns in between).
 - `messageId` is stable between live and replay: agent messages use the API message id, user messages the transcript entry's uuid. Replay chunks carry no timestamps or `_meta`.
 - An embedded text `resource` replays as text chunks of the user message: `[@name](uri)`, then `\n<context ref="uri">\n…\n</context>`.
+- After `/compact`, the replay starts at Claude Code's summary, a user message beginning "This session is being continued from a previous conversation"; nothing before it is replayed.
+- A cancelled turn replays with its partial answer (more text than was streamed before the cancel) and then a user message `[Request interrupted by user]`. A steered message replays as a user message where it was injected, between the two parts of the answer.
+- `session/list` `updatedAt` doesn't move after a turn ends (checked 12 s later), but `session/load` changes it. Listing takes about 20 ms; `session/close` + `session/load` about 0.6 s.
+- Electron honors `--user-data-dir=<folder>` for `app.getPath('userData')`. Pass it in dev with `npm run dev -- -- --user-data-dir=<folder>` (electron-vite forwards what follows its own `--`). `npm run dev` also writes `out/main` and `out/preload`, which a running built Gloss loads on restart.
+- A shell inside a Gloss session inherits `ELECTRON_RUN_AS_NODE=1` (set for the adapter): unset it to launch Electron from there.
 
 ## Git
 - Work on `dev`; open one PR per milestone against `main`.

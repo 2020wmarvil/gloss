@@ -17,6 +17,7 @@ const api: GlossApi = {
     import: (cwd, agentId, acpSessionId, title) =>
       ipcRenderer.invoke(IPC.sessionsImport, cwd, agentId, acpSessionId, title),
     open: (id) => ipcRenderer.invoke(IPC.sessionsOpen, id),
+    refresh: (id) => ipcRenderer.invoke(IPC.sessionsRefresh, id),
     rename: (id, title) => ipcRenderer.invoke(IPC.sessionsRename, id, title),
     delete: (id) => ipcRenderer.invoke(IPC.sessionsDelete, id),
     setModel: (id, value) => ipcRenderer.invoke(IPC.sessionsSetModel, id, value),

@@ -73,9 +73,12 @@ export type AuthResult = { ok: true } | { ok: false; error: string }
 
 export type GlossEvent =
   | { type: 'session'; session: Session }
-  | { type: 'sessionDeleted'; sessionId: string }
+  /** `deletedOutside`: the agent no longer had it, so Gloss deleted it too (SPEC → Shared sessions). */
+  | { type: 'sessionDeleted'; sessionId: string; deletedOutside?: { title: string } }
   /** `/clear` emptied the session: its messages, tool calls and threads are gone. */
   | { type: 'sessionCleared'; sessionId: string }
+  /** The log was synced from the agent's copy: reload it (SPEC → Shared sessions). */
+  | { type: 'sessionSynced'; sessionId: string }
   | { type: 'live'; sessionId: string; live: SessionLive }
   /** The user clicked a notification: show this session (and thread). */
   | { type: 'reveal'; sessionId: string; threadId: string | null }
@@ -111,7 +114,7 @@ export type GlossApi = {
     list(): Promise<Project[]>
     /** Native folder picker; adds the folder as a project. Resolves to null if cancelled. */
     open(): Promise<Project | null>
-    /** The agent's own sessions in the folder that Gloss hasn't imported. Empty if the agent can't list them. */
+    /** The agent's own sessions in the folder that Gloss has no record of. Empty if the agent can't list them. */
     agentSessions(path: string, agentId: string): Promise<AgentSession[]>
     /** Deletes the project and its sessions (the agent's copies too). Resolves to a warning if some agent copies couldn't be deleted. */
     delete(path: string): Promise<string | null>
@@ -120,10 +123,12 @@ export type GlossApi = {
     list(): Promise<Session[]>
     /** Starts an agent session in `cwd`. Rejects if the agent can't start one. */
     create(cwd: string, agentId: string): Promise<Session>
-    /** Imports one of the agent's sessions: its history becomes the main thread. */
+    /** Opens one of the agent's sessions in Gloss: its history becomes the log, placed in threads by its tags. */
     import(cwd: string, agentId: string, acpSessionId: string, title: string): Promise<Session>
     /** Its log and threads. Also resumes the session on the agent in the background, for the status line. */
     open(id: string): Promise<SessionView>
+    /** Reloads the session if the agent's copy changed elsewhere (SPEC → Shared sessions). */
+    refresh(id: string): Promise<void>
     rename(id: string, title: string): Promise<Session>
     /** Deletes it from Gloss and the agent. Resolves to a warning if the agent's copy couldn't be deleted. */
     delete(id: string): Promise<string | null>
@@ -189,6 +194,7 @@ export const IPC = {
   sessionsCreate: 'gloss:sessions:create',
   sessionsImport: 'gloss:sessions:import',
   sessionsOpen: 'gloss:sessions:open',
+  sessionsRefresh: 'gloss:sessions:refresh',
   sessionsRename: 'gloss:sessions:rename',
   sessionsDelete: 'gloss:sessions:delete',
   sessionsSetModel: 'gloss:sessions:setModel',

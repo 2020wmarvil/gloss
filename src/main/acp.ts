@@ -143,6 +143,10 @@ export class AgentConnection {
     return this.init.agentCapabilities?.sessionCapabilities?.delete != null
   }
 
+  get canCloseSessions(): boolean {
+    return this.init.agentCapabilities?.sessionCapabilities?.close != null
+  }
+
   get canSteer(): boolean {
     const steering = (this.init._meta as { steering?: { supported?: unknown } } | null | undefined)?.steering
     return steering?.supported === true
@@ -165,8 +169,26 @@ export class AgentConnection {
     return sessions
   }
 
+  /** One of the agent's sessions in `cwd` (session/list, newest first), or undefined if it isn't in the first `maxPages`. */
+  async findSession(cwd: string, sessionId: string, maxPages = 10): Promise<acp.SessionInfo | undefined> {
+    let cursor: string | null | undefined
+    for (let page = 0; page < maxPages; page++) {
+      const res = await this.conn.agent.request(acp.methods.agent.session.list, { cwd, cursor })
+      const found = res.sessions.find((s) => s.sessionId === sessionId)
+      if (found) return found
+      cursor = res.nextCursor
+      if (!cursor) break
+    }
+    return undefined
+  }
+
   async deleteSession(sessionId: string): Promise<void> {
     await this.conn.agent.request(acp.methods.agent.session.delete, { sessionId })
+  }
+
+  /** Stops the agent's live copy of the session; a later session/load starts it again from its saved history. */
+  async closeSession(sessionId: string): Promise<void> {
+    await this.conn.agent.request(acp.methods.agent.session.close, { sessionId })
   }
 
   setConfigOption(sessionId: string, configId: string, value: string): Promise<acp.SetSessionConfigOptionResponse> {
