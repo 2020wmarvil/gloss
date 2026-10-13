@@ -84,8 +84,6 @@ function anchorLabel(open: OpenSession, anchorMessageId: string, anchor: Anchor)
   return `“${truncate(anchor.text, 32)}”`
 }
 
-const SIDE_PANEL_KEY = 'gloss.sidePanelOpen'
-
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -100,8 +98,8 @@ export function App(): React.JSX.Element {
   const [open, setOpen] = useState<OpenSession | null>(null)
   /** The thread in the side panel; null shows the threads overview. */
   const [panel, setPanel] = useState<Panel | null>(null)
-  /** The side panel is expanded (UI state, remembered like the pane widths). */
-  const [sideOpen, setSideOpenState] = useState(() => localStorage.getItem(SIDE_PANEL_KEY) === '1')
+  /** The side panel is expanded. It starts collapsed on every launch. */
+  const [sideOpen, setSideOpen] = useState(false)
   /** sessionId → threadId of its running turn. */
   const [running, setRunning] = useState<Record<string, string | null>>({})
   const [notices, setNotices] = useState<Record<string, Notice[]>>({})
@@ -121,11 +119,6 @@ export function App(): React.JSX.Element {
   const lastSeq = useRef(-1)
   const project = projects.find((p) => projectPath !== null && sameFolder(p.path, projectPath)) ?? null
   const agent = agents[0]
-
-  const setSideOpen = useCallback((on: boolean) => {
-    setSideOpenState(on)
-    localStorage.setItem(SIDE_PANEL_KEY, on ? '1' : '0')
-  }, [])
 
   /** Opens a thread in the side panel, expanding it. */
   const showPanel = useCallback(
