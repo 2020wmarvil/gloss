@@ -1,11 +1,12 @@
 // The status line at the bottom of the conversation (SPEC → Status line). Everything
-// but the git branch and pull request come from what the agent reports over ACP.
+// but git details and the usage popup come from what the agent reports over ACP.
 import { useState } from 'react'
 import type { GitStatus, PullRequest } from '@shared/ipc'
 import { folderName } from '@shared/paths'
 import type { MessageQueue, ModelOption, RateLimit, Session, SessionLive, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
 import { Popover } from './Popover'
+import { UsagePanel } from './UsagePanel'
 
 type Props = {
   session: Session
@@ -55,7 +56,7 @@ function formatReset(ms: number): string {
 }
 
 /** One plan usage window: "5h ok", "5h 82%", or "5h limit · resets 3:40 PM". */
-function RateLimitItem({ limit, onClick }: { limit: RateLimit; onClick?(): void }): React.JSX.Element {
+function RateLimitItem({ limit }: { limit: RateLimit }): React.JSX.Element {
   const [short, long] = WINDOW_LABELS[limit.window] ?? [limit.window, limit.window.replace(/_/g, ' ')]
   const reset = limit.resetsAt ? formatReset(limit.resetsAt) : null
   const text =
@@ -74,17 +75,12 @@ function RateLimitItem({ limit, onClick }: { limit: RateLimit; onClick?(): void 
             ? 'getting close'
             : 'within the limit'
     }.`,
-    reset ? `Resets ${reset}.` : '',
-    onClick ? 'Click to run /usage for details.' : ''
+    reset ? `Resets ${reset}.` : ''
   ]
     .filter(Boolean)
     .join(' ')
   const className = `status-item${limit.status === 'rejected' ? ' error' : limit.status === 'warning' ? ' warn' : ''}`
-  return onClick ? (
-    <button className={className} title={title} onClick={onClick}>
-      {text}
-    </button>
-  ) : (
+  return (
     <span className={className} title={title}>
       {text}
     </span>
@@ -138,6 +134,16 @@ export function StatusLine(props: Props): React.JSX.Element {
   const model = live.model
   const current = model?.options.find((o) => o.value === model.current)
   const hasMcpCommand = live.commands.some((c) => c.name === 'mcp')
+  const usageLabel = <>
+    {pct !== null && usage && (
+      <span className={`status-item context${pct >= 80 ? ' high' : ''}`}>
+        <span className="meter" aria-hidden><span style={{ width: `${pct}%` }} /></span>
+        {pct}% <span className="muted">of {formatTokens(usage.size)}</span>
+      </span>
+    )}
+    {usage?.cost && <span className="status-item">{formatCost(usage.cost)}</span>}
+    {live.rateLimits.map((l) => <RateLimitItem key={l.window} limit={l} />)}
+  </>
 
   return (
     <div className="status-line" role="status">
@@ -160,29 +166,12 @@ export function StatusLine(props: Props): React.JSX.Element {
           <span className="status-item">{props.queue.items.length} queued</span>
         ))}
 
-      {pct !== null && usage && (
-        <span
-          className={`status-item context${pct >= 80 ? ' high' : ''}`}
-          title={`Context: ${usage.used.toLocaleString()} of ${usage.size.toLocaleString()} tokens. Run /compact to free space.`}
-        >
-          <span className="meter" aria-hidden>
-            <span style={{ width: `${pct}%` }} />
-          </span>
-          {pct}% <span className="muted">of {formatTokens(usage.size)}</span>
-        </span>
-      )}
-      {usage?.cost && (
-        <span className="status-item" title="Session cost reported by the agent">
-          {formatCost(usage.cost)}
-        </span>
-      )}
-      {live.rateLimits.map((l) => (
-        <RateLimitItem
-          key={l.window}
-          limit={l}
-          onClick={live.commands.some((c) => c.name === 'usage') ? () => props.onCommand('/usage') : undefined}
-        />
-      ))}
+      {session.agentId === 'claude' ? (
+        <Popover key={session.id} label={pct !== null || usage?.cost || live.rateLimits.length ? usageLabel : 'Usage'}
+          title="Usage details" className="status-item usage-trigger">
+          {() => <UsagePanel sessionId={session.id} context={usage} />}
+        </Popover>
+      ) : usageLabel}
 
       {model &&
         (devModel ? (

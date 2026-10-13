@@ -23,7 +23,8 @@ const api: GlossApi = {
     setModel: (id, value) => ipcRenderer.invoke(IPC.sessionsSetModel, id, value),
     copyMarkdown: (id, threadId) => ipcRenderer.invoke(IPC.sessionsCopyMarkdown, id, threadId),
     saveMarkdown: (id, threadId) => ipcRenderer.invoke(IPC.sessionsSaveMarkdown, id, threadId),
-    openFolder: (id) => ipcRenderer.invoke(IPC.sessionsOpenFolder, id)
+    openFolder: (id) => ipcRenderer.invoke(IPC.sessionsOpenFolder, id),
+    planUsage: (id) => ipcRenderer.invoke(IPC.sessionsPlanUsage, id)
   },
   git: {
     status: (cwd) => ipcRenderer.invoke(IPC.gitStatus, cwd),

@@ -131,6 +131,18 @@ export type RateLimit = {
   resetsAt?: number
 }
 
+/** Plan usage the usage popup asks the agent for (Claude Code's `/usage` data). */
+export type PlanUsage = {
+  /** The subscription, e.g. "Pro"; null without one. */
+  plan: string | null
+  /** False when plan limits don't apply (an API key, Bedrock, Vertex). */
+  available: boolean
+  /** Each window with a known percentage: "Session limit", "Weekly · all models", per model. */
+  limits: { label: string; percent: number; resetsAt: number | null }[]
+  /** Usage past the plan limits, when turned on. */
+  extraUsage: { percent: number | null } | null
+}
+
 /** What the agent reports about a session while it is attached: shown in the status line. */
 export type SessionLive = {
   /** The session's ACP session is live on a running agent. */

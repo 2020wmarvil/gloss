@@ -69,6 +69,11 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - Electron honors `--user-data-dir=<folder>` for `app.getPath('userData')`. Pass it in dev with `npm run dev -- -- --user-data-dir=<folder>` (electron-vite forwards what follows its own `--`). `npm run dev` also writes `out/main` and `out/preload`, which a running built Gloss loads on restart.
 - A shell inside a Gloss session inherits `ELECTRON_RUN_AS_NODE=1` (set for the adapter): unset it to launch Electron from there.
 
+## Verified external APIs (usage popup)
+
+- `@anthropic-ai/claude-agent-sdk@0.3.293` exposes `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })`. It works on a query whose async prompt input never yields, with `persistSession: false`, including when session usage is 100%. Close and abort the query after the request. Verified through Electron and the built app's preload/IPC path; a scratch project acquired no transcript and the app recorded no messages.
+- Utilization from this request is already a percentage (100 means exhausted), unlike the adapter's rate-limit events. Context must still come from the real session's ACP updates. The SDK is a pinned direct dependency because this method is experimental.
+
 ## Git
 - Work on `dev`; open one PR per milestone against `main`.
 

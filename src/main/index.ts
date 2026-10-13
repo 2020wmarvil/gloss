@@ -11,11 +11,13 @@ import { gitStatus, pullRequest } from './git'
 import { SessionManager } from './sessions'
 import { patchArg, SettingsFile } from './settings'
 import { runInTerminal } from './terminal'
+import { UsageSource } from './usage'
 
 let mainWindow: BrowserWindow | undefined
 let store: Store | undefined
 let sessions: SessionManager | undefined
 let settings: SettingsFile | undefined
+const usage = new UsageSource()
 
 function isExternalUrl(url: string): boolean {
   try {
@@ -269,6 +271,11 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     if (!session) throw new Error(`Unknown session ${String(id)}`)
     const error = await shell.openPath(session.cwd)
     return error === '' ? null : error
+  })
+  ipcMain.handle(IPC.sessionsPlanUsage, (_e, id: unknown) => {
+    const session = store!.getSession(str(id, 'id'))
+    if (!session) throw new Error(`Unknown session ${String(id)}`)
+    return usage.get(session.agentId, session.cwd)
   })
   ipcMain.handle(IPC.gitStatus, (_e, cwd: unknown) => gitStatus(str(cwd, 'cwd')))
   ipcMain.handle(IPC.gitPullRequest, (_e, cwd: unknown) => pullRequest(str(cwd, 'cwd')))

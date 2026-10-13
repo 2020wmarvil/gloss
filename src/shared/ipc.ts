@@ -10,6 +10,7 @@ import type {
   Message,
   MessageQueue,
   Plan,
+  PlanUsage,
   Project,
   Session,
   SessionLive,
@@ -142,6 +143,8 @@ export type GlossApi = {
     saveMarkdown(id: string, threadId: string | null): Promise<boolean>
     /** Opens the session's folder in the system file manager. Resolves to an error message, or null. */
     openFolder(id: string): Promise<string | null>
+    /** Plan usage from the session's agent, for the usage popup. Null if the agent can't be asked. */
+    planUsage(id: string): Promise<PlanUsage | null>
   }
   git: {
     /** The folder's branch and whether it has uncommitted changes; null outside a repo. */
@@ -204,6 +207,7 @@ export const IPC = {
   sessionsCopyMarkdown: 'gloss:sessions:copyMarkdown',
   sessionsSaveMarkdown: 'gloss:sessions:saveMarkdown',
   sessionsOpenFolder: 'gloss:sessions:openFolder',
+  sessionsPlanUsage: 'gloss:sessions:planUsage',
   gitStatus: 'gloss:git:status',
   gitPullRequest: 'gloss:git:pullRequest',
   threadsCreate: 'gloss:threads:create',
