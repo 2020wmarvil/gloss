@@ -202,7 +202,7 @@ In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its env
 
 The sidebar (`docs/mocks/sidebar-switcher.html`) shows one project at a time:
 
-- **Project switcher** at the top: the current project's name and path. Its menu lists every project (a dot marks one with a running session) and "Open project…", a folder picker that adds a project. Right-clicking a project (the switcher itself, or one in its menu) opens a menu with just Delete….
+- **Project switcher** at the top: the current project's name and path. Its menu lists every project (a dot marks one with a running session) and "Open project…", a folder picker that adds a project. Hovering a project in the menu shows a small **×** that deletes it.
 - **Delete project** asks for confirmation, then deletes each of the project's Gloss sessions as below (the agent's copies too) and removes the project. The agent's sessions that were never opened in Gloss are kept, and the folder's files are not touched.
 - **+ New session** starts a session in the current project (`Ctrl+N`). Without a project it opens the folder picker.
 - **Sessions:** the project's Gloss sessions, newest first, with a running dot or their age. Right-clicking a session opens its menu: Rename, Copy as markdown, Save as markdown…, Delete…. Double-click (or F2) renames in place.

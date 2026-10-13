@@ -289,10 +289,41 @@ button.primary {
   overflow-y: auto;
 }
 
-.project-menu button {
+.project-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.project-item button[role='menuitem'] {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   line-height: 1.3;
+}
+
+.menu .project-delete {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 5px;
+  text-align: center;
+  font-size: 16px;
+  line-height: 1;
+  color: #8a867d;
+  opacity: 0;
+}
+
+.project-item:hover .project-delete,
+.project-delete:focus-visible {
+  opacity: 1;
+}
+
+.menu .project-delete:hover {
+  background: #fbeaea;
+  color: var(--danger);
 }
 
 .project-menu button b {
@@ -303,11 +334,6 @@ button.primary {
 
 .project-menu button.on b {
   color: var(--accent);
-}
-
-.context-menu {
-  position: fixed;
-  min-width: 140px;
 }
 
 .row-actions {
