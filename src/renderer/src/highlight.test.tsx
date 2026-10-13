@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import ReactMarkdown from 'react-markdown'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { codeColors } from './highlight'
 import { remarkSourceSpans, type CodeColors } from './sourceSpans'
 
 // Colors every "x" red, as a stand-in for a highlighter.
@@ -32,5 +33,18 @@ describe('code highlighting', () => {
   it('leaves code plain when the language is not available', () => {
     const spans = render('```rust\nlet x = 1\n```').querySelectorAll('pre code span[data-src]')
     expect([...spans].map((s) => s.textContent)).toEqual(['let x = 1'])
+  })
+
+  it('colors code with light and dark pairs from Shiki', async () => {
+    let colors: (string | undefined)[] | null = null
+    await vi.waitFor(
+      () => {
+        colors = codeColors('const x = 1', 'typescript')
+        expect(colors).not.toBeNull()
+      },
+      { timeout: 5000 }
+    )
+    expect(colors).toHaveLength('const x = 1'.length)
+    expect(colors![0]).toMatch(/^light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\)$/i)
   })
 })

@@ -1,8 +1,8 @@
 // Syntax highlighting for code blocks (Shiki with its JavaScript regex engine: no
 // WebAssembly, so the CSP stays as is). Common languages load at startup, others
-// on first use. Colors are light-dark() pairs, so they follow the system theme.
-// Highlighting is synchronous once a language is loaded; until then
-// code renders plain and subscribers re-render when it arrives.
+// on first use. Highlighting is synchronous once a language is loaded; until then
+// code renders plain and subscribers re-render when it arrives. Colors are
+// light-dark() pairs, so they follow the theme's color-scheme without a re-render.
 import { useSyncExternalStore } from 'react'
 import { createHighlighterCore, type HighlighterCore } from 'shiki/core'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
@@ -70,7 +70,9 @@ export function codeColors(code: string, lang: string | null | undefined): (stri
     const { tokens } = highlighter.codeToTokens(code, { lang: id, themes: THEMES, defaultColor: 'light-dark()' })
     for (const line of tokens) {
       for (const token of line) {
-        for (let i = 0; i < token.content.length; i++) colors[token.offset + i] = token.color
+        // With two themes the color is only in htmlStyle, as "light-dark(light, dark)".
+        const color = token.htmlStyle?.color
+        for (let i = 0; i < token.content.length; i++) colors[token.offset + i] = color
       }
     }
   } catch {

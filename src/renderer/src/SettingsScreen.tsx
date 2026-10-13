@@ -107,15 +107,13 @@ function Field(props: { field: SettingField; value: unknown; onChange(value: unk
     case 'enum':
       return (
         <label className="setting">
-          <span className="setting-control">
-            <select value={String(value)} onChange={(e) => props.onChange(e.target.value)}>
-              {field.options?.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </span>
+          <select value={String(value)} onChange={(e) => props.onChange(e.target.value)}>
+            {field.options?.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
           <span>
             <span className="setting-label">{field.label}</span>
             <span className="setting-desc">{field.description}</span>

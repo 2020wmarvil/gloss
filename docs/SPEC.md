@@ -182,6 +182,7 @@ In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its env
 - **Settings screen** (the sidebar's Settings button, or `Ctrl+,`; Esc or Done closes it): the file's path with "Open in editor" (the system's app for `.json`), then a Global section and a Project section for the open session's folder. Changes save immediately: only the changed keys are written, everything else in the file is kept. Saving is refused while the file isn't valid JSON.
 - Each feature adds its own fields when it lands; no field appears before its feature exists.
 
+- **Fields so far:** `devModel` (see Dev model) and `theme`: `system` (default, follows the OS and updates live), `light` or `dark`. The renderer sets `data-theme` on the document; the dark palette is provisional until the M12 design system.
 ## Stack
 
 - **Electron**, built with `electron-vite`, TypeScript throughout.
@@ -216,7 +217,7 @@ The sidebar (`docs/mocks/sidebar-switcher.html`) shows one project at a time:
 - **Header:** the session title and the agent name. A session is exported from its sidebar menu; the thread panel has an **Export** menu for one thread.
 - **Export format:** `# Title`, then each message as `**You**` / `**Agent**` and its text, tool calls as `_Tool: title (status)_`, attachments named; for a whole session, each thread with replies follows under `## Thread: “anchor”` with the anchor quoted.
 - **Tool calls** show as one row (title, status), collapsed. Clicking expands what the agent did, from the tool call's ACP `content`: a command's full text and its output (the Claude adapter sends output as a console code block when the client has no terminal capability), a file edit (`diff` content) as a unified line diff with unchanged stretches collapsed to 3 lines of context, other content as markdown.
-- **Code blocks** are highlighted with Shiki (JavaScript regex engine, no WebAssembly, theme `github-light`). Common languages load at startup, others the first time they are seen; until then the block renders plain and re-renders when ready. Highlighting splits the same source-offset spans selection anchors use, so anchors in code keep working. Each block has a Copy button.
+- **Code blocks** are highlighted with Shiki (JavaScript regex engine, no WebAssembly, themes `github-light` and `github-dark` as `light-dark()` colors, so they follow the theme). Common languages load at startup, others the first time they are seen; until then the block renders plain and re-renders when ready. Highlighting splits the same source-offset spans selection anchors use, so anchors in code keep working. Each block has a Copy button.
 
 ## Composer
 
