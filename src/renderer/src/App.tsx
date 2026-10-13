@@ -25,6 +25,7 @@ import type { SourceSelection } from './SelectionPopover'
 import { SettingsScreen } from './SettingsScreen'
 import { SignInDialog } from './SignInDialog'
 import { ThreadPanel } from './ThreadPanel'
+import { applyTheme } from './theme'
 
 export type OpenSession = {
   session: Session
@@ -246,6 +247,9 @@ export function App(): React.JSX.Element {
   )
 
   useEffect(() => window.gloss.onEvent(onEvent), [onEvent])
+
+  const theme = settings?.global.theme ?? 'system'
+  useEffect(() => applyTheme(theme), [theme])
 
   useEffect(() => {
     void window.gloss.settings.get().then(setSettings)

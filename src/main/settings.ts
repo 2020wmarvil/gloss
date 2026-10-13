@@ -31,6 +31,12 @@ function checkValue(field: SettingField, value: unknown): string | null {
   switch (field.type) {
     case 'boolean':
       return typeof value === 'boolean' ? null : `expected true or false, got ${JSON.stringify(value)}`
+    case 'enum': {
+      const values = field.options?.map((o) => o.value) ?? []
+      return values.includes(value as string)
+        ? null
+        : `expected one of ${values.map((v) => JSON.stringify(v)).join(', ')}, got ${JSON.stringify(value)}`
+    }
   }
 }
 
@@ -90,7 +96,12 @@ export function settingsSchema(defaults: GlobalSettings): object {
     Object.fromEntries(
       fields(scope).map((f) => [
         f.key,
-        { type: f.type, description: f.description, default: defaultsFor?.[f.key] }
+        {
+          type: f.type === 'enum' ? 'string' : f.type,
+          ...(f.options ? { enum: f.options.map((o) => o.value) } : {}),
+          description: f.description,
+          default: defaultsFor?.[f.key]
+        }
       ])
     )
   return {

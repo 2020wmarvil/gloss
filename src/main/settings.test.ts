@@ -5,21 +5,29 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { SettingsState } from '../shared/ipc'
 import { parseSettings, patchArg, samePath, SettingsFile } from './settings'
 
-const defaults = { devModel: false }
+const defaults = { devModel: false, theme: 'system' as const }
 
 describe('parseSettings', () => {
   it('fills in defaults and ignores unknown keys', () => {
     expect(parseSettings('{"$schema": "x", "future": 1}', defaults)).toEqual({
       ok: true,
-      global: { devModel: false },
+      global: { devModel: false, theme: 'system' },
       projects: {}
+    })
+  })
+
+  it('accepts only the listed values of an enum', () => {
+    expect(parseSettings('{"theme": "dark"}', defaults)).toMatchObject({ ok: true, global: { theme: 'dark' } })
+    expect(parseSettings('{"theme": "blue"}', defaults)).toEqual({
+      ok: false,
+      error: 'theme: expected one of "system", "light", "dark", got "blue"'
     })
   })
 
   it('reads known values and projects', () => {
     expect(parseSettings('{"devModel": true, "projects": {"C:\\\\a": {"x": 1}}}', defaults)).toEqual({
       ok: true,
-      global: { devModel: true },
+      global: { devModel: true, theme: 'system' },
       projects: { 'C:\\a': {} }
     })
   })
@@ -51,6 +59,7 @@ describe('patchArg', () => {
   it('rejects unknown keys, bad values and bad shapes', () => {
     expect(() => patchArg({ global: { nope: 1 } })).toThrow(/Unknown global setting/)
     expect(() => patchArg({ global: { devModel: 'yes' } })).toThrow(/devModel/)
+    expect(() => patchArg({ global: { theme: 'blue' } })).toThrow(/theme/)
     expect(() => patchArg(null)).toThrow()
     expect(() => patchArg({ project: { values: {} } })).toThrow()
   })
@@ -85,12 +94,13 @@ describe('SettingsFile', () => {
 
   it('creates the file and its schema on first load', () => {
     const state = file.load()
-    expect(state).toEqual({ path: path(), global: { devModel: false }, projects: {}, error: null })
-    expect(onDisk()).toEqual({ $schema: './settings.schema.json', devModel: false })
+    expect(state).toEqual({ path: path(), global: { devModel: false, theme: 'system' }, projects: {}, error: null })
+    expect(onDisk()).toEqual({ $schema: './settings.schema.json', devModel: false, theme: 'system' })
     const schema = JSON.parse(readFileSync(join(dir, 'settings.schema.json'), 'utf8')) as {
-      properties: Record<string, { type: string; default?: unknown }>
+      properties: Record<string, { type: string; default?: unknown; enum?: unknown[] }>
     }
     expect(schema.properties.devModel).toMatchObject({ type: 'boolean', default: false })
+    expect(schema.properties.theme).toMatchObject({ type: 'string', default: 'system', enum: ['system', 'light', 'dark'] })
   })
 
   it('reads an existing file without changing it', () => {

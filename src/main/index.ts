@@ -266,7 +266,7 @@ app.whenReady().then(() => {
   const settingsFile = new SettingsFile({
     dir: dataDir,
     // The cheap dev model is on by default in development, off in packaged builds.
-    defaults: { devModel: !app.isPackaged },
+    defaults: { devModel: !app.isPackaged, theme: 'system' },
     onChange(next, prev) {
       emit({ type: 'settings', state: next })
       // Agents restart with the new model; busy ones once their turn ends.

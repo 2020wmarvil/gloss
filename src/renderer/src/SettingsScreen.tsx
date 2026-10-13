@@ -104,6 +104,25 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
 function Field(props: { field: SettingField; value: unknown; onChange(value: unknown): void }): React.JSX.Element {
   const { field, value } = props
   switch (field.type) {
+    case 'enum':
+      return (
+        <label className="setting">
+          <span className="setting-control">
+            <select value={String(value)} onChange={(e) => props.onChange(e.target.value)}>
+              {field.options?.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </span>
+          <span>
+            <span className="setting-label">{field.label}</span>
+            <span className="setting-desc">{field.description}</span>
+            <span className="setting-key mono">{field.key}</span>
+          </span>
+        </label>
+      )
     case 'boolean':
       return (
         <label className="setting">
