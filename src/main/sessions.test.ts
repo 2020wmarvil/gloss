@@ -65,6 +65,8 @@ type FakeAgent = {
   configOptions: acp.SessionConfigOption[] | null
   /** session/set_config_option calls, as "sessionId:configId=value". */
   configChanges: string[]
+  /** Runs after a config change, like Claude's adapter rebuilding its options on a model switch. */
+  afterConfigChange?(configId: string, options: acp.SessionConfigOption[]): acp.SessionConfigOption[]
   promptCapabilities: acp.PromptCapabilities
   /** The full prompt of each session/prompt. */
   promptBlocks: acp.ContentBlock[][]
@@ -204,6 +206,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       state.configOptions = (state.configOptions ?? []).map((o) =>
         o.id === ctx.params.configId && o.type === 'select' ? { ...o, currentValue: value } : o
       )
+      if (state.afterConfigChange) state.configOptions = state.afterConfigChange(ctx.params.configId, state.configOptions)
       return { configOptions: state.configOptions }
     })
     .onRequest(acp.methods.agent.authenticate, (ctx) => {
@@ -322,7 +325,6 @@ describe('SessionManager', () => {
   let state: FakeAgent
   let manager: SessionManager
   let runInTerminal: ReturnType<typeof vi.fn>
-  let devModel: boolean
 
   function makeManager(): SessionManager {
     return new SessionManager({
@@ -332,7 +334,6 @@ describe('SessionManager', () => {
       agentEnv: () => ({ FAKE: '1' }),
       connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
       runInTerminal: runInTerminal as never,
-      devModel: (agentId) => devModel && agentId !== 'second',
       now: () => 1000
     })
   }
@@ -340,7 +341,6 @@ describe('SessionManager', () => {
   beforeEach(() => {
     store = new Store(':memory:')
     events = []
-    devModel = false
     state = fakeAgent()
     runInTerminal = vi.fn(async () => 0)
     manager = makeManager()
@@ -694,32 +694,6 @@ describe('SessionManager', () => {
       await manager.cancel(session.id)
       await running
     })
-  })
-
-  it('defers an agent restart until the running turn ends', async () => {
-    let release!: () => void
-    const gate = new Promise<void>((r) => (release = r))
-    state.script = async ({ say }) => {
-      await gate
-      await say('done')
-      return 'end_turn'
-    }
-    const session = await manager.createSession('/w', 'fake')
-    const turn = manager.send(session.id, 'slow', null)
-    await vi.waitFor(() => expect(state.prompts).toEqual(['slow']))
-
-    await manager.restartAgents()
-    release()
-    await expect(turn).resolves.toEqual({ stopReason: 'end_turn' })
-    expect(manager.openSession(session.id).messages.at(-1)?.text).toBe('done')
-
-    state.script = async ({ say }) => {
-      await say('ok')
-      return 'end_turn'
-    }
-    await manager.send(session.id, 'next', null)
-    expect(state.connections).toBe(2)
-    expect(state.loads).toEqual([session.acpSessionId])
   })
 
   it('resumes with session/load after a restart, keeping the log', async () => {
@@ -1366,6 +1340,18 @@ describe('SessionManager', () => {
         { value: 'opus', name: 'Opus' }
       ]
     }
+    const EFFORT: acp.SessionConfigOption = {
+      id: 'effort',
+      name: 'Effort',
+      category: 'thought_level',
+      type: 'select',
+      currentValue: 'default',
+      options: [
+        { value: 'default', name: 'Default' },
+        { value: 'medium', name: 'Medium' },
+        { value: 'high', name: 'High' }
+      ]
+    }
 
     it('reports the model option, commands, usage and what prompts accept', async () => {
       state.configOptions = [MODEL]
@@ -1387,6 +1373,7 @@ describe('SessionManager', () => {
             { value: 'opus', name: 'Opus' }
           ]
         },
+        effort: null,
         commands: [
           { name: 'clear', description: 'Start over with a fresh conversation' },
           { name: 'compact', description: 'Compact the context', hint: '[focus]' }
@@ -1437,7 +1424,7 @@ describe('SessionManager', () => {
     it('sets the model per session and re-applies it on resume', async () => {
       state.configOptions = [MODEL]
       const session = await manager.createSession('/w', 'fake')
-      await manager.setModel(session.id, 'opus')
+      await manager.setChoice(session.id, 'model', 'opus')
       expect(manager.openSession(session.id).live.model?.current).toBe('opus')
       expect(store.getSession(session.id)?.model).toBe('opus')
 
@@ -1449,28 +1436,69 @@ describe('SessionManager', () => {
       expect(state.configChanges).toEqual([`${session.acpSessionId}:model=opus`, `${session.acpSessionId}:model=opus`])
     })
 
-    it('keeps model selection and resume available for an agent without a dev override', async () => {
-      devModel = true
-      state.configOptions = [MODEL]
-      const session = await manager.createSession('/w', 'second')
-      await manager.setModel(session.id, 'opus')
-      state.configOptions = [MODEL]
+    it('sets the effort per session and re-applies it after the model on resume', async () => {
+      state.configOptions = [MODEL, EFFORT]
+      const session = await manager.createSession('/w', 'fake')
+      // Claude's "default" is replaced by the level its adapter recommends.
+      expect(manager.openSession(session.id).live.effort).toEqual({
+        configId: 'effort',
+        current: 'medium',
+        options: [
+          { value: 'default', name: 'Default' },
+          { value: 'medium', name: 'Medium' },
+          { value: 'high', name: 'High' }
+        ]
+      })
+      await manager.setChoice(session.id, 'model', 'opus')
+      await manager.setChoice(session.id, 'effort', 'high')
+      expect(manager.openSession(session.id).live).toMatchObject({ model: { current: 'opus' }, effort: { current: 'high' } })
+      expect(store.getSession(session.id)).toMatchObject({ model: 'opus', effort: 'high' })
+
+      state.configOptions = [MODEL, EFFORT]
       await manager.dispose()
       manager = makeManager()
       await manager.send(session.id, 'hi', null)
-      expect(state.configChanges).toEqual([`${session.acpSessionId}:model=opus`, `${session.acpSessionId}:model=opus`])
+      const id = session.acpSessionId
+      expect(state.configChanges).toEqual([
+        `${id}:effort=medium`,
+        `${id}:model=opus`,
+        `${id}:effort=high`,
+        `${id}:model=opus`,
+        `${id}:effort=high`
+      ])
     })
 
-    it('leaves the model alone while the dev model is on', async () => {
-      state.configOptions = [MODEL]
+    it('pins a level again when a model switch puts the effort back on default', async () => {
+      state.configOptions = [MODEL, EFFORT]
+      state.afterConfigChange = (configId, options) =>
+        configId === 'model' ? options.map((o) => (o.id === 'effort' && o.type === 'select' ? { ...o, currentValue: 'default' } : o)) : options
       const session = await manager.createSession('/w', 'fake')
-      await manager.setModel(session.id, 'opus')
-      devModel = true
-      await expect(manager.setModel(session.id, 'default')).rejects.toThrow(/dev model/)
+      await manager.setChoice(session.id, 'effort', 'high')
+      await manager.setChoice(session.id, 'model', 'opus')
+      expect(manager.openSession(session.id).live.effort?.current).toBe('high')
+      const id = session.acpSessionId
+      expect(state.configChanges).toEqual([`${id}:effort=medium`, `${id}:effort=high`, `${id}:model=opus`, `${id}:effort=high`])
+    })
+
+    it("follows the agent's config updates and skips an effort the model doesn't offer", async () => {
+      state.configOptions = [MODEL, EFFORT]
+      const session = await manager.createSession('/w', 'fake')
+      await manager.setChoice(session.id, 'effort', 'high')
+      // A model without effort levels: the agent drops the option.
+      state.script = async ({ update }) => {
+        await update({ sessionUpdate: 'config_option_update', configOptions: [MODEL] })
+        return 'end_turn'
+      }
+      await manager.send(session.id, 'hi', null)
+      expect(manager.openSession(session.id).live.effort).toBeNull()
+      await expect(manager.setChoice(session.id, 'effort', 'high')).rejects.toThrow(/choice of effort/)
+
+      state.configOptions = [MODEL]
       await manager.dispose()
       manager = makeManager()
-      await manager.send(session.id, 'hi', null)
-      expect(state.configChanges).toEqual([`${session.acpSessionId}:model=opus`])
+      state.script = async () => 'end_turn'
+      await manager.send(session.id, 'again', null)
+      expect(state.configChanges).toEqual([`${session.acpSessionId}:effort=medium`, `${session.acpSessionId}:effort=high`])
     })
   })
 

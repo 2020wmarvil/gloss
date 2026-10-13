@@ -2,6 +2,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { Message, Plan, ToolCall } from '@shared/types'
 import type { OpenSession } from './App'
+import { Markdown } from './Markdown'
 import { hasDetails, ToolDetails } from './ToolDetails'
 
 /** A transient, client-side note shown in a log (not part of the conversation). */
@@ -81,7 +82,7 @@ export function Log({ items, className, empty, renderAgent }: Props): React.JSX.
                       ))}
                     </ul>
                   )}
-                  {item.message.text}
+                  <Markdown text={item.message.text} breaks />
                 </div>
               ) : (
                 <div key={item.message.id} className="agent" data-message-id={item.message.id}>

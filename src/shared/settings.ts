@@ -8,8 +8,6 @@ export type SessionOrder = 'created' | 'activity'
 
 export type GlobalSettings = {
   defaultAgent: 'claude' | 'codex'
-  /** Spawn Claude Code with ANTHROPIC_MODEL=haiku so development prompts are cheap. */
-  devModel: boolean
   /** Light, dark, or whatever the system uses. */
   theme: ThemeSetting
   /** How the sidebar sorts a project's sessions. */
@@ -40,14 +38,6 @@ export const SETTING_FIELDS: readonly SettingField[] = [
       { value: 'claude', label: 'Claude Code' },
       { value: 'codex', label: 'Codex' }
     ]
-  },
-  {
-    key: 'devModel',
-    scope: 'global',
-    type: 'boolean',
-    label: 'Dev model (Haiku)',
-    description:
-      'Spawn Claude Code with ANTHROPIC_MODEL=haiku so development prompts are cheap. Changing it restarts running agents.'
   },
   {
     key: 'theme',

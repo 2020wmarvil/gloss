@@ -10,6 +10,7 @@ import type {
   Anchor,
   Attachment,
   AuthMethodInfo,
+  ConfigChoice,
   Message,
   MessageQueue,
   Plan,
@@ -39,8 +40,6 @@ export type SessionManagerDeps = {
   /** Opens an initialized connection to the agent. */
   connect(config: AgentConfig, env: NodeJS.ProcessEnv, handlers: AgentHandlers): Promise<AgentConnection>
   runInTerminal: TerminalRunner
-  /** The dev model (Haiku) is on: it overrides the model picked per session. */
-  devModel?(agentId: string): boolean
   now?(): number
 }
 
@@ -80,6 +79,7 @@ function emptyLive(): SessionLive {
   return {
     attached: false,
     model: null,
+    effort: null,
     commands: GLOSS_COMMANDS,
     usage: null,
     rateLimits: [],
@@ -97,8 +97,6 @@ type AgentSlot = {
   current?: AgentConnection
   /** session/prompt requests in flight. */
   activePrompts: number
-  /** Restart once the in-flight prompts finish. */
-  restartPending?: boolean
   signIn?: SignIn
 }
 
@@ -227,7 +225,6 @@ export class SessionManager {
     const pending = slot.connection
     slot.connection = undefined
     slot.current = undefined
-    slot.restartPending = false
     try {
       ;(await pending).dispose()
     } catch {
@@ -235,15 +232,6 @@ export class SessionManager {
     }
     this.detachClosed()
     return true
-  }
-
-  /** Restarts every agent (e.g. after a settings change), deferring busy ones until they are idle. */
-  async restartAgents(): Promise<void> {
-    await Promise.all(
-      [...this.agents.entries()].map(async ([id, slot]) => {
-        if (!(await this.restartIdleAgent(id)) && slot.connection) slot.restartPending = true
-      })
-    )
   }
 
   async dispose(): Promise<void> {
@@ -562,18 +550,20 @@ export class SessionManager {
     }
   }
 
-  /** Picks the session's model via the agent's model config option. */
-  async setModel(id: string, value: string): Promise<void> {
+  /** Picks the session's model or effort via the agent's config option, and saves it on the session. */
+  async setChoice(id: string, kind: 'model' | 'effort', value: string): Promise<void> {
     const session = this.session(id)
-    if (this.deps.devModel?.(session.agentId)) throw new Error('The dev model is on. Turn it off in Settings to pick a model.')
     await this.withAgent(session.agentId, async (conn) => {
       const acpSessionId = await this.attach(id, conn)
-      const model = this.runtime(id).live.model
-      if (!model) throw new Error("The agent doesn't offer a choice of model.")
-      const res = await conn.setConfigOption(acpSessionId, model.configId, value)
-      this.setLive(id, { model: modelOption(res.configOptions) })
+      const choice = this.runtime(id).live[kind]
+      if (!choice) throw new Error(`The agent doesn't offer a choice of ${kind}.`)
+      const res = await conn.setConfigOption(acpSessionId, choice.configId, value)
+      let choices = configChoices(res.configOptions)
+      // A new model can leave the effort at "default" (its levels differ): pin a level again.
+      if (kind === 'model') choices = await this.settleEffort(conn, acpSessionId, choices, session.effort)
+      this.setLive(id, choices)
     })
-    const updated = this.deps.store.updateSession(id, { model: value })
+    const updated = this.deps.store.updateSession(id, { [kind]: value })
     this.deps.emit({ type: 'session', session: updated })
   }
 
@@ -978,7 +968,7 @@ export class SessionManager {
     }
   }
 
-  /** Records what the agent reported on attach, and re-applies the session's model. */
+  /** Records what the agent reported on attach, and re-applies the session's model, then its effort (whose levels depend on the model). */
   private async attached(
     sessionId: string,
     conn: AgentConnection,
@@ -986,30 +976,48 @@ export class SessionManager {
     permissions: SessionLive['permissions']
   ): Promise<void> {
     const caps = conn.promptCapabilities
-    let model = modelOption(configOptions ?? [])
+    let choices = configChoices(configOptions ?? [])
     const session = this.session(sessionId)
+    const model = choices.model
     const wanted = session.model
-    if (
-      wanted &&
-      model &&
-      model.current !== wanted &&
-      !this.deps.devModel?.(session.agentId) &&
-      model.options.some((o) => o.value === wanted)
-    ) {
+    if (wanted && model && model.current !== wanted && model.options.some((o) => o.value === wanted)) {
       try {
         const res = await conn.setConfigOption(session.acpSessionId, model.configId, wanted)
-        model = modelOption(res.configOptions)
+        choices = configChoices(res.configOptions)
       } catch (err) {
         console.warn(`[gloss] could not set the model to "${wanted}":`, errorMessage(err))
       }
     }
+    choices = await this.settleEffort(conn, session.acpSessionId, choices, session.effort)
     this.setLive(sessionId, {
       attached: true,
-      model,
+      ...choices,
       permissions,
       accepts: { image: caps.image === true, file: caps.embeddedContext === true },
       steering: conn.canSteer
     })
+  }
+
+  /**
+   * Sets the session's effort: its own pick when the model offers it, else a concrete
+   * level instead of the agent's "default" (SPEC → Status line → effort).
+   */
+  private async settleEffort(
+    conn: AgentConnection,
+    acpSessionId: string,
+    choices: Pick<SessionLive, 'model' | 'effort'>,
+    wanted: string | undefined
+  ): Promise<Pick<SessionLive, 'model' | 'effort'>> {
+    const effort = choices.effort
+    const target = effort && concreteEffort(effort, wanted)
+    if (!effort || !target || target === effort.current) return choices
+    try {
+      const res = await conn.setConfigOption(acpSessionId, effort.configId, target)
+      return configChoices(res.configOptions)
+    } catch (err) {
+      console.warn(`[gloss] could not set the effort to "${target}":`, errorMessage(err))
+      return choices
+    }
   }
 
   // Turns
@@ -1188,7 +1196,6 @@ export class SessionManager {
           return await conn.prompt(acpSessionId, prompt)
         } finally {
           slot.activePrompts--
-          if (slot.restartPending && slot.activePrompts === 0) void this.restartIdleAgent(session.agentId)
         }
       })
       result = { stopReason: res.stopReason }
@@ -1485,15 +1492,34 @@ function liveUpdate(u: acp.SessionUpdate, rateLimits: RateLimit[]): Partial<Sess
       }
     }
     case 'config_option_update':
-      return { model: modelOption(u.configOptions) }
+      return configChoices(u.configOptions)
     default:
       return null
   }
 }
 
-/** The agent's model config option (category "model", a select), flattened. */
-export function modelOption(options: acp.SessionConfigOption[]): SessionLive['model'] {
-  const o = options.find((x) => x.category === 'model' && x.type === 'select')
+/** The effort value Claude Code's adapter uses for "whatever Claude Code picks". */
+export const DEFAULT_EFFORT = 'default'
+
+/**
+ * The effort to set: `wanted` when the model offers it, else, when the agent is on its
+ * "default", the level its adapter recommends (medium, else the first). Null: leave it.
+ */
+export function concreteEffort(effort: ConfigChoice, wanted?: string): string | null {
+  const levels = effort.options.map((o) => o.value).filter((v) => v !== DEFAULT_EFFORT)
+  if (wanted && levels.includes(wanted)) return wanted
+  if (effort.current !== DEFAULT_EFFORT) return null
+  return levels.includes('medium') ? 'medium' : (levels[0] ?? null)
+}
+
+/** The agent's model and effort config options (categories "model" and "thought_level"). */
+export function configChoices(options: acp.SessionConfigOption[]): Pick<SessionLive, 'model' | 'effort'> {
+  return { model: selectOption(options, 'model'), effort: selectOption(options, 'thought_level') }
+}
+
+/** The agent's select config option of a category, flattened. */
+function selectOption(options: acp.SessionConfigOption[], category: string): ConfigChoice | null {
+  const o = options.find((x) => x.category === category && x.type === 'select')
   if (!o || o.type !== 'select') return null
   const flat = o.options.flatMap((x) => ('group' in x ? x.options : [x]))
   return {

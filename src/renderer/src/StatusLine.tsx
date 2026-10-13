@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import type { GitStatus, PullRequest } from '@shared/ipc'
 import { folderName } from '@shared/paths'
-import type { MessageQueue, ModelOption, RateLimit, Session, SessionLive, SlashCommand } from '@shared/types'
+import type { ConfigChoice, MessageQueue, ModelOption, RateLimit, Session, SessionLive, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
 import { Popover } from './Popover'
 import { UsagePanel } from './UsagePanel'
@@ -13,7 +13,6 @@ type Props = {
   live: SessionLive
   git: GitStatus | null
   pr: PullRequest | null
-  devModel: boolean
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
   runningLabel: string | null
@@ -22,7 +21,7 @@ type Props = {
   queue: MessageQueue
   onResumeQueue(): void
   onOpenThread(threadId: string): void
-  onSetModel(value: string): Promise<void>
+  onSetChoice(kind: 'model' | 'effort', value: string): Promise<void>
   /** Sends a slash command as a message in the main thread. */
   onCommand(text: string): void
 }
@@ -125,14 +124,53 @@ export function modelLabel(option: ModelOption): string {
   return option.value === 'default' && option.description ? option.description : option.name
 }
 
+/** A popover listing a config option's values (the model or the effort); picking one sets it. */
+function ChoicePicker(props: {
+  label: string
+  title: string
+  choice: ConfigChoice
+  onPick(value: string): void
+}): React.JSX.Element {
+  const { choice } = props
+  return (
+    <Popover label={props.label} title={props.title}>
+      {(close) => (
+        <ul className="option-list" role="listbox" aria-label={props.title}>
+          {choice.options.map((o) => (
+            <li key={o.value}>
+              <button
+                className={o.value === choice.current ? 'on' : undefined}
+                role="option"
+                aria-selected={o.value === choice.current}
+                onClick={() => {
+                  close()
+                  props.onPick(o.value)
+                }}
+              >
+                <span>{o.name}</span>
+                {o.description && <span className="muted">{o.description}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Popover>
+  )
+}
+
 export function StatusLine(props: Props): React.JSX.Element {
-  const { session, live, git, devModel, runningThread } = props
-  const [modelError, setModelError] = useState<string | null>(null)
+  const { session, live, git, runningThread } = props
+  const [choiceError, setChoiceError] = useState<string | null>(null)
   const [folderError, setFolderError] = useState<string | null>(null)
   const usage = live.usage
   const pct = usage && usage.size > 0 ? Math.min(100, Math.round((usage.used / usage.size) * 100)) : null
-  const model = live.model
-  const current = model?.options.find((o) => o.value === model.current)
+  const { model, effort } = live
+  const currentModel = model?.options.find((o) => o.value === model.current)
+  const currentEffort = effort?.options.find((o) => o.value === effort.current)
+  const pick = (kind: 'model' | 'effort') => (value: string) => {
+    setChoiceError(null)
+    props.onSetChoice(kind, value).catch((err: unknown) => setChoiceError(errorText(err)))
+  }
   const hasMcpCommand = live.commands.some((c) => c.name === 'mcp')
   const usageLabel = <>
     {pct !== null && usage && (
@@ -173,37 +211,19 @@ export function StatusLine(props: Props): React.JSX.Element {
         </Popover>
       ) : usageLabel}
 
-      {model &&
-        (devModel ? (
-          <span className="status-item" title="The dev model is on (Settings), so it overrides the model picked here.">
-            Haiku (dev)
-          </span>
-        ) : (
-          <Popover label={current ? modelLabel(current) : model.current} title="Model">
-            {(close) => (
-              <ul className="option-list" role="listbox" aria-label="Model">
-                {model.options.map((o) => (
-                  <li key={o.value}>
-                    <button
-                      className={o.value === model.current ? 'on' : undefined}
-                      role="option"
-                      aria-selected={o.value === model.current}
-                      onClick={() => {
-                        close()
-                        setModelError(null)
-                        props.onSetModel(o.value).catch((err: unknown) => setModelError(err instanceof Error ? err.message : String(err)))
-                      }}
-                    >
-                      <span>{o.name}</span>
-                      {o.description && <span className="muted">{o.description}</span>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Popover>
-        ))}
-      {modelError && <span className="status-item error">{modelError}</span>}
+      {model && (
+        <ChoicePicker label={currentModel ? modelLabel(currentModel) : model.current} title="Model" choice={model} onPick={pick('model')} />
+      )}
+      {effort && (
+        <ChoicePicker
+          label={currentEffort?.name ?? effort.current}
+          title="Effort"
+          // Gloss replaces Claude's "default" with a real level, so it isn't offered (unless that failed).
+          choice={{ ...effort, options: effort.options.filter((o) => o.value !== 'default' || o.value === effort.current) }}
+          onPick={pick('effort')}
+        />
+      )}
+      {choiceError && <span className="status-item error">{choiceError}</span>}
 
       {live.permissions === 'bypass' && (
         <span className="status-item" title="The agent runs without permission prompts (its bypass mode).">

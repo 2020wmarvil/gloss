@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
+import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor'
 
 /** The session's queue as one composer sees it: the messages queued from its thread. */
 export type ComposerQueue = {
@@ -88,17 +89,17 @@ export function Composer({
   const [dragging, setDragging] = useState(false)
   const [pick, setPick] = useState(0)
   const [dismissed, setDismissed] = useState<string | null>(null)
-  const ref = useRef<HTMLTextAreaElement>(null)
+  const ref = useRef<MarkdownEditorHandle>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
   // The caret goes back where it was when the user switched away (before the focus below).
   useLayoutEffect(() => {
     const el = ref.current
     const saved = drafts.get(draftKey)?.selection
-    if (el && saved) el.setSelectionRange(...saved)
+    if (el && saved) el.setSelection(...saved)
     return () => {
       const draft = drafts.get(draftKey)
-      if (el && draft) draft.selection = [el.selectionStart, el.selectionEnd]
+      if (el && draft) draft.selection = el.selection()
     }
   }, [draftKey])
 
@@ -266,50 +267,39 @@ export function Composer({
               />
             </>
           )}
-          <textarea
+          <MarkdownEditor
             ref={ref}
-            rows={Math.min(8, Math.max(1, text.split('\n').length))}
             placeholder={placeholder}
-            aria-label={placeholder}
+            ariaLabel={placeholder}
             value={text}
-            onChange={(e) => {
-              setText(e.target.value)
+            onChange={(value) => {
+              setText(value)
               setPick(0)
             }}
-            onPaste={(e) => {
-              const files = [...e.clipboardData.files]
-              if (files.length === 0) return
-              e.preventDefault()
+            onPasteFiles={(files) => {
               if (canAttach) void addFiles(files)
               else setError("The agent doesn't accept images or files.")
+              return true
             }}
             onKeyDown={(e) => {
-              if (matches.length > 0) {
-                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                  e.preventDefault()
-                  setPick((picked + (e.key === 'ArrowDown' ? 1 : matches.length - 1)) % matches.length)
-                  return
-                }
-                if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
-                  // Enter on an exact match sends it; otherwise it completes.
-                  if (!(e.key === 'Enter' && matches[picked].name === slash?.[1])) {
-                    e.preventDefault()
-                    choose(matches[picked])
-                    return
-                  }
-                }
-                if (e.key === 'Escape') {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setDismissed(text)
-                  return
-                }
+              if (matches.length === 0 || e.isComposing) return false
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                setPick((picked + (e.key === 'ArrowDown' ? 1 : matches.length - 1)) % matches.length)
+                return true
               }
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                submit(e.ctrlKey || e.metaKey ? 'steer' : 'send')
+              // Enter on an exact match sends it; otherwise Enter or Tab completes.
+              if ((e.key === 'Enter' && !e.shiftKey && matches[picked].name !== slash?.[1]) || e.key === 'Tab') {
+                choose(matches[picked])
+                return true
               }
+              if (e.key === 'Escape') {
+                e.stopPropagation()
+                setDismissed(text)
+                return true
+              }
+              return false
             }}
+            onSubmit={submit}
           />
           {running && (
             <button className="cancel" onClick={onCancel}>

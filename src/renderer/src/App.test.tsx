@@ -17,8 +17,8 @@ it('uses the default agent for creation and keeps external sessions separated wh
   const create = vi.fn(async () => { throw new Error('creation observed') })
   const importSession = vi.fn(async () => { throw new Error('import observed') })
   window.gloss = {
-    settings: { get: async () => ({ global: { defaultAgent: 'codex', devModel: true, theme: 'light', sessionOrder: 'created' }, projects: {}, error: null, path: '/settings.json' }) },
-    agents: { list: async () => [{ id: 'claude', name: 'Claude Code', hasDevModel: true }, { id: 'codex', name: 'Codex', hasDevModel: false }] },
+    settings: { get: async () => ({ global: { defaultAgent: 'codex', theme: 'light', sessionOrder: 'created' }, projects: {}, error: null, path: '/settings.json' }) },
+    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'codex', name: 'Codex' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: list },
     sessions: { list: async () => [], create, import: importSession },
     onEvent: () => () => {}

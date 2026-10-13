@@ -81,6 +81,9 @@ const MIGRATIONS = [
   ALTER TABLE sessions ADD COLUMN title_set INTEGER;
   ALTER TABLE sessions ADD COLUMN synced_at TEXT;
   UPDATE sessions SET title_set = 1;
+  `,
+  `
+  ALTER TABLE sessions ADD COLUMN effort TEXT;
   `
 ]
 
@@ -97,6 +100,7 @@ function toSession(r: Row): Session {
     createdAt: Number(r.created_at),
     activeAt: r.active_at != null ? Number(r.active_at) : Number(r.created_at),
     ...(r.model != null ? { model: r.model as string } : {}),
+    ...(r.effort != null ? { effort: r.effort as string } : {}),
     ...(r.synced_at != null ? { syncedAt: r.synced_at as string } : {})
   }
 }
@@ -237,7 +241,7 @@ export class Store {
   /** `syncedAt: null` forgets it. */
   updateSession(
     id: string,
-    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model'>> & { syncedAt?: string | null }
+    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model' | 'effort'>> & { syncedAt?: string | null }
   ): Session {
     if (patch.acpSessionId !== undefined) {
       this.db
@@ -252,6 +256,9 @@ export class Store {
     }
     if (patch.model !== undefined) {
       this.db.prepare('UPDATE sessions SET model = ? WHERE id = ?').run(patch.model, id)
+    }
+    if (patch.effort !== undefined) {
+      this.db.prepare('UPDATE sessions SET effort = ? WHERE id = ?').run(patch.effort, id)
     }
     if (patch.syncedAt !== undefined) {
       this.db.prepare('UPDATE sessions SET synced_at = ? WHERE id = ?').run(patch.syncedAt, id)
