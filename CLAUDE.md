@@ -53,7 +53,7 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 
 ## Verified external APIs (M9)
 - `plan` updates list the whole plan each time (`entries: { content, priority, status }[]`). The Claude adapter turns `TodoWrite` and the `Task*` tools into them (no `tool_call` for those).
-- Claude Code leaves those tools off in SDK sessions: without `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` the agent has neither and never sends a plan (`CLAUDE_CODE_ENABLE_TASKS` alone doesn't help). Gloss sets it in the Claude agent config.
+- Claude Code only gives those tools to older models by default (a fixed list: Opus 4.x, Sonnet 4.0-4.6, Haiku 4.5, the 3.x line), in the CLI too. Newer models (Opus 5.5, current Haiku) have neither and never send a plan unless `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (`CLAUDE_CODE_ENABLE_TASKS` alone doesn't help). Gloss sets it in the Claude agent config.
 
 ## Git
 - Work on `dev`; open one PR per milestone against `main`.

@@ -20,7 +20,7 @@ export const DEV_MODEL = 'haiku'
  * Claude Code through its ACP adapter (@agentclientprotocol/claude-agent-acp).
  * The adapter is a Node script; we run it with Electron's own Node runtime
  * (ELECTRON_RUN_AS_NODE) so users don't need a separate Node install.
- * Claude Code leaves its todo tools off in SDK sessions unless
+ * Claude Code gives only older models its todo tools unless
  * CLAUDE_CODE_ENABLE_TODO_TOOLS is set; with them it reports plans (SPEC → Plans).
  */
 function claudeAgent(): AgentConfig {
