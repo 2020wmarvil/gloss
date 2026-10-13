@@ -8,6 +8,7 @@ import type {
   Attachment,
   AuthMethodInfo,
   Message,
+  MessageQueue,
   Project,
   Session,
   SessionLive,
@@ -37,12 +38,14 @@ export type SessionView = {
   threads: Thread[]
   /** The running turn, if any. */
   turn: { threadId: string | null } | null
+  queue: MessageQueue
   live: SessionLive
 }
 
 export type GitStatus = { branch: string; dirty: boolean }
 
-export type TurnResult = { stopReason?: string; error?: string }
+/** `queued`: a turn was running, so the message was queued instead of sent. */
+export type TurnResult = { stopReason?: string; error?: string; queued?: true }
 
 export type AuthResult = { ok: true } | { ok: false; error: string }
 
@@ -62,7 +65,10 @@ export type GlossEvent =
       threadId: string | null
       stopReason?: string
       error?: string
+      /** A queued message starts right away. */
+      continues?: true
     }
+  | { type: 'queue'; sessionId: string; queue: MessageQueue }
   /** Something the user should know that is not part of the conversation, shown in `threadId`. */
   | { type: 'notice'; sessionId: string; threadId: string | null; text: string }
   | { type: 'authRequired'; agentId: string; agentName: string; methods: AuthMethodInfo[] }
@@ -107,9 +113,16 @@ export type GlossApi = {
     /** Creates the thread for an anchor, or returns the existing one for the same anchor. */
     create(sessionId: string, anchorMessageId: string, anchor: Anchor): Promise<Thread>
   }
-  /** Resolves when the turn ends. */
+  /** Resolves when the turn ends, or right away with `queued` if a turn is running (SPEC → Queue). */
   send(sessionId: string, text: string, threadId: string | null, attachments: Attachment[]): Promise<TurnResult>
   cancel(sessionId: string): Promise<void>
+  queue: {
+    /** Replaces a queued message's text. Rejects if it has already been sent. */
+    edit(sessionId: string, id: string, text: string): Promise<void>
+    remove(sessionId: string, id: string): Promise<void>
+    /** Sends the next queued message after the queue paused. */
+    resume(sessionId: string): Promise<void>
+  }
   auth: {
     signIn(agentId: string, methodId: string): Promise<AuthResult>
     dismiss(agentId: string): Promise<void>
@@ -148,6 +161,9 @@ export const IPC = {
   threadsCreate: 'gloss:threads:create',
   send: 'gloss:send',
   cancel: 'gloss:cancel',
+  queueEdit: 'gloss:queue:edit',
+  queueRemove: 'gloss:queue:remove',
+  queueResume: 'gloss:queue:resume',
   authSignIn: 'gloss:auth:signIn',
   authDismiss: 'gloss:auth:dismiss',
   settingsGet: 'gloss:settings:get',

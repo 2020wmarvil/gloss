@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { Attachment, SlashCommand } from '@shared/types'
+import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
+import { errorText } from './errors'
+
+/** The session's queue as one composer sees it: the messages queued from its thread. */
+export type ComposerQueue = {
+  items: QueuedMessage[]
+  paused: boolean
+  onEdit(id: string, text: string): Promise<void>
+  onRemove(id: string): Promise<void>
+  onResume(): Promise<void>
+}
 
 type Props = {
   className: string
   placeholder: string
-  /** A turn is running somewhere in the session: Send is disabled everywhere. */
+  /** A turn is running somewhere in the session: sending queues the message (SPEC → Queue). */
   running: boolean
+  queue: ComposerQueue
   autoFocus?: boolean
   /** Focus on the app's "focus composer" shortcut. */
   primary?: boolean
@@ -58,6 +69,7 @@ export function Composer({
   footer,
   commands,
   accepts,
+  queue,
   onSend,
   onCancel
 }: Props): React.JSX.Element {
@@ -109,7 +121,7 @@ export function Composer({
 
   function submit(): void {
     const trimmed = text.trim()
-    if ((!trimmed && attachments.length === 0) || running) return
+    if (!trimmed && attachments.length === 0) return
     onSend(trimmed, attachments)
     setText('')
     setAttachments([])
@@ -118,8 +130,40 @@ export function Composer({
 
   const canAttach = accepts.image || accepts.file
 
+  /** Runs a queue action, showing its error. Resolves to whether it worked. */
+  async function queueAction(action: () => Promise<void>): Promise<boolean> {
+    setError(null)
+    try {
+      await action()
+      return true
+    } catch (err) {
+      setError(errorText(err))
+      return false
+    }
+  }
+
   return (
     <div className={className}>
+      {queue.items.length > 0 && (
+        <div className="queue">
+          {queue.paused && (
+            <p className="queue-paused">
+              Queue paused: the last turn didn&apos;t finish.
+              <button onClick={() => void queueAction(queue.onResume)}>Resume</button>
+            </p>
+          )}
+          <ol aria-label="Queued messages">
+            {queue.items.map((item) => (
+              <QueuedRow
+                key={item.id}
+                item={item}
+                onEdit={(text) => queueAction(() => queue.onEdit(item.id, text))}
+                onRemove={() => void queueAction(() => queue.onRemove(item.id))}
+              />
+            ))}
+          </ol>
+        </div>
+      )}
       {matches.length > 0 && (
         <ul className="slash-menu" role="listbox" aria-label="Slash commands">
           {matches.map((c, i) => (
@@ -239,19 +283,75 @@ export function Composer({
               }
             }}
           />
-          {running ? (
+          {running && (
             <button className="cancel" onClick={onCancel}>
               Cancel
             </button>
-          ) : (
-            <button className="primary send" onClick={submit} disabled={!text.trim() && attachments.length === 0}>
-              Send
-            </button>
           )}
+          <button
+            className="primary send"
+            onClick={submit}
+            disabled={!text.trim() && attachments.length === 0}
+            title={running ? 'Sent when the running turn ends' : undefined}
+          >
+            {running ? 'Queue' : 'Send'}
+          </button>
         </div>
       </div>
       {error && <p className="composer-error">{error}</p>}
       {footer}
     </div>
+  )
+}
+
+/** A queued message: its text (editable in place), attachments, Edit and Remove. */
+function QueuedRow(props: { item: QueuedMessage; onEdit(text: string): Promise<boolean>; onRemove(): void }): React.JSX.Element {
+  const { item } = props
+  const [draft, setDraft] = useState<string | null>(null)
+
+  async function save(): Promise<void> {
+    if (draft !== null && (await props.onEdit(draft))) setDraft(null)
+  }
+
+  const files = item.attachments.length
+  return (
+    <li className="queued">
+      {draft === null ? (
+        <>
+          <span className="queued-text">
+            {item.text}
+            {files > 0 && <span className="muted"> (+{files === 1 ? '1 attachment' : `${files} attachments`})</span>}
+          </span>
+          <button aria-label="Edit queued message" onClick={() => setDraft(item.text)}>
+            Edit
+          </button>
+          <button aria-label="Remove queued message" onClick={props.onRemove}>
+            Remove
+          </button>
+        </>
+      ) : (
+        <>
+          <textarea
+            autoFocus
+            aria-label="Edit queued message"
+            rows={Math.min(6, Math.max(1, draft.split('\n').length))}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                void save()
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                e.stopPropagation()
+                setDraft(null)
+              }
+            }}
+          />
+          <button onClick={() => void save()}>Save</button>
+          <button onClick={() => setDraft(null)}>Cancel</button>
+        </>
+      )}
+    </li>
   )
 }

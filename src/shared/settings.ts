@@ -2,9 +2,13 @@
 // The main process validates the file and generates its JSON Schema from the table;
 // the renderer builds the settings screen from it. Pure data, no Node or DOM imports.
 
+export type ThemeSetting = 'system' | 'light' | 'dark'
+
 export type GlobalSettings = {
   /** Spawn agents with ANTHROPIC_MODEL=haiku so development prompts are cheap. */
   devModel: boolean
+  /** Light, dark, or whatever the system uses. */
+  theme: ThemeSetting
 }
 
 /** Settings for one project folder, under `projects` keyed by its path. None exist yet (M7+). */
@@ -13,9 +17,11 @@ export type ProjectSettings = Record<string, never>
 export type SettingField = {
   key: string
   scope: 'global' | 'project'
-  type: 'boolean'
+  type: 'boolean' | 'enum'
   label: string
   description: string
+  /** For enum fields: the allowed values and how the screen labels them. */
+  options?: readonly { value: string; label: string }[]
 }
 
 export const SETTING_FIELDS: readonly SettingField[] = [
@@ -26,6 +32,18 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Dev model (Haiku)',
     description:
       'Spawn agents with ANTHROPIC_MODEL=haiku so development prompts are cheap. Changing it restarts running agents.'
+  },
+  {
+    key: 'theme',
+    scope: 'global',
+    type: 'enum',
+    label: 'Theme',
+    description: 'Light or dark. System follows the operating system setting.',
+    options: [
+      { value: 'system', label: 'System' },
+      { value: 'light', label: 'Light' },
+      { value: 'dark', label: 'Dark' }
+    ]
   }
 ]
 

@@ -10,6 +10,7 @@ import type {
   Attachment,
   AuthMethodInfo,
   Message,
+  MessageQueue,
   Project,
   RateLimit,
   Session,
@@ -60,6 +61,8 @@ type SessionRuntime = {
   /** The session is being imported: session/load's replay becomes its history. */
   importing?: Recorder
   turn?: Turn
+  /** Messages sent while a turn was running (SPEC → Queue). */
+  queue: MessageQueue
   live: SessionLive
 }
 
@@ -114,7 +117,7 @@ export class SessionManager {
   private runtime(sessionId: string): SessionRuntime {
     let rt = this.runtimes.get(sessionId)
     if (!rt) {
-      rt = { loading: false, live: emptyLive() }
+      rt = { loading: false, queue: { items: [], paused: false }, live: emptyLive() }
       this.runtimes.set(sessionId, rt)
     }
     return rt
@@ -394,6 +397,7 @@ export class SessionManager {
       toolCalls: this.deps.store.listToolCalls(id),
       threads: this.deps.store.listThreads(id),
       turn: rt.turn ? { threadId: rt.turn.threadId } : null,
+      queue: rt.queue,
       live: rt.live
     }
   }
@@ -670,23 +674,47 @@ export class SessionManager {
 
   // Turns
 
+  /**
+   * Sends a message, or queues it if a turn is running (SPEC → Queue). Resolves
+   * when the turn ends, or right away with `queued`.
+   */
   async send(
     sessionId: string,
     text: string,
     threadId: string | null,
     attachments: Attachment[] = []
   ): Promise<TurnResult> {
+    this.session(sessionId)
+    this.anchorText(sessionId, threadId)
+    const rt = this.runtime(sessionId)
+    if (rt.turn) {
+      this.setQueue(sessionId, {
+        ...rt.queue,
+        items: [...rt.queue.items, { id: randomUUID(), threadId, text, attachments }]
+      })
+      return { queued: true }
+    }
+    return this.runTurn(sessionId, text, threadId, attachments)
+  }
+
+  /** The anchor text of a thread in the session (for the wire tag), or null for the main thread. */
+  private anchorText(sessionId: string, threadId: string | null): string | null {
+    if (threadId === null) return null
+    const thread = this.deps.store.getThread(threadId)
+    if (!thread || thread.sessionId !== sessionId) throw new Error(`Unknown thread ${threadId}`)
+    return thread.anchor.text
+  }
+
+  private async runTurn(
+    sessionId: string,
+    text: string,
+    threadId: string | null,
+    attachments: Attachment[]
+  ): Promise<TurnResult> {
     let session = this.session(sessionId)
     const rt = this.runtime(sessionId)
     if (rt.turn) throw new Error('A turn is already running in this session.')
-    let anchorText: string | null = null
-    if (threadId !== null) {
-      const thread = this.deps.store.getThread(threadId)
-      if (!thread || thread.sessionId !== sessionId) throw new Error(`Unknown thread ${threadId}`)
-      anchorText = thread.anchor.text
-    }
-
-    const wire = wireText(text, anchorText)
+    const wire = wireText(text, this.anchorText(sessionId, threadId))
     const isFirst = this.deps.store.countUserMessages(sessionId) === 0
     const message: Message = {
       id: randomUUID(),
@@ -733,8 +761,64 @@ export class SessionManager {
     } finally {
       rt.turn = undefined
     }
-    this.deps.emit({ type: 'turnEnd', sessionId, threadId, ...result })
+    // The queue moves on after a turn that ended normally. A cancelled, failed or
+    // cut-short turn pauses it, so the user can look before more is sent.
+    let continues = false
+    if (rt.queue.items.length > 0 && this.runtimes.get(sessionId) === rt) {
+      continues = !result.error && result.stopReason === 'end_turn'
+      if (rt.queue.paused !== !continues) this.setQueue(sessionId, { ...rt.queue, paused: !continues })
+    }
+    this.deps.emit({ type: 'turnEnd', sessionId, threadId, ...result, ...(continues ? { continues: true } : {}) })
+    if (continues) this.drain(sessionId)
     return result
+  }
+
+  private setQueue(sessionId: string, queue: MessageQueue): void {
+    this.runtime(sessionId).queue = queue
+    this.deps.emit({ type: 'queue', sessionId, queue })
+  }
+
+  /** Starts the next queued message if the session is idle and its queue isn't paused. */
+  private drain(sessionId: string): void {
+    const rt = this.runtimes.get(sessionId)
+    if (!rt || rt.turn || rt.queue.paused) return
+    const [next, ...rest] = rt.queue.items
+    if (!next) return
+    this.setQueue(sessionId, { items: rest, paused: false })
+    this.runTurn(sessionId, next.text, next.threadId, next.attachments).catch((err: unknown) =>
+      this.notice(sessionId, next.threadId, `Couldn't send a queued message: ${errorMessage(err)}`)
+    )
+  }
+
+  /** Replaces a queued message's text. */
+  editQueued(sessionId: string, id: string, text: string): void {
+    this.session(sessionId)
+    const rt = this.runtime(sessionId)
+    const item = rt.queue.items.find((q) => q.id === id)
+    if (!item) throw new Error('That message has already been sent.')
+    const trimmed = text.trim()
+    if (!trimmed && item.attachments.length === 0) throw new Error("A queued message can't be empty. Remove it instead.")
+    this.setQueue(sessionId, {
+      ...rt.queue,
+      items: rt.queue.items.map((q) => (q.id === id ? { ...q, text: trimmed } : q))
+    })
+  }
+
+  removeQueued(sessionId: string, id: string): void {
+    this.session(sessionId)
+    const rt = this.runtime(sessionId)
+    if (!rt.queue.items.some((q) => q.id === id)) throw new Error('That message has already been sent.')
+    const items = rt.queue.items.filter((q) => q.id !== id)
+    this.setQueue(sessionId, { items, paused: rt.queue.paused && items.length > 0 })
+  }
+
+  /** Sends the next queued message after the queue paused (once the running turn, if any, ends). */
+  resumeQueue(sessionId: string): void {
+    this.session(sessionId)
+    const rt = this.runtime(sessionId)
+    if (!rt.queue.paused) return
+    this.setQueue(sessionId, { ...rt.queue, paused: false })
+    this.drain(sessionId)
   }
 
   async cancel(sessionId: string): Promise<void> {

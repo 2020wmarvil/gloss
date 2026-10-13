@@ -1,14 +1,16 @@
 // Syntax highlighting for code blocks (Shiki with its JavaScript regex engine: no
 // WebAssembly, so the CSP stays as is). Common languages load at startup, others
 // on first use. Highlighting is synchronous once a language is loaded; until then
-// code renders plain and subscribers re-render when it arrives.
+// code renders plain and subscribers re-render when it arrives. Colors are
+// light-dark() pairs, so they follow the theme's color-scheme without a re-render.
 import { useSyncExternalStore } from 'react'
 import { createHighlighterCore, type HighlighterCore } from 'shiki/core'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 import { bundledLanguages } from 'shiki/langs'
+import githubDark from 'shiki/themes/github-dark.mjs'
 import githubLight from 'shiki/themes/github-light.mjs'
 
-const THEME = 'github-light'
+const THEMES = { light: 'github-light', dark: 'github-dark' }
 const PRELOAD = ['typescript', 'tsx', 'javascript', 'jsx', 'json', 'shellscript', 'powershell', 'python', 'css', 'html', 'markdown', 'yaml', 'diff']
 
 let highlighter: HighlighterCore | null = null
@@ -23,7 +25,7 @@ function changed(): void {
 }
 
 const ready = createHighlighterCore({
-  themes: [githubLight],
+  themes: [githubLight, githubDark],
   langs: PRELOAD.map((id) => bundledLanguages[id as keyof typeof bundledLanguages]),
   engine: createJavaScriptRegexEngine({ forgiving: true })
 }).then(
@@ -65,9 +67,12 @@ export function codeColors(code: string, lang: string | null | undefined): (stri
   if (cached) return cached
   const colors = new Array<string | undefined>(code.length)
   try {
-    for (const line of highlighter.codeToTokensBase(code, { lang: id, theme: THEME })) {
+    const { tokens } = highlighter.codeToTokens(code, { lang: id, themes: THEMES, defaultColor: 'light-dark()' })
+    for (const line of tokens) {
       for (const token of line) {
-        for (let i = 0; i < token.content.length; i++) colors[token.offset + i] = token.color
+        // With two themes the color is only in htmlStyle, as "light-dark(light, dark)".
+        const color = token.htmlStyle?.color
+        for (let i = 0; i < token.content.length; i++) colors[token.offset + i] = color
       }
     }
   } catch {

@@ -48,7 +48,7 @@ Build in order. Stop at the end of each milestone, show what works and how to tr
 
 # Roadmap 2
 
-M1–M5 built the design in `SPEC.md`. These milestones add settings, make Gloss a daily driver, let you queue and steer, take threads further, add search and code review sessions, converge on a long-term interface, add a second agent, and ship it; then future work. Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1–M5 built the design in `SPEC.md`. These milestones add settings, make Gloss a daily driver, let you queue and steer, take threads further, add search and code review sessions, converge on a long-term interface, add a second agent, and ship it; then future work (sub-agent threads, visual feedback, agent questions and permission modes). Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M6 — Settings
 A home for Gloss's settings, editable by hand (and by agents) as well as in the app.
@@ -91,7 +91,7 @@ A home for Gloss's settings, editable by hand (and by agents) as well as in the 
 ## M8 — Queue and steer
 Stop waiting for a turn to end before you can say something.
 
-- **Queue:** while a turn runs, the composer stays usable; a message sent then is queued (shown as pending, editable and removable) and sent when the turn ends, in order. Handled by Gloss, so it works with any agent. A queued message keeps its thread: it runs in the thread it was written in.
+- **Queue:** while a turn runs, the composer stays usable; a message sent then is queued (shown as pending, editable and removable) and sent when the turn ends, in order. Handled by Gloss, so it works with any agent. A queued message keeps its thread: it runs in the thread it was written in. *Landed early, before M8 (SPEC → Composer → Queue); M8 is left with steering.*
 - **Steer:** inject a message into the running turn ("skip the tests", "use the existing helper") when the agent supports it. The Claude adapter advertises a `_session/steering` extension in `initialize`; verify its request shape first. Offered only when the agent advertises steering; otherwise only queueing is available.
 - The running turn's thread, the queue and any steering are visible in the status line and thread panel.
 
@@ -143,7 +143,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 **Phase 2: implementation**
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
-- **Dark mode**, following the system setting, built on the dark tokens.
+- **Dark mode**, following the system setting, built on the dark tokens. *A Theme setting (System, Light, Dark) and a provisional dark palette landed early; M12 replaces the palette with the designed dark tokens.*
 - Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected.
 - Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M14 installers.
 - Polish: empty, loading and error states; window title.
@@ -207,6 +207,17 @@ Point at things visually to give the agent feedback. Expect to iterate on this c
 - Automatic marks: segment the capture and number regions so you only pick the ones you mean.
 - An MCP tool so the agent can ask you for a screenshot of something.
 
+## M17: Questions and permission modes (future)
+Let the agent ask the user things, and let the user choose how much it may do without asking. Replaces SPEC → Permissions ("no approval UI"); update it in this milestone.
+
+- **Agent questions:** advertise ACP's `clientCapabilities.elicitation.form` and answer `elicitation/create` requests with a question dialog built from the request's JSON Schema: single and multiple choice, free text, and the agent's "other" answer where it allows one, plus Decline and Cancel. With form support the Claude adapter turns on Claude Code's AskUserQuestion tool (disabled today because Gloss doesn't advertise it) and sends its questions this way; MCP servers' elicitations arrive the same way. The question shows in the thread whose turn asked it. URL elicitations (open a link, wait for `session/complete_elicitation`) are optional.
+- **Permission modes:** a per-session mode picker from the agent's `modes` (Claude Code: Manual, Accept edits, Plan, Auto, Bypass permissions), set with `session/set_mode` and kept in sync from `current_mode_update`. It replaces the status line's "bypass" item. A default mode in settings (global, with a per-project override) replaces always entering `bypassModeId`; bypass stays the default.
+- **Approval prompts:** in a mode where the agent asks, `session/request_permission` shows an approval prompt (the tool call's title and what it will run or change, with the agent's options: allow once, allow always, reject) in the thread of the running turn, instead of being auto-approved. Auto-approval remains for agents without a bypass mode only if the user picks it.
+- **Waiting on the user:** a turn waiting on a question or an approval is still running (queued messages wait), shows "Waiting for you" in the status line and sidebar, and sends an OS notification when Gloss isn't focused. Cancel answers it with `cancelled`.
+- Agent-agnostic: everything comes from ACP modes, permission options and elicitation schemas. Verify first: the SDK's elicitation request and response shapes (`CreateElicitationRequest`/`CreateElicitationResponse`), and how the Claude adapter maps AskUserQuestion (several questions per request, multi-select, the custom answer).
+
+**Done when:** Claude Code can ask a multiple-choice question mid-turn and gets the answer from a Gloss dialog, and a session switched to Manual asks before each edit or command and continues or stops based on the answer.
+
 ## Future work (after the milestones)
 Ideas worth building once the milestones are done. Not scheduled; first item first.
 
@@ -220,6 +231,7 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 - The M7–M11 passes are deliberately light: enough to build them. M12 revisits everything as a whole.
 - **M15:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 - **M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.
+- **M17:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.

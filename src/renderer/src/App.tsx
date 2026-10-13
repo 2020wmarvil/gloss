@@ -8,7 +8,9 @@ import type {
   Attachment,
   AuthMethodInfo,
   Message,
+  MessageQueue,
   Project,
+  QueuedMessage,
   Session,
   SessionLive,
   Thread,
@@ -16,7 +18,7 @@ import type {
 } from '@shared/types'
 import { truncate } from '@shared/wire'
 import { itemLabel, listItemSpans, type ListItemSpan } from './anchors'
-import { FOCUS_COMPOSER } from './Composer'
+import { FOCUS_COMPOSER, type ComposerQueue } from './Composer'
 import { errorText } from './errors'
 import { Conversation } from './Conversation'
 import type { Notice } from './Log'
@@ -25,6 +27,16 @@ import type { SourceSelection } from './SelectionPopover'
 import { SettingsScreen } from './SettingsScreen'
 import { SignInDialog } from './SignInDialog'
 import { ThreadPanel } from './ThreadPanel'
+import {
+  clampWidth,
+  ResizeHandle,
+  SIDEBAR_DEFAULT,
+  sidebarLimits,
+  threadPanelLimits,
+  useStoredWidth,
+  useWindowWidth
+} from './resize'
+import { applyTheme } from './theme'
 
 export type OpenSession = {
   session: Session
@@ -47,6 +59,8 @@ const NO_LIVE: SessionLive = {
   permissions: null,
   accepts: { image: false, file: false }
 }
+
+const NO_QUEUE: MessageQueue = { items: [], paused: false }
 
 function upsert<T extends { id: string }>(list: T[], item: T): T[] {
   const i = list.findIndex((x) => x.id === item.id)
@@ -83,10 +97,14 @@ export function App(): React.JSX.Element {
   const [running, setRunning] = useState<Record<string, string | null>>({})
   const [notices, setNotices] = useState<Record<string, Notice[]>>({})
   const [lives, setLives] = useState<Record<string, SessionLive>>({})
+  const [queues, setQueues] = useState<Record<string, MessageQueue>>({})
   const [git, setGit] = useState<GitStatus | null>(null)
   const [signIn, setSignIn] = useState<SignInRequest | null>(null)
   const [creating, setCreating] = useState(false)
   const [sidebarError, setSidebarError] = useState<string | null>(null)
+  const windowWidth = useWindowWidth()
+  const [sidebarStored, setSidebarWidth] = useStoredWidth('gloss.sidebarWidth')
+  const [threadStored, setThreadPanelWidth] = useStoredWidth('gloss.threadPanelWidth')
 
   const openId = useRef<string | null>(null)
   /** The open session's folder, for refreshing its git status. */
@@ -148,6 +166,7 @@ export function App(): React.JSX.Element {
       openCwd.current = view.session.cwd
       setProjectPath(view.session.cwd)
       setLives((l) => ({ ...l, [id]: view.live }))
+      setQueues((q) => ({ ...q, [id]: view.queue }))
       setRunning((r) => {
         const next = { ...r }
         if (view.turn) next[id] = view.turn.threadId
@@ -194,6 +213,9 @@ export function App(): React.JSX.Element {
           break
         case 'live':
           setLives((l) => ({ ...l, [event.sessionId]: event.live }))
+          break
+        case 'queue':
+          setQueues((q) => ({ ...q, [event.sessionId]: event.queue }))
           break
         case 'reveal':
           void selectSession(event.sessionId, event.threadId)
@@ -246,6 +268,9 @@ export function App(): React.JSX.Element {
   )
 
   useEffect(() => window.gloss.onEvent(onEvent), [onEvent])
+
+  const theme = settings?.global.theme ?? 'system'
+  useEffect(() => applyTheme(theme), [theme])
 
   useEffect(() => {
     void window.gloss.settings.get().then(setSettings)
@@ -466,11 +491,26 @@ export function App(): React.JSX.Element {
   const runningThreadRow = open?.threads.find((t) => t.id === runningThread)
   const sessionNotices = sessionId ? (notices[sessionId] ?? []) : []
   const live = (sessionId && lives[sessionId]) || NO_LIVE
+  const queue = (sessionId && queues[sessionId]) || NO_QUEUE
+  /** Part of the session's queue (one thread's messages) with the queue's actions, for a composer. */
+  const composerQueue = (id: string, items: QueuedMessage[]): ComposerQueue => ({
+    items,
+    paused: queue.paused,
+    onEdit: (itemId, text) => window.gloss.queue.edit(id, itemId, text),
+    onRemove: (itemId) => window.gloss.queue.remove(id, itemId),
+    onResume: () => window.gloss.queue.resume(id)
+  })
   const devModel = settings?.global.devModel ?? false
+  // Dragged widths, kept within what the window has room for now.
+  const sidebarLimit = sidebarLimits(windowWidth)
+  const sidebarWidth = sidebarStored === null ? null : clampWidth(sidebarStored, sidebarLimit)
+  const threadLimit = threadPanelLimits(windowWidth, sidebarWidth ?? SIDEBAR_DEFAULT)
+  const threadWidth = threadStored === null ? null : clampWidth(threadStored, threadLimit)
 
   return (
     <div className="app">
       <Sidebar
+        width={sidebarWidth}
         projects={projects}
         project={project}
         sessions={sessions}
@@ -497,6 +537,14 @@ export function App(): React.JSX.Element {
         onSaveMarkdown={(id) => exportMarkdown(id, null, 'save')}
         onSettings={() => setShowSettings((on) => !on)}
       />
+      <ResizeHandle
+        label="Resize sidebar"
+        pane="before"
+        limits={sidebarLimit}
+        value={sidebarWidth}
+        onResize={setSidebarWidth}
+        onReset={() => setSidebarWidth(null)}
+      />
       {showSettings && settings ? (
         <SettingsScreen
           state={settings}
@@ -519,6 +567,11 @@ export function App(): React.JSX.Element {
           }
           notices={sessionNotices}
           panel={panel}
+          queue={queue}
+          composerQueue={composerQueue(
+            open.session.id,
+            queue.items.filter((q) => q.threadId === null)
+          )}
           onSend={(text, attachments) => void send(text, attachments, null)}
           onCancel={() => void window.gloss.cancel(open.session.id)}
           onSetModel={(value) => window.gloss.sessions.setModel(open.session.id, value)}
@@ -549,25 +602,41 @@ export function App(): React.JSX.Element {
         </main>
       )}
       {open && panel && !showSettings && (
-        <ThreadPanel
-          open={open}
-          panel={panel}
-          label={
-            panel.anchor.kind === 'selection'
-              ? panel.threadId === null
-                ? 'from selection'
-                : 'selection'
-              : anchorLabel(open, panel.anchorMessageId, panel.anchor)
-          }
-          runningThread={runningThread}
-          notices={sessionNotices}
-          live={live}
-          onSend={(text, attachments) => void send(text, attachments, panel)}
-          onCancel={() => void window.gloss.cancel(open.session.id)}
-          onClose={() => setPanel(null)}
-          onCopyMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'copy')}
-          onSaveMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'save')}
-        />
+        <>
+          <ResizeHandle
+            label="Resize thread panel"
+            pane="after"
+            limits={threadLimit}
+            value={threadWidth}
+            onResize={setThreadPanelWidth}
+            onReset={() => setThreadPanelWidth(null)}
+          />
+          <ThreadPanel
+            width={threadWidth}
+            open={open}
+            panel={panel}
+            label={
+              panel.anchor.kind === 'selection'
+                ? panel.threadId === null
+                  ? 'from selection'
+                  : 'selection'
+                : anchorLabel(open, panel.anchorMessageId, panel.anchor)
+            }
+            runningThread={runningThread}
+            notices={sessionNotices}
+            live={live}
+            // A thread that doesn't exist yet has nothing queued.
+            queue={composerQueue(
+              open.session.id,
+              panel.threadId === null ? [] : queue.items.filter((q) => q.threadId === panel.threadId)
+            )}
+            onSend={(text, attachments) => void send(text, attachments, panel)}
+            onCancel={() => void window.gloss.cancel(open.session.id)}
+            onClose={() => setPanel(null)}
+            onCopyMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'copy')}
+            onSaveMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'save')}
+          />
+        </>
       )}
       {signIn && (
         <SignInDialog

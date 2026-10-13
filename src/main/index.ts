@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, shell } from 'electron'
 import { IPC, type GlossEvent } from '../shared/ipc'
 import type { Anchor, Attachment } from '../shared/types'
 import { AgentConnection } from './acp'
@@ -51,6 +51,11 @@ function createWindow(): void {
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = undefined
   })
+  if (process.platform !== 'darwin') {
+    win.webContents.on('before-input-event', (event, input) => {
+      if (handleShortcut(win, input)) event.preventDefault()
+    })
+  }
 
   // Agent output is untrusted. Never open new windows or navigate away from the
   // app; send web links to the system browser instead.
@@ -72,6 +77,25 @@ function createWindow(): void {
   }
 }
 
+/**
+ * The default menu's shortcuts, kept on Windows and Linux where Gloss has no menu:
+ * zoom always, and DevTools and reload in development.
+ */
+function handleShortcut(win: BrowserWindow, input: Electron.Input): boolean {
+  // AltGr arrives as Ctrl+Alt on Windows; leave it to typing.
+  if (input.type !== 'keyDown' || input.alt) return false
+  const mod = input.control
+  const key = input.key.toLowerCase()
+  const contents = win.webContents
+  if (mod && (key === '=' || key === '+')) contents.setZoomLevel(Math.min(contents.getZoomLevel() + 0.5, 5))
+  else if (mod && key === '-') contents.setZoomLevel(Math.max(contents.getZoomLevel() - 0.5, -3))
+  else if (mod && key === '0') contents.setZoomLevel(0)
+  else if (!app.isPackaged && (key === 'f12' || (mod && input.shift && key === 'i'))) contents.toggleDevTools()
+  else if (!app.isPackaged && mod && key === 'r') contents.reload()
+  else return false
+  return true
+}
+
 function emit(event: GlossEvent): void {
   mainWindow?.webContents.send(IPC.event, event)
   if (event.type === 'turnEnd') notifyTurnEnd(event)
@@ -85,7 +109,8 @@ const notifications = new Set<Notification>()
 /** An OS notification when a turn ends or fails while Gloss isn't focused. Clicking it opens the session (and thread). */
 function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
   const win = mainWindow
-  if (!win || win.isFocused() || event.stopReason === 'cancelled' || !Notification.isSupported()) return
+  // A queued message starting next isn't the end of the agent's work.
+  if (!win || win.isFocused() || event.stopReason === 'cancelled' || event.continues || !Notification.isSupported()) return
   const session = store?.getSession(event.sessionId)
   if (!session) return
   const body = event.error
@@ -242,6 +267,13 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     manager.send(str(sessionId, 'sessionId'), str(text, 'text'), threadArg(threadId), attachmentsArg(attachments))
   )
   ipcMain.handle(IPC.cancel, (_e, sessionId: unknown) => manager.cancel(str(sessionId, 'sessionId')))
+  ipcMain.handle(IPC.queueEdit, (_e, sessionId: unknown, id: unknown, text: unknown) =>
+    manager.editQueued(str(sessionId, 'sessionId'), str(id, 'id'), str(text, 'text'))
+  )
+  ipcMain.handle(IPC.queueRemove, (_e, sessionId: unknown, id: unknown) =>
+    manager.removeQueued(str(sessionId, 'sessionId'), str(id, 'id'))
+  )
+  ipcMain.handle(IPC.queueResume, (_e, sessionId: unknown) => manager.resumeQueue(str(sessionId, 'sessionId')))
   ipcMain.handle(IPC.authSignIn, (_e, agentId: unknown, methodId: unknown) =>
     manager.signIn(str(agentId, 'agentId'), str(methodId, 'methodId'))
   )
@@ -261,12 +293,15 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'app.gloss' : process.execPath)
 
 app.whenReady().then(() => {
+  // No File/Edit/View/Window menu bar on Windows and Linux. macOS keeps its menu
+  // (it lives in the system menu bar, and copy and paste need its Edit menu).
+  if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
   const dataDir = app.getPath('userData')
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
     // The cheap dev model is on by default in development, off in packaged builds.
-    defaults: { devModel: !app.isPackaged },
+    defaults: { devModel: !app.isPackaged, theme: 'system' },
     onChange(next, prev) {
       emit({ type: 'settings', state: next })
       // Agents restart with the new model; busy ones once their turn ends.

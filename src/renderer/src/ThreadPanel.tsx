@@ -4,12 +4,14 @@ import type { Attachment, SessionLive } from '@shared/types'
 import { wireTag } from '@shared/wire'
 import type { OpenSession, Panel } from './App'
 import { itemSource, listItemSpans } from './anchors'
-import { Composer } from './Composer'
+import { Composer, type ComposerQueue } from './Composer'
 import { ExportMenu } from './ExportMenu'
 import { Log, logItems, type Notice } from './Log'
 import { Markdown } from './Markdown'
 
 type Props = {
+  /** Width the user dragged it to; null = the CSS default. */
+  width: number | null
   open: OpenSession
   panel: Panel
   label: string
@@ -17,6 +19,8 @@ type Props = {
   runningThread: string | null | undefined
   notices: Notice[]
   live: SessionLive
+  /** Messages queued from this thread. */
+  queue: ComposerQueue
   onSend(text: string, attachments: Attachment[]): void
   onCancel(): void
   onClose(): void
@@ -49,7 +53,11 @@ export function ThreadPanel(props: Props): React.JSX.Element {
   const isSelection = panel.anchor.kind === 'selection'
 
   return (
-    <aside className="thread-panel" aria-label="Thread">
+    <aside
+      className="thread-panel"
+      aria-label="Thread"
+      style={props.width === null ? undefined : { flexBasis: props.width }}
+    >
       <header>
         <h2>{isSelection && panel.threadId === null ? 'New thread' : 'Thread'}</h2>
         <span className="mono">{label}</span>
@@ -87,6 +95,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         primary
         commands={live.commands}
         accepts={live.accepts}
+        queue={props.queue}
         onSend={onSend}
         onCancel={onCancel}
         footer={<div className="mono wire">sent as: {wireTag(panel.anchor.text)} …</div>}

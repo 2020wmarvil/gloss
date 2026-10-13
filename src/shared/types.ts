@@ -35,6 +35,22 @@ export type Message = {
   attachments?: Attachment[]
 }
 
+/** A message sent while a turn was running, waiting for its turn (SPEC → Queue). Kept in memory only. */
+export type QueuedMessage = {
+  id: string
+  /** The thread it was written in; it runs there. null = main thread. */
+  threadId: string | null
+  text: string
+  attachments: Attachment[]
+}
+
+/** A session's queued messages, sent in order as turns end. */
+export type MessageQueue = {
+  items: QueuedMessage[]
+  /** A turn was cancelled, failed or stopped early: nothing more is sent until the user resumes or a turn ends normally. */
+  paused: boolean
+}
+
 export type ToolCall = {
   /** ACP toolCallId. */
   id: string

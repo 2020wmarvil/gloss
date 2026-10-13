@@ -5,6 +5,8 @@ import { sameFolder } from '@shared/paths'
 import type { AgentSession, Project, Session } from '@shared/types'
 
 type Props = {
+  /** Width the user dragged it to; null = the CSS default. */
+  width: number | null
   projects: Project[]
   project: Project | null
   /** All Gloss sessions; the sidebar shows the current project's. */
@@ -87,7 +89,7 @@ export function Sidebar(props: Props): React.JSX.Element {
   const shownAgent = agentSessions && (showAll ? agentSessions : agentSessions.slice(0, AGENT_SESSIONS_SHOWN))
 
   return (
-    <nav className="sidebar">
+    <nav className="sidebar" style={props.width === null ? undefined : { flexBasis: props.width }}>
       <div className="brand">gloss.</div>
 
       <div className="switcher">

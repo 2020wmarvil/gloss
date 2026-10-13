@@ -33,6 +33,11 @@ const api: GlossApi = {
   send: (sessionId, text, threadId, attachments) =>
     ipcRenderer.invoke(IPC.send, sessionId, text, threadId, attachments),
   cancel: (sessionId) => ipcRenderer.invoke(IPC.cancel, sessionId),
+  queue: {
+    edit: (sessionId, id, text) => ipcRenderer.invoke(IPC.queueEdit, sessionId, id, text),
+    remove: (sessionId, id) => ipcRenderer.invoke(IPC.queueRemove, sessionId, id),
+    resume: (sessionId) => ipcRenderer.invoke(IPC.queueResume, sessionId)
+  },
   auth: {
     signIn: (agentId, methodId) => ipcRenderer.invoke(IPC.authSignIn, agentId, methodId),
     dismiss: (agentId) => ipcRenderer.invoke(IPC.authDismiss, agentId)
