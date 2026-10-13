@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { GitStatus, PullRequest } from '@shared/ipc'
 import { folderName } from '@shared/paths'
 import type { MessageQueue, ModelOption, RateLimit, Session, SessionLive, SlashCommand } from '@shared/types'
+import { errorText } from './errors'
 import { Popover } from './Popover'
 
 type Props = {
@@ -131,6 +132,7 @@ export function modelLabel(option: ModelOption): string {
 export function StatusLine(props: Props): React.JSX.Element {
   const { session, live, git, devModel, runningThread } = props
   const [modelError, setModelError] = useState<string | null>(null)
+  const [folderError, setFolderError] = useState<string | null>(null)
   const usage = live.usage
   const pct = usage && usage.size > 0 ? Math.min(100, Math.round((usage.used / usage.size) * 100)) : null
   const model = live.model
@@ -281,9 +283,17 @@ export function StatusLine(props: Props): React.JSX.Element {
             {git.dirty && <span className="dirty">*</span>}
           </span>
         ))}
-      <span className="status-item mono" title={session.cwd}>
+      <button
+        className="status-item mono"
+        title={`${session.cwd}\nClick to open the folder.`}
+        onClick={() => {
+          setFolderError(null)
+          void window.gloss.sessions.openFolder(session.id).then(setFolderError, (err: unknown) => setFolderError(errorText(err)))
+        }}
+      >
         {folderName(session.cwd)}
-      </span>
+      </button>
+      {folderError && <span className="status-item error">Couldn&apos;t open the folder: {folderError}</span>}
     </div>
   )
 }

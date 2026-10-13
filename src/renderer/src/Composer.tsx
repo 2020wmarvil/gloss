@@ -12,6 +12,8 @@ export type ComposerQueue = {
 }
 
 type Props = {
+  /** Which composer this is (session, and thread anchor), so its unsent draft survives switching away. */
+  draftKey: string
   className: string
   placeholder: string
   /** A turn is running somewhere in the session: sending queues the message (SPEC → Queue). */
@@ -32,6 +34,9 @@ type Props = {
 }
 
 export const FOCUS_COMPOSER = 'gloss:focus-composer'
+
+/** Unsent text and attachments by draftKey, kept while Gloss runs (SPEC → Composer). */
+const drafts = new Map<string, { text: string; attachments: Attachment[] }>()
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_FILE_BYTES = 1024 * 1024
@@ -63,6 +68,7 @@ async function toAttachment(file: File, accepts: Props['accepts']): Promise<Atta
 }
 
 export function Composer({
+  draftKey,
   className,
   placeholder,
   running,
@@ -76,8 +82,8 @@ export function Composer({
   onSteer,
   onCancel
 }: Props): React.JSX.Element {
-  const [text, setText] = useState('')
-  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [text, setText] = useState(() => drafts.get(draftKey)?.text ?? '')
+  const [attachments, setAttachments] = useState<Attachment[]>(() => drafts.get(draftKey)?.attachments ?? [])
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [pick, setPick] = useState(0)
@@ -88,6 +94,11 @@ export function Composer({
   useEffect(() => {
     if (autoFocus && !running) ref.current?.focus()
   }, [autoFocus, running])
+
+  useEffect(() => {
+    if (text || attachments.length > 0) drafts.set(draftKey, { text, attachments })
+    else drafts.delete(draftKey)
+  }, [draftKey, text, attachments])
 
   useEffect(() => {
     if (!primary) return

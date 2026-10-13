@@ -259,6 +259,13 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     await writeFile(result.filePath, markdown)
     return true
   })
+  // Takes the session, not a path: shell.openPath would run a file it was given.
+  ipcMain.handle(IPC.sessionsOpenFolder, async (_e, id: unknown) => {
+    const session = store!.getSession(str(id, 'id'))
+    if (!session) throw new Error(`Unknown session ${String(id)}`)
+    const error = await shell.openPath(session.cwd)
+    return error === '' ? null : error
+  })
   ipcMain.handle(IPC.gitStatus, (_e, cwd: unknown) => gitStatus(str(cwd, 'cwd')))
   ipcMain.handle(IPC.gitPullRequest, (_e, cwd: unknown) => pullRequest(str(cwd, 'cwd')))
   ipcMain.handle(IPC.threadsCreate, (_e, sessionId: unknown, anchorMessageId: unknown, anchor: unknown) =>

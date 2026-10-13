@@ -124,6 +124,7 @@ export function Conversation(props: Props): React.JSX.Element {
         renderAgent={renderAgent}
       />
       <Composer
+        draftKey={session.id}
         className="composer"
         placeholder="Message the agent"
         running={running}

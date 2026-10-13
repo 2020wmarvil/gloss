@@ -95,6 +95,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
       />
       <Composer
         key={`${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
+        draftKey={`${open.session.id}:${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
         className="thread-composer"
         placeholder="Reply in thread"
         running={running}

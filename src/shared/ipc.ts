@@ -132,6 +132,8 @@ export type GlossApi = {
     copyMarkdown(id: string, threadId: string | null): Promise<void>
     /** Saves the session (or one thread) as a markdown file. Resolves to false if cancelled. */
     saveMarkdown(id: string, threadId: string | null): Promise<boolean>
+    /** Opens the session's folder in the system file manager. Resolves to an error message, or null. */
+    openFolder(id: string): Promise<string | null>
   }
   git: {
     /** The folder's branch and whether it has uncommitted changes; null outside a repo. */
@@ -192,6 +194,7 @@ export const IPC = {
   sessionsSetModel: 'gloss:sessions:setModel',
   sessionsCopyMarkdown: 'gloss:sessions:copyMarkdown',
   sessionsSaveMarkdown: 'gloss:sessions:saveMarkdown',
+  sessionsOpenFolder: 'gloss:sessions:openFolder',
   gitStatus: 'gloss:git:status',
   gitPullRequest: 'gloss:git:pullRequest',
   threadsCreate: 'gloss:threads:create',
