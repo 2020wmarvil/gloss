@@ -433,7 +433,7 @@ describe('SessionManager', () => {
 
       releases.get(wireTwo)!()
       // 'three' is back in the main thread after a thread message: it says so.
-      const wireThree = '[main]\nthree'
+      const wireThree = '[re: the main conversation, not the thread above]\nthree'
       await waitForPrompt(releases, wireThree)
       releases.get(wireThree)!()
       await vi.waitFor(() => expect(manager.openSession(session.id).turn).toBeNull())
@@ -797,11 +797,11 @@ describe('SessionManager', () => {
 
       // Back in the main thread, the first message says so; later ones are sent untagged.
       await manager.send(sessionId, 'ok, do 1 and 2', null)
-      expect(state.prompts.at(-1)).toBe('[main]\nok, do 1 and 2')
+      expect(state.prompts.at(-1)).toBe('[re: the main conversation, not the thread above]\nok, do 1 and 2')
       await manager.send(sessionId, 'and 3', null)
       expect(state.prompts.at(-1)).toBe('and 3')
       const back = manager.openSession(sessionId).messages.find((m) => m.text === 'ok, do 1 and 2')!
-      expect(back.wireText).toBe('[main]\nok, do 1 and 2')
+      expect(back.wireText).toBe('[re: the main conversation, not the thread above]\nok, do 1 and 2')
     })
 
     it('truncates long anchors in the wire tag', async () => {

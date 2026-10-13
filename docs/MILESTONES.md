@@ -100,7 +100,7 @@ Stop waiting for a turn to end before you can say something.
 ## M9 — Threads, further
 - **Threads overview:** a per-session list of all threads (anchor quote, reply count, last activity, running indicator). Clicking one opens it in the panel. Placement: a collapsible right-hand side panel that shows the overview or one thread (SPEC → Conversation view → Side panel).
 - **Agent plan:** `plan` updates render as a checklist (pending / in progress / done) in the thread whose turn produced them, updated in place as the agent works. Persisted, so it survives a restart.
-- **Back to main on the wire:** the first main-thread message after a thread is sent with a `[main]` tag, so the agent doesn't read it as continuing the thread (SPEC → Wire format).
+- **Back to main on the wire:** the first main-thread message after a thread is tagged `[re: the main conversation, not the thread above]`, so the agent doesn't read it as continuing the thread (SPEC → Wire format).
 
 **Done when:** in a session with several threads, any thread can be found and opened from the overview, and an agent's plan is visible and updates live in the thread it belongs to.
 

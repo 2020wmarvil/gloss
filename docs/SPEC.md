@@ -41,11 +41,11 @@ User message in a thread is sent to the agent as:
 Main-thread messages are sent unchanged, except the first one after a thread: when the user's previous message in the session was in a thread, the main message is sent as
 
 ```
-[main]
+[re: the main conversation, not the thread above]
 <user's text>
 ```
 
-so the agent doesn't read it as continuing that thread. The UI shows the user's text without the tag; the tag is stored in `wireText`.
+so the agent doesn't read it as continuing that thread. It takes the thread tag's `[re: …]` form and avoids the bare word "main", which in a coding session reads as the git branch. The UI shows the user's text without the tag; the tag is stored in `wireText`.
 
 ## Data model
 
@@ -121,7 +121,7 @@ send(text, threadId?):
   if a turn is running: queue.push({text, threadId, attachments}); return   (see Composer → Queue)
   t = threads[threadId]
   wire = t ? `[re: "${truncate(t.anchor.text, 80)}"]\n${text}`
-           : lastUserMessage()?.threadId != null ? `[main]\n${text}` : text
+           : lastUserMessage()?.threadId != null ? `[re: the main conversation, not the thread above]\n${text}` : text
   insert Message{role:'user', text, wireText: wire, threadId, seq: next()}
   currentThread = threadId
   { stopReason } = await acp.prompt(sessionId, [{type:'text', text: wire}, ...attachmentBlocks])

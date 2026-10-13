@@ -13,7 +13,7 @@ export function wireTag(anchorText: string): string {
 }
 
 /** The tag on the first main-thread message after a thread, so the agent knows the thread is over. */
-export const MAIN_TAG = '[main]'
+export const MAIN_TAG = '[re: the main conversation, not the thread above]'
 
 /**
  * What is sent to the agent: thread messages tagged with their anchor, main-thread
