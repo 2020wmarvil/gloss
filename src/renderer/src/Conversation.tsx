@@ -30,11 +30,18 @@ type Props = {
   /** The main thread's part of it, for the composer. */
   composerQueue: ComposerQueue
   onSend(text: string, attachments: Attachment[]): void
+  /** Injects the message into the running turn (when it runs in the main thread). */
+  onSteer(text: string, attachments: Attachment[]): void
   onCancel(): void
   onSetModel(value: string): Promise<void>
   onOpenItem(message: Message, span: ListItemSpan): void
   onOpenSelection(message: Message, selection: SourceSelection): void
   onOpenThread(threadId: string): void
+}
+
+function lastUserMessage(messages: Message[]): Message | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === 'user') return messages[i]
+  return undefined
 }
 
 export function Conversation(props: Props): React.JSX.Element {
@@ -125,6 +132,7 @@ export function Conversation(props: Props): React.JSX.Element {
         accepts={live.accepts}
         queue={props.composerQueue}
         onSend={props.onSend}
+        onSteer={live.steering && runningThread === null ? props.onSteer : undefined}
         onCancel={props.onCancel}
       />
       <StatusLine
@@ -134,6 +142,7 @@ export function Conversation(props: Props): React.JSX.Element {
         devModel={props.devModel}
         runningThread={runningThread}
         runningLabel={props.runningLabel}
+        steered={running && lastUserMessage(open.messages)?.steered === true}
         queue={props.queue}
         onResumeQueue={() => void props.composerQueue.onResume()}
         onOpenThread={props.onOpenThread}

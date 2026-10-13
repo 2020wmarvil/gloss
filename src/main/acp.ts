@@ -32,6 +32,18 @@ export function isResourceNotFound(err: unknown): boolean {
   )
 }
 
+/**
+ * The Claude adapter's steering extension: injects a message into the running
+ * turn. Advertised as `_meta.steering.supported` in the initialize response.
+ */
+const STEER_METHOD = '_session/steering'
+
+/**
+ * `injected`: the message joined the running turn, whose output now answers it.
+ * `promptRequired`: no turn was running, so nothing was sent.
+ */
+export type SteerOutcome = 'injected' | 'promptRequired'
+
 export class AgentConnection {
   private closed = false
 
@@ -131,6 +143,11 @@ export class AgentConnection {
     return this.init.agentCapabilities?.sessionCapabilities?.delete != null
   }
 
+  get canSteer(): boolean {
+    const steering = (this.init._meta as { steering?: { supported?: unknown } } | null | undefined)?.steering
+    return steering?.supported === true
+  }
+
   get promptCapabilities(): acp.PromptCapabilities {
     return this.init.agentCapabilities?.promptCapabilities ?? {}
   }
@@ -174,6 +191,19 @@ export class AgentConnection {
 
   prompt(sessionId: string, prompt: acp.ContentBlock[]): Promise<acp.PromptResponse> {
     return this.conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt })
+  }
+
+  /** Injects a message into the session's running turn (see STEER_METHOD). */
+  async steer(sessionId: string, prompt: acp.ContentBlock[]): Promise<SteerOutcome> {
+    // promptRequired: if the turn already ended, the adapter sends nothing
+    // instead of starting a turn Gloss doesn't know about.
+    const res = await this.conn.agent.request<{ outcome?: unknown }>(STEER_METHOD, {
+      sessionId,
+      prompt,
+      _meta: { steering: { idleBehavior: 'promptRequired' } }
+    })
+    if (res.outcome === 'injected' || res.outcome === 'promptRequired') return res.outcome
+    throw new Error(`Unexpected steering outcome: ${String(res.outcome)}`)
   }
 
   cancel(sessionId: string): Promise<void> {

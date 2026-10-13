@@ -57,7 +57,8 @@ const NO_LIVE: SessionLive = {
   usage: null,
   rateLimits: [],
   permissions: null,
-  accepts: { image: false, file: false }
+  accepts: { image: false, file: false },
+  steering: false
 }
 
 const NO_QUEUE: MessageQueue = { items: [], paused: false }
@@ -224,6 +225,10 @@ export function App(): React.JSX.Element {
           if (event.message.sessionId !== openId.current) break
           lastSeq.current = Math.max(lastSeq.current, event.message.seq)
           setOpen((o) => (o ? { ...o, messages: upsert(o.messages, event.message) } : o))
+          break
+        case 'messageDeleted':
+          if (event.sessionId !== openId.current) break
+          setOpen((o) => (o ? { ...o, messages: o.messages.filter((m) => m.id !== event.messageId) } : o))
           break
         case 'toolCall':
           if (event.toolCall.sessionId !== openId.current) break
@@ -420,7 +425,12 @@ export function App(): React.JSX.Element {
     if (t) setPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id })
   }
 
-  async function send(text: string, attachments: Attachment[], target: Panel | null): Promise<void> {
+  async function send(
+    text: string,
+    attachments: Attachment[],
+    target: Panel | null,
+    how: 'send' | 'steer' = 'send'
+  ): Promise<void> {
     if (!open) return
     const sessionId = open.session.id
     let threadId: string | null = null
@@ -436,7 +446,7 @@ export function App(): React.JSX.Element {
         }
       }
       // Turn errors arrive as turnEnd events.
-      await window.gloss.send(sessionId, text, threadId, attachments)
+      await (how === 'steer' ? window.gloss.steer : window.gloss.send)(sessionId, text, threadId, attachments)
     } catch (err) {
       addNotice(sessionId, threadId, errorText(err))
     }
@@ -574,6 +584,7 @@ export function App(): React.JSX.Element {
             queue.items.filter((q) => q.threadId === null)
           )}
           onSend={(text, attachments) => void send(text, attachments, null)}
+          onSteer={(text, attachments) => void send(text, attachments, null, 'steer')}
           onCancel={() => void window.gloss.cancel(open.session.id)}
           onSetModel={(value) => window.gloss.sessions.setModel(open.session.id, value)}
           onOpenItem={openItem}
@@ -632,6 +643,7 @@ export function App(): React.JSX.Element {
               panel.threadId === null ? [] : queue.items.filter((q) => q.threadId === panel.threadId)
             )}
             onSend={(text, attachments) => void send(text, attachments, panel)}
+            onSteer={(text, attachments) => void send(text, attachments, panel, 'steer')}
             onCancel={() => void window.gloss.cancel(open.session.id)}
             onClose={() => setPanel(null)}
             onCopyMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'copy')}

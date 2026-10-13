@@ -26,6 +26,8 @@ type Props = {
   /** What the agent accepts besides text. */
   accepts: { image: boolean; file: boolean }
   onSend(text: string, attachments: Attachment[]): void
+  /** Offered while a turn runs in this composer's thread and the agent supports steering (SPEC → Steer). */
+  onSteer?(text: string, attachments: Attachment[]): void
   onCancel(): void
 }
 
@@ -71,6 +73,7 @@ export function Composer({
   accepts,
   queue,
   onSend,
+  onSteer,
   onCancel
 }: Props): React.JSX.Element {
   const [text, setText] = useState('')
@@ -119,10 +122,13 @@ export function Composer({
     }
   }
 
-  function submit(): void {
+  const steer = running ? onSteer : undefined
+
+  function submit(how: 'send' | 'steer' = 'send'): void {
     const trimmed = text.trim()
     if (!trimmed && attachments.length === 0) return
-    onSend(trimmed, attachments)
+    if (how === 'steer' && steer) steer(trimmed, attachments)
+    else onSend(trimmed, attachments)
     setText('')
     setAttachments([])
     setError(null)
@@ -279,7 +285,7 @@ export function Composer({
               }
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
-                submit()
+                submit(e.ctrlKey || e.metaKey ? 'steer' : 'send')
               }
             }}
           />
@@ -288,9 +294,19 @@ export function Composer({
               Cancel
             </button>
           )}
+          {steer && (
+            <button
+              className="steer"
+              onClick={() => submit('steer')}
+              disabled={!text.trim() && attachments.length === 0}
+              title="Send into the running turn now (Ctrl+Enter)"
+            >
+              Steer
+            </button>
+          )}
           <button
             className="primary send"
-            onClick={submit}
+            onClick={() => submit()}
             disabled={!text.trim() && attachments.length === 0}
             title={running ? 'Sent when the running turn ends' : undefined}
           >

@@ -32,6 +32,8 @@ const api: GlossApi = {
   },
   send: (sessionId, text, threadId, attachments) =>
     ipcRenderer.invoke(IPC.send, sessionId, text, threadId, attachments),
+  steer: (sessionId, text, threadId, attachments) =>
+    ipcRenderer.invoke(IPC.steer, sessionId, text, threadId, attachments),
   cancel: (sessionId) => ipcRenderer.invoke(IPC.cancel, sessionId),
   queue: {
     edit: (sessionId, id, text) => ipcRenderer.invoke(IPC.queueEdit, sessionId, id, text),

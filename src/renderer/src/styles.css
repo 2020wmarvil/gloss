@@ -739,6 +739,14 @@ body.resizing {
   overflow-wrap: anywhere;
 }
 
+.you .steered-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--accent-ink);
+}
+
 .notice {
   margin: 0;
   align-self: center;
@@ -1202,6 +1210,20 @@ body.resizing {
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: var(--panel);
+}
+
+/* Steer: inject the message into the running turn (SPEC → Steer) */
+.steer {
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent-tint);
+  color: var(--accent-ink);
+}
+
+.steer:disabled {
+  opacity: 0.5;
 }
 
 /* Queued messages, above the composer box */

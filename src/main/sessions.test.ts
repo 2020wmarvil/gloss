@@ -14,6 +14,8 @@ type Script = (ctx: {
   update(update: acp.SessionUpdate): Promise<void>
   requestPermission(title: string, options?: acp.PermissionOption[]): Promise<acp.RequestPermissionResponse>
   cancelled: Promise<void>
+  /** Resolves with the text of the next message steered into this turn. */
+  nextSteer(): Promise<string>
 }) => Promise<acp.StopReason>
 
 /** State shared by every connection to the fake agent, like a real agent's disk state. */
@@ -51,6 +53,12 @@ type FakeAgent = {
   promptBlocks: acp.ContentBlock[][]
   /** Slash commands announced after session/new and session/load. */
   commands: acp.AvailableCommand[]
+  /** Advertise the Claude adapter's `_session/steering` extension. */
+  steering: boolean
+  /** The full prompt of each steered message. */
+  steers: acp.ContentBlock[][]
+  /** Answer every steer with promptRequired, as if the turn had just ended. */
+  turnEnding: boolean
   script: Script
 }
 
@@ -78,6 +86,9 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
     promptCapabilities: {},
     promptBlocks: [],
     commands: [],
+    steering: false,
+    steers: [],
+    turnEnding: false,
     script: async ({ say }) => {
       await say('Hello')
       await say(' world')
@@ -90,6 +101,8 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
 function agentApp(state: FakeAgent): acp.AgentApp {
   state.connections++
   const cancels = new Map<string, () => void>()
+  /** Running turns' steer listeners, by session. */
+  const steerTo = new Map<string, (text: string) => void>()
   let next = 0
   return acp
     .agent({ name: 'fake' })
@@ -103,8 +116,17 @@ function agentApp(state: FakeAgent): acp.AgentApp {
           ...(state.canDelete ? { delete: {} } : {})
         }
       },
-      authMethods: state.authMethods
+      authMethods: state.authMethods,
+      ...(state.steering ? { _meta: { steering: { supported: true } } } : {})
     }))
+    .onRequest('_session/steering', { parse: (p) => p as { sessionId: string; prompt: acp.ContentBlock[] } }, (ctx) => {
+      const { sessionId, prompt } = ctx.params
+      const deliver = steerTo.get(sessionId)
+      if (!deliver || state.turnEnding) return { outcome: 'promptRequired', reason: 'noRunningTurn' }
+      state.steers.push(prompt)
+      deliver(prompt[0]?.type === 'text' ? prompt[0].text : '')
+      return { outcome: 'injected' }
+    })
     .onRequest(acp.methods.agent.session.list, (ctx) => ({
       sessions: state.listed.filter((s) => s.cwd === ctx.params.cwd)
     }))
@@ -169,6 +191,15 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       const update = (u: acp.SessionUpdate): Promise<void> =>
         ctx.client.notify(acp.methods.client.session.update, { sessionId, update: u })
       const cancelled = new Promise<void>((resolve) => cancels.set(sessionId, resolve))
+      const steered: string[] = []
+      let waiting: ((text: string) => void) | undefined
+      steerTo.set(sessionId, (t) => {
+        if (waiting) waiting(t)
+        else steered.push(t)
+        waiting = undefined
+      })
+      const nextSteer = (): Promise<string> =>
+        steered.length > 0 ? Promise.resolve(steered.shift()!) : new Promise((r) => (waiting = r))
       const stopReason = await state.script({
         sessionId,
         text,
@@ -189,8 +220,9 @@ function agentApp(state: FakeAgent): acp.AgentApp {
               { optionId: 'deny', name: 'Deny', kind: 'reject_once' }
             ]
           }),
-        cancelled
-      })
+        cancelled,
+        nextSteer
+      }).finally(() => steerTo.delete(sessionId))
       return { stopReason }
     })
 }
@@ -485,6 +517,107 @@ describe('SessionManager', () => {
       await manager.deleteSession(sessionId)
       await expect(running).resolves.toEqual({ stopReason: 'cancelled' })
       expect(state.prompts).toEqual(['one'])
+    })
+  })
+
+  describe('steering', () => {
+    /** The running turn says "working", waits for a steer, answers it and ends. */
+    function steerableTurn(): void {
+      state.steering = true
+      state.script = async ({ text, say, nextSteer }) => {
+        if (text === 'idle') return 'end_turn'
+        await say('working', 'm1')
+        const steer = await nextSteer()
+        await say(`ok: ${steer}`, 'm2')
+        return 'end_turn'
+      }
+    }
+
+    it('injects a message into the running turn and records it before the answer', async () => {
+      steerableTurn()
+      const session = await manager.createSession('/w', 'fake')
+      expect(manager.openSession(session.id).live.steering).toBe(true)
+      const running = manager.send(session.id, 'build it', null)
+      await vi.waitFor(() =>
+        expect(manager.openSession(session.id).messages.some((m) => m.text === 'working')).toBe(true)
+      )
+
+      await expect(manager.steer(session.id, 'skip the tests', null)).resolves.toEqual({ steered: true })
+      await expect(running).resolves.toEqual({ stopReason: 'end_turn' })
+
+      expect(state.prompts).toEqual(['build it'])
+      expect(state.steers).toEqual([[{ type: 'text', text: 'skip the tests' }]])
+      const messages = manager.openSession(session.id).messages
+      expect(messages.map((m) => [m.role, m.text, m.steered ?? false])).toEqual([
+        ['user', 'build it', false],
+        ['agent', 'working', false],
+        ['user', 'skip the tests', true],
+        ['agent', 'ok: skip the tests', false]
+      ])
+      // Persisted.
+      expect(store.listMessages(session.id)[2].steered).toBe(true)
+    })
+
+    it('steers only the thread the turn runs in, tagged for that thread', async () => {
+      state.steering = true
+      const session = await manager.createSession('/w', 'fake')
+      state.script = async ({ say }) => {
+        await say('1. Item')
+        return 'end_turn'
+      }
+      await manager.send(session.id, 'list', null)
+      const anchor = manager.openSession(session.id).messages.find((m) => m.role === 'agent')!
+      const thread = manager.createThread(session.id, anchor.id, { kind: 'listItem', path: [0], text: 'Item' })
+      steerableTurn()
+
+      const running = manager.send(session.id, 'fix it', thread.id)
+      await vi.waitFor(() => expect(state.prompts).toHaveLength(2))
+      await expect(manager.steer(session.id, 'not that way', null)).rejects.toThrow(/thread the agent is working in/)
+      await expect(manager.steer(session.id, 'smaller', thread.id)).resolves.toEqual({ steered: true })
+      await running
+
+      expect(state.steers).toEqual([[{ type: 'text', text: '[re: "Item"]\nsmaller' }]])
+      const inThread = manager.openSession(session.id).messages.filter((m) => m.threadId === thread.id)
+      expect(inThread.map((m) => m.text)).toEqual(['fix it', 'working', 'smaller', 'ok: [re: "Item"]\nsmaller'])
+    })
+
+    it('sends as usual when no turn is running', async () => {
+      steerableTurn()
+      const session = await manager.createSession('/w', 'fake')
+      await expect(manager.steer(session.id, 'idle', null)).resolves.toEqual({ stopReason: 'end_turn' })
+      expect(state.prompts).toEqual(['idle'])
+      expect(state.steers).toEqual([])
+    })
+
+    it('queues the message first when the turn ends before it gets in', async () => {
+      steerableTurn()
+      state.turnEnding = true
+      const session = await manager.createSession('/w', 'fake')
+      const running = manager.send(session.id, 'build it', null)
+      await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+      await manager.send(session.id, 'later', null)
+
+      await expect(manager.steer(session.id, 'idle', null)).resolves.toEqual({ queued: true })
+      expect(manager.openSession(session.id).queue.items.map((q) => q.text)).toEqual(['idle', 'later'])
+      expect(manager.openSession(session.id).messages.some((m) => m.steered)).toBe(false)
+      state.turnEnding = false
+      await manager.steer(session.id, 'go on', null)
+      await running
+      await vi.waitFor(() => expect(state.prompts).toEqual(['build it', 'idle', 'later']))
+    })
+
+    it("refuses to steer an agent that doesn't support it", async () => {
+      state.script = async ({ cancelled }) => {
+        await cancelled
+        return 'cancelled'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      expect(manager.openSession(session.id).live.steering).toBe(false)
+      const running = manager.send(session.id, 'build it', null)
+      await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+      await expect(manager.steer(session.id, 'faster', null)).rejects.toThrow(/Queue it instead/)
+      await manager.cancel(session.id)
+      await running
     })
   })
 
@@ -986,7 +1119,8 @@ describe('SessionManager', () => {
         usage: { used: 50_000, size: 200_000, cost: { amount: 0.12, currency: 'USD' } },
         rateLimits: [],
         permissions: 'auto',
-        accepts: { image: true, file: true }
+        accepts: { image: true, file: true },
+        steering: false
       })
       expect(events).toContainEqual(expect.objectContaining({ type: 'live', sessionId: session.id }))
     })

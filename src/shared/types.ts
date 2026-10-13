@@ -33,6 +33,8 @@ export type Message = {
   acpMessageId?: string
   /** User messages: images and files sent with it. */
   attachments?: Attachment[]
+  /** User messages: injected into a running turn instead of starting one (SPEC → Steer). */
+  steered?: true
 }
 
 /** A message sent while a turn was running, waiting for its turn (SPEC → Queue). Kept in memory only. */
@@ -118,6 +120,8 @@ export type SessionLive = {
   permissions: 'bypass' | 'auto' | null
   /** What the agent accepts in a prompt besides text. */
   accepts: { image: boolean; file: boolean }
+  /** The agent takes messages into a running turn (SPEC → Steer). */
+  steering: boolean
 }
 
 export type AuthMethodInfo = {
