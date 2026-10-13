@@ -104,6 +104,18 @@ Stop waiting for a turn to end before you can say something.
 
 **Done when:** in a session with several threads, any thread can be found and opened from the overview, and an agent's plan is visible and updates live in the thread it belongs to.
 
+## Shared sessions (pulled ahead of M10)
+Make the agent's session the source of truth, so one session can be continued in Gloss and in the `claude` CLI (SPEC → Shared sessions). Replaces import-once and the "Not in Gloss yet" section.
+
+- **Sync:** every `session/load` replay is matched against the cached log, keeping matched entries (and their threads), adding new ones and removing ones the agent no longer has. Messages from elsewhere are placed in threads by their tag; text-file attachments are parsed back from the replay.
+- **Reload on change:** compare `session/list` `updatedAt` with `syncedAt` on open, window focus and before each send; `session/close` then `session/load` when it moved. Never during a turn.
+- **One session list** in the sidebar: Gloss's sessions and the agent's own, by recent activity. Titles come from the agent unless renamed in Gloss.
+- **Deleted outside Gloss:** a session the agent no longer has (`resource_not_found` on load) is deleted in Gloss too, instead of silently getting a new agent session. Sessions that never had a message are exempt.
+- **Existing data:** current sessions sync like any other on their next resume; matching keeps their message ids, so their threads carry over. Back up the DB before the first run on real data.
+- Verify first: where a steered message lands in the transcript and the replay, and that a separate data folder (`--user-data-dir`) works, so development never runs against the live DB. Extend `sessions.test.ts`: a fake agent whose history changes between loads.
+
+**Done when:** a session started in Gloss with threads can be continued with `claude --resume`, and back in Gloss the CLI turns show in the main thread, the threads are intact, and the agent remembers both.
+
 ## M10 — Search
 Find anything you discussed: "where did we decide the cache key format?"
 

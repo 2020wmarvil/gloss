@@ -19,6 +19,7 @@ Consequences, all intended:
 - No forking, no merging, no summaries. The agent has everything that happened in every thread in its context.
 - One working tree. Edits made from any thread are visible everywhere.
 - Works with any agent, because the agent session is not modified.
+- The session stays the agent's own: it can be continued in the agent's CLI and back in Gloss (see Shared sessions).
 
 ## Anchors (what a thread hangs off)
 
@@ -55,9 +56,10 @@ type Session = {
   agentId: string            // which agent config, e.g. 'claude'
   acpSessionId: string       // the ACP session id
   cwd: string                // its project (folder)
-  title: string
+  title?: string             // set by renaming in Gloss; otherwise the agent's title (session/list), else the folder name
   createdAt: number
   model?: string             // model config value picked in Gloss; re-applied on resume
+  syncedAt?: string          // the agent's updatedAt for this session when Gloss last synced it (see Shared sessions)
 }
 
 type Attachment =
@@ -113,6 +115,7 @@ Projects are folders: those opened with "Open project…" (a `projects` table) p
 Notes:
 - `anchorMessageId` may point at a message inside a thread. That would allow nested threads later without a migration. Nesting is **not** in scope now.
 - A Thread row is created when the user sends the first message on an anchor, not when the panel is opened.
+- For an agent that shares its sessions (see Shared sessions), messages, tool calls and plans are a cache of the agent's session. Threads, the thread each message belongs to, titles renamed in Gloss, `model`, `steered` and `createdAt` are Gloss's own.
 
 ## Message flow
 
@@ -176,7 +179,7 @@ Lifecycle:
 2. `initialize` — advertise no `fs` and no `terminal` client capabilities for v1, so the agent uses its own file and shell tools. Read `agentCapabilities`: `loadSession`, `promptCapabilities` (what attachments it takes) and `sessionCapabilities` (`list`, `delete`).
 3. `session/new` with `cwd` and `mcpServers: []`.
 4. Turns via `session/prompt` as above.
-5. On app restart: if the agent advertised `loadSession`, use `session/load` to resume; otherwise start a new ACP session and show a notice that the agent lost context. The app's own DB is always the display state.
+5. On app restart: if the agent advertised `loadSession`, use `session/load` to resume, which also syncs the session (see Shared sessions); otherwise start a new ACP session and show a notice that the agent lost context, and the app's own DB is the display state.
 
 ### Authentication
 
@@ -235,13 +238,25 @@ In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its env
 The sidebar (`docs/mocks/sidebar-switcher.html`) shows one project at a time:
 
 - **Project switcher** at the top: the current project's name and path. Its menu lists every project (a dot marks one with a running session) and "Open project…", a folder picker that adds a project. Hovering a project in the menu shows a small **×** that deletes it.
-- **Delete project** asks for confirmation, then deletes each of the project's Gloss sessions as below (the agent's copies too) and removes the project. The agent's sessions that were never opened in Gloss are kept, and the folder's files are not touched.
+- **Delete project** asks for confirmation, then deletes each of the project's sessions that were opened in Gloss as below (the agent's copies too) and removes the project. The agent's sessions that were never opened in Gloss are kept, and the folder's files are not touched.
 - **+ New session** starts a session in the current project (`Ctrl+N`). Without a project it opens the folder picker.
-- **Sessions:** the project's Gloss sessions, newest first, with a running dot or their age. Right-clicking a session opens its menu: Rename, Copy as markdown, Save as markdown…, Delete…. Double-click (or F2) renames in place.
-- **Not in Gloss yet:** the agent's own sessions for the folder that Gloss hasn't imported, from `session/list` with `cwd` (when the agent advertises `sessionCapabilities.list`), newest first, five shown with "Show N more". Clicking one imports it. The section is hidden while loading and when there are none.
-- **Import:** a Gloss session is created for the agent's session and its main thread is built from the `session/load` replay: `user_message_chunk` and `agent_message_chunk` become messages (split by `messageId`, and at tool calls), `tool_call`/`tool_call_update` become tool calls, images in user chunks become attachments. If the load fails, the half-made session is removed. Importing the same agent session again opens the existing Gloss session.
+- **Sessions:** one list of the project's sessions, most recent activity first, with a running dot or their age: those opened in Gloss and, when the agent advertises `sessionCapabilities.list`, the agent's own sessions for the folder from `session/list` with `cwd` (for example ones started in the `claude` CLI). Right-clicking a session opens its menu: Rename, Copy as markdown, Save as markdown…, Delete…. Double-click (or F2) renames in place.
+- **Opening an agent session Gloss has no record of** creates its record, and the `session/load` replay builds its log: `user_message_chunk` and `agent_message_chunk` become messages (split by `messageId`, and at tool calls), `tool_call`/`tool_call_update` become tool calls, user messages are placed in threads as in Shared sessions. If the load fails, the half-made record is removed.
 - **Delete** asks for confirmation, cancels a running turn, calls `session/delete` when the agent advertises `sessionCapabilities.delete` (Claude Code then removes its transcript under `~/.claude/projects`), and removes the session, its messages, tool calls and threads from the DB. If the agent's delete fails, the Gloss copy is still removed and the sidebar says so (unless the session never had a message: Claude Code writes no transcript until the first prompt, so there is nothing to lose).
-- **Opening a session resumes it on the agent** in the background (`session/load`), so its model, commands and usage are known before the first message.
+- **Opening a session resumes it on the agent** in the background (`session/load`), so its model, commands and usage are known before the first message, and syncs it.
+
+## Shared sessions
+
+When the agent advertises `loadSession` and `sessionCapabilities.list` (Claude Code does), the agent's own copy of a session is the source of truth for the conversation, and the same session can be continued in Gloss and in the agent's CLI (`claude --resume`), one at a time.
+
+- **What lives where.** The agent's session (Claude Code: its transcript under `~/.claude/projects`) decides which messages, tool calls and plans exist and in what order. Gloss's DB caches them for display and search, and adds what a linear session can't hold (see Data model → Notes).
+- **Sync.** Each `session/load` replay is matched against the cached log, in order: agent messages by `messageId` (the Claude adapter uses the same ids live and in the replay), user messages by their wire text, tool calls by `toolCallId`. A matched entry keeps its Gloss id, thread and fields, so thread anchors stay valid. An entry the cache doesn't have (sent from elsewhere) is added. A cached entry the agent's session no longer has is removed; a thread anchored on a removed message is kept in the DB but hidden, and comes back if the message does.
+- **Messages from elsewhere** are placed by their tag: `[re: "<text>"]` goes to the thread whose own tag is that line (the most recently active if several match); `[re: the main conversation, not the thread above]` and untagged messages go to the main thread. A tag that matches no thread stays in the text and the message goes to the main thread. The agent's output goes to the thread of the user message before it. Images come back as image chunks; text files come back as text (`[@name](uri)`, then `<context ref="uri">…</context>`) and show as file attachments again. Such messages have no `createdAt`.
+- **When Gloss syncs:** when a session is resumed, and, for a session already running on the agent, when it is opened, when the window regains focus with it open, and before a prompt or queued message is sent. Gloss compares the agent's `updatedAt` for the session (from `session/list`) with `syncedAt`, and reloads the session if it moved: `session/close`, then `session/load`. The close is required: a `session/load` of a session the adapter already holds replays the new history but keeps the running process, whose model doesn't see it. Never while a turn runs. Gloss's own turns update `syncedAt` when they end. An agent without `session/close` syncs only when resumed.
+- **Deleted outside Gloss.** If `session/load` fails because the agent no longer has the session (ACP `resource_not_found`), Gloss deletes it too (messages, threads, queue) and the sidebar says so. A session that never had a message is the exception: Claude Code writes no transcript until the first prompt, so it gets a new agent session in its place. Missing from `session/list` alone is not enough (the list is paged). Other load failures show the error and are retried on the next open or send.
+- **In the CLI,** messages sent from threads show with their tags, and the threads are flattened into one conversation, which is how the agent sees them anyway.
+- **One at a time.** Gloss can't tell when the CLI is using a session. Using it in both at once gives the transcript two writers (Claude Code then branches it), and the next sync shows the branch the agent loads.
+- Agents without `loadSession` and `sessionCapabilities.list` keep the DB as the display state, and their sessions are the ones made in Gloss.
 
 ## Conversation view
 
@@ -251,7 +266,7 @@ The sidebar (`docs/mocks/sidebar-switcher.html`) shows one project at a time:
   - **Threads overview:** the session's threads, most recent activity first. Each row shows the anchor's label ("item 2" or "selection"), its quote (two lines at most), the reply count, the last activity ("5m ago", from its newest message, or the thread's creation for messages stored before M9) and "working" while the turn runs there. Clicking a row opens that thread. With no threads, it says how to start one.
   - **Thread view:** the thread panel, with **← All threads** to go back to the overview. Reply badges, anchors in the conversation, the status line and notifications open a thread straight into this view, expanding the panel if needed.
   - **»** (or `Esc`) collapses the panel from either view. It always starts collapsed when Gloss launches. Expanded, it uses the thread panel's width and resize handle; the rail has a fixed width.
-- **Plans:** an agent's `plan` updates render as a checklist (pending, in progress, done, with "2 of 4 done") in the thread whose turn produced them, at the point the plan first appeared, and update in place as the agent works. A plan is stored, so it survives a restart. Each turn that reports a plan gets its own checklist; an earlier turn's checklist keeps its last state. Claude Code reports its todo list this way; it only gives older models its todo tools by default, so Gloss sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` in the Claude agent's environment. An import records the plans in the replay too, one per user message.
+- **Plans:** an agent's `plan` updates render as a checklist (pending, in progress, done, with "2 of 4 done") in the thread whose turn produced them, at the point the plan first appeared, and update in place as the agent works. A plan is stored, so it survives a restart. Each turn that reports a plan gets its own checklist; an earlier turn's checklist keeps its last state. Claude Code reports its todo list this way; it only gives older models its todo tools by default, so Gloss sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` in the Claude agent's environment. A sync records the plans in the replay too, one per user message.
 - **Header:** the session title and the agent name. A session is exported from its sidebar menu; the thread panel has an **Export** menu for one thread.
 - **Export format:** `# Title`, then each message as `**You**` / `**Agent**` and its text, tool calls as `_Tool: title (status)_`, attachments named; for a whole session, each thread with replies follows under `## Thread: “anchor”` with the anchor quoted.
 - **Tool calls** show as one row (title, status), collapsed. Clicking expands what the agent did, from the tool call's ACP `content`: a command's full text and its output (the Claude adapter sends output as a console code block when the client has no terminal capability), a file edit (`diff` content) as a unified line diff with unchanged stretches collapsed to 3 lines of context, other content as markdown.
@@ -294,7 +309,7 @@ When a turn ends or fails while the Gloss window isn't focused, Gloss shows an O
 See `docs/mocks/`:
 - `main-view.html` — session list, main thread with a numbered agent reply, reply-count badges / hover "Reply" on items, thread panel on the right. Clickable.
 - `selection-anchor.html` — the selection popover and a new thread started from a selection, plus an existing inline anchor (dotted underline + count chip).
-- `sidebar-switcher.html` — the sidebar: project switcher, the project's sessions, and the agent's sessions not yet in Gloss.
+- `sidebar-switcher.html` — the sidebar: project switcher and the project's sessions. Its separate "Not in Gloss yet" section is superseded: the agent's sessions are now in the one session list (see Projects and sessions).
 - `threads-overview.html` — the side panel: the collapsed rail, the threads overview, a thread with **← All threads**, and an agent plan as a checklist. Clickable.
 
 The mocks show layout and interaction, not a final visual design.

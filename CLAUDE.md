@@ -59,6 +59,11 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - `gh` 2.74: `gh pr view --json number,title,state,isDraft,url,statusCheckRollup,reviewDecision` with no argument finds the current branch's PR, merged ones included (so Gloss compares `headRefOid` with `HEAD` for those). `state` is `OPEN`/`MERGED`/`CLOSED`; `reviewDecision` is `""` with none. `statusCheckRollup` mixes `CheckRun`s (`status`, `conclusion`) and `StatusContext`s (`state`).
 - `git for-each-ref --format=%(upstream:remotename)%00%(upstream:remoteref) refs/heads/<b>` prints the upstream as `origin\0refs/heads/dev`.
 
+## Verified external APIs (shared sessions)
+- The Claude adapter (0.89) advertises `sessionCapabilities.close`; SDK 1.8.0 has `methods.agent.session.close`. A `session/load` of a session the adapter already holds re-reads the transcript and replays it, but keeps the running Claude process when the params are unchanged, so the model doesn't see turns added elsewhere. `session/close` then `session/load` starts a fresh process that does (tested with `claude -p --resume` turns in between).
+- `messageId` is stable between live and replay: agent messages use the API message id, user messages the transcript entry's uuid. Replay chunks carry no timestamps or `_meta`.
+- An embedded text `resource` replays as text chunks of the user message: `[@name](uri)`, then `\n<context ref="uri">\n…\n</context>`.
+
 ## Git
 - Work on `dev`; open one PR per milestone against `main`.
 
