@@ -40,6 +40,8 @@ type FakeAgent = {
   /** Sessions returned by session/list (filtered by cwd). */
   listed: acp.SessionInfo[]
   deleted: string[]
+  /** session/delete fails. */
+  refuseDelete: boolean
   /** Config options reported by session/new and session/load. */
   configOptions: acp.SessionConfigOption[] | null
   /** session/set_config_option calls, as "sessionId:configId=value". */
@@ -70,6 +72,7 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
     canDelete: false,
     listed: [],
     deleted: [],
+    refuseDelete: false,
     configOptions: null,
     configChanges: [],
     promptCapabilities: {},
@@ -106,6 +109,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       sessions: state.listed.filter((s) => s.cwd === ctx.params.cwd)
     }))
     .onRequest(acp.methods.agent.session.delete, (ctx) => {
+      if (state.refuseDelete) throw acp.RequestError.internalError()
       state.deleted.push(ctx.params.sessionId)
       state.sessions.delete(ctx.params.sessionId)
       return {}
@@ -656,6 +660,17 @@ describe('SessionManager', () => {
       expect(events.at(-1)).toEqual({ type: 'sessionDeleted', sessionId: session.id })
     })
 
+    it("warns when the agent can't delete its copy, unless the session never had a message", async () => {
+      state.canDelete = true
+      state.refuseDelete = true
+      const empty = await manager.createSession('/w', 'fake')
+      await expect(manager.deleteSession(empty.id)).resolves.toBeNull()
+      const used = await manager.createSession('/w', 'fake')
+      await manager.send(used.id, 'hi', null)
+      await expect(manager.deleteSession(used.id)).resolves.toMatch(/couldn't delete its own copy/)
+      expect(manager.listSessions()).toEqual([])
+    })
+
     it('deletes only from Gloss when the agent cannot delete sessions', async () => {
       const session = await manager.createSession('/w', 'fake')
       await expect(manager.deleteSession(session.id)).resolves.toBeNull()
@@ -713,6 +728,19 @@ describe('SessionManager', () => {
         { acpSessionId: 'cli-2', title: 'Untitled session', updatedAt: '2026-10-05T00:00:00Z' },
         { acpSessionId: 'cli-1', title: 'Old CLI work', updatedAt: '2026-10-01T00:00:00Z' }
       ])
+    })
+
+    it('deletes a project with its sessions and their agent copies, leaving other projects', async () => {
+      state.canDelete = true
+      const a = await manager.createSession('/work/shop', 'fake')
+      const b = await manager.createSession('/work/shop', 'fake')
+      const other = await manager.createSession('/work/blog', 'fake')
+      manager.addProject('/work/shop')
+
+      await expect(manager.deleteProject('/work/shop')).resolves.toBeNull()
+      expect(state.deleted.sort()).toEqual([a.acpSessionId, b.acpSessionId].sort())
+      expect(manager.listSessions().map((s) => s.id)).toEqual([other.id])
+      expect(manager.listProjects()).toEqual([{ path: '/work/blog', name: 'blog' }])
     })
 
     it('lists nothing when the agent cannot list sessions', async () => {

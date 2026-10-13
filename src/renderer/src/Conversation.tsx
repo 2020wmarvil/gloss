@@ -5,7 +5,7 @@ import type { Attachment, Message, SessionLive, Thread } from '@shared/types'
 import type { OpenSession, Panel } from './App'
 import type { ListItemSpan } from './anchors'
 import { Composer } from './Composer'
-import { ExportMenu } from './ExportMenu'
+
 import { Log, logItems, type Notice } from './Log'
 import { Markdown } from './Markdown'
 import { SelectionPopover, type SourceSelection } from './SelectionPopover'
@@ -28,8 +28,6 @@ type Props = {
   onSend(text: string, attachments: Attachment[]): void
   onCancel(): void
   onSetModel(value: string): Promise<void>
-  onCopyMarkdown(): void
-  onSaveMarkdown(): void
   onOpenItem(message: Message, span: ListItemSpan): void
   onOpenSelection(message: Message, selection: SourceSelection): void
   onOpenThread(threadId: string): void
@@ -106,7 +104,6 @@ export function Conversation(props: Props): React.JSX.Element {
       <header>
         <h1 title={session.title}>{session.title}</h1>
         <span className="mono">{agentName}</span>
-        <ExportMenu label="session" onCopy={props.onCopyMarkdown} onSave={props.onSaveMarkdown} />
       </header>
       <Log
         className="log"

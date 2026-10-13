@@ -199,6 +199,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.projectsAgentSessions, (_e, path: unknown, agentId: unknown) =>
     manager.agentSessions(folderArg(path, 'path'), str(agentId, 'agentId'))
   )
+  ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
     manager.createSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))

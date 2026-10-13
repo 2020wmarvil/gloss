@@ -430,7 +430,11 @@ export class SessionManager {
         if (conn.canDeleteSessions) await conn.deleteSession(session.acpSessionId)
       })
     } catch (err) {
-      warning = `Deleted from Gloss, but the agent couldn't delete its own copy: ${errorMessage(err)}`
+      // A session that never had a message may have no copy on the agent's side
+      // (Claude Code writes its transcript on the first prompt): nothing was lost.
+      if (this.deps.store.countUserMessages(id) > 0) {
+        warning = `Deleted from Gloss, but the agent couldn't delete its own copy: ${errorMessage(err)}`
+      }
     }
     this.deps.store.deleteSession(id)
     this.runtimes.delete(id)
@@ -473,6 +477,24 @@ export class SessionManager {
     const known = this.listProjects().find((p) => samePath(p.path, path))
     this.deps.store.addProject(known?.path ?? path, this.now())
     return known ?? { path, name: folderName(path) }
+  }
+
+  /**
+   * Deletes a project: each of its Gloss sessions as deleteSession does (the
+   * agent's copy too), then the project itself. The agent's sessions Gloss never
+   * imported are left alone. Returns warnings for agent copies that couldn't be deleted.
+   */
+  async deleteProject(path: string): Promise<string | null> {
+    const warnings: string[] = []
+    for (const s of this.deps.store.listSessions()) {
+      if (!samePath(s.cwd, path)) continue
+      const warning = await this.deleteSession(s.id)
+      if (warning) warnings.push(`${s.title}: ${warning}`)
+    }
+    for (const p of this.deps.store.listProjects()) {
+      if (samePath(p.path, path)) this.deps.store.removeProject(p.path)
+    }
+    return warnings.length > 0 ? warnings.join('\n') : null
   }
 
   /** The agent's sessions in `cwd` that Gloss hasn't imported (session/list, when advertised). */

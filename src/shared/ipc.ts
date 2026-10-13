@@ -79,6 +79,8 @@ export type GlossApi = {
     open(): Promise<Project | null>
     /** The agent's own sessions in the folder that Gloss hasn't imported. Empty if the agent can't list them. */
     agentSessions(path: string, agentId: string): Promise<AgentSession[]>
+    /** Deletes the project and its sessions (the agent's copies too). Resolves to a warning if some agent copies couldn't be deleted. */
+    delete(path: string): Promise<string | null>
   }
   sessions: {
     list(): Promise<Session[]>
@@ -132,6 +134,7 @@ export const IPC = {
   projectsList: 'gloss:projects:list',
   projectsOpen: 'gloss:projects:open',
   projectsAgentSessions: 'gloss:projects:agentSessions',
+  projectsDelete: 'gloss:projects:delete',
   sessionsList: 'gloss:sessions:list',
   sessionsCreate: 'gloss:sessions:create',
   sessionsImport: 'gloss:sessions:import',

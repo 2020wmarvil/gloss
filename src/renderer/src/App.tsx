@@ -320,6 +320,32 @@ export function App(): React.JSX.Element {
     }
   }
 
+  async function deleteProject(path: string): Promise<void> {
+    setSidebarError(null)
+    try {
+      const warning = await window.gloss.projects.delete(path)
+      if (warning) setSidebarError(warning)
+      const [ps, list] = await Promise.all([window.gloss.projects.list(), window.gloss.sessions.list()])
+      setProjects(ps)
+      setSessions(list)
+      setAgentSessions((all) => {
+        const next = { ...all }
+        delete next[path]
+        return next
+      })
+      // Show the next project, or nothing.
+      if (ps[0]) selectProject(ps[0].path, list)
+      else {
+        setProjectPath(null)
+        openId.current = null
+        setOpen(null)
+        setPanel(null)
+      }
+    } catch (err) {
+      setSidebarError(errorText(err))
+    }
+  }
+
   function exportMarkdown(id: string, threadId: string | null, how: 'copy' | 'save'): void {
     const done =
       how === 'copy' ? window.gloss.sessions.copyMarkdown(id, threadId) : window.gloss.sessions.saveMarkdown(id, threadId)
@@ -458,6 +484,7 @@ export function App(): React.JSX.Element {
         settingsError={settings?.error != null}
         onSelectProject={(path) => selectProject(path, sessions)}
         onOpenProject={() => void openProject()}
+        onDeleteProject={(path) => void deleteProject(path)}
         onSelect={(id) => void selectSession(id)}
         onNew={() => void newSession()}
         onImport={(a) => void importSession(a)}
@@ -494,8 +521,6 @@ export function App(): React.JSX.Element {
           onSend={(text, attachments) => void send(text, attachments, null)}
           onCancel={() => void window.gloss.cancel(open.session.id)}
           onSetModel={(value) => window.gloss.sessions.setModel(open.session.id, value)}
-          onCopyMarkdown={() => exportMarkdown(open.session.id, null, 'copy')}
-          onSaveMarkdown={() => exportMarkdown(open.session.id, null, 'save')}
           onOpenItem={openItem}
           onOpenSelection={openSelection}
           onOpenThread={openThread}

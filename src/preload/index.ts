@@ -8,7 +8,8 @@ const api: GlossApi = {
   projects: {
     list: () => ipcRenderer.invoke(IPC.projectsList),
     open: () => ipcRenderer.invoke(IPC.projectsOpen),
-    agentSessions: (path, agentId) => ipcRenderer.invoke(IPC.projectsAgentSessions, path, agentId)
+    agentSessions: (path, agentId) => ipcRenderer.invoke(IPC.projectsAgentSessions, path, agentId),
+    delete: (path) => ipcRenderer.invoke(IPC.projectsDelete, path)
   },
   sessions: {
     list: () => ipcRenderer.invoke(IPC.sessionsList),

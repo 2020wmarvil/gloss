@@ -23,6 +23,7 @@ type Props = {
   settingsError: boolean
   onSelectProject(path: string): void
   onOpenProject(): void
+  onDeleteProject(path: string): void
   onSelect(id: string): void
   onNew(): void
   onImport(session: AgentSession): void
@@ -53,7 +54,9 @@ export function Sidebar(props: Props): React.JSX.Element {
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<Session | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<
+    { kind: 'session'; session: Session } | { kind: 'project'; project: Project; sessions: number } | null
+  >(null)
   const [showAll, setShowAll] = useState(false)
 
   useEffect(() => setShowAll(false), [project?.path])
@@ -119,6 +122,15 @@ export function Sidebar(props: Props): React.JSX.Element {
             <button role="menuitem" onClick={props.onOpenProject}>
               Open project…
             </button>
+            {project && (
+              <button
+                role="menuitem"
+                className="danger"
+                onClick={() => setConfirmDelete({ kind: 'project', project, sessions: sessions.length })}
+              >
+                Delete “{project.name}”…
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -157,6 +169,12 @@ export function Sidebar(props: Props): React.JSX.Element {
                       tabIndex={0}
                       title={s.title}
                       onClick={() => props.onSelect(s.id)}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setMenuFor(s.id)
+                        setSwitcherOpen(false)
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') props.onSelect(s.id)
                         if (e.key === 'F2') setRenaming(s.id)
@@ -193,7 +211,11 @@ export function Sidebar(props: Props): React.JSX.Element {
                           <button role="menuitem" onClick={() => (setMenuFor(null), props.onSaveMarkdown(s.id))}>
                             Save as markdown…
                           </button>
-                          <button role="menuitem" className="danger" onClick={() => (setMenuFor(null), setConfirmDelete(s))}>
+                          <button
+                            role="menuitem"
+                            className="danger"
+                            onClick={() => (setMenuFor(null), setConfirmDelete({ kind: 'session', session: s }))}
+                          >
                             Delete…
                           </button>
                         </div>
@@ -204,43 +226,43 @@ export function Sidebar(props: Props): React.JSX.Element {
               ))}
             </ul>
 
-            <div className="label">Not in Gloss yet</div>
-            <ul className="session-list">
-              {props.agentSessionsError ? (
-                <li className="sidebar-error">{props.agentSessionsError}</li>
-              ) : shownAgent === null ? (
-                <li className="sidebar-empty">Loading…</li>
-              ) : shownAgent.length === 0 ? (
-                <li className="sidebar-empty">Nothing else here</li>
-              ) : (
-                shownAgent.map((a) => (
-                  <li key={a.acpSessionId}>
-                    <button
-                      className="session-row agent"
-                      title={`${a.title}\nOpen in Gloss (imports its history)`}
-                      disabled={props.importing !== null}
-                      onClick={() => props.onImport(a)}
-                    >
-                      <span className="session-title">{a.title}</span>
-                      <span className="when">
-                        {props.importing === a.acpSessionId
-                          ? 'Opening…'
-                          : a.updatedAt
-                            ? ago(Date.parse(a.updatedAt))
-                            : ''}
-                      </span>
-                    </button>
-                  </li>
-                ))
-              )}
-              {agentSessions && !showAll && agentSessions.length > AGENT_SESSIONS_SHOWN && (
-                <li>
-                  <button className="show-more" onClick={() => setShowAll(true)}>
-                    Show {agentSessions.length - AGENT_SESSIONS_SHOWN} more
-                  </button>
-                </li>
-              )}
-            </ul>
+            {(props.agentSessionsError || (shownAgent && shownAgent.length > 0)) && (
+              <>
+                <div className="label">Not in Gloss yet</div>
+                <ul className="session-list">
+                  {props.agentSessionsError ? (
+                    <li className="sidebar-error">{props.agentSessionsError}</li>
+                  ) : (
+                    (shownAgent ?? []).map((a) => (
+                      <li key={a.acpSessionId}>
+                        <button
+                          className="session-row agent"
+                          title={`${a.title}\nOpen in Gloss (imports its history)`}
+                          disabled={props.importing !== null}
+                          onClick={() => props.onImport(a)}
+                        >
+                          <span className="session-title">{a.title}</span>
+                          <span className="when">
+                            {props.importing === a.acpSessionId
+                              ? 'Opening…'
+                              : a.updatedAt
+                                ? ago(Date.parse(a.updatedAt))
+                                : ''}
+                          </span>
+                        </button>
+                      </li>
+                    ))
+                  )}
+                  {agentSessions && !showAll && agentSessions.length > AGENT_SESSIONS_SHOWN && (
+                    <li>
+                      <button className="show-more" onClick={() => setShowAll(true)}>
+                        Show {agentSessions.length - AGENT_SESSIONS_SHOWN} more
+                      </button>
+                    </li>
+                  )}
+                </ul>
+              </>
+            )}
           </>
         )}
       </div>
@@ -261,11 +283,24 @@ export function Sidebar(props: Props): React.JSX.Element {
       {confirmDelete && (
         <div className="dialog-backdrop">
           <div className="dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title">
-            <h2 id="delete-title">Delete “{confirmDelete.title}”?</h2>
-            <p className="muted">
-              This deletes the session, its messages and threads from Gloss, and the agent&apos;s own copy of it. It
-              can&apos;t be undone.
-            </p>
+            <h2 id="delete-title">
+              Delete “{confirmDelete.kind === 'session' ? confirmDelete.session.title : confirmDelete.project.name}”?
+            </h2>
+            {confirmDelete.kind === 'session' ? (
+              <p className="muted">
+                This deletes the session, its messages and threads from Gloss, and the agent&apos;s own copy of it. It
+                can&apos;t be undone.
+              </p>
+            ) : (
+              <p className="muted">
+                This removes the project from Gloss and deletes{' '}
+                {confirmDelete.sessions === 0
+                  ? 'nothing else: it has no Gloss sessions'
+                  : `its ${confirmDelete.sessions === 1 ? 'session' : `${confirmDelete.sessions} sessions`}, with their messages, threads and the agent's own copies`}
+                . The agent&apos;s sessions that were never opened in Gloss are kept, and the folder&apos;s files are not
+                touched. It can&apos;t be undone.
+              </p>
+            )}
             <div className="dialog-actions">
               <button onClick={() => setConfirmDelete(null)} autoFocus>
                 Cancel
@@ -273,7 +308,8 @@ export function Sidebar(props: Props): React.JSX.Element {
               <button
                 className="danger"
                 onClick={() => {
-                  props.onDelete(confirmDelete.id)
+                  if (confirmDelete.kind === 'session') props.onDelete(confirmDelete.session.id)
+                  else props.onDeleteProject(confirmDelete.project.path)
                   setConfirmDelete(null)
                 }}
               >

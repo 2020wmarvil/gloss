@@ -302,6 +302,10 @@ export class Store {
     this.db.prepare('INSERT OR IGNORE INTO projects (path, added_at) VALUES (?, ?)').run(path, addedAt)
   }
 
+  removeProject(path: string): void {
+    this.db.prepare('DELETE FROM projects WHERE path = ?').run(path)
+  }
+
   listProjects(): { path: string; addedAt: number }[] {
     return this.db
       .prepare('SELECT * FROM projects ORDER BY added_at DESC')
