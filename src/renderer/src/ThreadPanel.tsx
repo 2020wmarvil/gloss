@@ -1,4 +1,4 @@
-// The side panel for one thread: anchor quote, the thread's messages, composer.
+// The side panel's thread view: anchor quote, the thread's messages, composer.
 import { useEffect } from 'react'
 import type { Attachment, SessionLive } from '@shared/types'
 import { wireTag } from '@shared/wire'
@@ -25,6 +25,9 @@ type Props = {
   /** Injects the message into the running turn (when it runs in this thread). */
   onSteer(text: string, attachments: Attachment[]): void
   onCancel(): void
+  /** Back to the threads overview. */
+  onBack(): void
+  /** Collapses the side panel. */
   onClose(): void
   onCopyMarkdown(threadId: string): void
   onSaveMarkdown(threadId: string): void
@@ -61,8 +64,10 @@ export function ThreadPanel(props: Props): React.JSX.Element {
       style={props.width === null ? undefined : { flexBasis: props.width }}
     >
       <header>
-        <h2>{isSelection && panel.threadId === null ? 'New thread' : 'Thread'}</h2>
-        <span className="mono">{label}</span>
+        <button className="back" onClick={props.onBack} title="All threads">
+          ← All threads
+        </button>
+        <h2 className="mono thread-label">{label}</h2>
         {runningHere && <span className="status">Agent is working…</span>}
         {threadId !== null && (
           <ExportMenu
@@ -71,8 +76,8 @@ export function ThreadPanel(props: Props): React.JSX.Element {
             onSave={() => props.onSaveMarkdown(threadId)}
           />
         )}
-        <button className="close" onClick={onClose} aria-label="Close thread" title="Close (Esc)">
-          ×
+        <button className="close" onClick={onClose} aria-label="Hide panel" title="Hide panel (Esc)">
+          »
         </button>
       </header>
       <blockquote className="anchor-quote">

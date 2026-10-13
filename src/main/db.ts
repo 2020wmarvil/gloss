@@ -1,6 +1,6 @@
 // SQLite persistence (node:sqlite). The app's DB is always the display state.
 import { DatabaseSync } from 'node:sqlite'
-import type { Anchor, Attachment, Message, Session, Thread, ToolCall } from '../shared/types'
+import type { Anchor, Attachment, Message, Plan, PlanEntry, Session, Thread, ToolCall } from '../shared/types'
 
 // Append-only. Each entry upgrades the schema by one version (PRAGMA user_version).
 const MIGRATIONS = [
@@ -63,6 +63,17 @@ const MIGRATIONS = [
     acp_session_id TEXT NOT NULL,
     PRIMARY KEY (agent_id, acp_session_id)
   );
+  `,
+  `
+  ALTER TABLE messages ADD COLUMN created_at INTEGER;
+  CREATE TABLE plans (
+    id         TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    seq        INTEGER NOT NULL,
+    thread_id  TEXT,
+    entries    TEXT NOT NULL
+  );
+  CREATE INDEX plans_by_session ON plans (session_id);
   `
 ]
 
@@ -93,6 +104,7 @@ function toMessage(r: Row): Message {
   if (r.acp_message_id != null) m.acpMessageId = r.acp_message_id as string
   if (r.attachments != null) m.attachments = JSON.parse(r.attachments as string) as Attachment[]
   if (r.steered) m.steered = true
+  if (r.created_at != null) m.createdAt = Number(r.created_at)
   return m
 }
 
@@ -108,6 +120,16 @@ function toToolCall(r: Row): ToolCall {
   if (r.kind != null) t.kind = r.kind as string
   if (r.content != null) t.content = JSON.parse(r.content as string)
   return t
+}
+
+function toPlan(r: Row): Plan {
+  return {
+    id: r.id as string,
+    sessionId: r.session_id as string,
+    seq: Number(r.seq),
+    threadId: (r.thread_id as string | null) ?? null,
+    entries: JSON.parse(r.entries as string) as PlanEntry[]
+  }
 }
 
 function toThread(r: Row): Thread {
@@ -202,16 +224,18 @@ export class Store {
     return s
   }
 
-  /** Next position in the session's log. Messages and tool calls share one sequence. */
+  /** Next position in the session's log. Messages, tool calls and plans share one sequence. */
   nextSeq(sessionId: string): number {
     const r = this.db
       .prepare(
         `SELECT MAX(s) AS m FROM (
            SELECT seq AS s FROM messages WHERE session_id = ?
            UNION ALL
-           SELECT message_seq AS s FROM tool_calls WHERE session_id = ?)`
+           SELECT message_seq AS s FROM tool_calls WHERE session_id = ?
+           UNION ALL
+           SELECT seq AS s FROM plans WHERE session_id = ?)`
       )
-      .get(sessionId, sessionId) as { m: number | null }
+      .get(sessionId, sessionId, sessionId) as { m: number | null }
     return r.m == null ? 0 : Number(r.m) + 1
   }
 
@@ -220,8 +244,8 @@ export class Store {
   insertMessage(m: Message): void {
     this.db
       .prepare(
-        `INSERT INTO messages (id, session_id, seq, role, text, wire_text, thread_id, acp_message_id, attachments, steered)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO messages (id, session_id, seq, role, text, wire_text, thread_id, acp_message_id, attachments, steered, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         m.id,
@@ -233,7 +257,8 @@ export class Store {
         m.threadId,
         m.acpMessageId ?? null,
         m.attachments ? JSON.stringify(m.attachments) : null,
-        m.steered ? 1 : null
+        m.steered ? 1 : null,
+        m.createdAt ?? null
       )
   }
 
@@ -245,8 +270,9 @@ export class Store {
     this.db.prepare('UPDATE messages SET text = ? WHERE id = ?').run(text, id)
   }
 
-  /** Removes the session's messages, tool calls and threads (to rebuild them). */
+  /** Removes the session's messages, tool calls, plans and threads (to rebuild them). */
   clearLog(sessionId: string): void {
+    this.db.prepare('DELETE FROM plans WHERE session_id = ?').run(sessionId)
     this.db.prepare('DELETE FROM threads WHERE session_id = ?').run(sessionId)
     this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId)
     this.db.prepare('DELETE FROM tool_calls WHERE session_id = ?').run(sessionId)
@@ -310,6 +336,24 @@ export class Store {
       .prepare('SELECT * FROM tool_calls WHERE session_id = ? ORDER BY message_seq')
       .all(sessionId)
       .map((r) => toToolCall(r as Row))
+  }
+
+  // Plans
+
+  upsertPlan(p: Plan): void {
+    this.db
+      .prepare(
+        `INSERT INTO plans (id, session_id, seq, thread_id, entries) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET entries = excluded.entries`
+      )
+      .run(p.id, p.sessionId, p.seq, p.threadId, JSON.stringify(p.entries))
+  }
+
+  listPlans(sessionId: string): Plan[] {
+    return this.db
+      .prepare('SELECT * FROM plans WHERE session_id = ? ORDER BY seq')
+      .all(sessionId)
+      .map((r) => toPlan(r as Row))
   }
 
   // Agent sessions Gloss deleted (session/delete), in case the agent lists them again

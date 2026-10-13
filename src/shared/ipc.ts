@@ -9,6 +9,7 @@ import type {
   AuthMethodInfo,
   Message,
   MessageQueue,
+  Plan,
   Project,
   Session,
   SessionLive,
@@ -35,6 +36,7 @@ export type SessionView = {
   session: Session
   messages: Message[]
   toolCalls: ToolCall[]
+  plans: Plan[]
   threads: Thread[]
   /** The running turn, if any. */
   turn: { threadId: string | null } | null
@@ -65,6 +67,8 @@ export type GlossEvent =
   /** A steered message that didn't get into the turn (SPEC → Steer). */
   | { type: 'messageDeleted'; sessionId: string; messageId: string }
   | { type: 'toolCall'; toolCall: ToolCall }
+  /** A plan was reported, or its entries changed (SPEC → Plans). */
+  | { type: 'plan'; plan: Plan }
   | { type: 'thread'; thread: Thread }
   | { type: 'turnStart'; sessionId: string; threadId: string | null }
   | {
@@ -102,7 +106,7 @@ export type GlossApi = {
     create(cwd: string, agentId: string): Promise<Session>
     /** Imports one of the agent's sessions: its history becomes the main thread. */
     import(cwd: string, agentId: string, acpSessionId: string, title: string): Promise<Session>
-    /** Also resumes the session on the agent in the background, for the status line. */
+    /** Its log and threads. Also resumes the session on the agent in the background, for the status line. */
     open(id: string): Promise<SessionView>
     rename(id: string, title: string): Promise<Session>
     /** Deletes it from Gloss and the agent. Resolves to a warning if the agent's copy couldn't be deleted. */

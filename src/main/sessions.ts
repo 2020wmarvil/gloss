@@ -11,6 +11,8 @@ import type {
   AuthMethodInfo,
   Message,
   MessageQueue,
+  Plan,
+  PlanEntry,
   Project,
   RateLimit,
   Session,
@@ -46,8 +48,10 @@ type Recorder = {
   agentMessage?: Message
   /** Import only: the user message that user chunks append to. */
   userMessage?: Message
-  /** A tool call arrived since the last text; the next text starts a new message. */
+  /** A tool call or a new plan arrived since the last text; the next text starts a new message below it. */
   afterToolCall: boolean
+  /** The plan reported in this turn (or, importing, since the last user message); later reports replace its entries. */
+  plan?: Plan
 }
 
 type Turn = Recorder & { cancelled: boolean }
@@ -410,6 +414,7 @@ export class SessionManager {
       session,
       messages: this.deps.store.listMessages(id),
       toolCalls: this.deps.store.listToolCalls(id),
+      plans: this.deps.store.listPlans(id),
       threads: this.deps.store.listThreads(id),
       turn: rt.turn ? { threadId: rt.turn.threadId } : null,
       queue: rt.queue,
@@ -822,7 +827,8 @@ export class SessionManager {
       wireText: wire,
       threadId,
       ...(attachments.length > 0 ? { attachments } : {}),
-      steered: true
+      steered: true,
+      createdAt: this.now()
     }
     this.deps.store.insertMessage(message)
     this.deps.emit({ type: 'message', message })
@@ -881,7 +887,8 @@ export class SessionManager {
       text,
       wireText: wire,
       threadId,
-      ...(attachments.length > 0 ? { attachments } : {})
+      ...(attachments.length > 0 ? { attachments } : {}),
+      createdAt: this.now()
     }
     this.deps.store.insertMessage(message)
     this.deps.emit({ type: 'message', message })
@@ -1038,12 +1045,15 @@ export class SessionManager {
             role: 'user',
             text: '',
             threadId: null,
-            ...(messageId !== undefined ? { acpMessageId: messageId } : {})
+            ...(messageId !== undefined ? { acpMessageId: messageId } : {}),
+            createdAt: this.now()
           }
           store.insertMessage(m)
           turn.userMessage = m
           turn.agentMessage = undefined
           turn.afterToolCall = false
+          // Each replayed prompt gets its own plan.
+          turn.plan = undefined
         }
         if (u.content.type === 'text') {
           m.text += u.content.text
@@ -1072,7 +1082,8 @@ export class SessionManager {
             role: 'agent',
             text: '',
             threadId: turn.threadId,
-            ...(messageId !== undefined ? { acpMessageId: messageId } : {})
+            ...(messageId !== undefined ? { acpMessageId: messageId } : {}),
+            createdAt: this.now()
           }
           store.insertMessage(m)
           turn.agentMessage = m
@@ -1122,8 +1133,21 @@ export class SessionManager {
         emit({ type: 'toolCall', toolCall })
         return
       }
+      case 'plan': {
+        // Each update lists the whole plan: the turn's first one starts its checklist, later ones replace it.
+        const entries = u.entries.map(planEntry)
+        if (!turn.plan && entries.length === 0) return
+        const plan: Plan = turn.plan
+          ? { ...turn.plan, entries }
+          : { id: randomUUID(), sessionId, seq: store.nextSeq(sessionId), threadId: turn.threadId, entries }
+        store.upsertPlan(plan)
+        if (!turn.plan) turn.afterToolCall = true
+        turn.plan = plan
+        emit({ type: 'plan', plan })
+        return
+      }
       default:
-        // plan, thoughts, etc.: not shown.
+        // thoughts, etc.: not shown.
         return
     }
   }
@@ -1268,6 +1292,10 @@ export function promptBlocks(
     }
   }
   return blocks
+}
+
+function planEntry(e: acp.PlanEntry): PlanEntry {
+  return { content: e.content, status: e.status, ...(e.priority ? { priority: e.priority } : {}) }
 }
 
 function errorMessage(err: unknown): string {
