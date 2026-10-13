@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
-import { bulletOnBackspace, bulletOnNewline, bulletOnSpace, bulletsToMarkdown, type Edit } from './bullets'
 import { errorText } from './errors'
+import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor'
 
 /** The session's queue as one composer sees it: the messages queued from its thread. */
 export type ComposerQueue = {
@@ -89,25 +89,17 @@ export function Composer({
   const [dragging, setDragging] = useState(false)
   const [pick, setPick] = useState(0)
   const [dismissed, setDismissed] = useState<string | null>(null)
-  const ref = useRef<HTMLTextAreaElement>(null)
+  const ref = useRef<MarkdownEditorHandle>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  /** Where the caret goes after an edit Gloss made to the text itself. */
-  const caretAfterEdit = useRef<number | null>(null)
-
-  useLayoutEffect(() => {
-    if (caretAfterEdit.current === null) return
-    ref.current?.setSelectionRange(caretAfterEdit.current, caretAfterEdit.current)
-    caretAfterEdit.current = null
-  }, [text])
 
   // The caret goes back where it was when the user switched away (before the focus below).
   useLayoutEffect(() => {
     const el = ref.current
     const saved = drafts.get(draftKey)?.selection
-    if (el && saved) el.setSelectionRange(...saved)
+    if (el && saved) el.setSelection(...saved)
     return () => {
       const draft = drafts.get(draftKey)
-      if (el && draft) draft.selection = [el.selectionStart, el.selectionEnd]
+      if (el && draft) draft.selection = el.selection()
     }
   }, [draftKey])
 
@@ -153,18 +145,10 @@ export function Composer({
     }
   }
 
-  /** Makes a bullet edit. Through insertText where the browser has it, so Ctrl+Z undoes it. */
-  function applyEdit(el: HTMLTextAreaElement, edit: Edit): void {
-    el.setSelectionRange(edit.start, edit.end)
-    if (edit.insert ? document.execCommand?.('insertText', false, edit.insert) : document.execCommand?.('delete')) return
-    caretAfterEdit.current = edit.start + edit.insert.length
-    setText(text.slice(0, edit.start) + edit.insert + text.slice(edit.end))
-  }
-
   const steer = running ? onSteer : undefined
 
   function submit(how: 'send' | 'steer' = 'send'): void {
-    const trimmed = bulletsToMarkdown(text.trim())
+    const trimmed = text.trim()
     if (!trimmed && attachments.length === 0) return
     if (how === 'steer' && steer) steer(trimmed, attachments)
     else onSend(trimmed, attachments)
@@ -283,67 +267,39 @@ export function Composer({
               />
             </>
           )}
-          <textarea
+          <MarkdownEditor
             ref={ref}
-            rows={Math.min(8, Math.max(1, text.split('\n').length))}
             placeholder={placeholder}
-            aria-label={placeholder}
+            ariaLabel={placeholder}
             value={text}
-            onChange={(e) => {
-              setText(e.target.value)
+            onChange={(value) => {
+              setText(value)
               setPick(0)
             }}
-            onPaste={(e) => {
-              const files = [...e.clipboardData.files]
-              if (files.length === 0) return
-              e.preventDefault()
+            onPasteFiles={(files) => {
               if (canAttach) void addFiles(files)
               else setError("The agent doesn't accept images or files.")
+              return true
             }}
             onKeyDown={(e) => {
-              if (matches.length > 0) {
-                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                  e.preventDefault()
-                  setPick((picked + (e.key === 'ArrowDown' ? 1 : matches.length - 1)) % matches.length)
-                  return
-                }
-                if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
-                  // Enter on an exact match sends it; otherwise it completes.
-                  if (!(e.key === 'Enter' && matches[picked].name === slash?.[1])) {
-                    e.preventDefault()
-                    choose(matches[picked])
-                    return
-                  }
-                }
-                if (e.key === 'Escape') {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setDismissed(text)
-                  return
-                }
+              if (matches.length === 0 || e.isComposing) return false
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                setPick((picked + (e.key === 'ArrowDown' ? 1 : matches.length - 1)) % matches.length)
+                return true
               }
-              const el = e.currentTarget
-              if (el.selectionStart === el.selectionEnd && !e.nativeEvent.isComposing && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                const caret = el.selectionStart
-                const edit =
-                  e.key === ' '
-                    ? bulletOnSpace(text, caret)
-                    : e.key === 'Enter' && e.shiftKey
-                      ? bulletOnNewline(text, caret)
-                      : e.key === 'Backspace'
-                        ? bulletOnBackspace(text, caret)
-                        : null
-                if (edit) {
-                  e.preventDefault()
-                  applyEdit(el, edit)
-                  return
-                }
+              // Enter on an exact match sends it; otherwise Enter or Tab completes.
+              if ((e.key === 'Enter' && !e.shiftKey && matches[picked].name !== slash?.[1]) || e.key === 'Tab') {
+                choose(matches[picked])
+                return true
               }
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                submit(e.ctrlKey || e.metaKey ? 'steer' : 'send')
+              if (e.key === 'Escape') {
+                e.stopPropagation()
+                setDismissed(text)
+                return true
               }
+              return false
             }}
+            onSubmit={submit}
           />
           {running && (
             <button className="cancel" onClick={onCancel}>

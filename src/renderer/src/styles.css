@@ -542,7 +542,6 @@ body.resizing {
   flex: 1;
   overflow-y: auto;
   padding: 8px 32px 32px;
-  max-width: 720px;
 }
 
 .settings-body section {
@@ -634,7 +633,7 @@ body.resizing {
 
 .shortcut {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 320px 1fr;
   gap: 12px;
   padding: 4px 0;
   font-size: 14px;
@@ -776,18 +775,12 @@ body.resizing {
   background: var(--chip);
   border-radius: 10px;
   padding: 10px 14px;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.you-text {
-  display: block;
-}
-
-.you-list {
-  margin: 0;
-  padding-left: 1.3em;
-  white-space: normal;
+/* Inline code and code blocks stand out from the bubble's chip color. */
+.you .md :not(pre) > code {
+  background: var(--panel);
 }
 
 .you .steered-label {
@@ -1245,14 +1238,38 @@ body.resizing {
   white-space: nowrap;
 }
 
-.box textarea {
+/* The markdown editor (CodeMirror): reads like the old text box, up to 8 lines, then scrolls. */
+.md-editor {
   flex: 1;
-  border: 0;
-  resize: none;
-  font: inherit;
+  min-width: 0;
+}
+
+.md-editor .cm-editor {
   background: transparent;
+}
+
+.md-editor .cm-editor.cm-focused {
   outline: none;
+}
+
+.md-editor .cm-scroller {
+  max-height: calc(8lh + 16px);
+  font-family: inherit;
+  line-height: 1.5;
+  overflow-y: auto;
+}
+
+.md-editor .cm-content {
   padding: 8px 0;
+  caret-color: var(--ink);
+}
+
+.md-editor .cm-line {
+  padding: 0;
+}
+
+.md-editor .cm-placeholder {
+  color: var(--faint);
 }
 
 .cancel {

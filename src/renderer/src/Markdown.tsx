@@ -4,6 +4,7 @@
 // copy button.
 import { useState } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import { itemMarker, listItemSpans, type ListItemSpan } from './anchors'
 import { codeColors, useHighlighting } from './highlight'
@@ -160,7 +161,8 @@ function anchorComponents(text: string, anchors: MessageAnchors): Components {
   }
 }
 
-export function Markdown({ text, anchors }: { text: string; anchors?: MessageAnchors }): React.JSX.Element {
+/** `breaks`: a newline is a line break (the user's messages, typed as chat), not a space. */
+export function Markdown({ text, anchors, breaks }: { text: string; anchors?: MessageAnchors; breaks?: boolean }): React.JSX.Element {
   // Re-render when highlighting for more languages becomes available.
   useHighlighting()
   return (
@@ -168,6 +170,7 @@ export function Markdown({ text, anchors }: { text: string; anchors?: MessageAnc
       <ReactMarkdown
         remarkPlugins={[
           remarkGfm,
+          ...(breaks ? [remarkBreaks] : []),
           remarkHtmlAsText,
           [remarkSourceSpans, { marks: anchors?.marks ?? [], colors: codeColors }]
         ]}
