@@ -3,9 +3,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import type { SessionOrder } from '@shared/settings'
-import type { AgentSession, Project, Session } from '@shared/types'
+import type { AgentInfo, AgentSession, Project, Session } from '@shared/types'
 
 type Props = {
+  agents: AgentInfo[]
+  selectedAgent: string
+  onSelectAgent(id: string): void
   /** Width the user dragged it to; null = the CSS default. */
   width: number | null
   projects: Project[]
@@ -133,6 +136,7 @@ export function Sidebar(props: Props): React.JSX.Element {
       >
         <span className="session-title" onDoubleClick={() => setRenaming(s.id)}>
           {s.title}
+          <small className="session-agent">{props.agents.find((a) => a.id === s.agentId)?.name ?? s.agentId}</small>
         </span>
         {s.id in running ? <span className="running-dot" aria-label="Running" /> : <span className="when">{ago(at)}</span>}
         {menuFor === s.id && (
@@ -223,6 +227,19 @@ export function Sidebar(props: Props): React.JSX.Element {
         )}
       </div>
 
+      <label className="agent-picker">
+        <span>Agent</span>
+        <select
+          aria-label="Agent for new sessions"
+          value={props.selectedAgent}
+          disabled={props.creating || props.importing !== null}
+          onChange={(e) => props.onSelectAgent(e.target.value)}
+        >
+          {props.agents.map((a) => (
+            <option key={a.id} value={a.id}>{a.name}</option>
+          ))}
+        </select>
+      </label>
       {project ? (
         <button className="new-session" onClick={props.onNew} disabled={props.creating} title="New session (Ctrl+N)">
           {props.creating ? 'Starting agent…' : '+ New session'}
@@ -249,7 +266,10 @@ export function Sidebar(props: Props): React.JSX.Element {
                       disabled={props.importing !== null}
                       onClick={() => props.onImport(row.agent)}
                     >
-                      <span className="session-title">{row.agent.title}</span>
+                      <span className="session-title">
+                        {row.agent.title}
+                        <small className="session-agent">{props.agents.find((a) => a.id === props.selectedAgent)?.name}</small>
+                      </span>
                       <span className="when">
                         {props.importing === row.agent.acpSessionId ? 'Opening…' : row.at ? ago(row.at) : ''}
                       </span>

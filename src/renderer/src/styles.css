@@ -590,7 +590,8 @@ body.resizing {
   margin-top: 4px;
 }
 
-.setting select {
+.setting select,
+.agent-picker select {
   height: 30px;
   padding: 0 8px;
   border: 1px solid var(--line-strong);
@@ -2221,4 +2222,25 @@ button.status.link {
 
 .anchor-chips .anchor-chip {
   margin-left: 0;
+}
+
+/* Agent choice applies to new sessions and the external session listing. */
+.agent-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
+.agent-picker select {
+  min-width: 0;
+  max-width: 150px;
+}
+
+.session-agent {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: normal;
 }

@@ -323,7 +323,7 @@ describe('SessionManager', () => {
       agentEnv: () => ({ FAKE: '1' }),
       connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
       runInTerminal: runInTerminal as never,
-      devModel: () => devModel,
+      devModel: (agentId) => devModel && agentId !== 'second',
       now: () => 1000
     })
   }
@@ -1421,6 +1421,18 @@ describe('SessionManager', () => {
       expect(store.getSession(session.id)?.model).toBe('opus')
 
       // The agent forgets it (a fresh process); Gloss sets it again when resuming.
+      state.configOptions = [MODEL]
+      await manager.dispose()
+      manager = makeManager()
+      await manager.send(session.id, 'hi', null)
+      expect(state.configChanges).toEqual([`${session.acpSessionId}:model=opus`, `${session.acpSessionId}:model=opus`])
+    })
+
+    it('keeps model selection and resume available for an agent without a dev override', async () => {
+      devModel = true
+      state.configOptions = [MODEL]
+      const session = await manager.createSession('/w', 'second')
+      await manager.setModel(session.id, 'opus')
       state.configOptions = [MODEL]
       await manager.dispose()
       manager = makeManager()

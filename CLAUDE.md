@@ -79,3 +79,10 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 
 ## Dev model
 Run the agent with `ANTHROPIC_MODEL=haiku` during development via the `devModel` setting (Settings screen, or `settings.json` in the app's `userData` folder).
+
+## Verified external APIs (Codex support)
+
+- `@agentclientprotocol/codex-acp@2.2.2` runs from `dist/index.js` under Electron with `ELECTRON_RUN_AS_NODE=1`. It launches its bundled `@openai/codex` CLI using the same runtime; Windows x64 was tested.
+- It advertises load/list/close/delete, images, embedded context, and the same steering extension Gloss already uses. Bypass mode is `agent-full-access`; model selection uses the `model` config option. The Claude dev override must not disable Codex's model picker.
+- With an empty `CODEX_HOME`, `session/new` returns ACP `auth_required`; the advertised `chat-gpt` method handles browser sign-in via `authenticate`. Existing Codex login works without another sign-in. A fresh browser login was not completed during validation.
+- Verified live through Electron and SessionManager: streaming, thread routing, model selection with Haiku enabled, tool execution, and thread preservation after restart/resume. Shared MCP settings and cross-agent context handoff remain future M13 work.

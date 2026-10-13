@@ -40,7 +40,7 @@ export type SessionManagerDeps = {
   connect(config: AgentConfig, env: NodeJS.ProcessEnv, handlers: AgentHandlers): Promise<AgentConnection>
   runInTerminal: TerminalRunner
   /** The dev model (Haiku) is on: it overrides the model picked per session. */
-  devModel?(): boolean
+  devModel?(agentId: string): boolean
   now?(): number
 }
 
@@ -565,7 +565,7 @@ export class SessionManager {
   /** Picks the session's model via the agent's model config option. */
   async setModel(id: string, value: string): Promise<void> {
     const session = this.session(id)
-    if (this.deps.devModel?.()) throw new Error('The dev model is on. Turn it off in Settings to pick a model.')
+    if (this.deps.devModel?.(session.agentId)) throw new Error('The dev model is on. Turn it off in Settings to pick a model.')
     await this.withAgent(session.agentId, async (conn) => {
       const acpSessionId = await this.attach(id, conn)
       const model = this.runtime(id).live.model
@@ -992,7 +992,7 @@ export class SessionManager {
       wanted &&
       model &&
       model.current !== wanted &&
-      !this.deps.devModel?.() &&
+      !this.deps.devModel?.(session.agentId) &&
       model.options.some((o) => o.value === wanted)
     ) {
       try {

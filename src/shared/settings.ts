@@ -7,7 +7,8 @@ export type ThemeSetting = 'system' | 'light' | 'dark'
 export type SessionOrder = 'created' | 'activity'
 
 export type GlobalSettings = {
-  /** Spawn agents with ANTHROPIC_MODEL=haiku so development prompts are cheap. */
+  defaultAgent: 'claude' | 'codex'
+  /** Spawn Claude Code with ANTHROPIC_MODEL=haiku so development prompts are cheap. */
   devModel: boolean
   /** Light, dark, or whatever the system uses. */
   theme: ThemeSetting
@@ -30,12 +31,23 @@ export type SettingField = {
 
 export const SETTING_FIELDS: readonly SettingField[] = [
   {
+    key: 'defaultAgent',
+    scope: 'global',
+    type: 'enum',
+    label: 'Default agent',
+    description: 'The agent selected for new sessions.',
+    options: [
+      { value: 'claude', label: 'Claude Code' },
+      { value: 'codex', label: 'Codex' }
+    ]
+  },
+  {
     key: 'devModel',
     scope: 'global',
     type: 'boolean',
     label: 'Dev model (Haiku)',
     description:
-      'Spawn agents with ANTHROPIC_MODEL=haiku so development prompts are cheap. Changing it restarts running agents.'
+      'Spawn Claude Code with ANTHROPIC_MODEL=haiku so development prompts are cheap. Changing it restarts running agents.'
   },
   {
     key: 'theme',
