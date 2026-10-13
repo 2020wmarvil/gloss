@@ -15,6 +15,7 @@ import type {
   RateLimit,
   Session,
   SessionLive,
+  SlashCommand,
   Thread
 } from '../shared/types'
 import { wireText } from '../shared/wire'
@@ -66,11 +67,14 @@ type SessionRuntime = {
   live: SessionLive
 }
 
+/** Slash commands Gloss runs itself instead of sending them to the agent. */
+const GLOSS_COMMANDS: SlashCommand[] = [{ name: 'clear', description: 'Start over with a fresh conversation' }]
+
 function emptyLive(): SessionLive {
   return {
     attached: false,
     model: null,
-    commands: [],
+    commands: GLOSS_COMMANDS,
     usage: null,
     rateLimits: [],
     permissions: null,
@@ -379,7 +383,7 @@ export class SessionManager {
           if (!isResourceNotFound(err)) throw err
           // Listed but not loadable: a leftover of a deleted session (Claude Code
           // can rewrite a transcript's metadata after its delete). Remove it.
-          if (conn.canDeleteSessions) await conn.deleteSession(acpSessionId).catch(() => {})
+          if (conn.canDeleteSessions) await this.deleteAgentSession(conn, agentId, acpSessionId).catch(() => {})
           throw new Error('That session has no conversation left (it was probably deleted), so it was removed.', {
             cause: err
           })
@@ -444,7 +448,7 @@ export class SessionManager {
     let warning: string | null = null
     try {
       await this.withAgent(session.agentId, async (conn) => {
-        if (conn.canDeleteSessions) await conn.deleteSession(session.acpSessionId)
+        if (conn.canDeleteSessions) await this.deleteAgentSession(conn, session.agentId, session.acpSessionId)
       })
     } catch (err) {
       // A session that never had a message may have no copy on the agent's side
@@ -458,6 +462,56 @@ export class SessionManager {
     this.byAcpId.delete(session.acpSessionId)
     this.deps.emit({ type: 'sessionDeleted', sessionId: id })
     return warning
+  }
+
+  /** session/delete, remembering the id so a copy the agent lists again stays hidden (see agentSessions). */
+  private deleteAgentSession(conn: AgentConnection, agentId: string, acpSessionId: string): Promise<void> {
+    this.deps.store.addDeletedAgentSession(agentId, acpSessionId)
+    return conn.deleteSession(acpSessionId)
+  }
+
+  /**
+   * `/clear`: replaces the session's agent session with a fresh one, in place.
+   * The old one is deleted, the agent's copy too (session/delete, when advertised),
+   * along with the session's messages, tool calls, threads and queue.
+   */
+  async clearSession(id: string): Promise<void> {
+    let session = this.session(id)
+    const rt = this.runtime(id)
+    if (rt.turn) throw new Error('Cancel the running turn before clearing the session.')
+    // A resume in progress would attach the old agent session after this.
+    await rt.attaching?.promise.catch(() => {})
+    let conn!: AgentConnection
+    let permissions: SessionLive['permissions'] = null
+    const res = await this.withAgent(session.agentId, async (c) => {
+      conn = c
+      const created = await c.newSession(session.cwd)
+      permissions = await this.enterBypassMode(session.agentId, c, created.sessionId, created.modes)
+      return created
+    })
+    if (rt.turn) throw new Error('Cancel the running turn before clearing the session.')
+
+    const old = session.acpSessionId
+    const hadMessages = this.deps.store.countUserMessages(id) > 0
+    this.byAcpId.delete(old)
+    this.deps.store.clearLog(id)
+    session = this.deps.store.updateSession(id, { acpSessionId: res.sessionId })
+    this.register(session.acpSessionId, id)
+    rt.attachedTo = conn
+    this.setQueue(id, { items: [], paused: false })
+    this.setLive(id, { usage: null })
+    this.deps.emit({ type: 'session', session })
+    this.deps.emit({ type: 'sessionCleared', sessionId: id })
+    await this.attached(id, conn, res.configOptions, permissions)
+
+    if (conn.canDeleteSessions) {
+      try {
+        await this.deleteAgentSession(conn, session.agentId, old)
+      } catch (err) {
+        // Claude Code writes its transcript on the first prompt: an unused session has nothing to delete.
+        if (hadMessages) this.notice(id, null, `Cleared, but the agent couldn't delete the old conversation: ${errorMessage(err)}`)
+      }
+    }
   }
 
   /** Picks the session's model via the agent's model config option. */
@@ -516,15 +570,24 @@ export class SessionManager {
 
   /** The agent's sessions in `cwd` that Gloss hasn't imported (session/list, when advertised). */
   async agentSessions(cwd: string, agentId: string): Promise<AgentSession[]> {
-    const listed = await this.withAgent(agentId, (conn) =>
-      conn.canListSessions ? conn.listSessions(cwd) : Promise.resolve([])
-    )
-    const known = new Set(
-      this.deps.store
+    const deleted = new Set(this.deps.store.listDeletedAgentSessions(agentId))
+    const listed = await this.withAgent(agentId, async (conn) => {
+      if (!conn.canListSessions) return []
+      const sessions = await conn.listSessions(cwd)
+      // Claude Code's process can rewrite a transcript's metadata after its
+      // delete, bringing the session back without its conversation. Delete it again.
+      for (const s of sessions) {
+        if (deleted.has(s.sessionId) && conn.canDeleteSessions) void conn.deleteSession(s.sessionId).catch(() => {})
+      }
+      return sessions
+    })
+    const known = new Set([
+      ...deleted,
+      ...this.deps.store
         .listSessions()
         .filter((s) => s.agentId === agentId)
         .map((s) => s.acpSessionId)
-    )
+    ])
     return listed
       .filter((s) => !known.has(s.sessionId))
       .map((s) => ({
@@ -698,6 +761,10 @@ export class SessionManager {
   ): Promise<TurnResult> {
     this.session(sessionId)
     this.anchorText(sessionId, threadId)
+    if (isClear(text, attachments)) {
+      await this.clearSession(sessionId)
+      return { cleared: true }
+    }
     const rt = this.runtime(sessionId)
     if (rt.turn) {
       this.setQueue(sessionId, {
@@ -722,6 +789,7 @@ export class SessionManager {
     attachments: Attachment[] = []
   ): Promise<TurnResult> {
     this.session(sessionId)
+    if (isClear(text, attachments)) return this.send(sessionId, text, threadId, attachments)
     const wire = wireText(text, this.anchorText(sessionId, threadId))
     const rt = this.runtime(sessionId)
     const turn = rt.turn
@@ -803,7 +871,8 @@ export class SessionManager {
     const rt = this.runtime(sessionId)
     if (rt.turn) throw new Error('A turn is already running in this session.')
     const wire = wireText(text, this.anchorText(sessionId, threadId))
-    const isFirst = this.deps.store.countUserMessages(sessionId) === 0
+    // Only a session still named after its folder takes its title from the first message.
+    const retitle = this.deps.store.countUserMessages(sessionId) === 0 && session.title === folderName(session.cwd)
     const message: Message = {
       id: randomUUID(),
       sessionId,
@@ -816,7 +885,7 @@ export class SessionManager {
     }
     this.deps.store.insertMessage(message)
     this.deps.emit({ type: 'message', message })
-    if (isFirst) {
+    if (retitle) {
       session = this.deps.store.updateSession(sessionId, { title: titleFrom(text) })
       this.deps.emit({ type: 'session', session })
     }
@@ -1073,6 +1142,10 @@ export class SessionManager {
   }
 }
 
+function isClear(text: string, attachments: Attachment[]): boolean {
+  return text.trim() === '/clear' && attachments.length === 0
+}
+
 function sameAnchor(a: Anchor, b: Anchor): boolean {
   if (a.kind === 'listItem' && b.kind === 'listItem') {
     return a.path.length === b.path.length && a.path.every((v, i) => v === b.path[i])
@@ -1126,11 +1199,16 @@ function liveUpdate(u: acp.SessionUpdate, rateLimits: RateLimit[]): Partial<Sess
   switch (u.sessionUpdate) {
     case 'available_commands_update':
       return {
-        commands: u.availableCommands.map((c) => ({
-          name: c.name,
-          description: c.description,
-          ...(c.input?.hint ? { hint: c.input.hint } : {})
-        }))
+        commands: [
+          ...GLOSS_COMMANDS,
+          ...u.availableCommands
+            .filter((c) => !GLOSS_COMMANDS.some((g) => g.name === c.name))
+            .map((c) => ({
+              name: c.name,
+              description: c.description,
+              ...(c.input?.hint ? { hint: c.input.hint } : {})
+            }))
+        ]
       }
     case 'usage_update': {
       const limit = claudeRateLimit(u._meta)

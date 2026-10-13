@@ -47,14 +47,17 @@ export type GitStatus = { branch: string; dirty: boolean }
 /**
  * `queued`: a turn was running, so the message was queued instead of sent.
  * `steered`: the message was injected into the running turn.
+ * `cleared`: it was `/clear`, which Gloss ran itself.
  */
-export type TurnResult = { stopReason?: string; error?: string; queued?: true; steered?: true }
+export type TurnResult = { stopReason?: string; error?: string; queued?: true; steered?: true; cleared?: true }
 
 export type AuthResult = { ok: true } | { ok: false; error: string }
 
 export type GlossEvent =
   | { type: 'session'; session: Session }
   | { type: 'sessionDeleted'; sessionId: string }
+  /** `/clear` emptied the session: its messages, tool calls and threads are gone. */
+  | { type: 'sessionCleared'; sessionId: string }
   | { type: 'live'; sessionId: string; live: SessionLive }
   /** The user clicked a notification: show this session (and thread). */
   | { type: 'reveal'; sessionId: string; threadId: string | null }

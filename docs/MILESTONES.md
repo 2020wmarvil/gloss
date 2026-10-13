@@ -218,6 +218,19 @@ Let the agent ask the user things, and let the user choose how much it may do wi
 
 **Done when:** Claude Code can ask a multiple-choice question mid-turn and gets the answer from a Gloss dialog, and a session switched to Manual asks before each edit or command and continues or stops based on the answer.
 
+## M18: Remote and mobile (future)
+Drive Gloss from a phone while the desktop app runs the agents. The desktop stays the only place agents, ACP and the database live; the phone is another client of the main process. Adds a section to `SPEC.md` (update it in this milestone).
+
+- **Bridge in the main process:** off by default, turned on in Settings. Serves the same API the preload exposes (requests and the event stream) over an authenticated WebSocket, plus a mobile web client. No new agent-facing logic: the phone's calls go through `SessionManager` like the renderer's, so a turn started on the phone shows live on the desktop and the reverse.
+- **Pairing:** Settings shows a QR code with the address and a one-time pairing secret; scanning it gives the phone a long-lived device token. Paired devices are listed with their last use and can be revoked. Every request needs a valid token. The bridge gives full control of agents that run commands without asking, so treat it as remote code execution: TLS only, and nothing listens until the user turns it on.
+- **Reachability:** start with the local network. For away from home, document a private network (Tailscale or similar) rather than building a relay; a hosted relay is a later option, not part of this milestone.
+- **Mobile client:** a phone layout of the session list, conversation and composer, with threads opened full screen. Covers the daily loop: read the log, open and reply in threads, send, queue, steer, cancel, resume a paused queue, see the status line (context, plan limits). Desktop-only features (settings, review sessions, visual feedback) can stay desktop-only. Agent output is untrusted here too: the same sanitized markdown rendering, and no `file://` or local-path links.
+- **Waiting on you:** with M17, questions and approval prompts can be answered from the phone; a turn that ends or needs an answer can notify the phone (web push from the PWA) when the desktop isn't focused.
+- **Desktop asleep or closed:** the phone shows "Gloss is offline" and reconnects on its own; nothing is queued on the phone while offline.
+- Verify first: serving the client from the main process without loosening the renderer's security settings, TLS on a LAN address (self-signed certificate pinned at pairing, or the private network's certificates), and web push on iOS (needs an installed PWA).
+
+**Done when:** you can pair a phone by scanning a QR code, see the same sessions as the desktop, start and steer a turn in a thread from the phone while watching it stream on both, and a revoked phone can no longer connect.
+
 ## Future work (after the milestones)
 Ideas worth building once the milestones are done. Not scheduled; first item first.
 
@@ -232,7 +245,9 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 - **M15:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 - **M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.
 - **M17:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.
+- **M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
 - Review sessions on other bases: unstaged changes, the current branch vs. `main`, a commit range (M11 starts with staged changes; keep the line anchor base-agnostic).
+- Polish the README and add visuals (screenshots, GIFs of threads and steering), and make a motion graphics demo reel.

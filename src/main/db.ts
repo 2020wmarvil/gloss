@@ -56,6 +56,13 @@ const MIGRATIONS = [
   `,
   `
   ALTER TABLE messages ADD COLUMN steered INTEGER;
+  `,
+  `
+  CREATE TABLE deleted_agent_sessions (
+    agent_id       TEXT NOT NULL,
+    acp_session_id TEXT NOT NULL,
+    PRIMARY KEY (agent_id, acp_session_id)
+  );
   `
 ]
 
@@ -303,6 +310,21 @@ export class Store {
       .prepare('SELECT * FROM tool_calls WHERE session_id = ? ORDER BY message_seq')
       .all(sessionId)
       .map((r) => toToolCall(r as Row))
+  }
+
+  // Agent sessions Gloss deleted (session/delete), in case the agent lists them again
+
+  addDeletedAgentSession(agentId: string, acpSessionId: string): void {
+    this.db
+      .prepare('INSERT OR IGNORE INTO deleted_agent_sessions (agent_id, acp_session_id) VALUES (?, ?)')
+      .run(agentId, acpSessionId)
+  }
+
+  listDeletedAgentSessions(agentId: string): string[] {
+    return this.db
+      .prepare('SELECT acp_session_id FROM deleted_agent_sessions WHERE agent_id = ?')
+      .all(agentId)
+      .map((r) => (r as Row).acp_session_id as string)
   }
 
   // Projects (folders opened in Gloss; folders of sessions count too)

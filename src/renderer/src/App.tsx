@@ -212,6 +212,14 @@ export function App(): React.JSX.Element {
             setPanel(null)
           }
           break
+        case 'sessionCleared':
+          setNotices((all) => ({ ...all, [event.sessionId]: [] }))
+          if (openId.current === event.sessionId) {
+            lastSeq.current = -1
+            setOpen((o) => (o ? { ...o, messages: [], toolCalls: [], threads: [] } : o))
+            setPanel(null)
+          }
+          break
         case 'live':
           setLives((l) => ({ ...l, [event.sessionId]: event.live }))
           break
