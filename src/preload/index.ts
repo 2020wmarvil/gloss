@@ -25,7 +25,8 @@ const api: GlossApi = {
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC.settingsGet),
-    setDevModel: (on) => ipcRenderer.invoke(IPC.settingsSetDevModel, on === true)
+    update: (patch) => ipcRenderer.invoke(IPC.settingsUpdate, patch),
+    openFile: () => ipcRenderer.invoke(IPC.settingsOpenFile)
   },
   onEvent(listener) {
     const wrapped = (_e: IpcRendererEvent, event: GlossEvent): void => listener(event)

@@ -42,4 +42,4 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - Work on `dev`; open one PR per milestone against `main`.
 
 ## Dev model
-Run the agent with `ANTHROPIC_MODEL=haiku` during development via the app's dev toggle.
+Run the agent with `ANTHROPIC_MODEL=haiku` during development via the `devModel` setting (Settings screen, or `settings.json` in the app's `userData` folder).

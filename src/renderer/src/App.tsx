@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { GlossEvent, Settings } from '@shared/ipc'
+import type { GlossEvent, SettingsPatch, SettingsState } from '@shared/ipc'
 import type { AgentInfo, Anchor, AuthMethodInfo, Message, Session, Thread, ToolCall } from '@shared/types'
 import { truncate } from '@shared/wire'
 import { itemLabel, listItemSpans, type ListItemSpan } from './anchors'
+import { errorText } from './errors'
 import { Conversation } from './Conversation'
 import type { Notice } from './Log'
 import { Sidebar } from './Sidebar'
 import type { SourceSelection } from './SelectionPopover'
+import { SettingsScreen } from './SettingsScreen'
 import { SignInDialog } from './SignInDialog'
 import { ThreadPanel } from './ThreadPanel'
 
@@ -30,12 +32,6 @@ function upsert<T extends { id: string }>(list: T[], item: T): T[] {
   return next
 }
 
-function errorText(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err)
-  // Electron prefixes errors thrown in IPC handlers.
-  return message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
-}
-
 /** A short name for an anchor: "item 2", or the quoted start of a selection. */
 function anchorLabel(open: OpenSession, anchorMessageId: string, anchor: Anchor): string {
   if (anchor.kind === 'listItem') {
@@ -47,7 +43,8 @@ function anchorLabel(open: OpenSession, anchorMessageId: string, anchor: Anchor)
 }
 
 export function App(): React.JSX.Element {
-  const [settings, setSettings] = useState<Settings | null>(null)
+  const [settings, setSettings] = useState<SettingsState | null>(null)
+  const [showSettings, setShowSettings] = useState(false)
   const [agents, setAgents] = useState<AgentInfo[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
   const [open, setOpen] = useState<OpenSession | null>(null)
@@ -123,12 +120,28 @@ export function App(): React.JSX.Element {
         case 'authResolved':
           setSignIn((s) => (s?.agentId === event.agentId ? null : s))
           break
+        case 'settings':
+          setSettings(event.state)
+          break
       }
     },
     [addNotice]
   )
 
   useEffect(() => window.gloss.onEvent(onEvent), [onEvent])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+        e.preventDefault()
+        setShowSettings((on) => !on)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const closeSettings = useCallback(() => setShowSettings(false), [])
 
   useEffect(() => {
     void window.gloss.settings.get().then(setSettings)
@@ -140,6 +153,7 @@ export function App(): React.JSX.Element {
   }, [])
 
   async function selectSession(id: string): Promise<void> {
+    setShowSettings(false)
     if (openId.current !== id) setPanel(null)
     openId.current = id
     const view = await window.gloss.sessions.open(id)
@@ -242,8 +256,8 @@ export function App(): React.JSX.Element {
     }
   }
 
-  async function toggleDevModel(on: boolean): Promise<void> {
-    setSettings(await window.gloss.settings.setDevModel(on))
+  async function updateSettings(patch: SettingsPatch): Promise<void> {
+    setSettings(await window.gloss.settings.update(patch))
   }
 
   const sessionId = open?.session.id
@@ -259,12 +273,21 @@ export function App(): React.JSX.Element {
         running={running}
         creating={creating}
         createError={createError}
-        settings={settings}
+        settingsOpen={showSettings}
+        settingsError={settings?.error != null}
         onSelect={(id) => void selectSession(id)}
         onNew={() => void newSession()}
-        onToggleDevModel={(on) => void toggleDevModel(on)}
+        onSettings={() => setShowSettings((on) => !on)}
       />
-      {open ? (
+      {showSettings && settings ? (
+        <SettingsScreen
+          state={settings}
+          projectPath={open?.session.cwd ?? null}
+          onUpdate={updateSettings}
+          onOpenFile={() => window.gloss.settings.openFile()}
+          onClose={closeSettings}
+        />
+      ) : open ? (
         <Conversation
           key={open.session.id}
           open={open}
@@ -291,7 +314,7 @@ export function App(): React.JSX.Element {
           )}
         </main>
       )}
-      {open && panel && (
+      {open && panel && !showSettings && (
         <ThreadPanel
           open={open}
           panel={panel}

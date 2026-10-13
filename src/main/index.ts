@@ -6,12 +6,13 @@ import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, listAgents } from './agents'
 import { Store } from './db'
 import { SessionManager } from './sessions'
-import { getSettings, updateSettings } from './settings'
+import { patchArg, SettingsFile } from './settings'
 import { runInTerminal } from './terminal'
 
 let mainWindow: BrowserWindow | undefined
 let store: Store | undefined
 let sessions: SessionManager | undefined
+let settings: SettingsFile | undefined
 
 function isExternalUrl(url: string): boolean {
   try {
@@ -84,7 +85,7 @@ function anchorArg(value: unknown): Anchor {
   throw new Error('Invalid anchor')
 }
 
-function registerIpc(manager: SessionManager): void {
+function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void {
   ipcMain.handle(IPC.agentsList, () => listAgents())
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
@@ -115,26 +116,39 @@ function registerIpc(manager: SessionManager): void {
       : await dialog.showOpenDialog(options)
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
-  ipcMain.handle(IPC.settingsGet, () => getSettings())
-  ipcMain.handle(IPC.settingsSetDevModel, async (_e, on: unknown) => {
-    const settings = updateSettings({ devModel: on === true })
-    // Agents restart with the new model; busy ones once their turn ends.
-    await manager.restartAgents()
-    return settings
+  ipcMain.handle(IPC.settingsGet, () => settingsFile.state())
+  ipcMain.handle(IPC.settingsUpdate, (_e, patch: unknown) => settingsFile.update(patchArg(patch)))
+  ipcMain.handle(IPC.settingsOpenFile, async () => {
+    const error = await shell.openPath(settingsFile.path)
+    return error === '' ? null : error
   })
 }
 
 app.whenReady().then(() => {
-  store = new Store(join(app.getPath('userData'), 'gloss.db'))
+  const dataDir = app.getPath('userData')
+  store = new Store(join(dataDir, 'gloss.db'))
+  const settingsFile = new SettingsFile({
+    dir: dataDir,
+    // The cheap dev model is on by default in development, off in packaged builds.
+    defaults: { devModel: !app.isPackaged },
+    onChange(next, prev) {
+      emit({ type: 'settings', state: next })
+      // Agents restart with the new model; busy ones once their turn ends.
+      if (next.global.devModel !== prev.global.devModel) void sessions?.restartAgents()
+    }
+  })
+  settings = settingsFile
+  settingsFile.load()
+  settingsFile.watch()
   sessions = new SessionManager({
     store,
     emit,
     getAgentConfig,
-    agentEnv: (config) => agentEnv(config, { devModel: getSettings().devModel }),
+    agentEnv: (config) => agentEnv(config, { devModel: settingsFile.state().global.devModel }),
     connect: (config, env, handlers) => AgentConnection.start(config, env, handlers),
     runInTerminal
   })
-  registerIpc(sessions)
+  registerIpc(sessions, settingsFile)
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -146,6 +160,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  settings?.close()
   void sessions?.dispose()
   store?.close()
 })

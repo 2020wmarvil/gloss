@@ -162,7 +162,16 @@ type AgentConfig = { id: string; name: string; command: string; args: string[]; 
 
 ### Dev model
 
-In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its environment so test prompts are cheap. Make this a dev-mode toggle in the app, not a per-project setting. Judge the threading UX on the normal model; Haiku produces shorter, less list-heavy answers.
+In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its environment so test prompts are cheap. It is a global setting (`devModel`, see Settings), on by default in development builds and off in packaged ones, not a per-project setting. Changing it restarts the agents (busy ones once their turn ends). Judge the threading UX on the normal model; Haiku produces shorter, less list-heavy answers.
+
+## Settings
+
+- **One `settings.json`** in Gloss's data folder (Electron's `userData`, next to the DB), never in a project. Global settings sit at the top level; per-project settings sit under `projects`, keyed by the folder's absolute path (matched case-insensitively on Windows).
+- **A JSON Schema**, `settings.schema.json`, is written next to it on every start, generated from the same field table the app validates against (`src/shared/settings.ts`). A new file's `$schema` points at it, so editors autocomplete and validate, and an agent can read what is allowed.
+- **Validation** is owned by the main process. Missing keys take their defaults; unknown keys are ignored and kept.
+- **Live reload:** the main process watches the folder (editors often replace the file) and applies changes without a restart. If the file has invalid JSON or values, or is deleted, Gloss keeps the last good settings and shows what is wrong (on the settings screen, and a mark on the sidebar's Settings button). It never resets or overwrites the file because of a bad edit.
+- **Settings screen** (the sidebar's Settings button, or `Ctrl+,`; Esc or Done closes it): the file's path with "Open in editor" (the system's app for `.json`), then a Global section and a Project section for the open session's folder. Changes save immediately: only the changed keys are written, everything else in the file is kept. Saving is refused while the file isn't valid JSON.
+- Each feature adds its own fields when it lands; no field appears before its feature exists.
 
 ## Stack
 
@@ -171,7 +180,8 @@ In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its env
   - `sessions.list() / sessions.create(cwd, agentId) / sessions.open(id)`
   - `send(sessionId, text, threadId | null)`, `cancel(sessionId)`
   - `threads.create(sessionId, anchorMessageId, anchor)`
-  - an event stream: message/tool-call upserts, turn start/end
+  - `settings.get() / settings.update(patch) / settings.openFile()`
+  - an event stream: message/tool-call upserts, turn start/end, settings changes
 - **Renderer** only renders. Framework is the implementer's choice (React is fine).
 - **Security:** agent output is untrusted (it can contain text from files and web pages). `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, expose only the IPC API via `contextBridge`, and **sanitize rendered markdown** (no raw HTML, safe link handling: open external links in the system browser).
 - **Persistence:** SQLite. Prefer the built-in `node:sqlite` if the Electron version's Node supports it; otherwise `better-sqlite3` with `electron-rebuild`.
