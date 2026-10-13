@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentEnv, DEV_MODEL, type AgentConfig } from './agents'
+import { agentEnv, DEV_MODEL, getAgentConfig, type AgentConfig } from './agents'
 
 const config: AgentConfig = {
   id: 'test',
@@ -22,5 +22,9 @@ describe('agentEnv', () => {
     expect(agentEnv(config, { devModel: false }, { ANTHROPIC_MODEL: 'opus' }).ANTHROPIC_MODEL).toBe(
       'opus'
     )
+  })
+
+  it("turns on Claude Code's todo tools, so it reports plans", () => {
+    expect(agentEnv(getAgentConfig('claude'), { devModel: false }, {}).CLAUDE_CODE_ENABLE_TODO_TOOLS).toBe('1')
   })
 })

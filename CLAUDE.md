@@ -51,6 +51,10 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - An injected message runs inside the pending `session/prompt`: its output streams as normal `session/update`s and that prompt's response comes once it is answered. The adapter doesn't echo it as a `user_message_chunk`.
 - The SDK sends custom methods with `conn.agent.request(method, params)`; an in-process agent registers one with `.onRequest(method, { parse }, handler)` (a parser is required).
 
+## Verified external APIs (M9)
+- `plan` updates list the whole plan each time (`entries: { content, priority, status }[]`). The Claude adapter turns `TodoWrite` and the `Task*` tools into them (no `tool_call` for those).
+- Claude Code leaves those tools off in SDK sessions: without `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` the agent has neither and never sends a plan (`CLAUDE_CODE_ENABLE_TASKS` alone doesn't help). Gloss sets it in the Claude agent config.
+
 ## Git
 - Work on `dev`; open one PR per milestone against `main`.
 
