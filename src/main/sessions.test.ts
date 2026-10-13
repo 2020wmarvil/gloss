@@ -940,6 +940,13 @@ describe('SessionManager', () => {
       await expect(manager.importSession('/w', 'fake', 'missing', 'Gone')).rejects.toThrow()
       expect(manager.listSessions()).toEqual([])
     })
+
+    it("deletes the agent's copy of a listed session it can't load", async () => {
+      state.canDelete = true
+      await expect(manager.importSession('/w', 'fake', 'stub', 'Gone')).rejects.toThrow(/no conversation left/)
+      expect(state.deleted).toEqual(['stub'])
+      expect(manager.listSessions()).toEqual([])
+    })
   })
 
   describe('live session state', () => {

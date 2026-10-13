@@ -23,6 +23,15 @@ export function isAuthRequired(err: unknown): boolean {
   )
 }
 
+/** ACP's resource_not_found error code. */
+const RESOURCE_NOT_FOUND = acp.RequestError.resourceNotFound().code
+
+export function isResourceNotFound(err: unknown): boolean {
+  return (
+    typeof err === 'object' && err !== null && (err as { code?: unknown }).code === RESOURCE_NOT_FOUND
+  )
+}
+
 export class AgentConnection {
   private closed = false
 

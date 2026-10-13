@@ -325,6 +325,7 @@ export function App(): React.JSX.Element {
       await selectSession(session.id)
     } catch (err) {
       setSidebarError(`Couldn't open that session: ${errorText(err)}`)
+      void loadAgentSessions(projectPath)
     } finally {
       setImporting(null)
     }

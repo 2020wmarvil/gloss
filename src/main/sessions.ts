@@ -18,7 +18,7 @@ import type {
   Thread
 } from '../shared/types'
 import { wireText } from '../shared/wire'
-import { AgentConnection, isAuthRequired, type AgentHandlers } from './acp'
+import { AgentConnection, isAuthRequired, isResourceNotFound, type AgentHandlers } from './acp'
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
 import { samePath } from './settings'
@@ -372,7 +372,17 @@ export class SessionManager {
         // A retry after sign-in replays from the start.
         store.clearLog(session.id)
         rt.importing = { threadId: null, afterToolCall: false }
-        await this.attach(session.id, conn)
+        try {
+          await this.attach(session.id, conn)
+        } catch (err) {
+          if (!isResourceNotFound(err)) throw err
+          // Listed but not loadable: a leftover of a deleted session (Claude Code
+          // can rewrite a transcript's metadata after its delete). Remove it.
+          if (conn.canDeleteSessions) await conn.deleteSession(acpSessionId).catch(() => {})
+          throw new Error('That session has no conversation left (it was probably deleted), so it was removed.', {
+            cause: err
+          })
+        }
       })
     } catch (err) {
       store.deleteSession(session.id)
