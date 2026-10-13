@@ -44,7 +44,23 @@ export type SessionView = {
   live: SessionLive
 }
 
-export type GitStatus = { branch: string; dirty: boolean }
+export type GitStatus = {
+  branch: string
+  dirty: boolean
+  /** The branch's upstream on GitHub; null if it has none or the remote isn't on github.com. */
+  url: string | null
+}
+
+/** The GitHub pull request for a folder's branch, from `gh pr view`. */
+export type PullRequest = {
+  number: number
+  title: string
+  url: string
+  state: 'open' | 'draft' | 'merged' | 'closed'
+  /** Combined result of its checks; null if it has none. */
+  checks: 'passing' | 'failing' | 'pending' | null
+  review: 'approved' | 'changes requested' | 'review required' | null
+}
 
 /**
  * `queued`: a turn was running, so the message was queued instead of sent.
@@ -120,6 +136,8 @@ export type GlossApi = {
   git: {
     /** The folder's branch and whether it has uncommitted changes; null outside a repo. */
     status(cwd: string): Promise<GitStatus | null>
+    /** The branch's pull request; null without one, or without `gh` or its login. */
+    pullRequest(cwd: string): Promise<PullRequest | null>
   }
   threads: {
     /** Creates the thread for an anchor, or returns the existing one for the same anchor. */
@@ -175,6 +193,7 @@ export const IPC = {
   sessionsCopyMarkdown: 'gloss:sessions:copyMarkdown',
   sessionsSaveMarkdown: 'gloss:sessions:saveMarkdown',
   gitStatus: 'gloss:git:status',
+  gitPullRequest: 'gloss:git:pullRequest',
   threadsCreate: 'gloss:threads:create',
   send: 'gloss:send',
   steer: 'gloss:steer',

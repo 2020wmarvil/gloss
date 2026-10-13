@@ -1,7 +1,7 @@
 // The status line at the bottom of the conversation (SPEC → Status line). Everything
-// but the git branch comes from what the agent reports over ACP.
+// but the git branch and pull request come from what the agent reports over ACP.
 import { useState } from 'react'
-import type { GitStatus } from '@shared/ipc'
+import type { GitStatus, PullRequest } from '@shared/ipc'
 import { folderName } from '@shared/paths'
 import type { MessageQueue, ModelOption, RateLimit, Session, SessionLive, SlashCommand } from '@shared/types'
 import { Popover } from './Popover'
@@ -10,6 +10,7 @@ type Props = {
   session: Session
   live: SessionLive
   git: GitStatus | null
+  pr: PullRequest | null
   devModel: boolean
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
@@ -86,6 +87,25 @@ function RateLimitItem({ limit, onClick }: { limit: RateLimit; onClick?(): void 
     <span className={className} title={title}>
       {text}
     </span>
+  )
+}
+
+const CHECK_LABELS: Record<NonNullable<PullRequest['checks']>, string> = {
+  passing: 'Checks passing',
+  failing: 'Checks failing',
+  pending: 'Checks running'
+}
+
+/** The branch's pull request: "#12 open" colored by state, with a dot for its checks. Opens it on GitHub. */
+function PullRequestItem({ pr }: { pr: PullRequest }): React.JSX.Element {
+  const title = [`#${pr.number} ${pr.title}`, pr.checks && `${CHECK_LABELS[pr.checks]}.`, pr.review && `Review: ${pr.review}.`, 'Click to open on GitHub.']
+    .filter(Boolean)
+    .join('\n')
+  // External links open in the system browser (the main window's open handler).
+  return (
+    <a className={`status-item link pr ${pr.state}`} href={pr.url} target="_blank" rel="noreferrer" title={title}>
+      {pr.checks && <span className={`pr-checks ${pr.checks}`} aria-label={CHECK_LABELS[pr.checks]} />}#{pr.number} {pr.state}
+    </a>
   )
 }
 
@@ -242,12 +262,25 @@ export function StatusLine(props: Props): React.JSX.Element {
       )}
 
       <span className="status-spacer" />
-      {git && (
-        <span className="status-item mono" title={git.dirty ? 'Uncommitted changes' : 'Clean working tree'}>
-          {git.branch}
-          {git.dirty && <span className="dirty">*</span>}
-        </span>
-      )}
+      {props.pr && <PullRequestItem pr={props.pr} />}
+      {git &&
+        (git.url ? (
+          <a
+            className="status-item link mono"
+            href={git.url}
+            target="_blank"
+            rel="noreferrer"
+            title={`${git.dirty ? 'Uncommitted changes' : 'Clean working tree'}. Click to open the branch on GitHub.`}
+          >
+            {git.branch}
+            {git.dirty && <span className="dirty">*</span>}
+          </a>
+        ) : (
+          <span className="status-item mono" title={git.dirty ? 'Uncommitted changes' : 'Clean working tree'}>
+            {git.branch}
+            {git.dirty && <span className="dirty">*</span>}
+          </span>
+        ))}
       <span className="status-item mono" title={session.cwd}>
         {folderName(session.cwd)}
       </span>

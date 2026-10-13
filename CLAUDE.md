@@ -55,6 +55,10 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - `plan` updates list the whole plan each time (`entries: { content, priority, status }[]`). The Claude adapter turns `TodoWrite` and the `Task*` tools into them (no `tool_call` for those).
 - Claude Code only gives those tools to older models by default (a fixed list: Opus 4.x, Sonnet 4.0-4.6, Haiku 4.5, the 3.x line), in the CLI too. Newer models (Opus 5.5, current Haiku) have neither and never send a plan unless `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (`CLAUDE_CODE_ENABLE_TASKS` alone doesn't help). Gloss sets it in the Claude agent config.
 
+## Verified external APIs (PR badge)
+- `gh` 2.74: `gh pr view --json number,title,state,isDraft,url,statusCheckRollup,reviewDecision` with no argument finds the current branch's PR, merged ones included (so Gloss compares `headRefOid` with `HEAD` for those). `state` is `OPEN`/`MERGED`/`CLOSED`; `reviewDecision` is `""` with none. `statusCheckRollup` mixes `CheckRun`s (`status`, `conclusion`) and `StatusContext`s (`state`).
+- `git for-each-ref --format=%(upstream:remotename)%00%(upstream:remoteref) refs/heads/<b>` prints the upstream as `origin\0refs/heads/dev`.
+
 ## Git
 - Work on `dev`; open one PR per milestone against `main`.
 

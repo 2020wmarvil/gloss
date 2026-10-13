@@ -24,7 +24,8 @@ const api: GlossApi = {
     saveMarkdown: (id, threadId) => ipcRenderer.invoke(IPC.sessionsSaveMarkdown, id, threadId)
   },
   git: {
-    status: (cwd) => ipcRenderer.invoke(IPC.gitStatus, cwd)
+    status: (cwd) => ipcRenderer.invoke(IPC.gitStatus, cwd),
+    pullRequest: (cwd) => ipcRenderer.invoke(IPC.gitPullRequest, cwd)
   },
   threads: {
     create: (sessionId, anchorMessageId, anchor) =>
