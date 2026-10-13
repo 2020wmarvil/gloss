@@ -9,6 +9,7 @@ import type {
   AuthMethodInfo,
   Message,
   MessageQueue,
+  Plan,
   Project,
   QueuedMessage,
   Session,
@@ -27,6 +28,7 @@ import type { SourceSelection } from './SelectionPopover'
 import { SettingsScreen } from './SettingsScreen'
 import { SignInDialog } from './SignInDialog'
 import { ThreadPanel } from './ThreadPanel'
+import { SideRail, ThreadsOverview } from './ThreadsOverview'
 import {
   clampWidth,
   ResizeHandle,
@@ -42,10 +44,11 @@ export type OpenSession = {
   session: Session
   messages: Message[]
   toolCalls: ToolCall[]
+  plans: Plan[]
   threads: Thread[]
 }
 
-/** The open thread panel. threadId is null until the first message creates the thread. */
+/** The thread shown in the side panel. threadId is null until the first message creates the thread. */
 export type Panel = { anchorMessageId: string; anchor: Anchor; threadId: string | null }
 
 export type SignInRequest = { agentId: string; agentName: string; methods: AuthMethodInfo[] }
@@ -81,6 +84,8 @@ function anchorLabel(open: OpenSession, anchorMessageId: string, anchor: Anchor)
   return `“${truncate(anchor.text, 32)}”`
 }
 
+const SIDE_PANEL_KEY = 'gloss.sidePanelOpen'
+
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -93,7 +98,10 @@ export function App(): React.JSX.Element {
   const [agentSessionsError, setAgentSessionsError] = useState<string | null>(null)
   const [importing, setImporting] = useState<string | null>(null)
   const [open, setOpen] = useState<OpenSession | null>(null)
+  /** The thread in the side panel; null shows the threads overview. */
   const [panel, setPanel] = useState<Panel | null>(null)
+  /** The side panel is expanded (UI state, remembered like the pane widths). */
+  const [sideOpen, setSideOpenState] = useState(() => localStorage.getItem(SIDE_PANEL_KEY) === '1')
   /** sessionId → threadId of its running turn. */
   const [running, setRunning] = useState<Record<string, string | null>>({})
   const [notices, setNotices] = useState<Record<string, Notice[]>>({})
@@ -113,6 +121,25 @@ export function App(): React.JSX.Element {
   const lastSeq = useRef(-1)
   const project = projects.find((p) => projectPath !== null && sameFolder(p.path, projectPath)) ?? null
   const agent = agents[0]
+
+  const setSideOpen = useCallback((on: boolean) => {
+    setSideOpenState(on)
+    localStorage.setItem(SIDE_PANEL_KEY, on ? '1' : '0')
+  }, [])
+
+  /** Opens a thread in the side panel, expanding it. */
+  const showPanel = useCallback(
+    (p: Panel) => {
+      setPanel(p)
+      setSideOpen(true)
+    },
+    [setSideOpen]
+  )
+
+  const collapseSide = useCallback(() => {
+    setPanel(null)
+    setSideOpen(false)
+  }, [setSideOpen])
 
   const addNotice = useCallback((sessionId: string, threadId: string | null, text: string) => {
     setNotices((all) => ({
@@ -163,7 +190,13 @@ export function App(): React.JSX.Element {
       const view = await window.gloss.sessions.open(id)
       if (openId.current !== id) return
       lastSeq.current = Math.max(-1, ...view.messages.map((m) => m.seq), ...view.toolCalls.map((t) => t.messageSeq))
-      setOpen({ session: view.session, messages: view.messages, toolCalls: view.toolCalls, threads: view.threads })
+      setOpen({
+        session: view.session,
+        messages: view.messages,
+        toolCalls: view.toolCalls,
+        plans: view.plans,
+        threads: view.threads
+      })
       openCwd.current = view.session.cwd
       setProjectPath(view.session.cwd)
       setLives((l) => ({ ...l, [id]: view.live }))
@@ -176,9 +209,9 @@ export function App(): React.JSX.Element {
       })
       refreshGit(view.session.cwd, id)
       const thread = threadId ? view.threads.find((t) => t.id === threadId) : undefined
-      if (thread) setPanel({ anchorMessageId: thread.anchorMessageId, anchor: thread.anchor, threadId: thread.id })
+      if (thread) showPanel({ anchorMessageId: thread.anchorMessageId, anchor: thread.anchor, threadId: thread.id })
     },
-    [refreshGit]
+    [refreshGit, showPanel]
   )
 
   /** Shows a project: its most recent session, or none. */
@@ -216,7 +249,7 @@ export function App(): React.JSX.Element {
           setNotices((all) => ({ ...all, [event.sessionId]: [] }))
           if (openId.current === event.sessionId) {
             lastSeq.current = -1
-            setOpen((o) => (o ? { ...o, messages: [], toolCalls: [], threads: [] } : o))
+            setOpen((o) => (o ? { ...o, messages: [], toolCalls: [], plans: [], threads: [] } : o))
             setPanel(null)
           }
           break
@@ -242,6 +275,11 @@ export function App(): React.JSX.Element {
           if (event.toolCall.sessionId !== openId.current) break
           lastSeq.current = Math.max(lastSeq.current, event.toolCall.messageSeq)
           setOpen((o) => (o ? { ...o, toolCalls: upsert(o.toolCalls, event.toolCall) } : o))
+          break
+        case 'plan':
+          if (event.plan.sessionId !== openId.current) break
+          lastSeq.current = Math.max(lastSeq.current, event.plan.seq)
+          setOpen((o) => (o ? { ...o, plans: upsert(o.plans, event.plan) } : o))
           break
         case 'thread':
           if (event.thread.sessionId !== openId.current) break
@@ -401,7 +439,7 @@ export function App(): React.JSX.Element {
         t.anchor.path.length === 1 &&
         t.anchor.path[0] === span.index
     )
-    setPanel(
+    showPanel(
       existing
         ? { anchorMessageId: message.id, anchor: existing.anchor, threadId: existing.id }
         : {
@@ -421,7 +459,7 @@ export function App(): React.JSX.Element {
         t.anchor.start === selection.start &&
         t.anchor.end === selection.end
     )
-    setPanel(
+    showPanel(
       existing
         ? { anchorMessageId: message.id, anchor: existing.anchor, threadId: existing.id }
         : { anchorMessageId: message.id, anchor: { kind: 'selection', ...selection }, threadId: null }
@@ -430,7 +468,7 @@ export function App(): React.JSX.Element {
 
   function openThread(threadId: string): void {
     const t = open?.threads.find((x) => x.id === threadId)
-    if (t) setPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id })
+    if (t) showPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id })
   }
 
   async function send(
@@ -475,6 +513,10 @@ export function App(): React.JSX.Element {
     } else if (e.key.toLowerCase() === 'n' && !e.shiftKey && !e.altKey) {
       e.preventDefault()
       void newSession()
+    } else if (e.key.toLowerCase() === 't' && e.shiftKey && !e.altKey) {
+      e.preventDefault()
+      if (sideOpen) collapseSide()
+      else setSideOpen(true)
     } else if (e.key.toLowerCase() === 'l' && !e.shiftKey) {
       e.preventDefault()
       setShowSettings(false)
@@ -621,42 +663,63 @@ export function App(): React.JSX.Element {
           )}
         </main>
       )}
-      {open && panel && !showSettings && (
+      {open && !showSettings && !sideOpen && (
+        <SideRail
+          count={open.threads.length}
+          running={runningThreadRow !== undefined}
+          onExpand={() => setSideOpen(true)}
+        />
+      )}
+      {open && !showSettings && sideOpen && (
         <>
           <ResizeHandle
-            label="Resize thread panel"
+            label="Resize side panel"
             pane="after"
             limits={threadLimit}
             value={threadWidth}
             onResize={setThreadPanelWidth}
             onReset={() => setThreadPanelWidth(null)}
           />
-          <ThreadPanel
-            width={threadWidth}
-            open={open}
-            panel={panel}
-            label={
-              panel.anchor.kind === 'selection'
-                ? panel.threadId === null
-                  ? 'from selection'
-                  : 'selection'
-                : anchorLabel(open, panel.anchorMessageId, panel.anchor)
-            }
-            runningThread={runningThread}
-            notices={sessionNotices}
-            live={live}
-            // A thread that doesn't exist yet has nothing queued.
-            queue={composerQueue(
-              open.session.id,
-              panel.threadId === null ? [] : queue.items.filter((q) => q.threadId === panel.threadId)
-            )}
-            onSend={(text, attachments) => void send(text, attachments, panel)}
-            onSteer={(text, attachments) => void send(text, attachments, panel, 'steer')}
-            onCancel={() => void window.gloss.cancel(open.session.id)}
-            onClose={() => setPanel(null)}
-            onCopyMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'copy')}
-            onSaveMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'save')}
-          />
+          {panel ? (
+            <ThreadPanel
+              width={threadWidth}
+              open={open}
+              panel={panel}
+              label={
+                panel.anchor.kind === 'selection'
+                  ? panel.threadId === null
+                    ? 'new thread'
+                    : 'selection'
+                  : anchorLabel(open, panel.anchorMessageId, panel.anchor)
+              }
+              runningThread={runningThread}
+              notices={sessionNotices}
+              live={live}
+              // A thread that doesn't exist yet has nothing queued.
+              queue={composerQueue(
+                open.session.id,
+                panel.threadId === null ? [] : queue.items.filter((q) => q.threadId === panel.threadId)
+              )}
+              onSend={(text, attachments) => void send(text, attachments, panel)}
+              onSteer={(text, attachments) => void send(text, attachments, panel, 'steer')}
+              onCancel={() => void window.gloss.cancel(open.session.id)}
+              onBack={() => setPanel(null)}
+              onClose={collapseSide}
+              onCopyMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'copy')}
+              onSaveMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'save')}
+            />
+          ) : (
+            <ThreadsOverview
+              width={threadWidth}
+              open={open}
+              runningThread={runningThread}
+              label={(t) =>
+                t.anchor.kind === 'selection' ? 'selection' : anchorLabel(open, t.anchorMessageId, t.anchor)
+              }
+              onOpenThread={openThread}
+              onCollapse={collapseSide}
+            />
+          )}
         </>
       )}
       {signIn && (

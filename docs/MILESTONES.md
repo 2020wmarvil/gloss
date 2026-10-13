@@ -98,8 +98,9 @@ Stop waiting for a turn to end before you can say something.
 **Done when:** you can line up follow-ups while the agent works and they run in order in the right threads, and with Claude Code you can redirect a running turn without cancelling it.
 
 ## M9 — Threads, further
-- **Threads overview:** a per-session list of all threads (anchor quote, reply count, last activity, running indicator). Clicking one opens it in the panel. Placement needs a design pass before M9 starts.
+- **Threads overview:** a per-session list of all threads (anchor quote, reply count, last activity, running indicator). Clicking one opens it in the panel. Placement: a collapsible right-hand side panel that shows the overview or one thread (SPEC → Conversation view → Side panel).
 - **Agent plan:** `plan` updates render as a checklist (pending / in progress / done) in the thread whose turn produced them, updated in place as the agent works. Persisted, so it survives a restart.
+- **Back to main on the wire:** the first main-thread message after a thread is tagged `[re: the main conversation, not the thread above]`, so the agent doesn't read it as continuing the thread (SPEC → Wire format).
 
 **Done when:** in a session with several threads, any thread can be found and opened from the overview, and an agent's plan is visible and updates live in the thread it belongs to.
 
@@ -239,7 +240,7 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 
 ## Design passes needed
 - **M7:** sidebar with projects (folders) and their sessions, including the agent's existing sessions not yet opened in Gloss.
-- **M9:** where the threads overview lives (a sidebar section under the session, or a header button that opens a list in the side panel).
+- **M9:** done: the overview lives in a collapsible right-hand side panel, which also shows a thread (`docs/mocks/threads-overview.html`).
 - **M11:** the diff viewer layout, line Reply affordances and range selection, where the general conversation sits, and how agent-opened threads look.
 - The M7–M11 passes are deliberately light: enough to build them. M12 revisits everything as a whole.
 - **M15:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).

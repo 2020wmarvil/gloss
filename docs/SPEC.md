@@ -38,7 +38,14 @@ User message in a thread is sent to the agent as:
 <user's text>
 ```
 
-Main-thread messages are sent unchanged. The UI shows the user's text without the tag; the tag is stored in `wireText`.
+Main-thread messages are sent unchanged, except the first one after a thread: when the user's previous message in the session was in a thread, the main message is sent as
+
+```
+[re: the main conversation, not the thread above]
+<user's text>
+```
+
+so the agent doesn't read it as continuing that thread. It takes the thread tag's `[re: …]` form and avoids the bare word "main", which in a coding session reads as the git branch. The UI shows the user's text without the tag; the tag is stored in `wireText`.
 
 ## Data model
 
@@ -68,6 +75,7 @@ type Message = {
   acpMessageId?: string      // ACP messageId for agent chunks, when provided
   attachments?: Attachment[] // user messages: images and files sent with it
   steered?: boolean          // user messages: injected into a running turn (see Composer → Steer)
+  createdAt?: number         // when it was recorded; missing on messages stored before M9
 }
 
 type ToolCall = {             // rendered inline in whichever thread it belongs to
@@ -79,6 +87,14 @@ type ToolCall = {             // rendered inline in whichever thread it belongs 
   kind?: string
   status: string             // pending | in_progress | completed | failed | cancelled
   content?: unknown
+}
+
+type Plan = {                 // the agent's plan for one turn, rendered as a checklist in its thread
+  id: string
+  sessionId: string
+  seq: number                // where it first appeared in the turn; shares the log's sequence
+  threadId: string | null
+  entries: { content: string; status: 'pending' | 'in_progress' | 'completed'; priority?: string }[]
 }
 
 type Thread = {
@@ -104,7 +120,8 @@ Notes:
 send(text, threadId?):
   if a turn is running: queue.push({text, threadId, attachments}); return   (see Composer → Queue)
   t = threads[threadId]
-  wire = t ? `[re: "${truncate(t.anchor.text, 80)}"]\n${text}` : text
+  wire = t ? `[re: "${truncate(t.anchor.text, 80)}"]\n${text}`
+           : lastUserMessage()?.threadId != null ? `[re: the main conversation, not the thread above]\n${text}` : text
   insert Message{role:'user', text, wireText: wire, threadId, seq: next()}
   currentThread = threadId
   { stopReason } = await acp.prompt(sessionId, [{type:'text', text: wire}, ...attachmentBlocks])
@@ -116,6 +133,8 @@ on session/update:
                          else one agent Message per turn), threadId = currentThread
   tool_call            → insert ToolCall, threadId = currentThread
   tool_call_update     → update ToolCall
+  plan                 → the turn's first plan inserts a Plan, threadId = currentThread;
+                         later ones in the same turn replace its entries (each lists the whole plan)
   available_commands_update, usage_update, config_option_update, current_mode_update
                        → the session's live state (status line, slash commands), at any time
   anything else        → ignore
@@ -145,7 +164,7 @@ Gloss runs agents without permission prompts. There is no approval UI.
 
 Rendering:
 - **Main view:** messages and tool calls with `threadId == null`, in `seq` order. Each anchor in an agent message is decorated with its thread's reply count.
-- **Thread panel:** a quote of the anchor text, then messages and tool calls with `threadId == t.id` in `seq` order, then a composer.
+- **Thread panel:** a quote of the anchor text, then messages, tool calls and plans with `threadId == t.id` in `seq` order, then a composer. It is one of the side panel's two views (see Conversation view → Side panel).
 - While a turn is running, sending from any composer queues the message (see Composer → Queue). Show which thread is running.
 
 ## Agent integration: ACP
@@ -202,8 +221,9 @@ In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its env
   - `send(sessionId, text, threadId | null, attachments)` (queues while a turn runs), `steer(sessionId, text, threadId | null, attachments)`, `cancel(sessionId)`, `queue.edit(sessionId, id, text) / queue.remove(sessionId, id) / queue.resume(sessionId)`
   - `git.status(cwd)`
   - `threads.create(sessionId, anchorMessageId, anchor)`
+  - `sessions.open` returns the session's messages, tool calls, plans and threads
   - `settings.get() / settings.update(patch) / settings.openFile()`
-  - an event stream: message/tool-call upserts, turn start/end, session upserts and deletes, live session state, queue changes, notification clicks, settings changes
+  - an event stream: message/tool-call/plan upserts, turn start/end, session upserts and deletes, live session state, queue changes, notification clicks, settings changes
 - **Renderer** only renders. Framework is the implementer's choice (React is fine).
 - **No menu bar** on Windows and Linux (`Menu.setApplicationMenu(null)`). The default menu's zoom shortcuts (`Ctrl+=`, `Ctrl+-`, `Ctrl+0`) are kept, plus DevTools (`F12`, `Ctrl+Shift+I`) and reload (`Ctrl+R`) in development. macOS keeps the default menu: it lives in the system menu bar, and copy and paste need its Edit menu.
 - **Security:** agent output is untrusted (it can contain text from files and web pages). `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, expose only the IPC API via `contextBridge`, and **sanitize rendered markdown** (no raw HTML, safe link handling: open external links in the system browser).
@@ -226,6 +246,12 @@ The sidebar (`docs/mocks/sidebar-switcher.html`) shows one project at a time:
 ## Conversation view
 
 - **Layout:** the log, composer and status line share one centered column that grows with the pane (820px up to 1080px), and the conversation text grows from 15px to 16px and 17px on wide panes (markdown sizes are relative to it). The thread panel grows with the window too (420px up to 600px). The sidebar and the thread panel can be resized by dragging their inner edge, or by focusing that edge and pressing the arrow keys; double-click resets it. The sidebar stays between 180px and 480px (at most 40% of the window), the thread panel at least 320px while leaving the conversation 360px. Widths are UI state, remembered in the renderer's localStorage, not settings.
+- **Side panel** (`docs/mocks/threads-overview.html`): the right-hand panel is collapsible and shows one of two views.
+  - **Collapsed**, it is a thin rail with a threads button, the session's thread count and a running dot while a turn runs in a thread. Clicking it opens the overview. `Ctrl+Shift+T` toggles the panel.
+  - **Threads overview:** the session's threads, most recent activity first. Each row shows the anchor's label ("item 2" or "selection"), its quote (two lines at most), the reply count, the last activity ("5m ago", from its newest message, or the thread's creation for messages stored before M9) and "working" while the turn runs there. Clicking a row opens that thread. With no threads, it says how to start one.
+  - **Thread view:** the thread panel, with **← All threads** to go back to the overview. Reply badges, anchors in the conversation, the status line and notifications open a thread straight into this view, expanding the panel if needed.
+  - **»** (or `Esc`) collapses the panel from either view. Whether it is open is UI state, remembered in localStorage like the widths. Expanded, it uses the thread panel's width and resize handle; the rail has a fixed width.
+- **Plans:** an agent's `plan` updates render as a checklist (pending, in progress, done, with "2 of 4 done") in the thread whose turn produced them, at the point the plan first appeared, and update in place as the agent works. A plan is stored, so it survives a restart. Each turn that reports a plan gets its own checklist; an earlier turn's checklist keeps its last state. Claude Code reports its todo list this way; it only gives older models its todo tools by default, so Gloss sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` in the Claude agent's environment. An import records the plans in the replay too, one per user message.
 - **Header:** the session title and the agent name. A session is exported from its sidebar menu; the thread panel has an **Export** menu for one thread.
 - **Export format:** `# Title`, then each message as `**You**` / `**Agent**` and its text, tool calls as `_Tool: title (status)_`, attachments named; for a whole session, each thread with replies follows under `## Thread: “anchor”` with the anchor quoted.
 - **Tool calls** show as one row (title, status), collapsed. Clicking expands what the agent did, from the tool call's ACP `content`: a command's full text and its output (the Claude adapter sends output as a console code block when the client has no terminal capability), a file edit (`diff` content) as a unified line diff with unchanged stretches collapsed to 3 lines of context, other content as markdown.
@@ -255,7 +281,7 @@ A line under the composer for the open session. Everything but the git branch co
 
 ## Keyboard shortcuts
 
-`Ctrl+N` new session · `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+PageDown` / `Ctrl+PageUp`) next / previous session in the project · `Ctrl+L` focus the composer · `Esc` close the thread panel, settings or a menu · `Ctrl+,` settings. `Cmd` works for `Ctrl` on macOS.
+`Ctrl+N` new session · `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+PageDown` / `Ctrl+PageUp`) next / previous session in the project · `Ctrl+L` focus the composer · `Ctrl+Shift+T` show or hide the side panel · `Esc` collapse the side panel, close settings or a menu · `Ctrl+,` settings. `Cmd` works for `Ctrl` on macOS.
 
 ## Notifications
 
@@ -267,5 +293,6 @@ See `docs/mocks/`:
 - `main-view.html` — session list, main thread with a numbered agent reply, reply-count badges / hover "Reply" on items, thread panel on the right. Clickable.
 - `selection-anchor.html` — the selection popover and a new thread started from a selection, plus an existing inline anchor (dotted underline + count chip).
 - `sidebar-switcher.html` — the sidebar: project switcher, the project's sessions, and the agent's sessions not yet in Gloss.
+- `threads-overview.html` — the side panel: the collapsed rail, the threads overview, a thread with **← All threads**, and an agent plan as a checklist. Clickable.
 
 The mocks show layout and interaction, not a final visual design.

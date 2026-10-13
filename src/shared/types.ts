@@ -35,6 +35,8 @@ export type Message = {
   attachments?: Attachment[]
   /** User messages: injected into a running turn instead of starting one (SPEC → Steer). */
   steered?: true
+  /** When it was recorded, ms since the epoch. Missing on messages stored before M9. */
+  createdAt?: number
 }
 
 /** A message sent while a turn was running, waiting for its turn (SPEC → Queue). Kept in memory only. */
@@ -65,6 +67,23 @@ export type ToolCall = {
   /** pending | in_progress | completed | failed | cancelled */
   status: string
   content?: unknown
+}
+
+export type PlanEntry = {
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+  priority?: string
+}
+
+/** The agent's plan for one turn, shown as a checklist in its thread (SPEC → Plans). */
+export type Plan = {
+  id: string
+  sessionId: string
+  /** Where it first appeared in the turn; shares the log's sequence with messages and tool calls. */
+  seq: number
+  threadId: string | null
+  /** The whole plan, as of the agent's latest update. */
+  entries: PlanEntry[]
 }
 
 export type Anchor =

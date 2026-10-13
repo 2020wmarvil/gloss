@@ -12,7 +12,14 @@ export function wireTag(anchorText: string): string {
   return `[re: "${truncate(anchorText, WIRE_ANCHOR_LENGTH)}"]`
 }
 
-/** What is sent to the agent: main-thread messages unchanged, thread messages tagged. */
-export function wireText(text: string, anchorText: string | null): string {
-  return anchorText === null ? text : `${wireTag(anchorText)}\n${text}`
+/** The tag on the first main-thread message after a thread, so the agent knows the thread is over. */
+export const MAIN_TAG = '[re: the main conversation, not the thread above]'
+
+/**
+ * What is sent to the agent: thread messages tagged with their anchor, main-thread
+ * messages unchanged unless they follow a thread (`afterThread`).
+ */
+export function wireText(text: string, anchorText: string | null, afterThread = false): string {
+  if (anchorText !== null) return `${wireTag(anchorText)}\n${text}`
+  return afterThread ? `${MAIN_TAG}\n${text}` : text
 }

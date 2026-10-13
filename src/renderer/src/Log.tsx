@@ -1,6 +1,6 @@
 // The message log shared by the main view and the thread panel.
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import type { Message, ToolCall } from '@shared/types'
+import type { Message, Plan, ToolCall } from '@shared/types'
 import type { OpenSession } from './App'
 import { hasDetails, ToolDetails } from './ToolDetails'
 
@@ -10,9 +10,10 @@ export type Notice = { id: string; threadId: string | null; text: string; afterS
 export type LogItem =
   | { kind: 'message'; seq: number; message: Message }
   | { kind: 'tool'; seq: number; toolCall: ToolCall }
+  | { kind: 'plan'; seq: number; plan: Plan }
   | { kind: 'notice'; seq: number; notice: Notice }
 
-/** Messages, tool calls and notices of one thread (null = main), in seq order. */
+/** Messages, tool calls, plans and notices of one thread (null = main), in seq order. */
 export function logItems(open: OpenSession, notices: Notice[], threadId: string | null): LogItem[] {
   return [
     ...open.messages
@@ -21,6 +22,9 @@ export function logItems(open: OpenSession, notices: Notice[], threadId: string 
     ...open.toolCalls
       .filter((t) => t.threadId === threadId)
       .map((t): LogItem => ({ kind: 'tool', seq: t.messageSeq, toolCall: t })),
+    ...open.plans
+      .filter((p) => p.threadId === threadId && p.entries.length > 0)
+      .map((p): LogItem => ({ kind: 'plan', seq: p.seq, plan: p })),
     ...notices
       .filter((n) => n.threadId === threadId)
       .map((n): LogItem => ({ kind: 'notice', seq: n.afterSeq + 0.5, notice: n }))
@@ -86,6 +90,8 @@ export function Log({ items, className, empty, renderAgent }: Props): React.JSX.
               )
             case 'tool':
               return <ToolRow key={item.toolCall.id} toolCall={item.toolCall} />
+            case 'plan':
+              return <PlanChecklist key={item.plan.id} plan={item.plan} />
             case 'notice':
               return (
                 <p key={item.notice.id} className="notice">
@@ -122,5 +128,31 @@ function ToolRow({ toolCall }: { toolCall: ToolCall }): React.JSX.Element {
       </button>
       {open && <ToolDetails toolCall={toolCall} />}
     </div>
+  )
+}
+
+const PLAN_STATUS = { pending: 'to do', in_progress: 'in progress', completed: 'done' } as const
+
+/** The agent's plan for a turn, as a checklist updated in place (SPEC → Plans). */
+function PlanChecklist({ plan }: { plan: Plan }): React.JSX.Element {
+  const done = plan.entries.filter((e) => e.status === 'completed').length
+  return (
+    <section className="plan" aria-label="Plan">
+      <div className="plan-head">
+        <span className="plan-title">Plan</span>
+        <span className="plan-progress">
+          {done} of {plan.entries.length} done
+        </span>
+      </div>
+      <ul>
+        {plan.entries.map((e, i) => (
+          <li key={i} className={`plan-entry ${e.status}`}>
+            <span className="plan-box" aria-hidden />
+            <span className="plan-text">{e.content}</span>
+            <span className="sr-only">({PLAN_STATUS[e.status] ?? e.status})</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }

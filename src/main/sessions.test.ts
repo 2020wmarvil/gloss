@@ -432,11 +432,13 @@ describe('SessionManager', () => {
       expect(texts(session.id)).toEqual(['three'])
 
       releases.get(wireTwo)!()
-      await waitForPrompt(releases, 'three')
-      releases.get('three')!()
+      // 'three' is back in the main thread after a thread message: it says so.
+      const wireThree = '[re: the main conversation, not the thread above]\nthree'
+      await waitForPrompt(releases, wireThree)
+      releases.get(wireThree)!()
       await vi.waitFor(() => expect(manager.openSession(session.id).turn).toBeNull())
 
-      expect(state.prompts).toEqual(['review', 'one', wireTwo, 'three'])
+      expect(state.prompts).toEqual(['review', 'one', wireTwo, wireThree])
       expect(manager.openSession(session.id).queue).toEqual({ items: [], paused: false })
       expect(events.filter((e) => e.type === 'turnEnd').at(-1)).not.toHaveProperty('continues')
       const messages = manager.openSession(session.id).messages
@@ -793,9 +795,13 @@ describe('SessionManager', () => {
       // The main thread is unchanged.
       expect(view.messages.filter((m) => m.threadId === null)).toHaveLength(2)
 
-      // Back in the main thread, messages are sent untagged.
+      // Back in the main thread, the first message says so; later ones are sent untagged.
       await manager.send(sessionId, 'ok, do 1 and 2', null)
-      expect(state.prompts.at(-1)).toBe('ok, do 1 and 2')
+      expect(state.prompts.at(-1)).toBe('[re: the main conversation, not the thread above]\nok, do 1 and 2')
+      await manager.send(sessionId, 'and 3', null)
+      expect(state.prompts.at(-1)).toBe('and 3')
+      const back = manager.openSession(sessionId).messages.find((m) => m.text === 'ok, do 1 and 2')!
+      expect(back.wireText).toBe('[re: the main conversation, not the thread above]\nok, do 1 and 2')
     })
 
     it('truncates long anchors in the wire tag', async () => {
@@ -856,6 +862,124 @@ describe('SessionManager', () => {
         expect.objectContaining({ type: 'notice', sessionId, threadId: thread.id })
       )
     })
+  })
+
+  describe('plans', () => {
+    const plan = (...statuses: acp.PlanEntryStatus[]): acp.SessionUpdate => ({
+      sessionUpdate: 'plan',
+      entries: statuses.map((status, i) => ({
+        content: `Step ${i + 1}`,
+        priority: 'medium',
+        status
+      }))
+    })
+
+    it("records a turn's plan in its thread, updating it in place", async () => {
+      state.script = async ({ say }) => {
+        await say('1. **Batch the query**\n')
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'Review it', null)
+      const review = manager.openSession(session.id).messages.find((m) => m.role === 'agent')!
+      const thread = manager.createThread(session.id, review.id, {
+        kind: 'listItem',
+        path: [0],
+        text: 'Batch the query'
+      })
+
+      state.script = async ({ say, update }) => {
+        await update(plan()) // An empty plan before there is one is nothing to show.
+        await say('On it.')
+        await update(plan('in_progress', 'pending'))
+        await say('Step 1 done.')
+        await update(plan('completed', 'in_progress'))
+        return 'end_turn'
+      }
+      await manager.send(session.id, 'Do it', thread.id)
+
+      const view = manager.openSession(session.id)
+      const inThread = view.messages.filter((m) => m.threadId === thread.id)
+      expect(inThread.map((m) => [m.seq, m.text])).toEqual([
+        [2, 'Do it'],
+        [3, 'On it.'],
+        [5, 'Step 1 done.']
+      ])
+      expect(view.plans).toEqual([
+        {
+          id: expect.any(String),
+          sessionId: session.id,
+          seq: 4,
+          threadId: thread.id,
+          entries: [
+            { content: 'Step 1', priority: 'medium', status: 'completed' },
+            { content: 'Step 2', priority: 'medium', status: 'in_progress' }
+          ]
+        }
+      ])
+      const planEvents = events.filter((e) => e.type === 'plan')
+      expect(planEvents).toHaveLength(2)
+      expect(new Set(planEvents.map((e) => e.type === 'plan' && e.plan.id)).size).toBe(1)
+
+      // The next turn's plan is a new checklist; the earlier one keeps its last state.
+      state.script = async ({ update }) => {
+        await update(plan('completed', 'completed'))
+        return 'end_turn'
+      }
+      await manager.send(session.id, 'Finish', null)
+      const plans = manager.openSession(session.id).plans
+      expect(plans.map((p) => [p.threadId, p.entries.map((e) => e.status)])).toEqual([
+        [thread.id, ['completed', 'in_progress']],
+        [null, ['completed', 'completed']]
+      ])
+    })
+
+    it('records plans from an import replay, one per user message', async () => {
+      state.sessions.add('cli-1')
+      state.history.set('cli-1', [
+        {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: 'Fix it' },
+          messageId: 'u1'
+        },
+        plan('in_progress'),
+        plan('completed'),
+        {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: 'Again' },
+          messageId: 'u2'
+        },
+        plan('pending')
+      ])
+      const session = await manager.importSession('/w', 'fake', 'cli-1', 'Old')
+      const view = manager.openSession(session.id)
+      expect(view.plans.map((p) => [p.seq, p.entries[0].status])).toEqual([
+        [1, 'completed'],
+        [3, 'pending']
+      ])
+      expect(view.messages.map((m) => [m.seq, m.text])).toEqual([
+        [0, 'Fix it'],
+        [2, 'Again']
+      ])
+    })
+
+    it('/clear removes the plans with the rest of the log', async () => {
+      state.script = async ({ update }) => {
+        await update(plan('pending'))
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'Plan it', null)
+      expect(manager.openSession(session.id).plans).toHaveLength(1)
+      await manager.send(session.id, '/clear', null)
+      expect(manager.openSession(session.id).plans).toEqual([])
+    })
+  })
+
+  it('timestamps messages when they are recorded', async () => {
+    const session = await manager.createSession('/w', 'fake')
+    await manager.send(session.id, 'hi', null)
+    expect(manager.openSession(session.id).messages.map((m) => m.createdAt)).toEqual([1000, 1000])
   })
 
   describe('permissions', () => {
