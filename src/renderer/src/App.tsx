@@ -27,6 +27,15 @@ import type { SourceSelection } from './SelectionPopover'
 import { SettingsScreen } from './SettingsScreen'
 import { SignInDialog } from './SignInDialog'
 import { ThreadPanel } from './ThreadPanel'
+import {
+  clampWidth,
+  ResizeHandle,
+  SIDEBAR_DEFAULT,
+  sidebarLimits,
+  threadPanelLimits,
+  useStoredWidth,
+  useWindowWidth
+} from './resize'
 import { applyTheme } from './theme'
 
 export type OpenSession = {
@@ -93,6 +102,9 @@ export function App(): React.JSX.Element {
   const [signIn, setSignIn] = useState<SignInRequest | null>(null)
   const [creating, setCreating] = useState(false)
   const [sidebarError, setSidebarError] = useState<string | null>(null)
+  const windowWidth = useWindowWidth()
+  const [sidebarStored, setSidebarWidth] = useStoredWidth('gloss.sidebarWidth')
+  const [threadStored, setThreadPanelWidth] = useStoredWidth('gloss.threadPanelWidth')
 
   const openId = useRef<string | null>(null)
   /** The open session's folder, for refreshing its git status. */
@@ -489,10 +501,16 @@ export function App(): React.JSX.Element {
     onResume: () => window.gloss.queue.resume(id)
   })
   const devModel = settings?.global.devModel ?? false
+  // Dragged widths, kept within what the window has room for now.
+  const sidebarLimit = sidebarLimits(windowWidth)
+  const sidebarWidth = sidebarStored === null ? null : clampWidth(sidebarStored, sidebarLimit)
+  const threadLimit = threadPanelLimits(windowWidth, sidebarWidth ?? SIDEBAR_DEFAULT)
+  const threadWidth = threadStored === null ? null : clampWidth(threadStored, threadLimit)
 
   return (
     <div className="app">
       <Sidebar
+        width={sidebarWidth}
         projects={projects}
         project={project}
         sessions={sessions}
@@ -518,6 +536,14 @@ export function App(): React.JSX.Element {
         onCopyMarkdown={(id) => exportMarkdown(id, null, 'copy')}
         onSaveMarkdown={(id) => exportMarkdown(id, null, 'save')}
         onSettings={() => setShowSettings((on) => !on)}
+      />
+      <ResizeHandle
+        label="Resize sidebar"
+        pane="before"
+        limits={sidebarLimit}
+        value={sidebarWidth}
+        onResize={setSidebarWidth}
+        onReset={() => setSidebarWidth(null)}
       />
       {showSettings && settings ? (
         <SettingsScreen
@@ -576,30 +602,41 @@ export function App(): React.JSX.Element {
         </main>
       )}
       {open && panel && !showSettings && (
-        <ThreadPanel
-          open={open}
-          panel={panel}
-          label={
-            panel.anchor.kind === 'selection'
-              ? panel.threadId === null
-                ? 'from selection'
-                : 'selection'
-              : anchorLabel(open, panel.anchorMessageId, panel.anchor)
-          }
-          runningThread={runningThread}
-          notices={sessionNotices}
-          live={live}
-          // A thread that doesn't exist yet has nothing queued.
-          queue={composerQueue(
-            open.session.id,
-            panel.threadId === null ? [] : queue.items.filter((q) => q.threadId === panel.threadId)
-          )}
-          onSend={(text, attachments) => void send(text, attachments, panel)}
-          onCancel={() => void window.gloss.cancel(open.session.id)}
-          onClose={() => setPanel(null)}
-          onCopyMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'copy')}
-          onSaveMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'save')}
-        />
+        <>
+          <ResizeHandle
+            label="Resize thread panel"
+            pane="after"
+            limits={threadLimit}
+            value={threadWidth}
+            onResize={setThreadPanelWidth}
+            onReset={() => setThreadPanelWidth(null)}
+          />
+          <ThreadPanel
+            width={threadWidth}
+            open={open}
+            panel={panel}
+            label={
+              panel.anchor.kind === 'selection'
+                ? panel.threadId === null
+                  ? 'from selection'
+                  : 'selection'
+                : anchorLabel(open, panel.anchorMessageId, panel.anchor)
+            }
+            runningThread={runningThread}
+            notices={sessionNotices}
+            live={live}
+            // A thread that doesn't exist yet has nothing queued.
+            queue={composerQueue(
+              open.session.id,
+              panel.threadId === null ? [] : queue.items.filter((q) => q.threadId === panel.threadId)
+            )}
+            onSend={(text, attachments) => void send(text, attachments, panel)}
+            onCancel={() => void window.gloss.cancel(open.session.id)}
+            onClose={() => setPanel(null)}
+            onCopyMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'copy')}
+            onSaveMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'save')}
+          />
+        </>
       )}
       {signIn && (
         <SignInDialog

@@ -10,6 +10,8 @@ import { Log, logItems, type Notice } from './Log'
 import { Markdown } from './Markdown'
 
 type Props = {
+  /** Width the user dragged it to; null = the CSS default. */
+  width: number | null
   open: OpenSession
   panel: Panel
   label: string
@@ -51,7 +53,11 @@ export function ThreadPanel(props: Props): React.JSX.Element {
   const isSelection = panel.anchor.kind === 'selection'
 
   return (
-    <aside className="thread-panel" aria-label="Thread">
+    <aside
+      className="thread-panel"
+      aria-label="Thread"
+      style={props.width === null ? undefined : { flexBasis: props.width }}
+    >
       <header>
         <h2>{isSelection && panel.threadId === null ? 'New thread' : 'Thread'}</h2>
         <span className="mono">{label}</span>
