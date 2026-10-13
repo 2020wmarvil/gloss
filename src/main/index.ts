@@ -7,7 +7,7 @@ import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, listAgents } from './agents'
 import { Store } from './db'
 import { toMarkdown } from './export'
-import { gitStatus } from './git'
+import { gitStatus, pullRequest } from './git'
 import { SessionManager } from './sessions'
 import { patchArg, SettingsFile } from './settings'
 import { runInTerminal } from './terminal'
@@ -259,7 +259,15 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     await writeFile(result.filePath, markdown)
     return true
   })
+  // Takes the session, not a path: shell.openPath would run a file it was given.
+  ipcMain.handle(IPC.sessionsOpenFolder, async (_e, id: unknown) => {
+    const session = store!.getSession(str(id, 'id'))
+    if (!session) throw new Error(`Unknown session ${String(id)}`)
+    const error = await shell.openPath(session.cwd)
+    return error === '' ? null : error
+  })
   ipcMain.handle(IPC.gitStatus, (_e, cwd: unknown) => gitStatus(str(cwd, 'cwd')))
+  ipcMain.handle(IPC.gitPullRequest, (_e, cwd: unknown) => pullRequest(str(cwd, 'cwd')))
   ipcMain.handle(IPC.threadsCreate, (_e, sessionId: unknown, anchorMessageId: unknown, anchor: unknown) =>
     manager.createThread(str(sessionId, 'sessionId'), str(anchorMessageId, 'anchorMessageId'), anchorArg(anchor))
   )

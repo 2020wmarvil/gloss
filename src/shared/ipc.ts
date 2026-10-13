@@ -44,7 +44,23 @@ export type SessionView = {
   live: SessionLive
 }
 
-export type GitStatus = { branch: string; dirty: boolean }
+export type GitStatus = {
+  branch: string
+  dirty: boolean
+  /** The branch's upstream on GitHub; null if it has none or the remote isn't on github.com. */
+  url: string | null
+}
+
+/** The GitHub pull request for a folder's branch, from `gh pr view`. */
+export type PullRequest = {
+  number: number
+  title: string
+  url: string
+  state: 'open' | 'draft' | 'merged' | 'closed'
+  /** Combined result of its checks; null if it has none. */
+  checks: 'passing' | 'failing' | 'pending' | null
+  review: 'approved' | 'changes requested' | 'review required' | null
+}
 
 /**
  * `queued`: a turn was running, so the message was queued instead of sent.
@@ -116,10 +132,14 @@ export type GlossApi = {
     copyMarkdown(id: string, threadId: string | null): Promise<void>
     /** Saves the session (or one thread) as a markdown file. Resolves to false if cancelled. */
     saveMarkdown(id: string, threadId: string | null): Promise<boolean>
+    /** Opens the session's folder in the system file manager. Resolves to an error message, or null. */
+    openFolder(id: string): Promise<string | null>
   }
   git: {
     /** The folder's branch and whether it has uncommitted changes; null outside a repo. */
     status(cwd: string): Promise<GitStatus | null>
+    /** The branch's pull request; null without one, or without `gh` or its login. */
+    pullRequest(cwd: string): Promise<PullRequest | null>
   }
   threads: {
     /** Creates the thread for an anchor, or returns the existing one for the same anchor. */
@@ -174,7 +194,9 @@ export const IPC = {
   sessionsSetModel: 'gloss:sessions:setModel',
   sessionsCopyMarkdown: 'gloss:sessions:copyMarkdown',
   sessionsSaveMarkdown: 'gloss:sessions:saveMarkdown',
+  sessionsOpenFolder: 'gloss:sessions:openFolder',
   gitStatus: 'gloss:git:status',
+  gitPullRequest: 'gloss:git:pullRequest',
   threadsCreate: 'gloss:threads:create',
   send: 'gloss:send',
   steer: 'gloss:steer',

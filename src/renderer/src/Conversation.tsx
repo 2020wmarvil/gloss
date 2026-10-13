@@ -1,6 +1,6 @@
 // The main thread: messages and tool calls with threadId == null.
 import { useRef } from 'react'
-import type { GitStatus } from '@shared/ipc'
+import type { GitStatus, PullRequest } from '@shared/ipc'
 import type { Attachment, Message, MessageQueue, SessionLive, Thread } from '@shared/types'
 import type { OpenSession, Panel } from './App'
 import type { ListItemSpan } from './anchors'
@@ -18,6 +18,7 @@ type Props = {
   agentName: string
   live: SessionLive
   git: GitStatus | null
+  pr: PullRequest | null
   devModel: boolean
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
@@ -123,6 +124,7 @@ export function Conversation(props: Props): React.JSX.Element {
         renderAgent={renderAgent}
       />
       <Composer
+        draftKey={session.id}
         className="composer"
         placeholder="Message the agent"
         running={running}
@@ -139,6 +141,7 @@ export function Conversation(props: Props): React.JSX.Element {
         session={session}
         live={live}
         git={props.git}
+        pr={props.pr}
         devModel={props.devModel}
         runningThread={runningThread}
         runningLabel={props.runningLabel}

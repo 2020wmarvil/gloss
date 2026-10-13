@@ -28,6 +28,7 @@
   --ok: #2e7d32;
   --ok-tint: #e7f5e9;
   --warn: #9a5b00;
+  --merged: #7a4fc4;
   --warn-fill: #c77700;
   --code-bg: #1f1e1b;
   --code-ink: #f4f2ec;
@@ -67,6 +68,7 @@
   --ok: #6cc070;
   --ok-tint: #1d2e1f;
   --warn: #f0b04a;
+  --merged: #b394f0;
   --warn-fill: #d99530;
   --code-bg: #0f0e0c;
   --code-ink: #ece9e1;
@@ -1458,9 +1460,50 @@ button.status-item,
   color: var(--muted);
 }
 
-button.status-item:hover:not(:disabled) {
+button.status-item:hover:not(:disabled),
+a.status-item:hover {
   background: var(--chip);
   color: var(--ink);
+}
+
+a.status-item {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.status-item.pr {
+  gap: 5px;
+}
+
+.status-item.pr.open {
+  color: var(--ok);
+}
+
+.status-item.pr.merged {
+  color: var(--merged);
+}
+
+.status-item.pr.closed {
+  color: var(--danger);
+}
+
+.pr-checks {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.pr-checks.passing {
+  background: var(--ok);
+}
+
+.pr-checks.failing {
+  background: var(--danger);
+}
+
+.pr-checks.pending {
+  background: var(--warn-fill);
 }
 
 .status-item.working {

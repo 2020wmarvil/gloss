@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { GitStatus, GlossEvent, SettingsPatch, SettingsState } from '@shared/ipc'
+import type { GitStatus, GlossEvent, PullRequest, SettingsPatch, SettingsState } from '@shared/ipc'
 import { sameFolder } from '@shared/paths'
 import type {
   AgentInfo,
@@ -84,8 +84,6 @@ function anchorLabel(open: OpenSession, anchorMessageId: string, anchor: Anchor)
   return `“${truncate(anchor.text, 32)}”`
 }
 
-const SIDE_PANEL_KEY = 'gloss.sidePanelOpen'
-
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -100,14 +98,15 @@ export function App(): React.JSX.Element {
   const [open, setOpen] = useState<OpenSession | null>(null)
   /** The thread in the side panel; null shows the threads overview. */
   const [panel, setPanel] = useState<Panel | null>(null)
-  /** The side panel is expanded (UI state, remembered like the pane widths). */
-  const [sideOpen, setSideOpenState] = useState(() => localStorage.getItem(SIDE_PANEL_KEY) === '1')
+  /** The side panel is expanded. It starts collapsed on every launch. */
+  const [sideOpen, setSideOpen] = useState(false)
   /** sessionId → threadId of its running turn. */
   const [running, setRunning] = useState<Record<string, string | null>>({})
   const [notices, setNotices] = useState<Record<string, Notice[]>>({})
   const [lives, setLives] = useState<Record<string, SessionLive>>({})
   const [queues, setQueues] = useState<Record<string, MessageQueue>>({})
   const [git, setGit] = useState<GitStatus | null>(null)
+  const [pr, setPr] = useState<PullRequest | null>(null)
   const [signIn, setSignIn] = useState<SignInRequest | null>(null)
   const [creating, setCreating] = useState(false)
   const [sidebarError, setSidebarError] = useState<string | null>(null)
@@ -119,13 +118,10 @@ export function App(): React.JSX.Element {
   /** The open session's folder, for refreshing its git status. */
   const openCwd = useRef<string | null>(null)
   const lastSeq = useRef(-1)
+  /** "cwd\0branch" → its pull request, so switching sessions shows it straight away. */
+  const prCache = useRef(new Map<string, PullRequest | null>())
   const project = projects.find((p) => projectPath !== null && sameFolder(p.path, projectPath)) ?? null
   const agent = agents[0]
-
-  const setSideOpen = useCallback((on: boolean) => {
-    setSideOpenState(on)
-    localStorage.setItem(SIDE_PANEL_KEY, on ? '1' : '0')
-  }, [])
 
   /** Opens a thread in the side panel, expanding it. */
   const showPanel = useCallback(
@@ -156,11 +152,29 @@ export function App(): React.JSX.Element {
     }))
   }, [])
 
-  const refreshGit = useCallback((cwd: string, sessionId: string) => {
-    void window.gloss.git.status(cwd).then((status) => {
-      if (openId.current === sessionId) setGit(status)
+  const refreshPr = useCallback((cwd: string, branch: string, sessionId: string) => {
+    void window.gloss.git.pullRequest(cwd).then((found) => {
+      prCache.current.set(`${cwd}\0${branch}`, found)
+      if (openId.current === sessionId) setPr(found)
     })
   }, [])
+
+  /** Refreshes the branch, then its pull request (`gh` is slower, so a cached one shows first). */
+  const refreshGit = useCallback(
+    (cwd: string, sessionId: string) => {
+      void window.gloss.git.status(cwd).then((status) => {
+        if (openId.current !== sessionId) return
+        setGit(status)
+        if (!status || status.branch === 'detached HEAD') {
+          setPr(null)
+          return
+        }
+        setPr(prCache.current.get(`${cwd}\0${status.branch}`) ?? null)
+        refreshPr(cwd, status.branch, sessionId)
+      })
+    },
+    [refreshPr]
+  )
 
   const refreshProjects = useCallback(async () => setProjects(await window.gloss.projects.list()), [])
 
@@ -185,6 +199,7 @@ export function App(): React.JSX.Element {
       if (openId.current !== id) {
         setPanel(null)
         setGit(null)
+        setPr(null)
       }
       openId.current = id
       const view = await window.gloss.sessions.open(id)
@@ -333,6 +348,19 @@ export function App(): React.JSX.Element {
       else if (ps[0]) setProjectPath(ps[0].path)
     })
   }, [selectSession])
+
+  // While the PR's checks run, poll it so their result shows without a turn. Only
+  // while the window is focused: `gh` makes a network call each time.
+  const pollPr = pr !== null && (pr.state === 'open' || pr.state === 'draft') && pr.checks === 'pending'
+  const branch = git?.branch
+  useEffect(() => {
+    if (!pollPr || !branch) return
+    const timer = setInterval(() => {
+      const sessionId = openId.current
+      if (document.hasFocus() && sessionId && openCwd.current) refreshPr(openCwd.current, branch, sessionId)
+    }, 90_000)
+    return () => clearInterval(timer)
+  }, [pollPr, branch, refreshPr])
 
   // The agent's sessions for the shown project, listed when it is shown.
   useEffect(() => {
@@ -621,6 +649,7 @@ export function App(): React.JSX.Element {
           agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
           live={live}
           git={git}
+          pr={pr}
           devModel={devModel}
           runningThread={runningThread}
           runningLabel={
