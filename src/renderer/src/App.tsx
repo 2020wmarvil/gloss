@@ -56,6 +56,7 @@ export type SignInRequest = { agentId: string; agentName: string; methods: AuthM
 const NO_LIVE: SessionLive = {
   attached: false,
   model: null,
+  effort: null,
   commands: [],
   usage: null,
   rateLimits: [],
@@ -628,7 +629,6 @@ export function App(): React.JSX.Element {
     onRemove: (itemId) => window.gloss.queue.remove(id, itemId),
     onResume: () => window.gloss.queue.resume(id)
   })
-  const devModel = (settings?.global.devModel ?? false) && !!agents.find((a) => a.id === open?.session.agentId)?.hasDevModel
   // Dragged widths, kept within what the window has room for now.
   const sidebarLimit = sidebarLimits(windowWidth)
   const sidebarWidth = sidebarStored === null ? null : clampWidth(sidebarStored, sidebarLimit)
@@ -693,7 +693,6 @@ export function App(): React.JSX.Element {
           live={live}
           git={git}
           pr={pr}
-          devModel={devModel}
           runningThread={runningThread}
           runningLabel={
             runningThreadRow ? anchorLabel(open, runningThreadRow.anchorMessageId, runningThreadRow.anchor) : null
@@ -708,7 +707,7 @@ export function App(): React.JSX.Element {
           onSend={(text, attachments) => void send(text, attachments, null)}
           onSteer={(text, attachments) => void send(text, attachments, null, 'steer')}
           onCancel={() => void window.gloss.cancel(open.session.id)}
-          onSetModel={(value) => window.gloss.sessions.setModel(open.session.id, value)}
+          onSetChoice={(kind, value) => window.gloss.sessions.setChoice(open.session.id, kind, value)}
           onOpenItem={openItem}
           onOpenSelection={openSelection}
           onOpenThread={openThread}

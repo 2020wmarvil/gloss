@@ -2,6 +2,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { Message, Plan, ToolCall } from '@shared/types'
 import type { OpenSession } from './App'
+import { splitLists } from './bullets'
 import { hasDetails, ToolDetails } from './ToolDetails'
 
 /** A transient, client-side note shown in a log (not part of the conversation). */
@@ -81,7 +82,7 @@ export function Log({ items, className, empty, renderAgent }: Props): React.JSX.
                       ))}
                     </ul>
                   )}
-                  {item.message.text}
+                  <UserText text={item.message.text} />
                 </div>
               ) : (
                 <div key={item.message.id} className="agent" data-message-id={item.message.id}>
@@ -128,6 +129,27 @@ function ToolRow({ toolCall }: { toolCall: ToolCall }): React.JSX.Element {
       </button>
       {open && <ToolDetails toolCall={toolCall} />}
     </div>
+  )
+}
+
+/** A user message's text, with its bulleted lines shown as a list. */
+function UserText({ text }: { text: string }): React.JSX.Element {
+  return (
+    <>
+      {splitLists(text).map((b, i) =>
+        b.kind === 'text' ? (
+          <span key={i} className="you-text">
+            {b.text}
+          </span>
+        ) : (
+          <ul key={i} className="you-list">
+            {b.items.map((item, j) => (
+              <li key={j}>{item}</li>
+            ))}
+          </ul>
+        )
+      )}
+    </>
   )
 }
 

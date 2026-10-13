@@ -13,11 +13,11 @@ const onCommand = vi.fn()
 const usage: PlanUsage = { plan: 'Pro', available: true, limits: [{ label: 'Session limit', percent: 100, resetsAt: null }], extraUsage: null }
 const props: ComponentProps<typeof StatusLine> = {
   session: { id: 's1', agentId: 'claude', acpSessionId: 'a1', cwd: '/project', title: 'Test', createdAt: 1 },
-  live: { attached: true, model: null, commands: [{ name: 'usage', description: 'Usage' }],
+  live: { attached: true, model: null, effort: null, commands: [{ name: 'usage', description: 'Usage' }],
     usage: { used: 40000, size: 200000 }, rateLimits: [{ window: 'five_hour', status: 'rejected' }],
     permissions: null, accepts: { image: false, file: false }, steering: false },
-  git: null, pr: null, devModel: false, runningThread: null, runningLabel: null, steered: false,
-  queue: { items: [], paused: false }, onResumeQueue() {}, onOpenThread() {}, async onSetModel() {}, onCommand
+  git: null, pr: null, runningThread: null, runningLabel: null, steered: false,
+  queue: { items: [], paused: false }, onResumeQueue() {}, onOpenThread() {}, async onSetChoice() {}, onCommand
 }
 function mount(fetch: () => Promise<PlanUsage | null>): void {
   window.gloss = { sessions: { planUsage: fetch } } as unknown as GlossApi
@@ -77,5 +77,26 @@ describe('usage popup', () => {
     expect(document.body.textContent).toContain('Plan limits are unavailable')
     expect(resetIn(100, 100)).toBe('Resets soon')
     expect(resetIn(61 * 60000, 0)).toBe('Resets in 1 hr 1 min')
+  })
+})
+
+describe('effort picker', () => {
+  it('shows the effort after the model and sets the one picked', async () => {
+    const onSetChoice = vi.fn(async () => {})
+    window.gloss = {} as unknown as GlossApi
+    const el = document.createElement('div')
+    document.body.replaceChildren(el)
+    root = createRoot(el)
+    const live = {
+      ...props.live,
+      model: { configId: 'model', current: 'opus', options: [{ value: 'opus', name: 'Opus' }] },
+      effort: { configId: 'effort', current: 'medium', options: [{ value: 'medium', name: 'Medium' }, { value: 'high', name: 'High' }] }
+    }
+    act(() => root!.render(<StatusLine {...props} live={live} onSetChoice={onSetChoice} />))
+    const labels = [...document.querySelectorAll('.popover-anchor > button')].map((b) => b.textContent)
+    expect(labels.slice(-3)).toEqual(['Opus', 'Medium effort', 'Extensions'])
+    await click('button[title="Effort"]')
+    await click('[role="option"]:not([aria-selected="true"])')
+    expect(onSetChoice).toHaveBeenCalledWith('effort', 'high')
   })
 })

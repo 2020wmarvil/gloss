@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { SettingsPatch, SettingsState } from '@shared/ipc'
 import { SETTING_FIELDS, type GlobalSettings, type SettingField } from '@shared/settings'
 import { errorText } from './errors'
+import { modKey, SHORTCUTS } from './shortcuts'
 
 type Props = {
   state: SettingsState
@@ -96,8 +97,46 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
             <p className="muted">Open a session to see its project&apos;s settings.</p>
           )}
         </section>
+
+        <section>
+          <div className="label">Keyboard shortcuts</div>
+          <Shortcuts />
+        </section>
       </div>
     </main>
+  )
+}
+
+function Shortcuts(): React.JSX.Element {
+  const mod = modKey()
+  return (
+    <>
+      {SHORTCUTS.map((group) => (
+        <div key={group.title} className="shortcut-group">
+          <h2>{group.title}</h2>
+          <dl>
+            {group.shortcuts.map((s) => (
+              <div key={s.action} className="shortcut">
+                <dt>
+                  {s.keys.map((combo, i) => (
+                    <span key={i}>
+                      {i > 0 && <span className="muted"> or </span>}
+                      {combo.map((k, j) => (
+                        <span key={j}>
+                          {j > 0 && '+'}
+                          <kbd>{k === 'Mod' ? mod : k}</kbd>
+                        </span>
+                      ))}
+                    </span>
+                  ))}
+                </dt>
+                <dd>{s.action}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ))}
+    </>
   )
 }
 

@@ -14,6 +14,8 @@ export type Session = {
   activeAt?: number
   /** The model picked for this session in Gloss (a model config option value), re-applied when it is resumed. */
   model?: string
+  /** The effort picked for this session in Gloss (a thought_level config option value), re-applied likewise. */
+  effort?: string
   /** The agent's `updatedAt` for the session when Gloss last synced it (SPEC → Shared sessions). */
   syncedAt?: string
 }
@@ -108,7 +110,7 @@ export type Thread = {
   createdAt: number
 }
 
-export type AgentInfo = { id: string; name: string; hasDevModel?: boolean }
+export type AgentInfo = { id: string; name: string }
 
 /** A folder Gloss groups sessions by. */
 export type Project = { path: string; name: string }
@@ -117,6 +119,9 @@ export type Project = { path: string; name: string }
 export type AgentSession = { acpSessionId: string; title: string; updatedAt?: string }
 
 export type ModelOption = { value: string; name: string; description?: string }
+
+/** One of the agent's select config options (model, effort), flattened. */
+export type ConfigChoice = { configId: string; current: string; options: ModelOption[] }
 
 export type SlashCommand = { name: string; description: string; hint?: string }
 
@@ -148,7 +153,9 @@ export type SessionLive = {
   /** The session's ACP session is live on a running agent. */
   attached: boolean
   /** The agent's model config option, if it has one. */
-  model: { configId: string; current: string; options: ModelOption[] } | null
+  model: ConfigChoice | null
+  /** The agent's effort config option (category thought_level), if the model has one. */
+  effort: ConfigChoice | null
   commands: SlashCommand[]
   /** Context window use, from the agent's usage updates. */
   usage: { used: number; size: number; cost?: { amount: number; currency: string } } | null

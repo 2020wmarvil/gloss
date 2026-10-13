@@ -78,7 +78,7 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - Work on `dev`; open one PR per milestone against `main`.
 
 ## Dev model
-Run the agent with `ANTHROPIC_MODEL=haiku` during development via the `devModel` setting (Settings screen, or `settings.json` in the app's `userData` folder).
+There is no dev model setting. When testing against a live agent, pick Haiku yourself: set `ANTHROPIC_MODEL=haiku` in the environment Gloss (and so the agent) is launched with, or set the session's model option.
 
 ## Verified external APIs (Codex support)
 
@@ -87,3 +87,7 @@ Run the agent with `ANTHROPIC_MODEL=haiku` during development via the `devModel`
 - With an empty `CODEX_HOME`, `session/new` returns ACP `auth_required`; the advertised `chat-gpt` method handles browser sign-in via `authenticate`. Existing Codex login works without another sign-in. A fresh browser login was not completed during validation.
 - On Windows, `@openai/codex/bin/codex.js` spawns the native `codex.exe` without `windowsHide`. Its parent (Electron as Node) has no console, so each launch opened a visible terminal window. `patches/@openai+codex+*.patch` (applied by `patch-package` on `postinstall`) adds the flag; regenerate it with `npx patch-package @openai/codex` when bumping the adapter.
 - Verified live through Electron and SessionManager: streaming, thread routing, model selection with Haiku enabled, tool execution, and thread preservation after restart/resume. Shared MCP settings and cross-agent context handoff remain future M13 work.
+
+## Verified external APIs (effort)
+- Both adapters report effort as a select config option with `category: "thought_level"`, set with `session/set_config_option` like the model. Claude (0.89): id `effort`, name "Effort", levels from the model's `supportedEffortLevels` plus "Default"; no option at all for a model without effort. Codex (2.2.2): id `reasoning_effort`, name "Reasoning effort".
+- The Claude adapter rebuilds its config options on a model switch (effort levels depend on the model), so re-apply the effort after the model.

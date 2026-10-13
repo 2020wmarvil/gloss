@@ -1,42 +1,33 @@
 import { describe, expect, it } from 'vitest'
-import { agentEnv, DEV_MODEL, getAgentConfig, listAgents, type AgentConfig } from './agents'
+import { agentEnv, getAgentConfig, listAgents, type AgentConfig } from './agents'
 
 const config: AgentConfig = {
   id: 'test',
   name: 'Test',
   command: 'node',
   args: [],
-  env: { ELECTRON_RUN_AS_NODE: '1' },
-  devModelEnv: { ANTHROPIC_MODEL: DEV_MODEL }
+  env: { ELECTRON_RUN_AS_NODE: '1' }
 }
 
 describe('agentEnv', () => {
-  it('launches the bundled Codex adapter without the Claude dev override', () => {
+  it('launches the bundled Codex adapter', () => {
     const codex = getAgentConfig('codex')
     expect(codex.command).toBe(process.execPath)
     expect(codex.args).toEqual([require.resolve('@agentclientprotocol/codex-acp/dist/index.js')])
     expect(codex.bypassModeId).toBe('agent-full-access')
-    expect(agentEnv(codex, { devModel: true }, {})).toEqual({ ELECTRON_RUN_AS_NODE: '1' })
+    expect(agentEnv(codex, {})).toEqual({ ELECTRON_RUN_AS_NODE: '1' })
     expect(listAgents()).toEqual([
-      { id: 'claude', name: 'Claude Code', hasDevModel: true },
-      { id: 'codex', name: 'Codex', hasDevModel: false }
+      { id: 'claude', name: 'Claude Code' },
+      { id: 'codex', name: 'Codex' }
     ])
   })
-  it('sets ANTHROPIC_MODEL when the dev model is on', () => {
-    const env = agentEnv(config, { devModel: true }, { PATH: '/bin' })
-    expect(env.ANTHROPIC_MODEL).toBe(DEV_MODEL)
-    expect(env.ELECTRON_RUN_AS_NODE).toBe('1')
-    expect(env.PATH).toBe('/bin')
-  })
 
-  it('leaves the inherited model alone when the dev model is off', () => {
-    expect(agentEnv(config, { devModel: false }, {}).ANTHROPIC_MODEL).toBeUndefined()
-    expect(agentEnv(config, { devModel: false }, { ANTHROPIC_MODEL: 'opus' }).ANTHROPIC_MODEL).toBe(
-      'opus'
-    )
+  it("adds the agent's environment to the inherited one", () => {
+    const env = agentEnv(config, { PATH: '/bin', ANTHROPIC_MODEL: 'haiku' })
+    expect(env).toEqual({ PATH: '/bin', ANTHROPIC_MODEL: 'haiku', ELECTRON_RUN_AS_NODE: '1' })
   })
 
   it("turns on Claude Code's todo tools, so it reports plans", () => {
-    expect(agentEnv(getAgentConfig('claude'), { devModel: false }, {}).CLAUDE_CODE_ENABLE_TODO_TOOLS).toBe('1')
+    expect(agentEnv(getAgentConfig('claude'), {}).CLAUDE_CODE_ENABLE_TODO_TOOLS).toBe('1')
   })
 })

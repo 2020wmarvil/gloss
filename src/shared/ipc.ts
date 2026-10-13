@@ -136,7 +136,8 @@ export type GlossApi = {
     rename(id: string, title: string): Promise<Session>
     /** Deletes it from Gloss and the agent. Resolves to a warning if the agent's copy couldn't be deleted. */
     delete(id: string): Promise<string | null>
-    setModel(id: string, value: string): Promise<void>
+    /** Picks the session's model or effort. */
+    setChoice(id: string, kind: 'model' | 'effort', value: string): Promise<void>
     /** Copies the session (or one thread) as markdown to the clipboard. */
     copyMarkdown(id: string, threadId: string | null): Promise<void>
     /** Saves the session (or one thread) as a markdown file. Resolves to false if cancelled. */
@@ -203,7 +204,7 @@ export const IPC = {
   sessionsRefresh: 'gloss:sessions:refresh',
   sessionsRename: 'gloss:sessions:rename',
   sessionsDelete: 'gloss:sessions:delete',
-  sessionsSetModel: 'gloss:sessions:setModel',
+  sessionsSetChoice: 'gloss:sessions:setChoice',
   sessionsCopyMarkdown: 'gloss:sessions:copyMarkdown',
   sessionsSaveMarkdown: 'gloss:sessions:saveMarkdown',
   sessionsOpenFolder: 'gloss:sessions:openFolder',

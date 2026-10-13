@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
+import { bulletOnBackspace, bulletOnNewline, bulletOnSpace, bulletsToMarkdown, type Edit } from './bullets'
 import { errorText } from './errors'
 
 /** The session's queue as one composer sees it: the messages queued from its thread. */
@@ -90,6 +91,14 @@ export function Composer({
   const [dismissed, setDismissed] = useState<string | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  /** Where the caret goes after an edit Gloss made to the text itself. */
+  const caretAfterEdit = useRef<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (caretAfterEdit.current === null) return
+    ref.current?.setSelectionRange(caretAfterEdit.current, caretAfterEdit.current)
+    caretAfterEdit.current = null
+  }, [text])
 
   // The caret goes back where it was when the user switched away (before the focus below).
   useLayoutEffect(() => {
@@ -144,10 +153,18 @@ export function Composer({
     }
   }
 
+  /** Makes a bullet edit. Through insertText where the browser has it, so Ctrl+Z undoes it. */
+  function applyEdit(el: HTMLTextAreaElement, edit: Edit): void {
+    el.setSelectionRange(edit.start, edit.end)
+    if (edit.insert ? document.execCommand?.('insertText', false, edit.insert) : document.execCommand?.('delete')) return
+    caretAfterEdit.current = edit.start + edit.insert.length
+    setText(text.slice(0, edit.start) + edit.insert + text.slice(edit.end))
+  }
+
   const steer = running ? onSteer : undefined
 
   function submit(how: 'send' | 'steer' = 'send'): void {
-    const trimmed = text.trim()
+    const trimmed = bulletsToMarkdown(text.trim())
     if (!trimmed && attachments.length === 0) return
     if (how === 'steer' && steer) steer(trimmed, attachments)
     else onSend(trimmed, attachments)
@@ -302,6 +319,23 @@ export function Composer({
                   e.preventDefault()
                   e.stopPropagation()
                   setDismissed(text)
+                  return
+                }
+              }
+              const el = e.currentTarget
+              if (el.selectionStart === el.selectionEnd && !e.nativeEvent.isComposing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                const caret = el.selectionStart
+                const edit =
+                  e.key === ' '
+                    ? bulletOnSpace(text, caret)
+                    : e.key === 'Enter' && e.shiftKey
+                      ? bulletOnNewline(text, caret)
+                      : e.key === 'Backspace'
+                        ? bulletOnBackspace(text, caret)
+                        : null
+                if (edit) {
+                  e.preventDefault()
+                  applyEdit(el, edit)
                   return
                 }
               }

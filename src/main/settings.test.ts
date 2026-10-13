@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { SettingsState } from '../shared/ipc'
 import { parseSettings, patchArg, samePath, SettingsFile } from './settings'
 
-const defaults = { defaultAgent: 'claude' as const, devModel: false, theme: 'system' as const, sessionOrder: 'created' as const }
+const defaults = { defaultAgent: 'claude' as const, theme: 'system' as const, sessionOrder: 'created' as const }
 
 describe('parseSettings', () => {
   it('accepts Codex as the default agent and rejects unknown agents', () => {
@@ -14,10 +14,10 @@ describe('parseSettings', () => {
     })
     expect(() => patchArg({ global: { defaultAgent: 'unknown' } })).toThrow(/defaultAgent/)
   })
-  it('fills in defaults and ignores unknown keys', () => {
-    expect(parseSettings('{"$schema": "x", "future": 1}', defaults)).toEqual({
+  it('fills in defaults and ignores unknown and retired keys', () => {
+    expect(parseSettings('{"$schema": "x", "future": 1, "devModel": true}', defaults)).toEqual({
       ok: true,
-      global: { defaultAgent: 'claude', devModel: false, theme: 'system', sessionOrder: 'created' },
+      global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created' },
       projects: {}
     })
   })
@@ -31,24 +31,24 @@ describe('parseSettings', () => {
   })
 
   it('reads known values and projects', () => {
-    expect(parseSettings('{"devModel": true, "projects": {"C:\\\\a": {"x": 1}}}', defaults)).toEqual({
+    expect(parseSettings('{"theme": "dark", "projects": {"C:\\\\a": {"x": 1}}}', defaults)).toEqual({
       ok: true,
-      global: { defaultAgent: 'claude', devModel: true, theme: 'system', sessionOrder: 'created' },
+      global: { defaultAgent: 'claude', theme: 'dark', sessionOrder: 'created' },
       projects: { 'C:\\a': {} }
     })
   })
 
   it('reports invalid JSON', () => {
-    const parsed = parseSettings('{"devModel": tru', defaults)
+    const parsed = parseSettings('{"theme": "dar', defaults)
     expect(parsed.ok).toBe(false)
     if (!parsed.ok) expect(parsed.error).toMatch(/^Invalid JSON/)
   })
 
   it('reports every invalid value', () => {
-    const parsed = parseSettings('{"devModel": "yes", "projects": {"a": 3}}', defaults)
+    const parsed = parseSettings('{"theme": "blue", "projects": {"a": 3}}', defaults)
     expect(parsed).toEqual({
       ok: false,
-      error: 'devModel: expected true or false, got "yes"\nprojects["a"]: expected an object'
+      error: 'theme: expected one of "system", "light", "dark", got "blue"\nprojects["a"]: expected an object'
     })
   })
 
@@ -59,12 +59,12 @@ describe('parseSettings', () => {
 
 describe('patchArg', () => {
   it('accepts known settings with valid values', () => {
-    expect(patchArg({ global: { devModel: true } })).toEqual({ global: { devModel: true } })
+    expect(patchArg({ global: { theme: 'dark' } })).toEqual({ global: { theme: 'dark' } })
   })
 
   it('rejects unknown keys, bad values and bad shapes', () => {
     expect(() => patchArg({ global: { nope: 1 } })).toThrow(/Unknown global setting/)
-    expect(() => patchArg({ global: { devModel: 'yes' } })).toThrow(/devModel/)
+    expect(() => patchArg({ global: { sessionOrder: 'yes' } })).toThrow(/sessionOrder/)
     expect(() => patchArg({ global: { theme: 'blue' } })).toThrow(/theme/)
     expect(() => patchArg(null)).toThrow()
     expect(() => patchArg({ project: { values: {} } })).toThrow()
@@ -100,43 +100,43 @@ describe('SettingsFile', () => {
 
   it('creates the file and its schema on first load', () => {
     const state = file.load()
-    expect(state).toEqual({ path: path(), global: { defaultAgent: 'claude', devModel: false, theme: 'system', sessionOrder: 'created' }, projects: {}, error: null })
-    expect(onDisk()).toEqual({ $schema: './settings.schema.json', defaultAgent: 'claude', devModel: false, theme: 'system', sessionOrder: 'created' })
+    expect(state).toEqual({ path: path(), global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created' }, projects: {}, error: null })
+    expect(onDisk()).toEqual({ $schema: './settings.schema.json', defaultAgent: 'claude', theme: 'system', sessionOrder: 'created' })
     const schema = JSON.parse(readFileSync(join(dir, 'settings.schema.json'), 'utf8')) as {
       properties: Record<string, { type: string; default?: unknown; enum?: unknown[] }>
     }
-    expect(schema.properties.devModel).toMatchObject({ type: 'boolean', default: false })
+    expect(schema.properties).not.toHaveProperty('devModel')
     expect(schema.properties.theme).toMatchObject({ type: 'string', default: 'system', enum: ['system', 'light', 'dark'] })
   })
 
   it('reads an existing file without changing it', () => {
-    writeFileSync(path(), '{"devModel": true}')
-    expect(file.load().global.devModel).toBe(true)
-    expect(readFileSync(path(), 'utf8')).toBe('{"devModel": true}')
+    writeFileSync(path(), '{"theme": "dark"}')
+    expect(file.load().global.theme).toBe('dark')
+    expect(readFileSync(path(), 'utf8')).toBe('{"theme": "dark"}')
   })
 
   it('reads a file with a BOM', () => {
-    writeFileSync(path(), '\uFEFF{"devModel": true}')
-    expect(file.load()).toMatchObject({ global: { devModel: true }, error: null })
+    writeFileSync(path(), '\uFEFF{"theme": "dark"}')
+    expect(file.load()).toMatchObject({ global: { theme: 'dark' }, error: null })
   })
 
   it('keeps the last good settings when an edit breaks the file', () => {
-    writeFileSync(path(), '{"devModel": true}')
+    writeFileSync(path(), '{"theme": "dark"}')
     file.load()
-    writeFileSync(path(), '{"devModel": true,')
+    writeFileSync(path(), '{"theme": "dark",')
     file.reload()
-    expect(file.state().global.devModel).toBe(true)
+    expect(file.state().global.theme).toBe('dark')
     expect(file.state().error).toMatch(/^Invalid JSON/)
     // The broken file is left alone.
-    expect(readFileSync(path(), 'utf8')).toBe('{"devModel": true,')
+    expect(readFileSync(path(), 'utf8')).toBe('{"theme": "dark",')
 
-    writeFileSync(path(), '{"devModel": "no"}')
+    writeFileSync(path(), '{"theme": "no"}')
     file.reload()
-    expect(file.state()).toMatchObject({ global: { devModel: true }, error: /devModel/ })
+    expect(file.state()).toMatchObject({ global: { theme: 'dark' }, error: /theme/ })
 
-    writeFileSync(path(), '{"devModel": false}')
+    writeFileSync(path(), '{"theme": "light"}')
     file.reload()
-    expect(file.state()).toMatchObject({ global: { devModel: false }, error: null })
+    expect(file.state()).toMatchObject({ global: { theme: 'light' }, error: null })
   })
 
   it('reports a deleted file and recreates it on save', () => {
@@ -144,19 +144,19 @@ describe('SettingsFile', () => {
     rmSync(path())
     file.reload()
     expect(file.state().error).toMatch(/missing/)
-    file.update({ global: { devModel: true } })
-    expect(file.state()).toMatchObject({ global: { devModel: true }, error: null })
-    expect(onDisk()).toEqual({ $schema: './settings.schema.json', devModel: true })
+    file.update({ global: { theme: 'dark' } })
+    expect(file.state()).toMatchObject({ global: { theme: 'dark' }, error: null })
+    expect(onDisk()).toEqual({ $schema: './settings.schema.json', theme: 'dark' })
   })
 
   it('saves changed keys and keeps unknown ones', () => {
-    writeFileSync(path(), '{"devModel": false, "future": {"a": 1}, "projects": {"/p": {"later": true}}}')
+    writeFileSync(path(), '{"theme": "light", "future": {"a": 1}, "projects": {"/p": {"later": true}}}')
     file.load()
-    const state = file.update({ global: { devModel: true } })
-    expect(state.global.devModel).toBe(true)
+    const state = file.update({ global: { theme: 'dark' } })
+    expect(state.global.theme).toBe('dark')
     expect(onDisk()).toEqual({
       $schema: './settings.schema.json',
-      devModel: true,
+      theme: 'dark',
       future: { a: 1 },
       projects: { '/p': { later: true } }
     })
@@ -174,7 +174,7 @@ describe('SettingsFile', () => {
   it("won't save over a file that isn't valid JSON", () => {
     file.load()
     writeFileSync(path(), '{oops')
-    expect(() => file.update({ global: { devModel: true } })).toThrow(/isn't a valid JSON object/)
+    expect(() => file.update({ global: { theme: 'dark' } })).toThrow(/isn't a valid JSON object/)
     expect(readFileSync(path(), 'utf8')).toBe('{oops')
   })
 
@@ -183,17 +183,17 @@ describe('SettingsFile', () => {
     changes = []
     file.reload()
     expect(changes).toEqual([])
-    file.update({ global: { devModel: true } })
-    expect(changes.map((c) => c.global.devModel)).toEqual([true])
+    file.update({ global: { theme: 'dark' } })
+    expect(changes.map((c) => c.global.theme)).toEqual(['dark'])
   })
 
   it('picks up edits made by other programs while watching', async () => {
     file.load()
     file.watch()
     changes = []
-    writeFileSync(path(), '{"devModel": true}')
+    writeFileSync(path(), '{"theme": "dark"}')
     await waitFor(() => changes.length > 0)
-    expect(file.state()).toMatchObject({ global: { devModel: true }, error: null })
+    expect(file.state()).toMatchObject({ global: { theme: 'dark' }, error: null })
   })
 })
 

@@ -19,7 +19,6 @@ type Props = {
   live: SessionLive
   git: GitStatus | null
   pr: PullRequest | null
-  devModel: boolean
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
   notices: Notice[]
@@ -34,7 +33,7 @@ type Props = {
   /** Injects the message into the running turn (when it runs in the main thread). */
   onSteer(text: string, attachments: Attachment[]): void
   onCancel(): void
-  onSetModel(value: string): Promise<void>
+  onSetChoice(kind: 'model' | 'effort', value: string): Promise<void>
   onOpenItem(message: Message, span: ListItemSpan): void
   onOpenSelection(message: Message, selection: SourceSelection): void
   onOpenThread(threadId: string): void
@@ -142,14 +141,13 @@ export function Conversation(props: Props): React.JSX.Element {
         live={live}
         git={props.git}
         pr={props.pr}
-        devModel={props.devModel}
         runningThread={runningThread}
         runningLabel={props.runningLabel}
         steered={running && lastUserMessage(open.messages)?.steered === true}
         queue={props.queue}
         onResumeQueue={() => void props.composerQueue.onResume()}
         onOpenThread={props.onOpenThread}
-        onSetModel={props.onSetModel}
+        onSetChoice={props.onSetChoice}
         onCommand={(text) => props.onSend(text, [])}
       />
       <SelectionPopover scope={mainRef} messages={open.messages} onReply={props.onOpenSelection} />

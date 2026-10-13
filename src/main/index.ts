@@ -248,9 +248,10 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     manager.renameSession(str(id, 'id'), str(title, 'title'))
   )
   ipcMain.handle(IPC.sessionsDelete, (_e, id: unknown) => manager.deleteSession(str(id, 'id')))
-  ipcMain.handle(IPC.sessionsSetModel, (_e, id: unknown, value: unknown) =>
-    manager.setModel(str(id, 'id'), str(value, 'value'))
-  )
+  ipcMain.handle(IPC.sessionsSetChoice, (_e, id: unknown, kind: unknown, value: unknown) => {
+    if (kind !== 'model' && kind !== 'effort') throw new Error('kind must be "model" or "effort"')
+    return manager.setChoice(str(id, 'id'), kind, str(value, 'value'))
+  })
   ipcMain.handle(IPC.sessionsCopyMarkdown, (_e, id: unknown, threadId: unknown) => {
     clipboard.writeText(exportLog(str(id, 'id'), threadArg(threadId)).markdown)
   })
@@ -322,12 +323,9 @@ app.whenReady().then(() => {
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    // The cheap dev model is on by default in development, off in packaged builds.
-    defaults: { defaultAgent: 'claude', devModel: !app.isPackaged, theme: 'system', sessionOrder: 'created' },
-    onChange(next, prev) {
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created' },
+    onChange(next) {
       emit({ type: 'settings', state: next })
-      // Agents restart with the new model; busy ones once their turn ends.
-      if (next.global.devModel !== prev.global.devModel) void sessions?.restartAgents()
     }
   })
   settings = settingsFile
@@ -337,10 +335,9 @@ app.whenReady().then(() => {
     store,
     emit,
     getAgentConfig,
-    agentEnv: (config) => agentEnv(config, { devModel: settingsFile.state().global.devModel }),
+    agentEnv: (config) => agentEnv(config),
     connect: (config, env, handlers) => AgentConnection.start(config, env, handlers),
-    runInTerminal,
-    devModel: (agentId) => settingsFile.state().global.devModel && !!getAgentConfig(agentId).devModelEnv
+    runInTerminal
   })
   registerIpc(sessions, settingsFile)
   createWindow()

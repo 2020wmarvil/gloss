@@ -60,6 +60,7 @@ type Session = {
   titleSet?: true            // renamed in Gloss: the agent's title doesn't replace it
   createdAt: number
   model?: string             // model config value picked in Gloss; re-applied on resume
+  effort?: string            // effort (thought_level) config value picked in Gloss; re-applied after the model
   syncedAt?: string          // the agent's updatedAt for this session when Gloss last synced it (see Shared sessions)
 }
 
@@ -116,7 +117,7 @@ Projects are folders: those opened with "Open project…" (a `projects` table) p
 Notes:
 - `anchorMessageId` may point at a message inside a thread. That would allow nested threads later without a migration. Nesting is **not** in scope now.
 - A Thread row is created when the user sends the first message on an anchor, not when the panel is opened.
-- For an agent that shares its sessions (see Shared sessions), messages, tool calls and plans are a cache of the agent's session. Threads, the thread each message belongs to, titles renamed in Gloss, `model`, `steered` and `createdAt` are Gloss's own.
+- For an agent that shares its sessions (see Shared sessions), messages, tool calls and plans are a cache of the agent's session. Threads, the thread each message belongs to, titles renamed in Gloss, `model`, `effort`, `steered` and `createdAt` are Gloss's own.
 
 ## Message flow
 
@@ -201,12 +202,10 @@ The sidebar's agent picker controls new sessions and which agent's external sess
 Agent config is a small table so more agents can be added later:
 
 ```ts
-type AgentConfig = { id: string; name: string; command: string; args: string[]; env?: Record<string,string>; devModelEnv?: Record<string,string>; bypassModeId?: string }
+type AgentConfig = { id: string; name: string; command: string; args: string[]; env?: Record<string,string>; bypassModeId?: string }
 ```
 
-### Dev model
-
-In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its environment so test prompts are cheap. It is a global setting (`devModel`, see Settings), on by default in development builds and off in packaged ones, not a per-project setting. Changing it restarts the agents (busy ones once their turn ends). Only agents with `devModelEnv` use the override; Codex model selection stays available when Haiku is on. Judge the threading UX on the normal model; Haiku produces shorter, less list-heavy answers.
+Agents inherit Gloss's environment, so a test run can pick a cheap model with `ANTHROPIC_MODEL=haiku`. There is no dev model setting. Judge the threading UX on the normal model; Haiku produces shorter, less list-heavy answers.
 
 ## Settings
 
@@ -214,9 +213,9 @@ In development, spawn the Claude adapter with `ANTHROPIC_MODEL=haiku` in its env
 - **A JSON Schema**, `settings.schema.json`, is written next to it on every start, generated from the same field table the app validates against (`src/shared/settings.ts`). A new file's `$schema` points at it, so editors autocomplete and validate, and an agent can read what is allowed.
 - **Validation** is owned by the main process. Missing keys take their defaults; unknown keys are ignored and kept.
 - **Live reload:** the main process watches the folder (editors often replace the file) and applies changes without a restart. If the file has invalid JSON or values, or is deleted, Gloss keeps the last good settings and shows what is wrong (on the settings screen, and a mark on the sidebar's Settings button). It never resets or overwrites the file because of a bad edit.
-- **Settings screen** (the sidebar's Settings button, or `Ctrl+,`; Esc or Done closes it): the file's path with "Open in editor" (the system's app for `.json`), then a Global section and a Project section for the open session's folder. Changes save immediately: only the changed keys are written, everything else in the file is kept. Saving is refused while the file isn't valid JSON.
+- **Settings screen** (the sidebar's Settings button, or `Ctrl+,`; Esc or Done closes it): the file's path with "Open in editor" (the system's app for `.json`), then a Global section, a Project section for the open session's folder, and a read-only list of every keyboard shortcut, grouped by where it applies (`src/renderer/src/shortcuts.ts`). Changes save immediately: only the changed keys are written, everything else in the file is kept. Saving is refused while the file isn't valid JSON.
 - Each feature adds its own fields when it lands; no field appears before its feature exists.
-- **Fields so far:** `defaultAgent`: `claude` (default) or `codex`, used for the initial sidebar agent selection, `devModel` (see Dev model), `theme`: `system` (default, follows the OS and updates live), `light` or `dark`, and `sessionOrder`: `created` (default, newest first) or `activity` (see Projects and sessions). The renderer sets `data-theme` on the document; the dark palette is provisional until the M12 design system.
+- **Fields so far:** `defaultAgent`: `claude` (default) or `codex`, used for the initial sidebar agent selection, `theme`: `system` (default, follows the OS and updates live), `light` or `dark`, and `sessionOrder`: `created` (default, newest first) or `activity` (see Projects and sessions). The renderer sets `data-theme` on the document; the dark palette is provisional until the M12 design system.
 
 ## Stack
 
@@ -284,6 +283,7 @@ When the agent advertises `loadSession` (Claude Code does), the agent's own copy
 - **Queue:** while a turn runs, the composer stays usable: its button reads **Queue** (next to Cancel) and a message sent then is queued instead of sent. Queued messages are listed above the composer of the thread they were written in, each with Edit (in place) and Remove, and run in that thread. When a turn ends normally (`end_turn`), the next queued message is sent straight away. A cancelled, failed or cut-short turn pauses the queue: the composer and status line show "paused" with **Resume**, and a message sent while paused and idle goes out right away; the queue moves on again after the next turn that ends normally. Removing the last queued message clears the pause. The queue is kept by the main process in memory, so it works for sessions that aren't open but is lost when Gloss quits. Works with any agent (no steering).
 - **Steer:** while a turn runs, the composer of the thread it runs in also has **Steer** (`Ctrl+Enter`), which injects the message into the running turn instead of queueing it ("skip the tests"). Offered only when the agent advertises it: the Claude adapter's `_session/steering` extension (`_meta.steering.supported` in `initialize`). Gloss records the message first (marked "steered" in the log) so the agent's answer lands below it, then sends it with `idleBehavior: "promptRequired"`; if the turn ended before it got in, the message is taken back and goes to the front of the queue. Other threads can only queue while a turn runs, so the reply stays in the thread it belongs to.
 - **Attachments:** paste or drop images and files on the composer, or pick them with **+**. Images become ACP `image` blocks; text files become embedded `resource` blocks (with a `file://` URI when the file has a path). Only what the agent's `promptCapabilities` allow (`image`, `embeddedContext`); the **+** button and drops are off otherwise. Limits: images 10 MB, files 1 MB and text only. Attachments show as thumbnails or names in the composer and in the sent message.
+- **Bullets:** typing `*` then a space at the start of a line (after any indent) turns it into `• `. Shift+Enter on a bullet line starts the next bullet at the same indent; on an empty bullet it removes the bullet and ends the list. Backspace right after a bullet removes it. Enter still sends. The edits go through the browser's `insertText`, so Ctrl+Z undoes them. A message is sent with its bullets as `- ` markdown list items, and user messages show lines starting with `- `, `* ` or `• ` (outside ``` fences) as a bulleted list.
 - **Drafts:** each composer (a session's main thread, or one thread anchor) keeps its unsent text, attachments and caret position when the user switches to another session or thread and back. Drafts are kept in the renderer's memory, so they are lost when Gloss quits.
 
 ## Status line
@@ -296,7 +296,8 @@ A line under the composer for the open session. Agent state comes from ACP; the 
 - session cost, from `usage_update` `cost`
 - plan usage limits, Claude Code only: the Claude adapter attaches Claude Code's rate-limit info to `usage_update` as `_meta["_claude/rateLimit"]` (`rateLimitType`, `status`, optional `utilization`, `resetsAt` in Unix seconds), one window per update. Gloss keeps the latest per window and shows each: "5h ok" (Claude Code reports no percentage far from the limit), "5h 82%" (amber when warned), or "5h limit · resets 3:40 PM" (red when reached). The tooltip has the reset time. Agents that don't send it show nothing.
 - **Usage popup:** clicking any usage item (context, cost or plan limit) for Claude opens a popup; before usage arrives, a "Usage" button opens it. It shows the current session's context window, then the account's plan, session and weekly limits, per-model limits when reported, and extra usage when enabled. Limits have bars, percentages and reset intervals. The main process asks a short-lived Claude Agent SDK query for `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })`, with no prompt and `persistSession: false`, then closes it. Nothing is added to the conversation or session list, and it works while a turn runs or the allowance is exhausted. Successful results are cached for 30 seconds and concurrent requests share the fetch; fetching times out after 15 seconds. Loading, unavailable limits and errors appear inside the popup, with retry after errors. Escape, an outside click or changing sessions closes it. Context comes from the current session's ACP usage, never the temporary query. The experimental SDK dependency is pinned.
-- model: the agent's config option with category `model`, shown by name, except that a `default` option shows its description, which names the model it stands for (Claude Code's "Default (recommended)" shows as e.g. "Opus 5.5"); clicking opens a picker that calls `session/set_config_option`. The choice is saved on the session and re-applied when it is resumed. While the dev model is on, this shows "Haiku (dev)" and can't be changed.
+- model: the agent's config option with category `model`, shown by name, except that a `default` option shows its description, which names the model it stands for (Claude Code's "Default (recommended)" shows as e.g. "Opus 5.5"); clicking opens a picker that calls `session/set_config_option`. The choice is saved on the session and re-applied when it is resumed.
+- effort, right after the model: the agent's config option with category `thought_level` (Claude Code's "Effort", Codex's "Reasoning effort"), shown as e.g. "High effort"; clicking opens a picker that calls `session/set_config_option`. Its levels depend on the model, and it is hidden when the model has none. Saved on the session and re-applied on resume after the model, when the model offers it.
 - permission mode: "bypass", or "auto-approving" (a warning) when the agent didn't switch to its bypass mode
 - **Extensions:** what the agent loaded, from its commands: commands and skills, and MCP prompts (`mcp:<server>:<prompt>`). When the agent has an `/mcp` command, "Show MCP server status" sends it in the main thread (Claude Code answers with each server's status). Gloss doesn't install or configure extensions.
 - the git branch of the session folder with `*` when the tree is dirty (`git status --porcelain --branch` in the main process; hidden outside a repo; refreshed when a session opens and after each turn). When the branch's upstream is on GitHub, clicking it opens the branch there.
@@ -305,7 +306,7 @@ A line under the composer for the open session. Agent state comes from ACP; the 
 
 ## Keyboard shortcuts
 
-`Ctrl+N` new session · `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+PageDown` / `Ctrl+PageUp`) next / previous session in the project · `Ctrl+L` focus the composer · `Ctrl+Shift+T` show or hide the side panel · `Esc` collapse the side panel, close settings or a menu · `Ctrl+,` settings. `Cmd` works for `Ctrl` on macOS.
+`Ctrl+N` new session · `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+PageDown` / `Ctrl+PageUp`) next / previous session in the project · `Ctrl+L` focus the composer · `Ctrl+Shift+T` show or hide the side panel · `Esc` collapse the side panel, close settings or a menu · `Ctrl+,` settings. `Cmd` works for `Ctrl` on macOS. The settings screen lists these and the shortcuts that apply in one place (composer, queued messages, selections, session list, panel edges); they can't be changed.
 
 ## Notifications
 

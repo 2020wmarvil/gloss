@@ -621,6 +621,44 @@ body.resizing {
   font-size: 11px;
 }
 
+.shortcut-group h2 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.shortcut-group dl {
+  margin: 0;
+}
+
+.shortcut {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 14px;
+}
+
+.shortcut dt,
+.shortcut dd {
+  margin: 0;
+}
+
+.shortcut kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+}
+
 .settings-problem {
   margin: 16px 0 0;
   padding: 10px 12px;
@@ -740,6 +778,16 @@ body.resizing {
   padding: 10px 14px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.you-text {
+  display: block;
+}
+
+.you-list {
+  margin: 0;
+  padding-left: 1.3em;
+  white-space: normal;
 }
 
 .you .steered-label {
