@@ -236,3 +236,4 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
 - Review sessions on other bases: unstaged changes, the current branch vs. `main`, a commit range (M11 starts with staged changes; keep the line anchor base-agnostic).
+- Polish the README and add visuals (screenshots, GIFs of threads and steering), and make a motion graphics demo reel.
