@@ -383,7 +383,7 @@ export class SessionManager {
           if (!isResourceNotFound(err)) throw err
           // Listed but not loadable: a leftover of a deleted session (Claude Code
           // can rewrite a transcript's metadata after its delete). Remove it.
-          if (conn.canDeleteSessions) await conn.deleteSession(acpSessionId).catch(() => {})
+          if (conn.canDeleteSessions) await this.deleteAgentSession(conn, agentId, acpSessionId).catch(() => {})
           throw new Error('That session has no conversation left (it was probably deleted), so it was removed.', {
             cause: err
           })
@@ -448,7 +448,7 @@ export class SessionManager {
     let warning: string | null = null
     try {
       await this.withAgent(session.agentId, async (conn) => {
-        if (conn.canDeleteSessions) await conn.deleteSession(session.acpSessionId)
+        if (conn.canDeleteSessions) await this.deleteAgentSession(conn, session.agentId, session.acpSessionId)
       })
     } catch (err) {
       // A session that never had a message may have no copy on the agent's side
@@ -462,6 +462,12 @@ export class SessionManager {
     this.byAcpId.delete(session.acpSessionId)
     this.deps.emit({ type: 'sessionDeleted', sessionId: id })
     return warning
+  }
+
+  /** session/delete, remembering the id so a copy the agent lists again stays hidden (see agentSessions). */
+  private deleteAgentSession(conn: AgentConnection, agentId: string, acpSessionId: string): Promise<void> {
+    this.deps.store.addDeletedAgentSession(agentId, acpSessionId)
+    return conn.deleteSession(acpSessionId)
   }
 
   /**
@@ -489,7 +495,7 @@ export class SessionManager {
     const hadMessages = this.deps.store.countUserMessages(id) > 0
     this.byAcpId.delete(old)
     this.deps.store.clearLog(id)
-    session = this.deps.store.updateSession(id, { acpSessionId: res.sessionId, title: folderName(session.cwd) })
+    session = this.deps.store.updateSession(id, { acpSessionId: res.sessionId })
     this.register(session.acpSessionId, id)
     rt.attachedTo = conn
     this.setQueue(id, { items: [], paused: false })
@@ -500,7 +506,7 @@ export class SessionManager {
 
     if (conn.canDeleteSessions) {
       try {
-        await conn.deleteSession(old)
+        await this.deleteAgentSession(conn, session.agentId, old)
       } catch (err) {
         // Claude Code writes its transcript on the first prompt: an unused session has nothing to delete.
         if (hadMessages) this.notice(id, null, `Cleared, but the agent couldn't delete the old conversation: ${errorMessage(err)}`)
@@ -564,15 +570,24 @@ export class SessionManager {
 
   /** The agent's sessions in `cwd` that Gloss hasn't imported (session/list, when advertised). */
   async agentSessions(cwd: string, agentId: string): Promise<AgentSession[]> {
-    const listed = await this.withAgent(agentId, (conn) =>
-      conn.canListSessions ? conn.listSessions(cwd) : Promise.resolve([])
-    )
-    const known = new Set(
-      this.deps.store
+    const deleted = new Set(this.deps.store.listDeletedAgentSessions(agentId))
+    const listed = await this.withAgent(agentId, async (conn) => {
+      if (!conn.canListSessions) return []
+      const sessions = await conn.listSessions(cwd)
+      // Claude Code's process can rewrite a transcript's metadata after its
+      // delete, bringing the session back without its conversation. Delete it again.
+      for (const s of sessions) {
+        if (deleted.has(s.sessionId) && conn.canDeleteSessions) void conn.deleteSession(s.sessionId).catch(() => {})
+      }
+      return sessions
+    })
+    const known = new Set([
+      ...deleted,
+      ...this.deps.store
         .listSessions()
         .filter((s) => s.agentId === agentId)
         .map((s) => s.acpSessionId)
-    )
+    ])
     return listed
       .filter((s) => !known.has(s.sessionId))
       .map((s) => ({
@@ -856,7 +871,8 @@ export class SessionManager {
     const rt = this.runtime(sessionId)
     if (rt.turn) throw new Error('A turn is already running in this session.')
     const wire = wireText(text, this.anchorText(sessionId, threadId))
-    const isFirst = this.deps.store.countUserMessages(sessionId) === 0
+    // Only a session still named after its folder takes its title from the first message.
+    const retitle = this.deps.store.countUserMessages(sessionId) === 0 && session.title === folderName(session.cwd)
     const message: Message = {
       id: randomUUID(),
       sessionId,
@@ -869,7 +885,7 @@ export class SessionManager {
     }
     this.deps.store.insertMessage(message)
     this.deps.emit({ type: 'message', message })
-    if (isFirst) {
+    if (retitle) {
       session = this.deps.store.updateSession(sessionId, { title: titleFrom(text) })
       this.deps.emit({ type: 'session', session })
     }
