@@ -53,6 +53,8 @@ export function Sidebar(props: Props): React.JSX.Element {
   const { project, openId, running, agentSessions } = props
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [menuFor, setMenuFor] = useState<string | null>(null)
+  /** The project whose right-click menu is open, and where. */
+  const [projectMenu, setProjectMenu] = useState<{ project: Project; x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<
     { kind: 'session'; session: Session } | { kind: 'project'; project: Project; sessions: number } | null
@@ -61,16 +63,35 @@ export function Sidebar(props: Props): React.JSX.Element {
 
   useEffect(() => setShowAll(false), [project?.path])
 
-  // Clicks elsewhere close the menus.
+  // Clicks elsewhere and Escape close the menus.
   useEffect(() => {
-    if (!switcherOpen && menuFor === null) return
+    if (!switcherOpen && menuFor === null && projectMenu === null) return
     const close = (): void => {
       setSwitcherOpen(false)
       setMenuFor(null)
+      setProjectMenu(null)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close()
     }
     window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
-  }, [switcherOpen, menuFor])
+    window.addEventListener('contextmenu', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('contextmenu', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [switcherOpen, menuFor, projectMenu])
+
+  /** Opens a project's right-click menu (just Delete) at the pointer. */
+  function openProjectMenu(e: React.MouseEvent, p: Project): void {
+    e.preventDefault()
+    e.stopPropagation()
+    setSwitcherOpen(false)
+    setMenuFor(null)
+    setProjectMenu({ project: p, x: e.clientX, y: e.clientY })
+  }
 
   const sessions = project ? props.sessions.filter((s) => sameFolder(s.cwd, project.path)) : []
   const isRunningIn = (p: Project): boolean =>
@@ -90,6 +111,10 @@ export function Sidebar(props: Props): React.JSX.Element {
             e.stopPropagation()
             setSwitcherOpen((o) => !o)
             setMenuFor(null)
+            setProjectMenu(null)
+          }}
+          onContextMenu={(e) => {
+            if (project) openProjectMenu(e, project)
           }}
         >
           <span className="switch-names">
@@ -108,6 +133,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                 role="menuitem"
                 className={project && sameFolder(p.path, project.path) ? 'on' : undefined}
                 onClick={() => props.onSelectProject(p.path)}
+                onContextMenu={(e) => openProjectMenu(e, p)}
               >
                 <b>
                   {p.name}
@@ -122,18 +148,33 @@ export function Sidebar(props: Props): React.JSX.Element {
             <button role="menuitem" onClick={props.onOpenProject}>
               Open project…
             </button>
-            {project && (
-              <button
-                role="menuitem"
-                className="danger"
-                onClick={() => setConfirmDelete({ kind: 'project', project, sessions: sessions.length })}
-              >
-                Delete “{project.name}”…
-              </button>
-            )}
           </div>
         )}
       </div>
+      {projectMenu && (
+        <div
+          className="menu context-menu"
+          role="menu"
+          style={{ left: projectMenu.x, top: projectMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            role="menuitem"
+            className="danger"
+            onClick={() => {
+              const p = projectMenu.project
+              setProjectMenu(null)
+              setConfirmDelete({
+                kind: 'project',
+                project: p,
+                sessions: props.sessions.filter((s) => sameFolder(s.cwd, p.path)).length
+              })
+            }}
+          >
+            Delete…
+          </button>
+        </div>
+      )}
 
       {project ? (
         <button className="new-session" onClick={props.onNew} disabled={props.creating} title="New session (Ctrl+N)">
@@ -174,6 +215,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                         e.stopPropagation()
                         setMenuFor(s.id)
                         setSwitcherOpen(false)
+                        setProjectMenu(null)
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') props.onSelect(s.id)
@@ -188,18 +230,6 @@ export function Sidebar(props: Props): React.JSX.Element {
                       ) : (
                         <span className="when">{ago(s.createdAt)}</span>
                       )}
-                      <button
-                        className="row-menu"
-                        aria-label="Session actions"
-                        title="More"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setMenuFor((m) => (m === s.id ? null : s.id))
-                          setSwitcherOpen(false)
-                        }}
-                      >
-                        ⋯
-                      </button>
                       {menuFor === s.id && (
                         <div className="menu row-actions" role="menu" onClick={(e) => e.stopPropagation()}>
                           <button role="menuitem" onClick={() => (setMenuFor(null), setRenaming(s.id))}>
@@ -296,7 +326,9 @@ export function Sidebar(props: Props): React.JSX.Element {
                 This removes the project from Gloss and deletes{' '}
                 {confirmDelete.sessions === 0
                   ? 'nothing else: it has no Gloss sessions'
-                  : `its ${confirmDelete.sessions === 1 ? 'session' : `${confirmDelete.sessions} sessions`}, with their messages, threads and the agent's own copies`}
+                  : confirmDelete.sessions === 1
+                    ? "its session, with its messages, threads and the agent's own copy"
+                    : `its ${confirmDelete.sessions} sessions, with their messages, threads and the agent's own copies`}
                 . The agent&apos;s sessions that were never opened in Gloss are kept, and the folder&apos;s files are not
                 touched. It can&apos;t be undone.
               </p>
