@@ -90,12 +90,13 @@ describe('effort picker', () => {
     const live = {
       ...props.live,
       model: { configId: 'model', current: 'opus', options: [{ value: 'opus', name: 'Opus' }] },
-      effort: { configId: 'effort', current: 'medium', options: [{ value: 'medium', name: 'Medium' }, { value: 'high', name: 'High' }] }
+      effort: { configId: 'effort', current: 'medium', options: [{ value: 'default', name: 'Default' }, { value: 'medium', name: 'Medium' }, { value: 'high', name: 'High' }] }
     }
     act(() => root!.render(<StatusLine {...props} live={live} onSetChoice={onSetChoice} />))
     const labels = [...document.querySelectorAll('.popover-anchor > button')].map((b) => b.textContent)
     expect(labels.slice(-3)).toEqual(['Opus', 'Medium effort', 'Extensions'])
     await click('button[title="Effort"]')
+    expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual(['Medium', 'High'])
     await click('[role="option"]:not([aria-selected="true"])')
     expect(onSetChoice).toHaveBeenCalledWith('effort', 'high')
   })

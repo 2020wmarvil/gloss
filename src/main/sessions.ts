@@ -558,7 +558,10 @@ export class SessionManager {
       const choice = this.runtime(id).live[kind]
       if (!choice) throw new Error(`The agent doesn't offer a choice of ${kind}.`)
       const res = await conn.setConfigOption(acpSessionId, choice.configId, value)
-      this.setLive(id, configChoices(res.configOptions))
+      let choices = configChoices(res.configOptions)
+      // A new model can leave the effort at "default" (its levels differ): pin a level again.
+      if (kind === 'model') choices = await this.settleEffort(conn, acpSessionId, choices, session.effort)
+      this.setLive(id, choices)
     })
     const updated = this.deps.store.updateSession(id, { [kind]: value })
     this.deps.emit({ type: 'session', session: updated })
@@ -975,17 +978,17 @@ export class SessionManager {
     const caps = conn.promptCapabilities
     let choices = configChoices(configOptions ?? [])
     const session = this.session(sessionId)
-    for (const kind of ['model', 'effort'] as const) {
-      const wanted = session[kind]
-      const choice = choices[kind]
-      if (!wanted || !choice || choice.current === wanted || !choice.options.some((o) => o.value === wanted)) continue
+    const model = choices.model
+    const wanted = session.model
+    if (wanted && model && model.current !== wanted && model.options.some((o) => o.value === wanted)) {
       try {
-        const res = await conn.setConfigOption(session.acpSessionId, choice.configId, wanted)
+        const res = await conn.setConfigOption(session.acpSessionId, model.configId, wanted)
         choices = configChoices(res.configOptions)
       } catch (err) {
-        console.warn(`[gloss] could not set the ${kind} to "${wanted}":`, errorMessage(err))
+        console.warn(`[gloss] could not set the model to "${wanted}":`, errorMessage(err))
       }
     }
+    choices = await this.settleEffort(conn, session.acpSessionId, choices, session.effort)
     this.setLive(sessionId, {
       attached: true,
       ...choices,
@@ -993,6 +996,28 @@ export class SessionManager {
       accepts: { image: caps.image === true, file: caps.embeddedContext === true },
       steering: conn.canSteer
     })
+  }
+
+  /**
+   * Sets the session's effort: its own pick when the model offers it, else a concrete
+   * level instead of the agent's "default" (SPEC → Status line → effort).
+   */
+  private async settleEffort(
+    conn: AgentConnection,
+    acpSessionId: string,
+    choices: Pick<SessionLive, 'model' | 'effort'>,
+    wanted: string | undefined
+  ): Promise<Pick<SessionLive, 'model' | 'effort'>> {
+    const effort = choices.effort
+    const target = effort && concreteEffort(effort, wanted)
+    if (!effort || !target || target === effort.current) return choices
+    try {
+      const res = await conn.setConfigOption(acpSessionId, effort.configId, target)
+      return configChoices(res.configOptions)
+    } catch (err) {
+      console.warn(`[gloss] could not set the effort to "${target}":`, errorMessage(err))
+      return choices
+    }
   }
 
   // Turns
@@ -1471,6 +1496,20 @@ function liveUpdate(u: acp.SessionUpdate, rateLimits: RateLimit[]): Partial<Sess
     default:
       return null
   }
+}
+
+/** The effort value Claude Code's adapter uses for "whatever Claude Code picks". */
+export const DEFAULT_EFFORT = 'default'
+
+/**
+ * The effort to set: `wanted` when the model offers it, else, when the agent is on its
+ * "default", the level its adapter recommends (medium, else the first). Null: leave it.
+ */
+export function concreteEffort(effort: ConfigChoice, wanted?: string): string | null {
+  const levels = effort.options.map((o) => o.value).filter((v) => v !== DEFAULT_EFFORT)
+  if (wanted && levels.includes(wanted)) return wanted
+  if (effort.current !== DEFAULT_EFFORT) return null
+  return levels.includes('medium') ? 'medium' : (levels[0] ?? null)
 }
 
 /** The agent's model and effort config options (categories "model" and "thought_level"). */

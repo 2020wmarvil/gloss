@@ -65,6 +65,8 @@ type FakeAgent = {
   configOptions: acp.SessionConfigOption[] | null
   /** session/set_config_option calls, as "sessionId:configId=value". */
   configChanges: string[]
+  /** Runs after a config change, like Claude's adapter rebuilding its options on a model switch. */
+  afterConfigChange?(configId: string, options: acp.SessionConfigOption[]): acp.SessionConfigOption[]
   promptCapabilities: acp.PromptCapabilities
   /** The full prompt of each session/prompt. */
   promptBlocks: acp.ContentBlock[][]
@@ -204,6 +206,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       state.configOptions = (state.configOptions ?? []).map((o) =>
         o.id === ctx.params.configId && o.type === 'select' ? { ...o, currentValue: value } : o
       )
+      if (state.afterConfigChange) state.configOptions = state.afterConfigChange(ctx.params.configId, state.configOptions)
       return { configOptions: state.configOptions }
     })
     .onRequest(acp.methods.agent.authenticate, (ctx) => {
@@ -1345,6 +1348,7 @@ describe('SessionManager', () => {
       currentValue: 'default',
       options: [
         { value: 'default', name: 'Default' },
+        { value: 'medium', name: 'Medium' },
         { value: 'high', name: 'High' }
       ]
     }
@@ -1435,11 +1439,13 @@ describe('SessionManager', () => {
     it('sets the effort per session and re-applies it after the model on resume', async () => {
       state.configOptions = [MODEL, EFFORT]
       const session = await manager.createSession('/w', 'fake')
+      // Claude's "default" is replaced by the level its adapter recommends.
       expect(manager.openSession(session.id).live.effort).toEqual({
         configId: 'effort',
-        current: 'default',
+        current: 'medium',
         options: [
           { value: 'default', name: 'Default' },
+          { value: 'medium', name: 'Medium' },
           { value: 'high', name: 'High' }
         ]
       })
@@ -1453,7 +1459,25 @@ describe('SessionManager', () => {
       manager = makeManager()
       await manager.send(session.id, 'hi', null)
       const id = session.acpSessionId
-      expect(state.configChanges).toEqual([`${id}:model=opus`, `${id}:effort=high`, `${id}:model=opus`, `${id}:effort=high`])
+      expect(state.configChanges).toEqual([
+        `${id}:effort=medium`,
+        `${id}:model=opus`,
+        `${id}:effort=high`,
+        `${id}:model=opus`,
+        `${id}:effort=high`
+      ])
+    })
+
+    it('pins a level again when a model switch puts the effort back on default', async () => {
+      state.configOptions = [MODEL, EFFORT]
+      state.afterConfigChange = (configId, options) =>
+        configId === 'model' ? options.map((o) => (o.id === 'effort' && o.type === 'select' ? { ...o, currentValue: 'default' } : o)) : options
+      const session = await manager.createSession('/w', 'fake')
+      await manager.setChoice(session.id, 'effort', 'high')
+      await manager.setChoice(session.id, 'model', 'opus')
+      expect(manager.openSession(session.id).live.effort?.current).toBe('high')
+      const id = session.acpSessionId
+      expect(state.configChanges).toEqual([`${id}:effort=medium`, `${id}:effort=high`, `${id}:model=opus`, `${id}:effort=high`])
     })
 
     it("follows the agent's config updates and skips an effort the model doesn't offer", async () => {
@@ -1474,7 +1498,7 @@ describe('SessionManager', () => {
       manager = makeManager()
       state.script = async () => 'end_turn'
       await manager.send(session.id, 'again', null)
-      expect(state.configChanges).toEqual([`${session.acpSessionId}:effort=high`])
+      expect(state.configChanges).toEqual([`${session.acpSessionId}:effort=medium`, `${session.acpSessionId}:effort=high`])
     })
   })
 

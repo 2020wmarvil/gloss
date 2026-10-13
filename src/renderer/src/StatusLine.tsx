@@ -218,7 +218,8 @@ export function StatusLine(props: Props): React.JSX.Element {
         <ChoicePicker
           label={`${currentEffort?.name ?? effort.current} effort`}
           title="Effort"
-          choice={effort}
+          // Gloss replaces Claude's "default" with a real level, so it isn't offered (unless that failed).
+          choice={{ ...effort, options: effort.options.filter((o) => o.value !== 'default' || o.value === effort.current) }}
           onPick={pick('effort')}
         />
       )}
