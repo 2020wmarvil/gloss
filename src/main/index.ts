@@ -11,11 +11,13 @@ import { gitStatus, pullRequest } from './git'
 import { SessionManager } from './sessions'
 import { patchArg, SettingsFile } from './settings'
 import { runInTerminal } from './terminal'
+import { UsageSource } from './usage'
 
 let mainWindow: BrowserWindow | undefined
 let store: Store | undefined
 let sessions: SessionManager | undefined
 let settings: SettingsFile | undefined
+const usage = new UsageSource()
 
 function isExternalUrl(url: string): boolean {
   try {
@@ -229,15 +231,19 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
     manager.createSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
   )
-  ipcMain.handle(IPC.sessionsImport, (_e, cwd: unknown, agentId: unknown, acpSessionId: unknown, title: unknown) =>
-    manager.importSession(
-      folderArg(cwd, 'cwd'),
-      str(agentId, 'agentId'),
-      str(acpSessionId, 'acpSessionId'),
-      str(title, 'title')
-    )
+  ipcMain.handle(
+    IPC.sessionsImport,
+    (_e, cwd: unknown, agentId: unknown, acpSessionId: unknown, title: unknown, listedAt: unknown) =>
+      manager.importSession(
+        folderArg(cwd, 'cwd'),
+        str(agentId, 'agentId'),
+        str(acpSessionId, 'acpSessionId'),
+        str(title, 'title'),
+        typeof listedAt === 'string' ? listedAt : undefined
+      )
   )
   ipcMain.handle(IPC.sessionsOpen, (_e, id: unknown) => manager.openSession(str(id, 'id')))
+  ipcMain.handle(IPC.sessionsRefresh, (_e, id: unknown) => manager.refreshSession(str(id, 'id')))
   ipcMain.handle(IPC.sessionsRename, (_e, id: unknown, title: unknown) =>
     manager.renameSession(str(id, 'id'), str(title, 'title'))
   )
@@ -265,6 +271,11 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     if (!session) throw new Error(`Unknown session ${String(id)}`)
     const error = await shell.openPath(session.cwd)
     return error === '' ? null : error
+  })
+  ipcMain.handle(IPC.sessionsPlanUsage, (_e, id: unknown) => {
+    const session = store!.getSession(str(id, 'id'))
+    if (!session) throw new Error(`Unknown session ${String(id)}`)
+    return usage.get(session.agentId, session.cwd)
   })
   ipcMain.handle(IPC.gitStatus, (_e, cwd: unknown) => gitStatus(str(cwd, 'cwd')))
   ipcMain.handle(IPC.gitPullRequest, (_e, cwd: unknown) => pullRequest(str(cwd, 'cwd')))
@@ -312,7 +323,7 @@ app.whenReady().then(() => {
   const settingsFile = new SettingsFile({
     dir: dataDir,
     // The cheap dev model is on by default in development, off in packaged builds.
-    defaults: { devModel: !app.isPackaged, theme: 'system' },
+    defaults: { devModel: !app.isPackaged, theme: 'system', sessionOrder: 'created' },
     onChange(next, prev) {
       emit({ type: 'settings', state: next })
       // Agents restart with the new model; busy ones once their turn ends.

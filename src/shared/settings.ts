@@ -4,11 +4,15 @@
 
 export type ThemeSetting = 'system' | 'light' | 'dark'
 
+export type SessionOrder = 'created' | 'activity'
+
 export type GlobalSettings = {
   /** Spawn agents with ANTHROPIC_MODEL=haiku so development prompts are cheap. */
   devModel: boolean
   /** Light, dark, or whatever the system uses. */
   theme: ThemeSetting
+  /** How the sidebar sorts a project's sessions. */
+  sessionOrder: SessionOrder
 }
 
 /** Settings for one project folder, under `projects` keyed by its path. None exist yet (M7+). */
@@ -43,6 +47,18 @@ export const SETTING_FIELDS: readonly SettingField[] = [
       { value: 'system', label: 'System' },
       { value: 'light', label: 'Light' },
       { value: 'dark', label: 'Dark' }
+    ]
+  },
+  {
+    key: 'sessionOrder',
+    scope: 'global',
+    type: 'enum',
+    label: 'Session order',
+    description:
+      "How the sidebar sorts a project's sessions. The agent doesn't say when a session started outside Gloss began, so until it is opened here it counts from its last activity.",
+    options: [
+      { value: 'created', label: 'Newest first' },
+      { value: 'activity', label: 'Recent activity' }
     ]
   }
 ]

@@ -55,6 +55,15 @@ describe('Composer drafts', () => {
     expect(mount('s1').value).toBe('half a thought')
   })
 
+  it('puts the caret back where it was', () => {
+    const textarea = mount('s4')
+    type(textarea, 'hello world')
+    act(() => textarea.setSelectionRange(2, 5))
+    unmount()
+    const again = mount('s4')
+    expect([again.selectionStart, again.selectionEnd]).toEqual([2, 5])
+  })
+
   it('forgets the draft once it is cleared', () => {
     type(mount('s3'), 'draft')
     type(document.querySelector('textarea')!, '')

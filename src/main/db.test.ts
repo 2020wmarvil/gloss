@@ -35,4 +35,38 @@ describe('Store', () => {
     expect(store.updateSession('s', { title: 'New', acpSessionId: 'b' })).toMatchObject({ title: 'New', acpSessionId: 'b' })
     store.close()
   })
+
+  it('lists sessions by their newest message, else when they were made', () => {
+    const store = new Store(':memory:')
+    for (const [id, createdAt] of [['old', 1], ['new', 5], ['busy', 2]] as const) {
+      store.insertSession({ id, agentId: 'claude', acpSessionId: id, cwd: '/w', title: id, createdAt })
+    }
+    store.insertMessage({ id: 'm', sessionId: 'busy', seq: 0, role: 'user', text: 'hi', threadId: null, createdAt: 9 })
+    expect(store.listSessions().map((s) => [s.id, s.activeAt])).toEqual([
+      ['busy', 9],
+      ['new', 5],
+      ['old', 1]
+    ])
+    store.close()
+  })
+
+  it('resequences the log, inserting new entries where they belong', () => {
+    const store = new Store(':memory:')
+    store.insertSession({ id: 's', agentId: 'claude', acpSessionId: 'a', cwd: '/w', title: 'w', createdAt: 1 })
+    store.insertMessage({ id: 'm0', sessionId: 's', seq: 0, role: 'user', text: 'a', threadId: null })
+    store.insertMessage({ id: 'm1', sessionId: 's', seq: 1, role: 'agent', text: 'b', threadId: null })
+    store.transaction(() =>
+      store.resequence('s', [
+        { kind: 'message', id: 'm0' },
+        { insert: (seq) => store.insertMessage({ id: 'x', sessionId: 's', seq, role: 'user', text: 'new', threadId: null }) },
+        { kind: 'message', id: 'm1' }
+      ])
+    )
+    expect(store.listMessages('s').map((m) => [m.seq, m.id])).toEqual([
+      [0, 'm0'],
+      [1, 'x'],
+      [2, 'm1']
+    ])
+    store.close()
+  })
 })

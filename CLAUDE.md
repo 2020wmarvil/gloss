@@ -59,6 +59,21 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - `gh` 2.74: `gh pr view --json number,title,state,isDraft,url,statusCheckRollup,reviewDecision` with no argument finds the current branch's PR, merged ones included (so Gloss compares `headRefOid` with `HEAD` for those). `state` is `OPEN`/`MERGED`/`CLOSED`; `reviewDecision` is `""` with none. `statusCheckRollup` mixes `CheckRun`s (`status`, `conclusion`) and `StatusContext`s (`state`).
 - `git for-each-ref --format=%(upstream:remotename)%00%(upstream:remoteref) refs/heads/<b>` prints the upstream as `origin\0refs/heads/dev`.
 
+## Verified external APIs (shared sessions)
+- The Claude adapter (0.89) advertises `sessionCapabilities.close`; SDK 1.8.0 has `methods.agent.session.close`. A `session/load` of a session the adapter already holds re-reads the transcript and replays it, but keeps the running Claude process when the params are unchanged, so the model doesn't see turns added elsewhere. `session/close` then `session/load` starts a fresh process that does (tested with `claude -p --resume` turns in between).
+- `messageId` is stable between live and replay: agent messages use the API message id, user messages the transcript entry's uuid. Replay chunks carry no timestamps or `_meta`.
+- An embedded text `resource` replays as text chunks of the user message: `[@name](uri)`, then `\n<context ref="uri">\n…\n</context>`.
+- After `/compact`, the replay starts at Claude Code's summary, a user message beginning "This session is being continued from a previous conversation"; nothing before it is replayed.
+- A cancelled turn replays with its partial answer (more text than was streamed before the cancel) and then a user message `[Request interrupted by user]`. A steered message replays as a user message where it was injected, between the two parts of the answer.
+- `session/list` `updatedAt` doesn't move after a turn ends (checked 12 s later), but `session/load` changes it. Listing takes about 20 ms; `session/close` + `session/load` about 0.6 s.
+- Electron honors `--user-data-dir=<folder>` for `app.getPath('userData')`. Pass it in dev with `npm run dev -- -- --user-data-dir=<folder>` (electron-vite forwards what follows its own `--`). `npm run dev` also writes `out/main` and `out/preload`, which a running built Gloss loads on restart.
+- A shell inside a Gloss session inherits `ELECTRON_RUN_AS_NODE=1` (set for the adapter): unset it to launch Electron from there.
+
+## Verified external APIs (usage popup)
+
+- `@anthropic-ai/claude-agent-sdk@0.3.293` exposes `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })`. It works on a query whose async prompt input never yields, with `persistSession: false`, including when session usage is 100%. Close and abort the query after the request. Verified through Electron and the built app's preload/IPC path; a scratch project acquired no transcript and the app recorded no messages.
+- Utilization from this request is already a percentage (100 means exhausted), unlike the adapter's rate-limit events. Context must still come from the real session's ACP updates. The SDK is a pinned direct dependency because this method is experimental.
+
 ## Git
 - Work on `dev`; open one PR per milestone against `main`.
 

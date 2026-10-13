@@ -10,6 +10,7 @@ import type {
   Message,
   MessageQueue,
   Plan,
+  PlanUsage,
   Project,
   Session,
   SessionLive,
@@ -73,9 +74,12 @@ export type AuthResult = { ok: true } | { ok: false; error: string }
 
 export type GlossEvent =
   | { type: 'session'; session: Session }
-  | { type: 'sessionDeleted'; sessionId: string }
+  /** `deletedOutside`: the agent no longer had it, so Gloss deleted it too (SPEC → Shared sessions). */
+  | { type: 'sessionDeleted'; sessionId: string; deletedOutside?: { title: string } }
   /** `/clear` emptied the session: its messages, tool calls and threads are gone. */
   | { type: 'sessionCleared'; sessionId: string }
+  /** The log was synced from the agent's copy: reload it (SPEC → Shared sessions). */
+  | { type: 'sessionSynced'; sessionId: string }
   | { type: 'live'; sessionId: string; live: SessionLive }
   /** The user clicked a notification: show this session (and thread). */
   | { type: 'reveal'; sessionId: string; threadId: string | null }
@@ -111,7 +115,7 @@ export type GlossApi = {
     list(): Promise<Project[]>
     /** Native folder picker; adds the folder as a project. Resolves to null if cancelled. */
     open(): Promise<Project | null>
-    /** The agent's own sessions in the folder that Gloss hasn't imported. Empty if the agent can't list them. */
+    /** The agent's own sessions in the folder that Gloss has no record of. Empty if the agent can't list them. */
     agentSessions(path: string, agentId: string): Promise<AgentSession[]>
     /** Deletes the project and its sessions (the agent's copies too). Resolves to a warning if some agent copies couldn't be deleted. */
     delete(path: string): Promise<string | null>
@@ -120,10 +124,15 @@ export type GlossApi = {
     list(): Promise<Session[]>
     /** Starts an agent session in `cwd`. Rejects if the agent can't start one. */
     create(cwd: string, agentId: string): Promise<Session>
-    /** Imports one of the agent's sessions: its history becomes the main thread. */
-    import(cwd: string, agentId: string, acpSessionId: string, title: string): Promise<Session>
+    /**
+     * Opens one of the agent's sessions in Gloss: its history becomes the log, placed in threads by its tags.
+     * `listedAt` (the agent's `updatedAt` in its listing) stands in for when it was made, so it keeps its place.
+     */
+    import(cwd: string, agentId: string, acpSessionId: string, title: string, listedAt?: string): Promise<Session>
     /** Its log and threads. Also resumes the session on the agent in the background, for the status line. */
     open(id: string): Promise<SessionView>
+    /** Reloads the session if the agent's copy changed elsewhere (SPEC → Shared sessions). */
+    refresh(id: string): Promise<void>
     rename(id: string, title: string): Promise<Session>
     /** Deletes it from Gloss and the agent. Resolves to a warning if the agent's copy couldn't be deleted. */
     delete(id: string): Promise<string | null>
@@ -134,6 +143,8 @@ export type GlossApi = {
     saveMarkdown(id: string, threadId: string | null): Promise<boolean>
     /** Opens the session's folder in the system file manager. Resolves to an error message, or null. */
     openFolder(id: string): Promise<string | null>
+    /** Plan usage from the session's agent, for the usage popup. Null if the agent can't be asked. */
+    planUsage(id: string): Promise<PlanUsage | null>
   }
   git: {
     /** The folder's branch and whether it has uncommitted changes; null outside a repo. */
@@ -189,12 +200,14 @@ export const IPC = {
   sessionsCreate: 'gloss:sessions:create',
   sessionsImport: 'gloss:sessions:import',
   sessionsOpen: 'gloss:sessions:open',
+  sessionsRefresh: 'gloss:sessions:refresh',
   sessionsRename: 'gloss:sessions:rename',
   sessionsDelete: 'gloss:sessions:delete',
   sessionsSetModel: 'gloss:sessions:setModel',
   sessionsCopyMarkdown: 'gloss:sessions:copyMarkdown',
   sessionsSaveMarkdown: 'gloss:sessions:saveMarkdown',
   sessionsOpenFolder: 'gloss:sessions:openFolder',
+  sessionsPlanUsage: 'gloss:sessions:planUsage',
   gitStatus: 'gloss:git:status',
   gitPullRequest: 'gloss:git:pullRequest',
   threadsCreate: 'gloss:threads:create',

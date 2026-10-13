@@ -5,10 +5,17 @@ export type Session = {
   agentId: string
   acpSessionId: string
   cwd: string
+  /** Renamed in Gloss (`titleSet`), else the agent's title, else the first message or the folder name. */
   title: string
+  /** The user renamed it in Gloss: the agent's title doesn't replace it. */
+  titleSet?: true
   createdAt: number
+  /** The newest message's time, else `createdAt`. Sorts the session list. */
+  activeAt?: number
   /** The model picked for this session in Gloss (a model config option value), re-applied when it is resumed. */
   model?: string
+  /** The agent's `updatedAt` for the session when Gloss last synced it (SPEC → Shared sessions). */
+  syncedAt?: string
 }
 
 /** An image or file sent with a user message (SPEC → Attachments). */
@@ -106,7 +113,7 @@ export type AgentInfo = { id: string; name: string }
 /** A folder Gloss groups sessions by. */
 export type Project = { path: string; name: string }
 
-/** One of the agent's own sessions for a folder that Gloss hasn't imported. */
+/** One of the agent's own sessions for a folder that Gloss has no record of yet. */
 export type AgentSession = { acpSessionId: string; title: string; updatedAt?: string }
 
 export type ModelOption = { value: string; name: string; description?: string }
@@ -122,6 +129,18 @@ export type RateLimit = {
   utilization?: number
   /** When the window resets, ms since the epoch. */
   resetsAt?: number
+}
+
+/** Plan usage the usage popup asks the agent for (Claude Code's `/usage` data). */
+export type PlanUsage = {
+  /** The subscription, e.g. "Pro"; null without one. */
+  plan: string | null
+  /** False when plan limits don't apply (an API key, Bedrock, Vertex). */
+  available: boolean
+  /** Each window with a known percentage: "Session limit", "Weekly · all models", per model. */
+  limits: { label: string; percent: number; resetsAt: number | null }[]
+  /** Usage past the plan limits, when turned on. */
+  extraUsage: { percent: number | null } | null
 }
 
 /** What the agent reports about a session while it is attached: shown in the status line. */

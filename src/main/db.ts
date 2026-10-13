@@ -1,4 +1,5 @@
-// SQLite persistence (node:sqlite). The app's DB is always the display state.
+// SQLite persistence (node:sqlite). For agents that share their sessions, the log is a
+// cache of the agent's own copy; threads and the rest are Gloss's own (SPEC → Shared sessions).
 import { DatabaseSync } from 'node:sqlite'
 import type { Anchor, Attachment, Message, Plan, PlanEntry, Session, Thread, ToolCall } from '../shared/types'
 
@@ -74,6 +75,12 @@ const MIGRATIONS = [
     entries    TEXT NOT NULL
   );
   CREATE INDEX plans_by_session ON plans (session_id);
+  `,
+  // Sessions made before shared sessions keep their titles: the agent's doesn't replace them.
+  `
+  ALTER TABLE sessions ADD COLUMN title_set INTEGER;
+  ALTER TABLE sessions ADD COLUMN synced_at TEXT;
+  UPDATE sessions SET title_set = 1;
   `
 ]
 
@@ -86,10 +93,16 @@ function toSession(r: Row): Session {
     acpSessionId: r.acp_session_id as string,
     cwd: r.cwd as string,
     title: r.title as string,
+    ...(r.title_set ? { titleSet: true as const } : {}),
     createdAt: Number(r.created_at),
-    ...(r.model != null ? { model: r.model as string } : {})
+    activeAt: r.active_at != null ? Number(r.active_at) : Number(r.created_at),
+    ...(r.model != null ? { model: r.model as string } : {}),
+    ...(r.synced_at != null ? { syncedAt: r.synced_at as string } : {})
   }
 }
+
+/** Sessions with the time of their newest message. */
+const SESSIONS = `SELECT s.*, (SELECT MAX(m.created_at) FROM messages m WHERE m.session_id = s.id) AS active_at FROM sessions s`
 
 function toMessage(r: Row): Message {
   const m: Message = {
@@ -173,17 +186,31 @@ export class Store {
     this.db.close()
   }
 
+  /** Runs `fn` in one transaction. */
+  transaction<T>(fn: () => T): T {
+    this.db.exec('BEGIN')
+    try {
+      const result = fn()
+      this.db.exec('COMMIT')
+      return result
+    } catch (err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    }
+  }
+
   // Sessions
 
+  /** Most recent activity first. */
   listSessions(): Session[] {
     return this.db
-      .prepare('SELECT * FROM sessions ORDER BY created_at DESC')
+      .prepare(`${SESSIONS} ORDER BY COALESCE(active_at, s.created_at) DESC, s.created_at DESC`)
       .all()
       .map((r) => toSession(r as Row))
   }
 
   getSession(id: string): Session | undefined {
-    const r = this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id)
+    const r = this.db.prepare(`${SESSIONS} WHERE s.id = ?`).get(id)
     return r ? toSession(r as Row) : undefined
   }
 
@@ -197,7 +224,7 @@ export class Store {
 
   getSessionByAcpId(agentId: string, acpSessionId: string): Session | undefined {
     const r = this.db
-      .prepare('SELECT * FROM sessions WHERE agent_id = ? AND acp_session_id = ?')
+      .prepare(`${SESSIONS} WHERE s.agent_id = ? AND s.acp_session_id = ?`)
       .get(agentId, acpSessionId)
     return r ? toSession(r as Row) : undefined
   }
@@ -207,7 +234,11 @@ export class Store {
     this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
   }
 
-  updateSession(id: string, patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'model'>>): Session {
+  /** `syncedAt: null` forgets it. */
+  updateSession(
+    id: string,
+    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model'>> & { syncedAt?: string | null }
+  ): Session {
     if (patch.acpSessionId !== undefined) {
       this.db
         .prepare('UPDATE sessions SET acp_session_id = ? WHERE id = ?')
@@ -216,8 +247,14 @@ export class Store {
     if (patch.title !== undefined) {
       this.db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(patch.title, id)
     }
+    if (patch.titleSet !== undefined) {
+      this.db.prepare('UPDATE sessions SET title_set = ? WHERE id = ?').run(patch.titleSet ? 1 : null, id)
+    }
     if (patch.model !== undefined) {
       this.db.prepare('UPDATE sessions SET model = ? WHERE id = ?').run(patch.model, id)
+    }
+    if (patch.syncedAt !== undefined) {
+      this.db.prepare('UPDATE sessions SET synced_at = ? WHERE id = ?').run(patch.syncedAt, id)
     }
     const s = this.getSession(id)
     if (!s) throw new Error(`No session ${id}`)
@@ -270,16 +307,34 @@ export class Store {
     this.db.prepare('UPDATE messages SET text = ? WHERE id = ?').run(text, id)
   }
 
+  /**
+   * Gives the session's log the order of `entries` (seq 0, 1, …). Every message
+   * of the session must be in it. Entries not stored yet are inserted by `insert`
+   * once their seq is free.
+   */
+  resequence(
+    sessionId: string,
+    entries: ({ kind: 'message' | 'toolCall' | 'plan'; id: string } | { insert(seq: number): void })[]
+  ): void {
+    // Out of the way first: messages' seqs are unique.
+    this.db.prepare('UPDATE messages SET seq = -1 - seq WHERE session_id = ?').run(sessionId)
+    const message = this.db.prepare('UPDATE messages SET seq = ? WHERE id = ?')
+    const toolCall = this.db.prepare('UPDATE tool_calls SET message_seq = ? WHERE session_id = ? AND id = ?')
+    const plan = this.db.prepare('UPDATE plans SET seq = ? WHERE id = ?')
+    entries.forEach((e, seq) => {
+      if ('insert' in e) e.insert(seq)
+      else if (e.kind === 'message') message.run(seq, e.id)
+      else if (e.kind === 'toolCall') toolCall.run(seq, sessionId, e.id)
+      else plan.run(seq, e.id)
+    })
+  }
+
   /** Removes the session's messages, tool calls, plans and threads (to rebuild them). */
   clearLog(sessionId: string): void {
     this.db.prepare('DELETE FROM plans WHERE session_id = ?').run(sessionId)
     this.db.prepare('DELETE FROM threads WHERE session_id = ?').run(sessionId)
     this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId)
     this.db.prepare('DELETE FROM tool_calls WHERE session_id = ?').run(sessionId)
-  }
-
-  updateMessageAttachments(id: string, attachments: Attachment[]): void {
-    this.db.prepare('UPDATE messages SET attachments = ? WHERE id = ?').run(JSON.stringify(attachments), id)
   }
 
   listMessages(sessionId: string): Message[] {
@@ -337,6 +392,10 @@ export class Store {
         t.status,
         t.content === undefined ? null : JSON.stringify(t.content)
       )
+  }
+
+  deleteToolCall(sessionId: string, id: string): void {
+    this.db.prepare('DELETE FROM tool_calls WHERE session_id = ? AND id = ?').run(sessionId, id)
   }
 
   listToolCalls(sessionId: string): ToolCall[] {

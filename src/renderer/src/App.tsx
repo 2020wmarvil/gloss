@@ -66,6 +66,11 @@ const NO_LIVE: SessionLive = {
 
 const NO_QUEUE: MessageQueue = { items: [], paused: false }
 
+/** Most recent activity first, as the main process lists them. */
+function byActivity(list: Session[]): Session[] {
+  return list.sort((a, b) => (b.activeAt ?? b.createdAt) - (a.activeAt ?? a.createdAt) || b.createdAt - a.createdAt)
+}
+
 function upsert<T extends { id: string }>(list: T[], item: T): T[] {
   const i = list.findIndex((x) => x.id === item.id)
   if (i === -1) return [...list, item]
@@ -91,7 +96,7 @@ export function App(): React.JSX.Element {
   const [projects, setProjects] = useState<Project[]>([])
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
-  /** Project path → the agent's sessions there not yet in Gloss. */
+  /** Project path → the agent's sessions there that Gloss has no record of. */
   const [agentSessions, setAgentSessions] = useState<Record<string, AgentSession[]>>({})
   const [agentSessionsError, setAgentSessionsError] = useState<string | null>(null)
   const [importing, setImporting] = useState<string | null>(null)
@@ -249,16 +254,23 @@ export function App(): React.JSX.Element {
     (event: GlossEvent) => {
       switch (event.type) {
         case 'session':
-          setSessions((list) => upsert(list, event.session).sort((a, b) => b.createdAt - a.createdAt))
+          setSessions((list) => byActivity(upsert(list, event.session)))
           setOpen((o) => (o && o.session.id === event.session.id ? { ...o, session: event.session } : o))
           break
         case 'sessionDeleted':
           setSessions((list) => list.filter((s) => s.id !== event.sessionId))
+          if (event.deletedOutside) {
+            setSidebarError(`“${event.deletedOutside.title}” was deleted outside Gloss, so it was removed here too.`)
+          }
           if (openId.current === event.sessionId) {
             openId.current = null
             setOpen(null)
             setPanel(null)
           }
+          break
+        case 'sessionSynced':
+          // The log changed under the open session (turns taken elsewhere): show it again.
+          if (openId.current === event.sessionId) void selectSession(event.sessionId)
           break
         case 'sessionCleared':
           setNotices((all) => ({ ...all, [event.sessionId]: [] }))
@@ -277,11 +289,20 @@ export function App(): React.JSX.Element {
         case 'reveal':
           void selectSession(event.sessionId, event.threadId)
           break
-        case 'message':
+        case 'message': {
+          const { sessionId: of, createdAt } = event.message
+          if (createdAt !== undefined) {
+            setSessions((list) =>
+              list.some((s) => s.id === of && (s.activeAt ?? s.createdAt) < createdAt)
+                ? byActivity(list.map((s) => (s.id === of ? { ...s, activeAt: createdAt } : s)))
+                : list
+            )
+          }
           if (event.message.sessionId !== openId.current) break
           lastSeq.current = Math.max(lastSeq.current, event.message.seq)
           setOpen((o) => (o ? { ...o, messages: upsert(o.messages, event.message) } : o))
           break
+        }
         case 'messageDeleted':
           if (event.sessionId !== openId.current) break
           setOpen((o) => (o ? { ...o, messages: o.messages.filter((m) => m.id !== event.messageId) } : o))
@@ -367,6 +388,16 @@ export function App(): React.JSX.Element {
     if (projectPath) void loadAgentSessions(projectPath)
   }, [projectPath, loadAgentSessions])
 
+  // Back in the window: pick up what was done in the agent's CLI meanwhile (SPEC → Shared sessions).
+  useEffect(() => {
+    const onFocus = (): void => {
+      if (openId.current) void window.gloss.sessions.refresh(openId.current)
+      if (projectPath) void loadAgentSessions(projectPath)
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [projectPath, loadAgentSessions])
+
   async function newSession(): Promise<void> {
     if (!projectPath) return openProject()
     if (!agent) return
@@ -396,7 +427,7 @@ export function App(): React.JSX.Element {
     setSidebarError(null)
     setImporting(a.acpSessionId)
     try {
-      const session = await window.gloss.sessions.import(projectPath, agent.id, a.acpSessionId, a.title)
+      const session = await window.gloss.sessions.import(projectPath, agent.id, a.acpSessionId, a.title, a.updatedAt)
       setAgentSessions((all) => ({
         ...all,
         [projectPath]: (all[projectPath] ?? []).filter((x) => x.acpSessionId !== a.acpSessionId)
@@ -606,6 +637,7 @@ export function App(): React.JSX.Element {
         openId={sessionId ?? null}
         running={running}
         agentSessions={projectPath ? (agentSessions[projectPath] ?? null) : []}
+        order={settings?.global.sessionOrder ?? 'created'}
         agentSessionsError={agentSessionsError}
         importing={importing}
         creating={creating}

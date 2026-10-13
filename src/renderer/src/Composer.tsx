@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
 
@@ -35,8 +35,8 @@ type Props = {
 
 export const FOCUS_COMPOSER = 'gloss:focus-composer'
 
-/** Unsent text and attachments by draftKey, kept while Gloss runs (SPEC → Composer). */
-const drafts = new Map<string, { text: string; attachments: Attachment[] }>()
+/** Unsent text, attachments and where the caret was, by draftKey, kept while Gloss runs (SPEC → Composer). */
+const drafts = new Map<string, { text: string; attachments: Attachment[]; selection?: [number, number] }>()
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_FILE_BYTES = 1024 * 1024
@@ -90,6 +90,17 @@ export function Composer({
   const [dismissed, setDismissed] = useState<string | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+
+  // The caret goes back where it was when the user switched away (before the focus below).
+  useLayoutEffect(() => {
+    const el = ref.current
+    const saved = drafts.get(draftKey)?.selection
+    if (el && saved) el.setSelectionRange(...saved)
+    return () => {
+      const draft = drafts.get(draftKey)
+      if (el && draft) draft.selection = [el.selectionStart, el.selectionEnd]
+    }
+  }, [draftKey])
 
   useEffect(() => {
     if (autoFocus && !running) ref.current?.focus()

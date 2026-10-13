@@ -1,5 +1,6 @@
 // Owns agent connections, session attachment, turns and sign-in.
-// The agent sees one linear ACP session per Gloss session; the DB is the display state.
+// The agent sees one linear ACP session per Gloss session. When the agent can load
+// its sessions, its copy is the source of truth for the log (SPEC → Shared sessions).
 import { randomUUID } from 'node:crypto'
 import type * as acp from '@agentclientprotocol/sdk'
 import { pathToFileURL } from 'node:url'
@@ -18,13 +19,15 @@ import type {
   Session,
   SessionLive,
   SlashCommand,
-  Thread
+  Thread,
+  ToolCall
 } from '../shared/types'
 import { wireText } from '../shared/wire'
 import { AgentConnection, isAuthRequired, isResourceNotFound, type AgentHandlers, type SteerOutcome } from './acp'
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
 import { samePath } from './settings'
+import { isLogUpdate, matchReplay, parseReplay, placeUserMessage, type CachedEntry } from './sync'
 import type { TerminalRunner } from './terminal'
 
 export type SessionManagerDeps = {
@@ -41,30 +44,29 @@ export type SessionManagerDeps = {
   now?(): number
 }
 
-/** Where the agent's updates are being written: a turn, or an import's history replay. */
-type Recorder = {
+type Turn = {
   threadId: string | null
   /** The agent message that text chunks currently append to. */
   agentMessage?: Message
-  /** Import only: the user message that user chunks append to. */
-  userMessage?: Message
   /** A tool call or a new plan arrived since the last text; the next text starts a new message below it. */
   afterToolCall: boolean
-  /** The plan reported in this turn (or, importing, since the last user message); later reports replace its entries. */
+  /** The plan reported in this turn; later reports replace its entries. */
   plan?: Plan
+  cancelled: boolean
+  /** The user message that starts the turn, until it is sent: the agent's copy doesn't have it yet. */
+  unsent?: string
 }
-
-type Turn = Recorder & { cancelled: boolean }
 
 type SessionRuntime = {
   /** The connection the session's ACP session is live on. */
   attachedTo?: AgentConnection
   /** An attach in progress, so concurrent callers share it. */
   attaching?: { conn: AgentConnection; promise: Promise<string> }
-  /** session/load is replaying history; ignore its updates unless importing. */
+  /** session/load is replaying history, collected in `replay` and then synced. */
   loading: boolean
-  /** The session is being imported: session/load's replay becomes its history. */
-  importing?: Recorder
+  replay?: acp.SessionUpdate[]
+  /** The session is being imported: a failed load removes it instead of starting a new agent session. */
+  importing?: boolean
   turn?: Turn
   /** Messages sent while a turn was running (SPEC → Queue). */
   queue: MessageQueue
@@ -105,6 +107,13 @@ const TITLE_LENGTH = 60
 export class SignInCancelledError extends Error {
   constructor() {
     super('Sign-in was cancelled.')
+  }
+}
+
+/** The agent no longer has the session (it was deleted outside Gloss), so Gloss deleted it too. */
+export class SessionGoneError extends Error {
+  constructor() {
+    super('The agent no longer has this session (it was deleted outside Gloss), so it was removed.')
   }
 }
 
@@ -350,22 +359,34 @@ export class SessionManager {
     this.deps.store.addProject(cwd, this.now())
     this.register(session.acpSessionId, session.id)
     this.runtime(session.id).attachedTo = conn
-    this.deps.emit({ type: 'session', session })
+    const created = this.session(session.id)
+    this.deps.emit({ type: 'session', session: created })
     await this.attached(session.id, conn, res.configOptions, permissions)
-    return session
+    return created
   }
 
-  /** Imports one of the agent's sessions: a Gloss session whose main thread is built from the session/load replay. */
-  async importSession(cwd: string, agentId: string, acpSessionId: string, title: string): Promise<Session> {
+  /**
+   * Imports one of the agent's sessions: a Gloss session whose log is built from the
+   * session/load replay. The agent doesn't say when it was made, so `listedAt` (its
+   * updatedAt in the listing) stands in, keeping its place in the session list.
+   */
+  async importSession(
+    cwd: string,
+    agentId: string,
+    acpSessionId: string,
+    title: string,
+    listedAt?: string
+  ): Promise<Session> {
     const existing = this.deps.store.getSessionByAcpId(agentId, acpSessionId)
     if (existing) return existing
+    const listed = listedAt ? Date.parse(listedAt) : NaN
     const session: Session = {
       id: randomUUID(),
       agentId,
       acpSessionId,
       cwd,
       title: title.trim() || folderName(cwd),
-      createdAt: this.now()
+      createdAt: Number.isFinite(listed) ? listed : this.now()
     }
     const { store } = this.deps
     store.insertSession(session)
@@ -378,9 +399,8 @@ export class SessionManager {
             `${this.deps.getAgentConfig(agentId).name} can't resume its sessions, so they can't be opened here.`
           )
         }
-        // A retry after sign-in replays from the start.
-        store.clearLog(session.id)
-        rt.importing = { threadId: null, afterToolCall: false }
+        // The load's replay is synced into the empty log.
+        rt.importing = true
         try {
           await this.attach(session.id, conn)
         } catch (err) {
@@ -402,14 +422,17 @@ export class SessionManager {
       rt.importing = undefined
     }
     store.addProject(cwd, this.now())
-    this.deps.emit({ type: 'session', session })
-    return session
+    const imported = this.session(session.id)
+    this.deps.emit({ type: 'session', session: imported })
+    return imported
   }
 
+  /** Its log and threads. Resumes it on the agent in the background, or checks it for changes made elsewhere. */
   openSession(id: string): SessionView {
     const session = this.session(id)
     const rt = this.runtime(id)
     if (!rt.attachedTo) void this.resume(id)
+    else void this.refreshSession(id)
     return {
       session,
       messages: this.deps.store.listMessages(id),
@@ -428,8 +451,28 @@ export class SessionManager {
     try {
       await this.withAgent(session.agentId, (conn) => this.attach(id, conn))
     } catch (err) {
-      if (err instanceof SignInCancelledError || !this.deps.store.getSession(id)) return
+      if (this.disposed || err instanceof SignInCancelledError || err instanceof SessionGoneError) return
+      if (!this.deps.store.getSession(id)) return
       this.notice(id, null, `Couldn't resume the session on the agent: ${errorMessage(err)}`)
+    }
+  }
+
+  /**
+   * Reloads a session that is running on the agent if its saved history changed
+   * elsewhere (SPEC → Shared sessions). For opening it and the window regaining focus.
+   */
+  async refreshSession(id: string): Promise<void> {
+    const rt = this.runtimes.get(id)
+    // A load in progress gets the latest history; then check again.
+    await rt?.attaching?.promise.catch(() => {})
+    const conn = rt?.attachedTo
+    if (!rt || !conn || rt.turn || rt.attaching || this.disposed) return
+    try {
+      await this.ensureFresh(id, conn, () => !rt.turn)
+    } catch (err) {
+      if (this.disposed || err instanceof SignInCancelledError || err instanceof SessionGoneError) return
+      if (!this.deps.store.getSession(id)) return
+      this.notice(id, null, `Couldn't reload the session from the agent: ${errorMessage(err)}`)
     }
   }
 
@@ -437,7 +480,7 @@ export class SessionManager {
     this.session(id)
     const trimmed = title.replace(/\s+/g, ' ').trim()
     if (!trimmed) throw new Error('A session needs a title.')
-    const session = this.deps.store.updateSession(id, { title: trimmed.slice(0, 200) })
+    const session = this.deps.store.updateSession(id, { title: trimmed.slice(0, 200), titleSet: true })
     this.deps.emit({ type: 'session', session })
     return session
   }
@@ -500,7 +543,7 @@ export class SessionManager {
     const hadMessages = this.deps.store.countUserMessages(id) > 0
     this.byAcpId.delete(old)
     this.deps.store.clearLog(id)
-    session = this.deps.store.updateSession(id, { acpSessionId: res.sessionId })
+    session = this.deps.store.updateSession(id, { acpSessionId: res.sessionId, syncedAt: null })
     this.register(session.acpSessionId, id)
     rt.attachedTo = conn
     this.setQueue(id, { items: [], paused: false })
@@ -573,7 +616,10 @@ export class SessionManager {
     return warnings.length > 0 ? warnings.join('\n') : null
   }
 
-  /** The agent's sessions in `cwd` that Gloss hasn't imported (session/list, when advertised). */
+  /**
+   * The agent's sessions in `cwd` that Gloss has no record of (session/list, when
+   * advertised). Gloss's own sessions there take the agent's title unless renamed in Gloss.
+   */
   async agentSessions(cwd: string, agentId: string): Promise<AgentSession[]> {
     const deleted = new Set(this.deps.store.listDeletedAgentSessions(agentId))
     const listed = await this.withAgent(agentId, async (conn) => {
@@ -586,13 +632,21 @@ export class SessionManager {
       }
       return sessions
     })
-    const known = new Set([
-      ...deleted,
-      ...this.deps.store
+    const { store } = this.deps
+    const mine = new Map(
+      store
         .listSessions()
         .filter((s) => s.agentId === agentId)
-        .map((s) => s.acpSessionId)
-    ])
+        .map((s) => [s.acpSessionId, s])
+    )
+    for (const s of listed) {
+      const session = mine.get(s.sessionId)
+      const title = s.title?.replace(/\s+/g, ' ').trim().slice(0, 200)
+      if (session && !session.titleSet && title && title !== session.title) {
+        this.deps.emit({ type: 'session', session: store.updateSession(session.id, { title }) })
+      }
+    }
+    const known = new Set([...deleted, ...mine.keys()])
     return listed
       .filter((s) => !known.has(s.sessionId))
       .map((s) => ({
@@ -651,45 +705,250 @@ export class SessionManager {
     return promise
   }
 
-  /** session/load, or a new session if that fails (except when importing). */
+  /**
+   * session/load, syncing the log from its replay (SPEC → Shared sessions). An
+   * agent that can't load gets a new session, with a notice that it lost context.
+   */
   private async doAttach(sessionId: string, conn: AgentConnection): Promise<string> {
     const rt = this.runtime(sessionId)
-    let session = this.session(sessionId)
+    const session = this.session(sessionId)
+    if (!conn.canLoadSession) return this.replaceAgentSession(sessionId, conn, true)
 
-    if (conn.canLoadSession) {
-      rt.loading = true
-      this.byAcpId.set(session.acpSessionId, session.id)
-      let loaded: acp.LoadSessionResponse | undefined
-      try {
-        loaded = await conn.loadSession(session.acpSessionId, session.cwd)
-      } catch (err) {
-        if (isAuthRequired(err) || rt.importing) throw err
+    // The agent's last change, before the load changes it: the time of what the replay adds.
+    const before = await this.agentUpdatedAt(conn, session).catch(() => undefined)
+    rt.loading = true
+    rt.replay = []
+    this.byAcpId.set(session.acpSessionId, session.id)
+    let loaded: acp.LoadSessionResponse | undefined
+    let replay: acp.SessionUpdate[]
+    try {
+      loaded = await conn.loadSession(session.acpSessionId, session.cwd)
+    } catch (err) {
+      if (isAuthRequired(err) || rt.importing) throw err
+      if (!isResourceNotFound(err)) {
         console.error(`[gloss] session/load failed for ${sessionId}:`, errorMessage(err))
-      } finally {
-        rt.loading = false
+        throw new Error(`The agent couldn't resume it: ${errorMessage(err)}`, { cause: err })
       }
-      if (loaded) {
-        const permissions = await this.enterBypassMode(session.agentId, conn, session.acpSessionId, loaded.modes)
-        rt.attachedTo = conn
-        await this.attached(sessionId, conn, loaded.configOptions, permissions)
-        return session.acpSessionId
+      // Deleted outside Gloss. A session that never had a message has no saved
+      // history (Claude Code writes none until the first prompt): nothing is lost.
+      if (this.deps.store.countUserMessages(sessionId) > (rt.turn?.unsent ? 1 : 0)) {
+        this.removeDeletedOutside(sessionId)
+        throw new SessionGoneError()
       }
+    } finally {
+      rt.loading = false
+      replay = rt.replay ?? []
+      rt.replay = undefined
     }
+    if (!loaded) return this.replaceAgentSession(sessionId, conn, false)
 
+    const at = before ? Date.parse(before) : NaN
+    this.sync(sessionId, replay, Number.isFinite(at) ? at : this.now())
+    const permissions = await this.enterBypassMode(session.agentId, conn, session.acpSessionId, loaded.modes)
+    rt.attachedTo = conn
+    await this.attached(sessionId, conn, loaded.configOptions, permissions)
+    await this.recordSynced(sessionId, conn)
+    return session.acpSessionId
+  }
+
+  /** Starts a new agent session for a Gloss session whose own can't be loaded. */
+  private async replaceAgentSession(sessionId: string, conn: AgentConnection, notice: boolean): Promise<string> {
+    const rt = this.runtime(sessionId)
+    let session = this.session(sessionId)
     const res = await conn.newSession(session.cwd)
     const permissions = await this.enterBypassMode(session.agentId, conn, res.sessionId, res.modes)
     this.byAcpId.delete(session.acpSessionId)
-    session = this.deps.store.updateSession(session.id, { acpSessionId: res.sessionId })
+    session = this.deps.store.updateSession(session.id, { acpSessionId: res.sessionId, syncedAt: null })
     this.register(session.acpSessionId, session.id)
     rt.attachedTo = conn
     this.deps.emit({ type: 'session', session })
     await this.attached(sessionId, conn, res.configOptions, permissions)
-    this.notice(
-      sessionId,
-      rt.turn?.threadId ?? null,
-      'Started a new agent session. The agent could not resume the previous one, so it does not remember the earlier messages shown here.'
-    )
+    if (notice) {
+      this.notice(
+        sessionId,
+        rt.turn?.threadId ?? null,
+        'Started a new agent session. The agent could not resume the previous one, so it does not remember the earlier messages shown here.'
+      )
+    }
     return session.acpSessionId
+  }
+
+  /** The agent's updatedAt for the session (session/list), if it lists sessions and has this one. */
+  private async agentUpdatedAt(conn: AgentConnection, session: Session): Promise<string | undefined> {
+    if (!conn.canListSessions) return undefined
+    return (await conn.findSession(session.cwd, session.acpSessionId))?.updatedAt ?? undefined
+  }
+
+  /** Remembers the agent's updatedAt for the session, so a later change made elsewhere can be told apart. */
+  private async recordSynced(sessionId: string, conn: AgentConnection): Promise<void> {
+    const session = this.deps.store.getSession(sessionId)
+    if (!session) return
+    try {
+      const updatedAt = await this.agentUpdatedAt(conn, session)
+      if (updatedAt && updatedAt !== session.syncedAt && this.deps.store.getSession(sessionId)) {
+        this.deps.store.updateSession(sessionId, { syncedAt: updatedAt })
+      }
+    } catch (err) {
+      console.warn(`[gloss] could not list the agent's sessions:`, errorMessage(err))
+    }
+  }
+
+  /**
+   * Reloads the session (session/close, then session/load) if the agent's copy
+   * changed since Gloss last synced it. `canReload` is checked again once the
+   * agent has answered: a reload never interrupts a running prompt.
+   */
+  private async ensureFresh(sessionId: string, conn: AgentConnection, canReload: () => boolean): Promise<void> {
+    const rt = this.runtime(sessionId)
+    if (!conn.canLoadSession || !conn.canListSessions || !conn.canCloseSessions) return
+    // A load in progress replays the latest history anyway.
+    const loading = (): Promise<unknown> | undefined => (rt.attaching?.conn === conn ? rt.attaching.promise : undefined)
+    if (loading()) return void (await loading())
+    if (rt.attachedTo !== conn) return
+    const updatedAt = await this.agentUpdatedAt(conn, this.session(sessionId))
+    if (loading()) return void (await loading())
+    if (!updatedAt || updatedAt === this.deps.store.getSession(sessionId)?.syncedAt) return
+    if (rt.attachedTo !== conn || !canReload()) return
+    await this.reattach(sessionId, conn)
+  }
+
+  /**
+   * session/close, then attach again. The close is needed: a session/load of a
+   * session the agent holds replays the new history but keeps its running copy,
+   * whose model doesn't see it.
+   */
+  private reattach(sessionId: string, conn: AgentConnection): Promise<string> {
+    const rt = this.runtime(sessionId)
+    if (rt.attaching?.conn === conn) return rt.attaching.promise
+    const acpSessionId = this.session(sessionId).acpSessionId
+    rt.attachedTo = undefined
+    const promise = (async () => {
+      await conn.closeSession(acpSessionId)
+      return this.doAttach(sessionId, conn)
+    })().finally(() => {
+      if (rt.attaching?.promise === promise) rt.attaching = undefined
+    })
+    rt.attaching = { conn, promise }
+    return promise
+  }
+
+  /** Deletes a session the agent no longer has from Gloss too. */
+  private removeDeletedOutside(sessionId: string): void {
+    const session = this.session(sessionId)
+    this.deps.store.deleteSession(sessionId)
+    this.runtimes.delete(sessionId)
+    this.byAcpId.delete(session.acpSessionId)
+    this.deps.emit({ type: 'sessionDeleted', sessionId, deletedOutside: { title: session.title } })
+  }
+
+  /**
+   * Makes the log match the agent's replay (SPEC → Shared sessions). Entries
+   * new to Gloss are recorded at `at` and placed in threads by their tags.
+   */
+  private sync(sessionId: string, updates: acp.SessionUpdate[], at: number): void {
+    const { store } = this.deps
+    // A turn's message that isn't sent yet stays last.
+    const unsent = this.runtime(sessionId).turn?.unsent
+    const messages = store.listMessages(sessionId)
+    const cached: CachedEntry[] = [
+      ...messages.filter((m) => m.id !== unsent).map((message): CachedEntry => ({ type: 'message', message })),
+      ...store.listToolCalls(sessionId).map((toolCall): CachedEntry => ({ type: 'toolCall', toolCall })),
+      ...store.listPlans(sessionId).map((plan): CachedEntry => ({ type: 'plan', plan }))
+    ].sort((a, b) => seqOf(a) - seqOf(b))
+    const { log, removed } = matchReplay(cached, parseReplay(updates))
+    const last = messages.find((m) => m.id === unsent)
+    if (last) log.push({ cached: { type: 'message', message: last } })
+
+    const changed =
+      removed.length > 0 ||
+      log.some((item, i) => {
+        if (!item.cached) return true
+        if (seqOf(item.cached) !== i) return true
+        const r = item.replay
+        if (r?.type === 'agent' && item.cached.type === 'message') return r.text !== item.cached.message.text
+        if (r?.type === 'tool' && item.cached.type === 'toolCall') return toolStatus(item.cached.toolCall, r.toolCall) !== null
+        return false
+      })
+    if (!changed) return
+
+    store.transaction(() => {
+      for (const c of removed) {
+        // Threads anchored on a removed message go with it.
+        if (c.type === 'message') store.deleteMessage(c.message.id)
+        else if (c.type === 'toolCall') store.deleteToolCall(sessionId, c.toolCall.id)
+      }
+      const threads = store.listThreads(sessionId)
+      /** Thread id → position of its latest user message, to rank threads a tag could name. */
+      const active = new Map<string, number>()
+      /** The thread of the latest user message: where the agent's answer goes. */
+      let threadId: string | null = null
+      const entries = log.map((item, i): Parameters<Store['resequence']>[1][number] => {
+        const c = item.cached
+        const r = item.replay
+        if (c?.type === 'message') {
+          if (c.message.role === 'user') {
+            threadId = c.message.threadId
+            if (threadId) active.set(threadId, i)
+          }
+          if (r?.type === 'agent' && r.text !== c.message.text) store.updateMessageText(c.message.id, r.text)
+          return { kind: 'message', id: c.message.id }
+        }
+        if (c?.type === 'toolCall') {
+          const status = r?.type === 'tool' ? toolStatus(c.toolCall, r.toolCall) : null
+          if (status) store.upsertToolCall({ ...c.toolCall, status })
+          return { kind: 'toolCall', id: c.toolCall.id }
+        }
+        if (c?.type === 'plan') return { kind: 'plan', id: c.plan.id }
+
+        const entry = r!
+        if (entry.type === 'user') {
+          const placed = placeUserMessage(entry.wire, threads, active)
+          threadId = placed.threadId
+          if (threadId) active.set(threadId, i)
+          return {
+            insert: (seq) =>
+              store.insertMessage({
+                id: randomUUID(),
+                sessionId,
+                seq,
+                role: 'user',
+                text: placed.text,
+                wireText: entry.wire,
+                threadId: placed.threadId,
+                ...(entry.acpMessageId !== undefined ? { acpMessageId: entry.acpMessageId } : {}),
+                ...(entry.attachments.length > 0 ? { attachments: entry.attachments } : {}),
+                createdAt: at
+              })
+          }
+        }
+        const thread = threadId
+        switch (entry.type) {
+          case 'agent':
+            return {
+              insert: (seq) =>
+                store.insertMessage({
+                  id: randomUUID(),
+                  sessionId,
+                  seq,
+                  role: 'agent',
+                  text: entry.text,
+                  threadId: thread,
+                  ...(entry.acpMessageId !== undefined ? { acpMessageId: entry.acpMessageId } : {}),
+                  createdAt: at
+                })
+            }
+          case 'tool':
+            return { insert: (seq) => store.upsertToolCall({ ...entry.toolCall, sessionId, messageSeq: seq, threadId: thread }) }
+          case 'plan':
+            return {
+              insert: (seq) => store.upsertPlan({ id: randomUUID(), sessionId, seq, threadId: thread, entries: entry.entries })
+            }
+        }
+      })
+      store.resequence(sessionId, entries)
+    })
+    this.deps.emit({ type: 'session', session: this.session(sessionId) })
+    this.deps.emit({ type: 'sessionSynced', sessionId })
   }
 
   /**
@@ -903,21 +1162,27 @@ export class SessionManager {
       this.deps.emit({ type: 'session', session })
     }
 
-    const turn: Turn = { threadId, cancelled: false, afterToolCall: false }
+    const turn: Turn = { threadId, cancelled: false, afterToolCall: false, unsent: message.id }
     rt.turn = turn
     this.deps.emit({ type: 'turnStart', sessionId, threadId })
 
     let result: TurnResult
+    let attachedTo: AgentConnection | undefined
     try {
       const res = await this.withAgent(session.agentId, async (conn) => {
         // A retry after sign-in starts a fresh agent message.
         turn.agentMessage = undefined
         turn.afterToolCall = false
+        await this.attach(sessionId, conn)
+        // Changes made elsewhere (the agent's CLI) come in before the prompt goes out.
+        await this.ensureFresh(sessionId, conn, () => true)
         const acpSessionId = await this.attach(sessionId, conn)
         if (turn.cancelled) return { stopReason: 'cancelled' as const }
+        attachedTo = conn
         const prompt = promptBlocks(wire, attachments, conn.promptCapabilities)
         const slot = this.slot(session.agentId)
         slot.activePrompts++
+        turn.unsent = undefined
         try {
           return await conn.prompt(acpSessionId, prompt)
         } finally {
@@ -928,9 +1193,10 @@ export class SessionManager {
       result = { stopReason: res.stopReason }
     } catch (err) {
       result = turn.cancelled ? { stopReason: 'cancelled' } : { error: errorMessage(err) }
-    } finally {
-      rt.turn = undefined
     }
+    // The turn changed the agent's copy: remember its updatedAt so it isn't taken for a change made elsewhere.
+    if (attachedTo) await this.recordSynced(sessionId, attachedTo)
+    rt.turn = undefined
     // The queue moves on after a turn that ended normally. A cancelled, failed or
     // cut-short turn pauses it, so the user can look before more is sent.
     let continues = false
@@ -1030,50 +1296,17 @@ export class SessionManager {
       }
     }
 
-    // Conversation updates are recorded during a turn, and during session/load
-    // only when importing. Otherwise the replay is not part of the display state.
-    const turn = rt.loading ? rt.importing : rt.turn
+    // session/load replays the history: it is synced once the load ends (SPEC → Shared sessions).
+    if (rt.loading) {
+      if (isLogUpdate(u)) rt.replay?.push(u)
+      return
+    }
+    // Conversation updates are recorded during a turn.
+    const turn = rt.turn
     if (!turn) return
     const { store, emit } = this.deps
 
     switch (u.sessionUpdate) {
-      case 'user_message_chunk': {
-        if (!rt.importing) return
-        const messageId = u.messageId ?? undefined
-        let m = turn.userMessage
-        const differentMessage =
-          messageId !== undefined && m?.acpMessageId !== undefined && m.acpMessageId !== messageId
-        if (!m || turn.agentMessage || turn.afterToolCall || differentMessage) {
-          m = {
-            id: randomUUID(),
-            sessionId,
-            seq: store.nextSeq(sessionId),
-            role: 'user',
-            text: '',
-            threadId: null,
-            ...(messageId !== undefined ? { acpMessageId: messageId } : {}),
-            createdAt: this.now()
-          }
-          store.insertMessage(m)
-          turn.userMessage = m
-          turn.agentMessage = undefined
-          turn.afterToolCall = false
-          // Each replayed prompt gets its own plan.
-          turn.plan = undefined
-        }
-        if (u.content.type === 'text') {
-          m.text += u.content.text
-          store.updateMessageText(m.id, m.text)
-        } else if (u.content.type === 'image' && u.content.data) {
-          m.attachments = [
-            ...(m.attachments ?? []),
-            { kind: 'image', name: 'image', mimeType: u.content.mimeType, data: u.content.data }
-          ]
-          store.updateMessageAttachments(m.id, m.attachments)
-        }
-        emit({ type: 'message', message: { ...m } })
-        return
-      }
       case 'agent_message_chunk': {
         if (u.content.type !== 'text') return
         const messageId = u.messageId ?? undefined
@@ -1093,7 +1326,6 @@ export class SessionManager {
           }
           store.insertMessage(m)
           turn.agentMessage = m
-          turn.userMessage = undefined
           turn.afterToolCall = false
         }
         m.text += u.content.text
@@ -1306,6 +1538,16 @@ function planEntry(e: acp.PlanEntry): PlanEntry {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+function seqOf(c: CachedEntry): number {
+  return c.type === 'message' ? c.message.seq : c.type === 'toolCall' ? c.toolCall.messageSeq : c.plan.seq
+}
+
+/** The replay's status for a tool call Gloss saw unfinished (its turn was cut short), or null. */
+function toolStatus(cached: ToolCall, replayed: Pick<ToolCall, 'status'>): string | null {
+  const unfinished = cached.status === 'pending' || cached.status === 'in_progress'
+  return unfinished && replayed.status !== cached.status ? replayed.status : null
 }
 
 function folderName(cwd: string): string {

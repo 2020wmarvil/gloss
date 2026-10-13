@@ -1578,6 +1578,54 @@ a.status-item {
   min-width: 180px;
 }
 
+.status-item.usage-trigger {
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.usage-panel {
+  width: 290px;
+  max-width: calc(100vw - 100px);
+  padding: 12px;
+}
+
+.usage-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.usage-window {
+  margin-top: 18px;
+}
+
+.usage-meter {
+  height: 7px;
+  margin: 7px 0;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--chip);
+}
+
+.usage-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.usage-window.high .usage-meter > span {
+  background: var(--warn-fill);
+}
+
+.usage-window.exhausted .usage-meter > span {
+  background: var(--danger);
+}
+
+.usage-panel p {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .option-list {
   list-style: none;
   margin: 0;
