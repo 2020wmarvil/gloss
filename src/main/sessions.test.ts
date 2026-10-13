@@ -962,6 +962,44 @@ describe('SessionManager', () => {
       expect(store.getSession(session.id)).toBeUndefined()
     })
 
+    it('/clear replaces the agent session in place and deletes the old one', async () => {
+      state.canDelete = true
+      const session = await manager.createSession('/w/shop', 'fake')
+      await manager.send(session.id, 'hi', null)
+      const message = manager.openSession(session.id).messages[1]
+      manager.createThread(session.id, message.id, { kind: 'selection', start: 0, end: 5, text: 'Hello' })
+
+      await expect(manager.send(session.id, ' /clear ', null)).resolves.toEqual({ cleared: true })
+      expect(state.prompts).toEqual(['hi'])
+      expect(state.deleted).toEqual([session.acpSessionId])
+      const cleared = store.getSession(session.id)!
+      expect(cleared.acpSessionId).not.toBe(session.acpSessionId)
+      expect(cleared.title).toBe('shop')
+      const view = manager.openSession(session.id)
+      expect([view.messages, view.toolCalls, view.threads]).toEqual([[], [], []])
+      expect(events).toContainEqual({ type: 'sessionCleared', sessionId: session.id })
+
+      await manager.send(session.id, 'again', null)
+      expect(state.prompts).toEqual(['hi', 'again'])
+      expect(manager.openSession(session.id).session.title).toBe('again')
+    })
+
+    it('/clear is run by Gloss when steered too, and refused during a turn', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await expect(manager.steer(session.id, '/clear', null)).resolves.toEqual({ cleared: true })
+      expect(state.prompts).toEqual([])
+
+      state.script = async ({ cancelled }) => {
+        await cancelled
+        return 'cancelled'
+      }
+      const turn = manager.send(session.id, 'long', null)
+      await vi.waitFor(() => expect(state.prompts).toEqual(['long']))
+      await expect(manager.send(session.id, '/clear', null)).rejects.toThrow(/Cancel the running turn/)
+      await manager.cancel(session.id)
+      await turn
+    })
+
     it('cancels a running turn before deleting', async () => {
       state.canDelete = true
       state.script = async ({ say, cancelled }) => {
@@ -1115,7 +1153,10 @@ describe('SessionManager', () => {
             { value: 'opus', name: 'Opus' }
           ]
         },
-        commands: [{ name: 'compact', description: 'Compact the context', hint: '[focus]' }],
+        commands: [
+          { name: 'clear', description: 'Start over with a fresh conversation' },
+          { name: 'compact', description: 'Compact the context', hint: '[focus]' }
+        ],
         usage: { used: 50_000, size: 200_000, cost: { amount: 0.12, currency: 'USD' } },
         rateLimits: [],
         permissions: 'auto',
