@@ -1,0 +1,12 @@
+diff --git a/node_modules/@openai/codex/bin/codex.js b/node_modules/@openai/codex/bin/codex.js
+index 9346007..3885a9f 100644
+--- a/node_modules/@openai/codex/bin/codex.js
++++ b/node_modules/@openai/codex/bin/codex.js
+@@ -240,6 +240,7 @@ env[packageManagerEnvVar] = "1";
+ 
+ const child = spawn(binaryPath, process.argv.slice(2), {
+   stdio: "inherit",
++  windowsHide: true,
+   env,
+ });
+ 
