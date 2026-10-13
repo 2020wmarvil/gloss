@@ -1,7 +1,19 @@
 // The IPC contract between the main process and the renderer.
 // Type-only (plus channel names): nothing here may pull runtime code into the sandboxed preload.
 import type { GlobalSettings, ProjectSettings } from './settings'
-import type { AgentInfo, Anchor, AuthMethodInfo, Message, Session, Thread, ToolCall } from './types'
+import type {
+  AgentInfo,
+  AgentSession,
+  Anchor,
+  Attachment,
+  AuthMethodInfo,
+  Message,
+  Project,
+  Session,
+  SessionLive,
+  Thread,
+  ToolCall
+} from './types'
 
 export type SettingsState = {
   /** Absolute path of settings.json. */
@@ -25,7 +37,10 @@ export type SessionView = {
   threads: Thread[]
   /** The running turn, if any. */
   turn: { threadId: string | null } | null
+  live: SessionLive
 }
+
+export type GitStatus = { branch: string; dirty: boolean }
 
 export type TurnResult = { stopReason?: string; error?: string }
 
@@ -33,6 +48,10 @@ export type AuthResult = { ok: true } | { ok: false; error: string }
 
 export type GlossEvent =
   | { type: 'session'; session: Session }
+  | { type: 'sessionDeleted'; sessionId: string }
+  | { type: 'live'; sessionId: string; live: SessionLive }
+  /** The user clicked a notification: show this session (and thread). */
+  | { type: 'reveal'; sessionId: string; threadId: string | null }
   | { type: 'message'; message: Message }
   | { type: 'toolCall'; toolCall: ToolCall }
   | { type: 'thread'; thread: Thread }
@@ -54,26 +73,50 @@ export type GlossApi = {
   agents: {
     list(): Promise<AgentInfo[]>
   }
+  projects: {
+    list(): Promise<Project[]>
+    /** Native folder picker; adds the folder as a project. Resolves to null if cancelled. */
+    open(): Promise<Project | null>
+    /** The agent's own sessions in the folder that Gloss hasn't imported. Empty if the agent can't list them. */
+    agentSessions(path: string, agentId: string): Promise<AgentSession[]>
+    /** Deletes the project and its sessions (the agent's copies too). Resolves to a warning if some agent copies couldn't be deleted. */
+    delete(path: string): Promise<string | null>
+  }
   sessions: {
     list(): Promise<Session[]>
     /** Starts an agent session in `cwd`. Rejects if the agent can't start one. */
     create(cwd: string, agentId: string): Promise<Session>
+    /** Imports one of the agent's sessions: its history becomes the main thread. */
+    import(cwd: string, agentId: string, acpSessionId: string, title: string): Promise<Session>
+    /** Also resumes the session on the agent in the background, for the status line. */
     open(id: string): Promise<SessionView>
+    rename(id: string, title: string): Promise<Session>
+    /** Deletes it from Gloss and the agent. Resolves to a warning if the agent's copy couldn't be deleted. */
+    delete(id: string): Promise<string | null>
+    setModel(id: string, value: string): Promise<void>
+    /** Copies the session (or one thread) as markdown to the clipboard. */
+    copyMarkdown(id: string, threadId: string | null): Promise<void>
+    /** Saves the session (or one thread) as a markdown file. Resolves to false if cancelled. */
+    saveMarkdown(id: string, threadId: string | null): Promise<boolean>
+  }
+  git: {
+    /** The folder's branch and whether it has uncommitted changes; null outside a repo. */
+    status(cwd: string): Promise<GitStatus | null>
   }
   threads: {
     /** Creates the thread for an anchor, or returns the existing one for the same anchor. */
     create(sessionId: string, anchorMessageId: string, anchor: Anchor): Promise<Thread>
   }
   /** Resolves when the turn ends. */
-  send(sessionId: string, text: string, threadId: string | null): Promise<TurnResult>
+  send(sessionId: string, text: string, threadId: string | null, attachments: Attachment[]): Promise<TurnResult>
   cancel(sessionId: string): Promise<void>
   auth: {
     signIn(agentId: string, methodId: string): Promise<AuthResult>
     dismiss(agentId: string): Promise<void>
   }
-  dialog: {
-    /** Native folder picker. Resolves to null if cancelled. */
-    pickDirectory(): Promise<string | null>
+  files: {
+    /** The path of a dropped or picked File, if it has one. */
+    pathFor(file: File): string
   }
   settings: {
     get(): Promise<SettingsState>
@@ -88,15 +131,25 @@ export type GlossApi = {
 
 export const IPC = {
   agentsList: 'gloss:agents:list',
+  projectsList: 'gloss:projects:list',
+  projectsOpen: 'gloss:projects:open',
+  projectsAgentSessions: 'gloss:projects:agentSessions',
+  projectsDelete: 'gloss:projects:delete',
   sessionsList: 'gloss:sessions:list',
   sessionsCreate: 'gloss:sessions:create',
+  sessionsImport: 'gloss:sessions:import',
   sessionsOpen: 'gloss:sessions:open',
+  sessionsRename: 'gloss:sessions:rename',
+  sessionsDelete: 'gloss:sessions:delete',
+  sessionsSetModel: 'gloss:sessions:setModel',
+  sessionsCopyMarkdown: 'gloss:sessions:copyMarkdown',
+  sessionsSaveMarkdown: 'gloss:sessions:saveMarkdown',
+  gitStatus: 'gloss:git:status',
   threadsCreate: 'gloss:threads:create',
   send: 'gloss:send',
   cancel: 'gloss:cancel',
   authSignIn: 'gloss:auth:signIn',
   authDismiss: 'gloss:auth:dismiss',
-  pickDirectory: 'gloss:dialog:pickDirectory',
   settingsGet: 'gloss:settings:get',
   settingsUpdate: 'gloss:settings:update',
   settingsOpenFile: 'gloss:settings:openFile',

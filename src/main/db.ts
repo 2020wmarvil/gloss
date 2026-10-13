@@ -1,6 +1,6 @@
 // SQLite persistence (node:sqlite). The app's DB is always the display state.
 import { DatabaseSync } from 'node:sqlite'
-import type { Anchor, Message, Session, Thread, ToolCall } from '../shared/types'
+import type { Anchor, Attachment, Message, Session, Thread, ToolCall } from '../shared/types'
 
 // Append-only. Each entry upgrades the schema by one version (PRAGMA user_version).
 const MIGRATIONS = [
@@ -45,6 +45,14 @@ const MIGRATIONS = [
     created_at        INTEGER NOT NULL
   );
   CREATE INDEX threads_by_session ON threads (session_id);
+  `,
+  `
+  ALTER TABLE sessions ADD COLUMN model TEXT;
+  ALTER TABLE messages ADD COLUMN attachments TEXT;
+  CREATE TABLE projects (
+    path     TEXT PRIMARY KEY,
+    added_at INTEGER NOT NULL
+  );
   `
 ]
 
@@ -57,7 +65,8 @@ function toSession(r: Row): Session {
     acpSessionId: r.acp_session_id as string,
     cwd: r.cwd as string,
     title: r.title as string,
-    createdAt: Number(r.created_at)
+    createdAt: Number(r.created_at),
+    ...(r.model != null ? { model: r.model as string } : {})
   }
 }
 
@@ -72,6 +81,7 @@ function toMessage(r: Row): Message {
   }
   if (r.wire_text != null) m.wireText = r.wire_text as string
   if (r.acp_message_id != null) m.acpMessageId = r.acp_message_id as string
+  if (r.attachments != null) m.attachments = JSON.parse(r.attachments as string) as Attachment[]
   return m
 }
 
@@ -152,7 +162,19 @@ export class Store {
       .run(s.id, s.agentId, s.acpSessionId, s.cwd, s.title, s.createdAt)
   }
 
-  updateSession(id: string, patch: Partial<Pick<Session, 'acpSessionId' | 'title'>>): Session {
+  getSessionByAcpId(agentId: string, acpSessionId: string): Session | undefined {
+    const r = this.db
+      .prepare('SELECT * FROM sessions WHERE agent_id = ? AND acp_session_id = ?')
+      .get(agentId, acpSessionId)
+    return r ? toSession(r as Row) : undefined
+  }
+
+  /** Deletes the session with its messages, tool calls and threads. */
+  deleteSession(id: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
+  }
+
+  updateSession(id: string, patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'model'>>): Session {
     if (patch.acpSessionId !== undefined) {
       this.db
         .prepare('UPDATE sessions SET acp_session_id = ? WHERE id = ?')
@@ -160,6 +182,9 @@ export class Store {
     }
     if (patch.title !== undefined) {
       this.db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(patch.title, id)
+    }
+    if (patch.model !== undefined) {
+      this.db.prepare('UPDATE sessions SET model = ? WHERE id = ?').run(patch.model, id)
     }
     const s = this.getSession(id)
     if (!s) throw new Error(`No session ${id}`)
@@ -184,8 +209,8 @@ export class Store {
   insertMessage(m: Message): void {
     this.db
       .prepare(
-        `INSERT INTO messages (id, session_id, seq, role, text, wire_text, thread_id, acp_message_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO messages (id, session_id, seq, role, text, wire_text, thread_id, acp_message_id, attachments)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         m.id,
@@ -195,12 +220,24 @@ export class Store {
         m.text,
         m.wireText ?? null,
         m.threadId,
-        m.acpMessageId ?? null
+        m.acpMessageId ?? null,
+        m.attachments ? JSON.stringify(m.attachments) : null
       )
   }
 
   updateMessageText(id: string, text: string): void {
     this.db.prepare('UPDATE messages SET text = ? WHERE id = ?').run(text, id)
+  }
+
+  /** Removes the session's messages, tool calls and threads (to rebuild them). */
+  clearLog(sessionId: string): void {
+    this.db.prepare('DELETE FROM threads WHERE session_id = ?').run(sessionId)
+    this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId)
+    this.db.prepare('DELETE FROM tool_calls WHERE session_id = ?').run(sessionId)
+  }
+
+  updateMessageAttachments(id: string, attachments: Attachment[]): void {
+    this.db.prepare('UPDATE messages SET attachments = ? WHERE id = ?').run(JSON.stringify(attachments), id)
   }
 
   listMessages(sessionId: string): Message[] {
@@ -257,6 +294,23 @@ export class Store {
       .prepare('SELECT * FROM tool_calls WHERE session_id = ? ORDER BY message_seq')
       .all(sessionId)
       .map((r) => toToolCall(r as Row))
+  }
+
+  // Projects (folders opened in Gloss; folders of sessions count too)
+
+  addProject(path: string, addedAt: number): void {
+    this.db.prepare('INSERT OR IGNORE INTO projects (path, added_at) VALUES (?, ?)').run(path, addedAt)
+  }
+
+  removeProject(path: string): void {
+    this.db.prepare('DELETE FROM projects WHERE path = ?').run(path)
+  }
+
+  listProjects(): { path: string; addedAt: number }[] {
+    return this.db
+      .prepare('SELECT * FROM projects ORDER BY added_at DESC')
+      .all()
+      .map((r) => ({ path: (r as Row).path as string, addedAt: Number((r as Row).added_at) }))
   }
 
   // Threads

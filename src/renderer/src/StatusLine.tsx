@@ -1,0 +1,234 @@
+// The status line at the bottom of the conversation (SPEC → Status line). Everything
+// but the git branch comes from what the agent reports over ACP.
+import { useState } from 'react'
+import type { GitStatus } from '@shared/ipc'
+import { folderName } from '@shared/paths'
+import type { RateLimit, Session, SessionLive, SlashCommand } from '@shared/types'
+import { Popover } from './Popover'
+
+type Props = {
+  session: Session
+  live: SessionLive
+  git: GitStatus | null
+  devModel: boolean
+  /** threadId of the running turn; undefined when idle. */
+  runningThread: string | null | undefined
+  runningLabel: string | null
+  onOpenThread(threadId: string): void
+  onSetModel(value: string): Promise<void>
+  /** Sends a slash command as a message in the main thread. */
+  onCommand(text: string): void
+}
+
+function formatCost(cost: { amount: number; currency: string }): string {
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: cost.currency, maximumFractionDigits: 2 }).format(cost.amount)
+  } catch {
+    return `${cost.amount.toFixed(2)} ${cost.currency}`
+  }
+}
+
+function formatTokens(n: number): string {
+  return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
+}
+
+const WINDOW_LABELS: Record<string, [short: string, long: string]> = {
+  five_hour: ['5h', '5-hour limit'],
+  seven_day: ['week', 'weekly limit'],
+  seven_day_opus: ['week (Opus)', 'weekly Opus limit'],
+  seven_day_sonnet: ['week (Sonnet)', 'weekly Sonnet limit'],
+  seven_day_overage_included: ['week', 'weekly limit'],
+  overage: ['extra', 'extra usage']
+}
+
+function formatReset(ms: number): string {
+  const d = new Date(ms)
+  const sameDay = d.toDateString() === new Date().toDateString()
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return sameDay ? time : `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`
+}
+
+/** One plan usage window: "5h ok", "5h 82%", or "5h limit · resets 3:40 PM". */
+function RateLimitItem({ limit, onClick }: { limit: RateLimit; onClick?(): void }): React.JSX.Element {
+  const [short, long] = WINDOW_LABELS[limit.window] ?? [limit.window, limit.window.replace(/_/g, ' ')]
+  const reset = limit.resetsAt ? formatReset(limit.resetsAt) : null
+  const text =
+    limit.status === 'rejected'
+      ? `${short} limit${reset ? ` · resets ${reset}` : ''}`
+      : limit.utilization !== undefined
+        ? `${short} ${limit.utilization}%`
+        : `${short} ok`
+  const title = [
+    `Claude ${long}: ${
+      limit.status === 'rejected'
+        ? 'reached'
+        : limit.utilization !== undefined
+          ? `${limit.utilization}% used`
+          : limit.status === 'warning'
+            ? 'getting close'
+            : 'within the limit'
+    }.`,
+    reset ? `Resets ${reset}.` : '',
+    onClick ? 'Click to run /usage for details.' : ''
+  ]
+    .filter(Boolean)
+    .join(' ')
+  const className = `status-item${limit.status === 'rejected' ? ' error' : limit.status === 'warning' ? ' warn' : ''}`
+  return onClick ? (
+    <button className={className} title={title} onClick={onClick}>
+      {text}
+    </button>
+  ) : (
+    <span className={className} title={title}>
+      {text}
+    </span>
+  )
+}
+
+/** Commands grouped for the extensions panel: MCP prompts are named "mcp:<server>:<prompt>". */
+function groupCommands(commands: SlashCommand[]): { title: string; commands: SlashCommand[] }[] {
+  const mcp = commands.filter((c) => c.name.startsWith('mcp:'))
+  const other = commands.filter((c) => !c.name.startsWith('mcp:'))
+  return [
+    { title: 'Commands and skills', commands: other },
+    { title: 'MCP prompts', commands: mcp }
+  ].filter((g) => g.commands.length > 0)
+}
+
+export function StatusLine(props: Props): React.JSX.Element {
+  const { session, live, git, devModel, runningThread } = props
+  const [modelError, setModelError] = useState<string | null>(null)
+  const usage = live.usage
+  const pct = usage && usage.size > 0 ? Math.min(100, Math.round((usage.used / usage.size) * 100)) : null
+  const model = live.model
+  const current = model?.options.find((o) => o.value === model.current)
+  const hasMcpCommand = live.commands.some((c) => c.name === 'mcp')
+
+  return (
+    <div className="status-line" role="status">
+      {runningThread !== undefined &&
+        (runningThread === null ? (
+          <span className="status-item working">Working…</span>
+        ) : (
+          <button className="status-item working link" onClick={() => props.onOpenThread(runningThread)}>
+            Working in {props.runningLabel ?? 'a thread'}
+          </button>
+        ))}
+      {!live.attached && runningThread === undefined && <span className="status-item muted">Agent not running</span>}
+
+      {pct !== null && usage && (
+        <span
+          className={`status-item context${pct >= 80 ? ' high' : ''}`}
+          title={`Context: ${usage.used.toLocaleString()} of ${usage.size.toLocaleString()} tokens. Run /compact to free space.`}
+        >
+          <span className="meter" aria-hidden>
+            <span style={{ width: `${pct}%` }} />
+          </span>
+          {pct}% <span className="muted">of {formatTokens(usage.size)}</span>
+        </span>
+      )}
+      {usage?.cost && (
+        <span className="status-item" title="Session cost reported by the agent">
+          {formatCost(usage.cost)}
+        </span>
+      )}
+      {live.rateLimits.map((l) => (
+        <RateLimitItem
+          key={l.window}
+          limit={l}
+          onClick={live.commands.some((c) => c.name === 'usage') ? () => props.onCommand('/usage') : undefined}
+        />
+      ))}
+
+      {model &&
+        (devModel ? (
+          <span className="status-item" title="The dev model is on (Settings), so it overrides the model picked here.">
+            Haiku (dev)
+          </span>
+        ) : (
+          <Popover label={current?.name ?? model.current} title="Model">
+            {(close) => (
+              <ul className="option-list" role="listbox" aria-label="Model">
+                {model.options.map((o) => (
+                  <li key={o.value}>
+                    <button
+                      className={o.value === model.current ? 'on' : undefined}
+                      role="option"
+                      aria-selected={o.value === model.current}
+                      onClick={() => {
+                        close()
+                        setModelError(null)
+                        props.onSetModel(o.value).catch((err: unknown) => setModelError(err instanceof Error ? err.message : String(err)))
+                      }}
+                    >
+                      <span>{o.name}</span>
+                      {o.description && <span className="muted">{o.description}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Popover>
+        ))}
+      {modelError && <span className="status-item error">{modelError}</span>}
+
+      {live.permissions === 'bypass' && (
+        <span className="status-item" title="The agent runs without permission prompts (its bypass mode).">
+          bypass
+        </span>
+      )}
+      {live.permissions === 'auto' && (
+        <span
+          className="status-item warn"
+          title="The agent didn't switch to its bypass mode, so Gloss approves each permission request it makes."
+        >
+          auto-approving
+        </span>
+      )}
+
+      {(live.commands.length > 0 || hasMcpCommand) && (
+        <Popover label="Extensions" title="What the agent loaded">
+          {(close) => (
+            <div className="extensions">
+              <p className="muted">The agent loads its own plugins, skills and MCP servers. Gloss shows what it reports.</p>
+              {hasMcpCommand && (
+                <button
+                  className="extensions-mcp"
+                  onClick={() => {
+                    close()
+                    props.onCommand('/mcp')
+                  }}
+                >
+                  Show MCP server status
+                </button>
+              )}
+              {groupCommands(live.commands).map((g) => (
+                <section key={g.title}>
+                  <div className="label">{g.title}</div>
+                  <ul>
+                    {g.commands.map((c) => (
+                      <li key={c.name}>
+                        <span className="mono">/{c.name}</span> <span className="muted">{c.description}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          )}
+        </Popover>
+      )}
+
+      <span className="status-spacer" />
+      {git && (
+        <span className="status-item mono" title={git.dirty ? 'Uncommitted changes' : 'Clean working tree'}>
+          {git.branch}
+          {git.dirty && <span className="dirty">*</span>}
+        </span>
+      )}
+      <span className="status-item mono" title={session.cwd}>
+        {folderName(session.cwd)}
+      </span>
+    </div>
+  )
+}

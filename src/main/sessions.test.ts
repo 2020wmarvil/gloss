@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as acp from '@agentclientprotocol/sdk'
 import type { GlossEvent } from '../shared/ipc'
@@ -31,6 +32,25 @@ type FakeAgent = {
   modeChanges: string[]
   /** session/set_mode fails. */
   refuseModes: boolean
+  /** History replayed by session/load, per session; default: one agent chunk "REPLAY". */
+  history: Map<string, acp.SessionUpdate[]>
+  /** Advertise session/list and session/delete. */
+  canList: boolean
+  canDelete: boolean
+  /** Sessions returned by session/list (filtered by cwd). */
+  listed: acp.SessionInfo[]
+  deleted: string[]
+  /** session/delete fails. */
+  refuseDelete: boolean
+  /** Config options reported by session/new and session/load. */
+  configOptions: acp.SessionConfigOption[] | null
+  /** session/set_config_option calls, as "sessionId:configId=value". */
+  configChanges: string[]
+  promptCapabilities: acp.PromptCapabilities
+  /** The full prompt of each session/prompt. */
+  promptBlocks: acp.ContentBlock[][]
+  /** Slash commands announced after session/new and session/load. */
+  commands: acp.AvailableCommand[]
   script: Script
 }
 
@@ -47,6 +67,17 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
     modes: null,
     modeChanges: [],
     refuseModes: false,
+    history: new Map(),
+    canList: false,
+    canDelete: false,
+    listed: [],
+    deleted: [],
+    refuseDelete: false,
+    configOptions: null,
+    configChanges: [],
+    promptCapabilities: {},
+    promptBlocks: [],
+    commands: [],
     script: async ({ say }) => {
       await say('Hello')
       await say(' world')
@@ -64,18 +95,48 @@ function agentApp(state: FakeAgent): acp.AgentApp {
     .agent({ name: 'fake' })
     .onRequest(acp.methods.agent.initialize, () => ({
       protocolVersion: acp.PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: state.loadSession },
+      agentCapabilities: {
+        loadSession: state.loadSession,
+        promptCapabilities: state.promptCapabilities,
+        sessionCapabilities: {
+          ...(state.canList ? { list: {} } : {}),
+          ...(state.canDelete ? { delete: {} } : {})
+        }
+      },
       authMethods: state.authMethods
     }))
+    .onRequest(acp.methods.agent.session.list, (ctx) => ({
+      sessions: state.listed.filter((s) => s.cwd === ctx.params.cwd)
+    }))
+    .onRequest(acp.methods.agent.session.delete, (ctx) => {
+      if (state.refuseDelete) throw acp.RequestError.internalError()
+      state.deleted.push(ctx.params.sessionId)
+      state.sessions.delete(ctx.params.sessionId)
+      return {}
+    })
+    .onRequest(acp.methods.agent.session.setConfigOption, (ctx) => {
+      const value = 'value' in ctx.params ? String(ctx.params.value) : ''
+      state.configChanges.push(`${ctx.params.sessionId}:${ctx.params.configId}=${value}`)
+      state.configOptions = (state.configOptions ?? []).map((o) =>
+        o.id === ctx.params.configId && o.type === 'select' ? { ...o, currentValue: value } : o
+      )
+      return { configOptions: state.configOptions }
+    })
     .onRequest(acp.methods.agent.authenticate, (ctx) => {
       state.authenticated.push(ctx.params.methodId)
       state.signedIn = true
       return {}
     })
-    .onRequest(acp.methods.agent.session.new, () => {
+    .onRequest(acp.methods.agent.session.new, async (ctx) => {
       const sessionId = `acp-${state.connections}-${next++}`
       state.sessions.add(sessionId)
-      return { sessionId, modes: state.modes }
+      if (state.commands.length > 0) {
+        await ctx.client.notify(acp.methods.client.session.update, {
+          sessionId,
+          update: { sessionUpdate: 'available_commands_update', availableCommands: state.commands }
+        })
+      }
+      return { sessionId, modes: state.modes, configOptions: state.configOptions }
     })
     .onRequest(acp.methods.agent.session.setMode, (ctx) => {
       if (state.refuseModes) throw acp.RequestError.internalError(undefined, 'mode refused')
@@ -87,11 +148,13 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       state.loads.push(sessionId)
       if (!state.sessions.has(sessionId)) throw acp.RequestError.resourceNotFound(sessionId)
       // Replay history, as the Claude adapter does.
-      await ctx.client.notify(acp.methods.client.session.update, {
-        sessionId,
-        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } }
-      })
-      return { modes: state.modes }
+      const history = state.history.get(sessionId) ?? [
+        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } }
+      ]
+      for (const update of history) {
+        await ctx.client.notify(acp.methods.client.session.update, { sessionId, update })
+      }
+      return { modes: state.modes, configOptions: state.configOptions }
     })
     .onNotification(acp.methods.agent.session.cancel, (ctx) => {
       cancels.get(ctx.params.sessionId)?.()
@@ -100,8 +163,9 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       if (!state.signedIn) throw acp.RequestError.authRequired()
       const { sessionId } = ctx.params
       const block = ctx.params.prompt[0]
-      const text = block.type === 'text' ? block.text : ''
+      const text = block?.type === 'text' ? block.text : ''
       state.prompts.push(text)
+      state.promptBlocks.push(ctx.params.prompt)
       const update = (u: acp.SessionUpdate): Promise<void> =>
         ctx.client.notify(acp.methods.client.session.update, { sessionId, update: u })
       const cancelled = new Promise<void>((resolve) => cancels.set(sessionId, resolve))
@@ -153,6 +217,7 @@ describe('SessionManager', () => {
   let state: FakeAgent
   let manager: SessionManager
   let runInTerminal: ReturnType<typeof vi.fn>
+  let devModel: boolean
 
   function makeManager(): SessionManager {
     return new SessionManager({
@@ -162,6 +227,7 @@ describe('SessionManager', () => {
       agentEnv: () => ({ FAKE: '1' }),
       connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
       runInTerminal: runInTerminal as never,
+      devModel: () => devModel,
       now: () => 1000
     })
   }
@@ -169,6 +235,7 @@ describe('SessionManager', () => {
   beforeEach(() => {
     store = new Store(':memory:')
     events = []
+    devModel = false
     state = fakeAgent()
     runInTerminal = vi.fn(async () => 0)
     manager = makeManager()
@@ -557,6 +624,301 @@ describe('SessionManager', () => {
         { outcome: { outcome: 'cancelled' } }
       ])
       expect(events.some((e) => e.type === 'notice')).toBe(false)
+    })
+
+    it('reports bypass or auto-approval in the live state', async () => {
+      state.modes = MODES
+      const a = await manager.createSession('/w', 'fake')
+      expect(manager.openSession(a.id).live.permissions).toBe('bypass')
+      state.refuseModes = true
+      const b = await manager.createSession('/w', 'fake')
+      expect(manager.openSession(b.id).live.permissions).toBe('auto')
+    })
+  })
+
+  describe('session management', () => {
+    it('renames a session', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      expect(manager.renameSession(session.id, '  Order   review ').title).toBe('Order review')
+      expect(store.getSession(session.id)?.title).toBe('Order review')
+      expect(() => manager.renameSession(session.id, '   ')).toThrow()
+    })
+
+    it('deletes a session from the DB and the agent', async () => {
+      state.canDelete = true
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'hi', null)
+      const message = manager.openSession(session.id).messages[1]
+      manager.createThread(session.id, message.id, { kind: 'selection', start: 0, end: 5, text: 'Hello' })
+
+      await expect(manager.deleteSession(session.id)).resolves.toBeNull()
+      expect(state.deleted).toEqual([session.acpSessionId])
+      expect(store.getSession(session.id)).toBeUndefined()
+      expect(store.listMessages(session.id)).toEqual([])
+      expect(store.listToolCalls(session.id)).toEqual([])
+      expect(store.listThreads(session.id)).toEqual([])
+      expect(events.at(-1)).toEqual({ type: 'sessionDeleted', sessionId: session.id })
+    })
+
+    it("warns when the agent can't delete its copy, unless the session never had a message", async () => {
+      state.canDelete = true
+      state.refuseDelete = true
+      const empty = await manager.createSession('/w', 'fake')
+      await expect(manager.deleteSession(empty.id)).resolves.toBeNull()
+      const used = await manager.createSession('/w', 'fake')
+      await manager.send(used.id, 'hi', null)
+      await expect(manager.deleteSession(used.id)).resolves.toMatch(/couldn't delete its own copy/)
+      expect(manager.listSessions()).toEqual([])
+    })
+
+    it('deletes only from Gloss when the agent cannot delete sessions', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await expect(manager.deleteSession(session.id)).resolves.toBeNull()
+      expect(state.deleted).toEqual([])
+      expect(store.getSession(session.id)).toBeUndefined()
+    })
+
+    it('cancels a running turn before deleting', async () => {
+      state.canDelete = true
+      state.script = async ({ say, cancelled }) => {
+        await say('Working')
+        await cancelled
+        return 'cancelled'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      const turn = manager.send(session.id, 'long', null)
+      await vi.waitFor(() => expect(store.listMessages(session.id)).toHaveLength(2))
+      await manager.deleteSession(session.id)
+      await expect(turn).resolves.toEqual({ stopReason: 'cancelled' })
+      expect(store.getSession(session.id)).toBeUndefined()
+    })
+  })
+
+  describe('projects and existing sessions', () => {
+    it('lists folders of sessions and opened projects, most recent first, without duplicates', async () => {
+      let now = 1
+      manager = new SessionManager({
+        store,
+        emit: (e) => events.push(e),
+        getAgentConfig: () => config,
+        agentEnv: () => ({}),
+        connect: (_c, _e, handlers) => AgentConnection.open(agentApp(state), handlers),
+        runInTerminal: runInTerminal as never,
+        now: () => now++
+      })
+      await manager.createSession('/work/shop', 'fake')
+      manager.addProject('/work/blog')
+      await manager.createSession('/work/shop', 'fake')
+      expect(manager.listProjects()).toEqual([
+        { path: '/work/shop', name: 'shop' },
+        { path: '/work/blog', name: 'blog' }
+      ])
+    })
+
+    it("lists the agent's sessions for a folder that Gloss hasn't imported", async () => {
+      state.canList = true
+      const mine = await manager.createSession('/w', 'fake')
+      state.listed = [
+        { sessionId: mine.acpSessionId, cwd: '/w', title: 'mine' },
+        { sessionId: 'cli-1', cwd: '/w', title: 'Old CLI work', updatedAt: '2026-10-01T00:00:00Z' },
+        { sessionId: 'cli-2', cwd: '/w', updatedAt: '2026-10-05T00:00:00Z' },
+        { sessionId: 'cli-3', cwd: '/elsewhere', title: 'other folder' }
+      ]
+      expect(await manager.agentSessions('/w', 'fake')).toEqual([
+        { acpSessionId: 'cli-2', title: 'Untitled session', updatedAt: '2026-10-05T00:00:00Z' },
+        { acpSessionId: 'cli-1', title: 'Old CLI work', updatedAt: '2026-10-01T00:00:00Z' }
+      ])
+    })
+
+    it('deletes a project with its sessions and their agent copies, leaving other projects', async () => {
+      state.canDelete = true
+      const a = await manager.createSession('/work/shop', 'fake')
+      const b = await manager.createSession('/work/shop', 'fake')
+      const other = await manager.createSession('/work/blog', 'fake')
+      manager.addProject('/work/shop')
+
+      await expect(manager.deleteProject('/work/shop')).resolves.toBeNull()
+      expect(state.deleted.sort()).toEqual([a.acpSessionId, b.acpSessionId].sort())
+      expect(manager.listSessions().map((s) => s.id)).toEqual([other.id])
+      expect(manager.listProjects()).toEqual([{ path: '/work/blog', name: 'blog' }])
+    })
+
+    it('lists nothing when the agent cannot list sessions', async () => {
+      expect(await manager.agentSessions('/w', 'fake')).toEqual([])
+    })
+
+    it('imports a session, building its main thread from the session/load replay', async () => {
+      state.sessions.add('cli-1')
+      state.history.set('cli-1', [
+        { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Fix the ' }, messageId: 'u1' },
+        { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'build' }, messageId: 'u1' },
+        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Looking.' }, messageId: 'a1' },
+        { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'npm run build', kind: 'execute', status: 'pending' },
+        { sessionUpdate: 'tool_call_update', toolCallId: 't1', status: 'completed' },
+        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Fixed.' }, messageId: 'a2' },
+        {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'image', data: 'iVBOR', mimeType: 'image/png' },
+          messageId: 'u2'
+        },
+        { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'And this?' }, messageId: 'u2' }
+      ])
+      const session = await manager.importSession('/w', 'fake', 'cli-1', 'Old CLI work')
+      expect(session).toMatchObject({ acpSessionId: 'cli-1', cwd: '/w', title: 'Old CLI work' })
+
+      const view = manager.openSession(session.id)
+      expect(view.messages.map((m) => [m.seq, m.role, m.text, m.threadId])).toEqual([
+        [0, 'user', 'Fix the build', null],
+        [1, 'agent', 'Looking.', null],
+        [3, 'agent', 'Fixed.', null],
+        [4, 'user', 'And this?', null]
+      ])
+      expect(view.messages[3].attachments).toEqual([
+        { kind: 'image', name: 'image', mimeType: 'image/png', data: 'iVBOR' }
+      ])
+      expect(view.toolCalls.map((t) => [t.messageSeq, t.title, t.status])).toEqual([[2, 'npm run build', 'completed']])
+      expect(manager.listProjects()).toEqual([{ path: '/w', name: 'w' }])
+
+      // Importing it again returns the same session; a later turn continues it without re-recording the replay.
+      expect((await manager.importSession('/w', 'fake', 'cli-1', 'x')).id).toBe(session.id)
+      await manager.send(session.id, 'next', null)
+      expect(manager.openSession(session.id).messages.map((m) => m.text).slice(-2)).toEqual(['next', 'Hello world'])
+    })
+
+    it('removes a failed import', async () => {
+      await expect(manager.importSession('/w', 'fake', 'missing', 'Gone')).rejects.toThrow()
+      expect(manager.listSessions()).toEqual([])
+    })
+  })
+
+  describe('live session state', () => {
+    const MODEL: acp.SessionConfigOption = {
+      id: 'model',
+      name: 'Model',
+      category: 'model',
+      type: 'select',
+      currentValue: 'default',
+      options: [
+        { value: 'default', name: 'Default', description: 'Sonnet' },
+        { value: 'opus', name: 'Opus' }
+      ]
+    }
+
+    it('reports the model option, commands, usage and what prompts accept', async () => {
+      state.configOptions = [MODEL]
+      state.commands = [{ name: 'compact', description: 'Compact the context', input: { hint: '[focus]' } }]
+      state.promptCapabilities = { image: true, embeddedContext: true }
+      state.script = async ({ update }) => {
+        await update({ sessionUpdate: 'usage_update', used: 50_000, size: 200_000, cost: { amount: 0.12, currency: 'USD' } })
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'hi', null)
+      expect(manager.openSession(session.id).live).toEqual({
+        attached: true,
+        model: {
+          configId: 'model',
+          current: 'default',
+          options: [
+            { value: 'default', name: 'Default', description: 'Sonnet' },
+            { value: 'opus', name: 'Opus' }
+          ]
+        },
+        commands: [{ name: 'compact', description: 'Compact the context', hint: '[focus]' }],
+        usage: { used: 50_000, size: 200_000, cost: { amount: 0.12, currency: 'USD' } },
+        rateLimits: [],
+        permissions: 'auto',
+        accepts: { image: true, file: true }
+      })
+      expect(events).toContainEqual(expect.objectContaining({ type: 'live', sessionId: session.id }))
+    })
+
+    it("tracks Claude Code's plan limits per window from usage updates", async () => {
+      const usage = (info: Record<string, unknown>): acp.SessionUpdate => ({
+        sessionUpdate: 'usage_update',
+        used: 1000,
+        size: 200_000,
+        _meta: { '_claude/rateLimit': info }
+      })
+      state.script = async ({ update }) => {
+        await update(usage({ status: 'allowed', rateLimitType: 'five_hour', resetsAt: 1_791_873_000 }))
+        await update(usage({ status: 'allowed_warning', rateLimitType: 'seven_day', utilization: 0.82 }))
+        await update(usage({ status: 'rejected', rateLimitType: 'five_hour', resetsAt: 1_791_873_000, utilization: 100 }))
+        // Usage updates without rate-limit info keep what is known.
+        await update({ sessionUpdate: 'usage_update', used: 2000, size: 200_000 })
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'hi', null)
+      expect(manager.openSession(session.id).live.rateLimits).toEqual([
+        { window: 'seven_day', status: 'warning', utilization: 82 },
+        { window: 'five_hour', status: 'rejected', utilization: 100, resetsAt: 1_791_873_000_000 }
+      ])
+    })
+
+    it('resumes a session on the agent when it is opened', async () => {
+      state.configOptions = [MODEL]
+      const session = await manager.createSession('/w', 'fake')
+      await manager.dispose()
+      manager = makeManager()
+      expect(manager.openSession(session.id).live.attached).toBe(false)
+      await vi.waitFor(() => expect(manager.openSession(session.id).live.attached).toBe(true))
+      expect(state.loads).toEqual([session.acpSessionId])
+      expect(manager.openSession(session.id).live.model?.current).toBe('default')
+    })
+
+    it('sets the model per session and re-applies it on resume', async () => {
+      state.configOptions = [MODEL]
+      const session = await manager.createSession('/w', 'fake')
+      await manager.setModel(session.id, 'opus')
+      expect(manager.openSession(session.id).live.model?.current).toBe('opus')
+      expect(store.getSession(session.id)?.model).toBe('opus')
+
+      // The agent forgets it (a fresh process); Gloss sets it again when resuming.
+      state.configOptions = [MODEL]
+      await manager.dispose()
+      manager = makeManager()
+      await manager.send(session.id, 'hi', null)
+      expect(state.configChanges).toEqual([`${session.acpSessionId}:model=opus`, `${session.acpSessionId}:model=opus`])
+    })
+
+    it('leaves the model alone while the dev model is on', async () => {
+      state.configOptions = [MODEL]
+      const session = await manager.createSession('/w', 'fake')
+      await manager.setModel(session.id, 'opus')
+      devModel = true
+      await expect(manager.setModel(session.id, 'default')).rejects.toThrow(/dev model/)
+      await manager.dispose()
+      manager = makeManager()
+      await manager.send(session.id, 'hi', null)
+      expect(state.configChanges).toEqual([`${session.acpSessionId}:model=opus`])
+    })
+  })
+
+  describe('attachments', () => {
+    it('sends images and files after the text and stores them on the message', async () => {
+      state.promptCapabilities = { image: true, embeddedContext: true }
+      const session = await manager.createSession('/w', 'fake')
+      const attachments = [
+        { kind: 'image' as const, name: 'shot.png', mimeType: 'image/png', data: 'iVBOR' },
+        { kind: 'file' as const, name: 'notes.md', path: '/w/notes.md', mimeType: 'text/markdown', text: '# Notes' }
+      ]
+      await manager.send(session.id, 'look', null, attachments)
+      expect(state.promptBlocks.at(-1)).toEqual([
+        { type: 'text', text: 'look' },
+        { type: 'image', data: 'iVBOR', mimeType: 'image/png' },
+        { type: 'resource', resource: { uri: pathToFileURL('/w/notes.md').href, text: '# Notes', mimeType: 'text/markdown' } }
+      ])
+      expect(manager.openSession(session.id).messages[0].attachments).toEqual(attachments)
+    })
+
+    it('fails the turn when the agent does not accept an attachment', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      const result = await manager.send(session.id, 'look', null, [
+        { kind: 'image', name: 'a.png', mimeType: 'image/png', data: 'x' }
+      ])
+      expect(result.error).toMatch(/images/)
+      expect(state.prompts).toEqual([])
     })
   })
 })

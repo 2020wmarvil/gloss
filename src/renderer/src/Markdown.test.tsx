@@ -8,8 +8,9 @@ describe('Markdown', () => {
   it('renders lists, code and GFM tables', () => {
     const html = render('1. **One**\n2. `two`\n\n| a | b |\n| - | - |\n| 1 | 2 |')
     expect(html).toContain('<ol>')
-    expect(html).toContain('<strong>One</strong>')
-    expect(html).toContain('<code>two</code>')
+    // Text runs are wrapped in spans that carry their source offsets.
+    expect(html).toMatch(/<strong>(<span[^>]*>)+One(<\/span>)+<\/strong>/)
+    expect(html).toMatch(/<code><span[^>]*>two<\/span><\/code>/)
     expect(html).toContain('<table>')
   })
 

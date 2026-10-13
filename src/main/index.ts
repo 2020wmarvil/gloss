@@ -1,10 +1,13 @@
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, shell } from 'electron'
 import { IPC, type GlossEvent } from '../shared/ipc'
-import type { Anchor } from '../shared/types'
+import type { Anchor, Attachment } from '../shared/types'
 import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, listAgents } from './agents'
 import { Store } from './db'
+import { toMarkdown } from './export'
+import { gitStatus } from './git'
 import { SessionManager } from './sessions'
 import { patchArg, SettingsFile } from './settings'
 import { runInTerminal } from './terminal'
@@ -40,6 +43,11 @@ function createWindow(): void {
   })
   mainWindow = win
   win.once('ready-to-show', () => win.show())
+  win.on('focus', () => {
+    unread = 0
+    app.setBadgeCount(0)
+    win.flashFrame(false)
+  })
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = undefined
   })
@@ -66,6 +74,41 @@ function createWindow(): void {
 
 function emit(event: GlossEvent): void {
   mainWindow?.webContents.send(IPC.event, event)
+  if (event.type === 'turnEnd') notifyTurnEnd(event)
+}
+
+/** Finished turns since the window was last focused (the badge count). */
+let unread = 0
+/** Shown notifications, kept so their click handlers survive garbage collection. */
+const notifications = new Set<Notification>()
+
+/** An OS notification when a turn ends or fails while Gloss isn't focused. Clicking it opens the session (and thread). */
+function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
+  const win = mainWindow
+  if (!win || win.isFocused() || event.stopReason === 'cancelled' || !Notification.isSupported()) return
+  const session = store?.getSession(event.sessionId)
+  if (!session) return
+  const body = event.error
+    ? `The turn failed: ${event.error}`
+    : event.threadId
+      ? 'The agent replied in a thread.'
+      : 'The agent finished.'
+  const n = new Notification({ title: session.title, body })
+  notifications.add(n)
+  n.on('click', () => {
+    notifications.delete(n)
+    if (win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    emit({ type: 'reveal', sessionId: event.sessionId, threadId: event.threadId })
+  })
+  n.on('close', () => notifications.delete(n))
+  n.show()
+  unread++
+  // A badge where the OS has one (macOS, some Linux docks); Windows flashes the taskbar button.
+  app.setBadgeCount(unread)
+  if (process.platform === 'win32') win.flashFrame(true)
 }
 
 function str(value: unknown, name: string): string {
@@ -85,22 +128,118 @@ function anchorArg(value: unknown): Anchor {
   throw new Error('Invalid anchor')
 }
 
+const MAX_ATTACHMENTS = 20
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+const MAX_FILE_CHARS = 1024 * 1024
+
+function attachmentsArg(value: unknown): Attachment[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > MAX_ATTACHMENTS) throw new Error('Invalid attachments')
+  return value.map((v: unknown): Attachment => {
+    const a = v as Partial<Record<string, unknown>> | null
+    if (!a || typeof a.name !== 'string') throw new Error('Invalid attachment')
+    if (
+      a.kind === 'image' &&
+      typeof a.mimeType === 'string' &&
+      a.mimeType.startsWith('image/') &&
+      typeof a.data === 'string' &&
+      a.data.length <= (MAX_IMAGE_BYTES * 4) / 3 + 4
+    ) {
+      return { kind: 'image', name: a.name, mimeType: a.mimeType, data: a.data }
+    }
+    if (a.kind === 'file' && typeof a.text === 'string') {
+      if (a.text.length > MAX_FILE_CHARS) throw new Error(`${a.name} is too large to attach.`)
+      return {
+        kind: 'file',
+        name: a.name,
+        text: a.text,
+        ...(typeof a.path === 'string' && a.path ? { path: a.path } : {}),
+        ...(typeof a.mimeType === 'string' && a.mimeType ? { mimeType: a.mimeType } : {})
+      }
+    }
+    throw new Error(`Invalid attachment ${a.name}`)
+  })
+}
+
+/** A folder path: an empty one would make the agent list every project's sessions. */
+function folderArg(value: unknown, name: string): string {
+  const path = str(value, name)
+  if (path.trim() === '') throw new Error(`Expected ${name} to be a folder path`)
+  return path
+}
+
+function threadArg(value: unknown): string | null {
+  return value === null ? null : str(value, 'threadId')
+}
+
+function exportLog(id: string, threadId: string | null): { title: string; markdown: string } {
+  const s = store!
+  const session = s.getSession(id)
+  if (!session) throw new Error(`Unknown session ${id}`)
+  const markdown = toMarkdown(
+    { session, messages: s.listMessages(id), toolCalls: s.listToolCalls(id), threads: s.listThreads(id) },
+    threadId
+  )
+  return { title: session.title, markdown }
+}
+
+async function pickFolder(): Promise<string | null> {
+  const options: Electron.OpenDialogOptions = { properties: ['openDirectory'] }
+  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+  return result.canceled ? null : (result.filePaths[0] ?? null)
+}
+
 function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void {
   ipcMain.handle(IPC.agentsList, () => listAgents())
+  ipcMain.handle(IPC.projectsList, () => manager.listProjects())
+  ipcMain.handle(IPC.projectsOpen, async () => {
+    const path = await pickFolder()
+    return path ? manager.addProject(path) : null
+  })
+  ipcMain.handle(IPC.projectsAgentSessions, (_e, path: unknown, agentId: unknown) =>
+    manager.agentSessions(folderArg(path, 'path'), str(agentId, 'agentId'))
+  )
+  ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
-    manager.createSession(str(cwd, 'cwd'), str(agentId, 'agentId'))
+    manager.createSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
+  )
+  ipcMain.handle(IPC.sessionsImport, (_e, cwd: unknown, agentId: unknown, acpSessionId: unknown, title: unknown) =>
+    manager.importSession(
+      folderArg(cwd, 'cwd'),
+      str(agentId, 'agentId'),
+      str(acpSessionId, 'acpSessionId'),
+      str(title, 'title')
+    )
   )
   ipcMain.handle(IPC.sessionsOpen, (_e, id: unknown) => manager.openSession(str(id, 'id')))
+  ipcMain.handle(IPC.sessionsRename, (_e, id: unknown, title: unknown) =>
+    manager.renameSession(str(id, 'id'), str(title, 'title'))
+  )
+  ipcMain.handle(IPC.sessionsDelete, (_e, id: unknown) => manager.deleteSession(str(id, 'id')))
+  ipcMain.handle(IPC.sessionsSetModel, (_e, id: unknown, value: unknown) =>
+    manager.setModel(str(id, 'id'), str(value, 'value'))
+  )
+  ipcMain.handle(IPC.sessionsCopyMarkdown, (_e, id: unknown, threadId: unknown) => {
+    clipboard.writeText(exportLog(str(id, 'id'), threadArg(threadId)).markdown)
+  })
+  ipcMain.handle(IPC.sessionsSaveMarkdown, async (_e, id: unknown, threadId: unknown) => {
+    const { title, markdown } = exportLog(str(id, 'id'), threadArg(threadId))
+    const options: Electron.SaveDialogOptions = {
+      defaultPath: `${title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'session'}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }]
+    }
+    const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return false
+    await writeFile(result.filePath, markdown)
+    return true
+  })
+  ipcMain.handle(IPC.gitStatus, (_e, cwd: unknown) => gitStatus(str(cwd, 'cwd')))
   ipcMain.handle(IPC.threadsCreate, (_e, sessionId: unknown, anchorMessageId: unknown, anchor: unknown) =>
     manager.createThread(str(sessionId, 'sessionId'), str(anchorMessageId, 'anchorMessageId'), anchorArg(anchor))
   )
-  ipcMain.handle(IPC.send, (_e, sessionId: unknown, text: unknown, threadId: unknown) =>
-    manager.send(
-      str(sessionId, 'sessionId'),
-      str(text, 'text'),
-      threadId === null ? null : str(threadId, 'threadId')
-    )
+  ipcMain.handle(IPC.send, (_e, sessionId: unknown, text: unknown, threadId: unknown, attachments: unknown) =>
+    manager.send(str(sessionId, 'sessionId'), str(text, 'text'), threadArg(threadId), attachmentsArg(attachments))
   )
   ipcMain.handle(IPC.cancel, (_e, sessionId: unknown) => manager.cancel(str(sessionId, 'sessionId')))
   ipcMain.handle(IPC.authSignIn, (_e, agentId: unknown, methodId: unknown) =>
@@ -109,13 +248,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.authDismiss, (_e, agentId: unknown) =>
     manager.dismissSignIn(str(agentId, 'agentId'))
   )
-  ipcMain.handle(IPC.pickDirectory, async () => {
-    const options: Electron.OpenDialogOptions = { properties: ['openDirectory'] }
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
-      : await dialog.showOpenDialog(options)
-    return result.canceled ? null : (result.filePaths[0] ?? null)
-  })
+
   ipcMain.handle(IPC.settingsGet, () => settingsFile.state())
   ipcMain.handle(IPC.settingsUpdate, (_e, patch: unknown) => settingsFile.update(patchArg(patch)))
   ipcMain.handle(IPC.settingsOpenFile, async () => {
@@ -123,6 +256,9 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     return error === '' ? null : error
   })
 }
+
+// Windows shows notifications only for an app with an AppUserModelID.
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'app.gloss' : process.execPath)
 
 app.whenReady().then(() => {
   const dataDir = app.getPath('userData')
@@ -146,7 +282,8 @@ app.whenReady().then(() => {
     getAgentConfig,
     agentEnv: (config) => agentEnv(config, { devModel: settingsFile.state().global.devModel }),
     connect: (config, env, handlers) => AgentConnection.start(config, env, handlers),
-    runInTerminal
+    runInTerminal,
+    devModel: () => settingsFile.state().global.devModel
   })
   registerIpc(sessions, settingsFile)
   createWindow()

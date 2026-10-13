@@ -1,7 +1,8 @@
 // The message log shared by the main view and the thread panel.
-import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { Message, ToolCall } from '@shared/types'
 import type { OpenSession } from './App'
+import { hasDetails, ToolDetails } from './ToolDetails'
 
 /** A transient, client-side note shown in a log (not part of the conversation). */
 export type Notice = { id: string; threadId: string | null; text: string; afterSeq: number }
@@ -58,6 +59,19 @@ export function Log({ items, className, empty, renderAgent }: Props): React.JSX.
             case 'message':
               return item.message.role === 'user' ? (
                 <div key={item.message.id} className="you">
+                  {item.message.attachments && item.message.attachments.length > 0 && (
+                    <ul className="attachments sent">
+                      {item.message.attachments.map((a, i) => (
+                        <li key={i} className="attachment" title={a.kind === 'file' ? (a.path ?? a.name) : a.name}>
+                          {a.kind === 'image' ? (
+                            <img src={`data:${a.mimeType};base64,${a.data}`} alt={a.name} />
+                          ) : (
+                            <span className="attachment-name">{a.name}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {item.message.text}
                 </div>
               ) : (
@@ -80,12 +94,28 @@ export function Log({ items, className, empty, renderAgent }: Props): React.JSX.
   )
 }
 
+/** A tool call: one line, expanding to what it did. Collapsed by default. */
 function ToolRow({ toolCall }: { toolCall: ToolCall }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const expandable = hasDetails(toolCall)
   return (
-    <div className={`tool status-${toolCall.status}`}>
-      <span className="tool-dot" aria-hidden />
-      <span className="tool-title">{toolCall.title}</span>
-      <span className="tool-status">{toolCall.status.replace('_', ' ')}</span>
+    <div className={`tool status-${toolCall.status}${open ? ' open' : ''}`}>
+      <button
+        className="tool-row"
+        aria-expanded={expandable ? open : undefined}
+        disabled={!expandable}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="tool-dot" aria-hidden />
+        <span className="tool-title">{toolCall.title}</span>
+        <span className="tool-status">{toolCall.status.replace('_', ' ')}</span>
+        {expandable && (
+          <span className="tool-chevron" aria-hidden>
+            {open ? '▾' : '▸'}
+          </span>
+        )}
+      </button>
+      {open && <ToolDetails toolCall={toolCall} />}
     </div>
   )
 }

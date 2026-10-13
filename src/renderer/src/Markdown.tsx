@@ -1,12 +1,43 @@
 // Renders untrusted agent markdown. No raw HTML (it is shown as text), only
 // absolute web and mailto links (opened in the system browser by the main
-// process), and no images are loaded.
+// process), and no images are loaded. Code blocks are highlighted and have a
+// copy button.
+import { useState } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { itemMarker, listItemSpans, type ListItemSpan } from './anchors'
+import { codeColors, useHighlighting } from './highlight'
 import { remarkSourceSpans, type Mark } from './sourceSpans'
 
 type Node = { type: string; children?: Node[] }
+type HastNode = { type: string; value?: string; children?: HastNode[] }
+
+function textOf(node: HastNode | undefined): string {
+  if (!node) return ''
+  if (node.type === 'text') return node.value ?? ''
+  return (node.children ?? []).map(textOf).join('')
+}
+
+function CodeBlock({ code, children }: { code: string; children: React.ReactNode }): React.JSX.Element {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="code-block">
+      <pre>{children}</pre>
+      <button
+        type="button"
+        className="copy-code"
+        onClick={() => {
+          void navigator.clipboard.writeText(code).then(() => {
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1500)
+          })
+        }}
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+    </div>
+  )
+}
 
 /** Turns raw HTML nodes into plain text so they are displayed, not rendered. */
 function remarkHtmlAsText() {
@@ -30,7 +61,9 @@ const baseComponents: Components = {
         {children}
       </span>
     ),
-  img: ({ alt }) => <span className="md-image">[image{alt ? `: ${alt}` : ''}]</span>
+  img: ({ alt }) => <span className="md-image">[image{alt ? `: ${alt}` : ''}]</span>,
+  // The code's text without a trailing newline (the code node's value).
+  pre: ({ node, children }) => <CodeBlock code={textOf(node as HastNode).replace(/\n$/, '')}>{children}</CodeBlock>
 }
 
 /** Thread anchors in one agent message: reply affordances, marked selections. */
@@ -128,14 +161,16 @@ function anchorComponents(text: string, anchors: MessageAnchors): Components {
 }
 
 export function Markdown({ text, anchors }: { text: string; anchors?: MessageAnchors }): React.JSX.Element {
+  // Re-render when highlighting for more languages becomes available.
+  useHighlighting()
   return (
     <div className={anchors ? 'md with-anchors' : 'md'}>
       <ReactMarkdown
-        remarkPlugins={
-          anchors
-            ? [remarkGfm, remarkHtmlAsText, [remarkSourceSpans, { marks: anchors.marks }]]
-            : [remarkGfm, remarkHtmlAsText]
-        }
+        remarkPlugins={[
+          remarkGfm,
+          remarkHtmlAsText,
+          [remarkSourceSpans, { marks: anchors?.marks ?? [], colors: codeColors }]
+        ]}
         components={anchors ? anchorComponents(text, anchors) : baseComponents}
       >
         {text}

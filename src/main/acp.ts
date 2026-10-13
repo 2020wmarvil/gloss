@@ -114,6 +114,39 @@ export class AgentConnection {
     return this.init.agentCapabilities?.loadSession === true
   }
 
+  get canListSessions(): boolean {
+    return this.init.agentCapabilities?.sessionCapabilities?.list != null
+  }
+
+  get canDeleteSessions(): boolean {
+    return this.init.agentCapabilities?.sessionCapabilities?.delete != null
+  }
+
+  get promptCapabilities(): acp.PromptCapabilities {
+    return this.init.agentCapabilities?.promptCapabilities ?? {}
+  }
+
+  /** The agent's sessions in `cwd`, following pages up to `maxPages`. */
+  async listSessions(cwd: string, maxPages = 10): Promise<acp.SessionInfo[]> {
+    const sessions: acp.SessionInfo[] = []
+    let cursor: string | null | undefined
+    for (let page = 0; page < maxPages; page++) {
+      const res = await this.conn.agent.request(acp.methods.agent.session.list, { cwd, cursor })
+      sessions.push(...res.sessions)
+      cursor = res.nextCursor
+      if (!cursor) break
+    }
+    return sessions
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.conn.agent.request(acp.methods.agent.session.delete, { sessionId })
+  }
+
+  setConfigOption(sessionId: string, configId: string, value: string): Promise<acp.SetSessionConfigOptionResponse> {
+    return this.conn.agent.request(acp.methods.agent.session.setConfigOption, { sessionId, configId, value })
+  }
+
   newSession(cwd: string): Promise<acp.NewSessionResponse> {
     return this.conn.agent.request(acp.methods.agent.session.new, { cwd, mcpServers: [] })
   }
@@ -130,11 +163,8 @@ export class AgentConnection {
     await this.conn.agent.request(acp.methods.agent.session.setMode, { sessionId, modeId })
   }
 
-  prompt(sessionId: string, text: string): Promise<acp.PromptResponse> {
-    return this.conn.agent.request(acp.methods.agent.session.prompt, {
-      sessionId,
-      prompt: [{ type: 'text', text }]
-    })
+  prompt(sessionId: string, prompt: acp.ContentBlock[]): Promise<acp.PromptResponse> {
+    return this.conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt })
   }
 
   cancel(sessionId: string): Promise<void> {

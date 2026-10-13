@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock – sidebar B: project switcher</title>
+<style>
+:root{--bg:#F7F6F2;--panel:#FFFFFF;--ink:#1C1B18;--muted:#5F5C55;--faint:#8A867D;--line:#E3E1DA;--chip:#ECEAE3;--accent:#2C55C9;--danger:#B3261E}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+button{font:inherit;cursor:pointer;color:inherit}
+.app{display:flex;height:100vh}
+nav{flex:0 0 260px;padding:20px 12px 12px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:6px;min-height:0}
+.brand{font-weight:600;font-size:18px;padding:0 8px 6px}
+.switcher{position:relative}
+.switch-btn{width:100%;display:flex;align-items:center;gap:8px;height:44px;border:1px solid #D6D3CA;border-radius:8px;background:var(--panel);text-align:left;padding:0 10px}
+.switch-btn .names{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.2}
+.switch-btn b{font-size:14px}
+.switch-btn .mono{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.caret{color:var(--muted);font-size:11px}
+.plist{position:absolute;left:0;right:0;top:48px;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.12);padding:4px}
+.plist button{display:flex;flex-direction:column;align-items:flex-start;width:100%;border:0;background:transparent;padding:6px 10px;border-radius:5px;text-align:left;line-height:1.3}
+.plist button:hover{background:#F1EFE9}
+.plist button.on b{color:var(--accent)}
+.plist hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.new-session{height:36px;border:1px solid #D6D3CA;border-radius:8px;background:var(--panel);text-align:left;padding:0 10px}
+.label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:12px 8px 2px}
+.list{display:flex;flex-direction:column;gap:1px}
+.scroll{flex:1;overflow-y:auto}
+.icon-btn{flex:none;width:24px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--muted);opacity:0;font-size:16px;line-height:1}
+.row:hover .icon-btn,.icon-btn:focus-visible{opacity:1}
+.icon-btn:hover{background:#E4E1D8;color:var(--ink)}
+.row{display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:6px;font-size:14px;color:#3A3833;cursor:pointer;position:relative}
+.row:hover{background:#EFEDE7}
+.row.on{background:var(--chip);color:var(--ink);font-weight:500}
+.title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.3}}
+.when{flex:none;font-size:12px;color:var(--faint)}
+.row.agent{color:var(--muted)}
+.row.agent .title::before{content:"";display:inline-block;width:6px;height:6px;border:1.5px solid var(--faint);border-radius:50%;margin-right:8px;vertical-align:1px}
+.loading{padding:6px 8px;font-size:13px;color:var(--faint)}
+.more{padding:4px 8px;font-size:13px;color:var(--accent);border:0;background:transparent;text-align:left}
+.row input{flex:1;min-width:0;font:inherit;border:1px solid var(--accent);border-radius:4px;padding:0 4px;background:#fff}
+.menu{position:absolute;right:4px;top:32px;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.12);padding:4px;min-width:140px;font-weight:400}
+.menu button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:6px 10px;border-radius:5px;font-size:14px}
+.menu button:hover{background:#F1EFE9}
+.menu .danger{color:var(--danger)}
+.settings{padding:8px;border:0;border-top:1px solid var(--line);background:transparent;text-align:left;font-size:13px;color:var(--muted)}
+main{flex:1;min-width:0;display:flex;flex-direction:column}
+header{display:flex;align-items:baseline;gap:12px;padding:16px 32px;border-bottom:1px solid var(--line)}
+header h1{margin:0;font-size:16px}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--muted)}
+.log{flex:1;padding:28px 32px;color:var(--muted);max-width:820px}
+.note{margin:24px 32px;padding:12px 14px;border:1px dashed #CFCBC0;border-radius:8px;font-size:13px;color:var(--muted);max-width:640px}
+.note b{color:var(--ink)}
+.backdrop{position:fixed;inset:0;background:rgba(28,27,24,.35);display:flex;align-items:center;justify-content:center}
+.backdrop[hidden]{display:none}
+.dialog{width:420px;background:var(--panel);border-radius:12px;padding:20px 22px;box-shadow:0 10px 40px rgba(0,0,0,.2)}
+.dialog h2{margin:0 0 6px;font-size:16px}
+.dialog p{margin:6px 0;font-size:14px;color:var(--muted)}
+.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.actions button{height:36px;padding:0 14px;border:1px solid #D6D3CA;border-radius:8px;background:var(--panel)}
+.actions .del{background:var(--danger);border-color:var(--danger);color:#fff}
+</style>
+</head>
+<body>
+<div class="app">
+  <nav aria-label="Project and sessions">
+    <div class="brand">gloss.</div>
+    <div class="switcher">
+      <button class="switch-btn" id="switchBtn"><span class="names"><b id="pname"></b><span class="mono" id="ppath"></span></span><span class="caret">▼</span></button>
+      <div class="plist" id="plist" hidden></div>
+    </div>
+    <button class="new-session" id="newSession">+ New session</button>
+    <div class="scroll">
+      <div class="label">Sessions</div>
+      <div class="list" id="mine"></div>
+      <div class="label">Not in Gloss yet</div>
+      <div class="list" id="agent"></div>
+    </div>
+    <button class="settings">Settings</button>
+  </nav>
+  <main>
+    <header><h1 id="h1"></h1><span class="mono" id="hpath"></span></header>
+    <div class="log" id="log"></div>
+    <div class="note">
+      <b>Option B: project switcher.</b> One project at a time, picked at the top (its menu lists your projects and “Open project…”). Below: that project's Gloss sessions, then <i>Not in Gloss yet</i>, the agent's other sessions in the folder (<code>session/list</code>); clicking one imports it and opens it.
+      Hover a session for <b>⋯</b> (Rename, Delete). Double-click a title to rename. Sessions running in other projects show a dot next to that project in the menu.
+    </div>
+  </main>
+</div>
+
+<div class="backdrop" id="confirm" hidden>
+  <div class="dialog" role="dialog" aria-modal="true">
+    <h2>Delete session?</h2>
+    <p>This deletes the session, its messages and threads from Gloss, and Claude Code's own transcript. It can't be undone.</p>
+    <div class="actions"><button id="cancelDel">Cancel</button><button class="del" id="doDel">Delete</button></div>
+  </div>
+</div>
+
+<script>
+const projects = [
+  { name:'gloss', path:'C:\\Users\\you\\Desktop\\gloss', loaded:false, showAll:false,
+    sessions:[{id:1,title:'M7 daily driver',running:true,when:'now'},{id:2,title:'Fix CI on Linux',when:'2h'},{id:3,title:'Settings screen copy',when:'1d'}],
+    agent:[{id:11,title:'refactor sessions.ts',when:'3d'},{id:12,title:'roadmap 2 draft',when:'5d'},{id:13,title:'why does selection drift',when:'1w'},{id:14,title:'try electron 44',when:'2w'},{id:15,title:'electron-vite config',when:'3w'},{id:18,title:'markdown sanitizing',when:'1mo'}] },
+  { name:'website', path:'C:\\Users\\you\\src\\website', loaded:false, showAll:false,
+    sessions:[{id:4,title:'Blog post layout',running:true,when:'now'}], agent:[{id:16,title:'tailwind upgrade',when:'2w'}] },
+  { name:'dotfiles', path:'C:\\Users\\you\\dotfiles', loaded:false, showAll:false, sessions:[], agent:[{id:17,title:'nvim lsp setup',when:'1mo'}] }
+];
+let proj = projects[0], current = 1, menuFor = null, renaming = null, pendingDelete = null, nextId = 100;
+const el = (t,c,txt) => { const e=document.createElement(t); if(c) e.className=c; if(txt!=null) e.textContent=txt; return e; };
+
+function sessionRow(s){
+  const r = el('div','row'+(s.id===current?' on':''));
+  if (renaming===s.id){
+    const inp = el('input'); inp.value=s.title; r.append(inp);
+    setTimeout(()=>{inp.focus(); inp.select();});
+    const done=(save)=>{ if(save&&inp.value.trim()) s.title=inp.value.trim(); renaming=null; render(); };
+    inp.onkeydown=(e)=>{ if(e.key==='Enter') done(true); if(e.key==='Escape') done(false); };
+    inp.onblur=()=>done(true);
+    return r;
+  }
+  const t = el('span','title',s.title); t.ondblclick=(e)=>{e.stopPropagation(); renaming=s.id; render();};
+  r.append(t);
+  r.append(s.running ? el('span','dot') : el('span','when',s.when));
+  const more = el('span','icon-btn','⋯'); more.setAttribute('role','button'); more.title='More';
+  more.onclick=(e)=>{ e.stopPropagation(); menuFor = menuFor===s.id?null:s.id; render(); };
+  r.append(more);
+  if (menuFor===s.id){
+    const m = el('div','menu');
+    const ren = el('button',null,'Rename'); ren.onclick=(e)=>{e.stopPropagation(); menuFor=null; renaming=s.id; render();};
+    const exp = el('button',null,'Export as markdown…'); exp.onclick=(e)=>{e.stopPropagation(); menuFor=null; render();};
+    const del = el('button','danger','Delete…'); del.onclick=(e)=>{e.stopPropagation(); menuFor=null; pendingDelete=s.id; document.getElementById('confirm').hidden=false; render();};
+    m.append(ren,exp,del); r.append(m);
+  }
+  r.onclick=()=>{ current=s.id; menuFor=null; render(); };
+  return r;
+}
+
+function render(){
+  document.getElementById('pname').textContent = proj.name;
+  document.getElementById('ppath').textContent = proj.path;
+  const plist = document.getElementById('plist'); plist.innerHTML='';
+  for (const p of projects){
+    const b = el('button', p===proj?'on':'');
+    const name = el('b',null,p.name);
+    if (p!==proj && p.sessions.some(s=>s.running)){ const d=el('span','dot'); d.style.display='inline-block'; d.style.marginLeft='8px'; name.append(d); }
+    b.append(name, el('span','mono',p.path));
+    b.onclick=(e)=>{ e.stopPropagation(); proj=p; plist.hidden=true; current=p.sessions[0]?.id ?? null; render(); };
+    plist.append(b);
+  }
+  plist.append(el('hr'));
+  const op = el('button',null,'Open project…');
+  op.onclick=(e)=>{ e.stopPropagation(); const name='new-project-'+projects.length; const p={name,path:'C:\\Users\\you\\src\\'+name,loaded:false,showAll:false,sessions:[],agent:[{id:nextId++,title:'an old CLI session',when:'2mo'}]}; projects.push(p); proj=p; current=null; plist.hidden=true; render(); };
+  plist.append(op);
+
+  const mine = document.getElementById('mine'); mine.innerHTML='';
+  if (proj.sessions.length===0) mine.append(el('div','loading','No Gloss sessions yet'));
+  for (const s of proj.sessions) mine.append(sessionRow(s));
+
+  const agent = document.getElementById('agent'); agent.innerHTML='';
+  if (!proj.loaded){
+    agent.append(el('div','loading','Loading…'));
+    const p = proj; setTimeout(()=>{ p.loaded=true; render(); }, 700);
+  } else if (proj.agent.length===0){
+    agent.append(el('div','loading','Nothing else here'));
+  } else {
+    const shown = proj.showAll ? proj.agent : proj.agent.slice(0,5);
+    for (const a of shown){
+      const r = el('div','row agent'); r.title='Open in Gloss (imports its history)';
+      r.append(el('span','title',a.title), el('span','when',a.when));
+      r.onclick=()=>{ proj.agent=proj.agent.filter(x=>x!==a); const s={id:a.id,title:a.title,when:a.when}; proj.sessions.unshift(s); current=s.id; render(); };
+      agent.append(r);
+    }
+    if (proj.agent.length>5 && !proj.showAll){
+      const m = el('button','more','Show '+(proj.agent.length-5)+' more'); m.onclick=()=>{proj.showAll=true; render();}; agent.append(m);
+    }
+  }
+
+  const s = proj.sessions.find(s=>s.id===current);
+  document.getElementById('h1').textContent = s ? s.title : 'No session';
+  document.getElementById('hpath').textContent = s ? proj.path : '';
+  document.getElementById('log').textContent = s ? 'The conversation for “'+s.title+'” shows here.' : 'Start a session, or open one from “Not in Gloss yet”.';
+}
+document.getElementById('switchBtn').onclick=(e)=>{ e.stopPropagation(); const l=document.getElementById('plist'); l.hidden=!l.hidden; };
+document.getElementById('newSession').onclick=()=>{ const s={id:nextId++,title:'New session',when:'now'}; proj.sessions.unshift(s); current=s.id; render(); };
+document.getElementById('cancelDel').onclick=()=>{ pendingDelete=null; document.getElementById('confirm').hidden=true; };
+document.getElementById('doDel').onclick=()=>{
+  proj.sessions = proj.sessions.filter(s=>s.id!==pendingDelete);
+  if (current===pendingDelete) current = proj.sessions[0]?.id ?? null;
+  pendingDelete=null; document.getElementById('confirm').hidden=true; render();
+};
+document.addEventListener('click', ()=>{ let changed=false; if(menuFor!==null){menuFor=null; changed=true;} const l=document.getElementById('plist'); if(!l.hidden){l.hidden=true;} if(changed) render(); });
+render();
+</script>
+</body>
+</html>
