@@ -33,6 +33,16 @@ export function isResourceNotFound(err: unknown): boolean {
 }
 
 /**
+ * The Codex adapter refuses session/load while another Codex client (the app,
+ * the CLI, an IDE) holds the session: invalid_request with this reason.
+ */
+export function isSessionInUse(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  const data = (err as { data?: unknown }).data
+  return typeof data === 'object' && data !== null && (data as { reason?: unknown }).reason === 'thread_active_writer'
+}
+
+/**
  * The Claude adapter's steering extension: injects a message into the running
  * turn. Advertised as `_meta.steering.supported` in the initialize response.
  */

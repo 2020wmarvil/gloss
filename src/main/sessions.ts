@@ -23,7 +23,7 @@ import type {
   ToolCall
 } from '../shared/types'
 import { wireText } from '../shared/wire'
-import { AgentConnection, isAuthRequired, isResourceNotFound, type AgentHandlers, type SteerOutcome } from './acp'
+import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, type AgentHandlers, type SteerOutcome } from './acp'
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
 import { samePath } from './settings'
@@ -724,6 +724,7 @@ export class SessionManager {
     try {
       loaded = await conn.loadSession(session.acpSessionId, session.cwd)
     } catch (err) {
+      if (isSessionInUse(err)) throw new Error('This session is open in Codex. Quit Codex to continue here.', { cause: err })
       if (isAuthRequired(err) || rt.importing) throw err
       if (!isResourceNotFound(err)) {
         console.error(`[gloss] session/load failed for ${sessionId}:`, errorMessage(err))
