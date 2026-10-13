@@ -168,14 +168,165 @@ button.primary {
   }
 }
 
-.dev-toggle {
+.settings-button {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 8px 0;
+  gap: 8px;
+  padding: 8px;
+  border: 0;
   border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
   font-size: 13px;
   color: var(--muted);
+}
+
+.settings-button:hover,
+.settings-button.on {
+  color: var(--ink);
+}
+
+.settings-alert {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Settings screen */
+
+.settings {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 32px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings header h1 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.settings-close,
+.settings-file button {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #d6d3ca;
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.settings-close {
+  margin-left: auto;
+}
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 32px 32px;
+  max-width: 720px;
+}
+
+.settings-body section {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-body section:last-child {
+  border-bottom: 0;
+}
+
+.settings-body .label {
+  margin-bottom: 10px;
+}
+
+.settings-body p {
+  margin: 6px 0;
+  font-size: 14px;
+}
+
+.settings-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-file .mono {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-file button {
+  flex: none;
+}
+
+.setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.setting input {
+  margin-top: 4px;
+}
+
+.setting > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.setting-label {
+  font-weight: 500;
+}
+
+.setting-desc {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.setting-key {
+  font-size: 11px;
+}
+
+.settings-problem {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #e8c4c1;
+  border-radius: 8px;
+  background: #fbf0ef;
+  color: var(--danger);
+  font-size: 14px;
+}
+
+.settings-problem p {
+  margin: 0;
+}
+
+.settings-problem pre {
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* Empty state */

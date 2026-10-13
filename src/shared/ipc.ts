@@ -1,10 +1,21 @@
 // The IPC contract between the main process and the renderer.
 // Type-only (plus channel names): nothing here may pull runtime code into the sandboxed preload.
+import type { GlobalSettings, ProjectSettings } from './settings'
 import type { AgentInfo, Anchor, AuthMethodInfo, Message, Session, Thread, ToolCall } from './types'
 
-export type Settings = {
-  /** Spawn agents with ANTHROPIC_MODEL=haiku so development prompts are cheap. */
-  devModel: boolean
+export type SettingsState = {
+  /** Absolute path of settings.json. */
+  path: string
+  global: GlobalSettings
+  /** Keyed by folder path, as written in the file. */
+  projects: Record<string, ProjectSettings>
+  /** What is wrong with the file, if its last edit was rejected. The settings above are the last good ones. */
+  error: string | null
+}
+
+export type SettingsPatch = {
+  global?: Partial<GlobalSettings>
+  project?: { path: string; values: Partial<ProjectSettings> }
 }
 
 export type SessionView = {
@@ -37,6 +48,7 @@ export type GlossEvent =
   | { type: 'notice'; sessionId: string; threadId: string | null; text: string }
   | { type: 'authRequired'; agentId: string; agentName: string; methods: AuthMethodInfo[] }
   | { type: 'authResolved'; agentId: string }
+  | { type: 'settings'; state: SettingsState }
 
 export type GlossApi = {
   agents: {
@@ -64,8 +76,11 @@ export type GlossApi = {
     pickDirectory(): Promise<string | null>
   }
   settings: {
-    get(): Promise<Settings>
-    setDevModel(on: boolean): Promise<Settings>
+    get(): Promise<SettingsState>
+    /** Writes the changed keys to settings.json, keeping everything else. Rejects if the file isn't valid JSON. */
+    update(patch: SettingsPatch): Promise<SettingsState>
+    /** Opens settings.json in the system's editor for JSON. Resolves to an error message, or null. */
+    openFile(): Promise<string | null>
   }
   /** Subscribe to main-process events. Returns an unsubscribe function. */
   onEvent(listener: (event: GlossEvent) => void): () => void
@@ -83,6 +98,7 @@ export const IPC = {
   authDismiss: 'gloss:auth:dismiss',
   pickDirectory: 'gloss:dialog:pickDirectory',
   settingsGet: 'gloss:settings:get',
-  settingsSetDevModel: 'gloss:settings:setDevModel',
+  settingsUpdate: 'gloss:settings:update',
+  settingsOpenFile: 'gloss:settings:openFile',
   event: 'gloss:event'
 } as const

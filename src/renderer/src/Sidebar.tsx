@@ -1,4 +1,3 @@
-import type { Settings } from '@shared/ipc'
 import type { Session } from '@shared/types'
 
 type Props = {
@@ -7,14 +6,16 @@ type Props = {
   running: Record<string, string | null>
   creating: boolean
   createError: string | null
-  settings: Settings | null
+  settingsOpen: boolean
+  /** settings.json's last edit was rejected. */
+  settingsError: boolean
   onSelect(id: string): void
   onNew(): void
-  onToggleDevModel(on: boolean): void
+  onSettings(): void
 }
 
 export function Sidebar(props: Props): React.JSX.Element {
-  const { sessions, openId, running, creating, createError, settings } = props
+  const { sessions, openId, running, creating, createError, settingsOpen, settingsError } = props
   return (
     <nav className="sidebar">
       <div className="brand">gloss.</div>
@@ -37,15 +38,18 @@ export function Sidebar(props: Props): React.JSX.Element {
           </li>
         ))}
       </ul>
-      <label className="dev-toggle" title="Spawn agents with ANTHROPIC_MODEL=haiku">
-        <input
-          type="checkbox"
-          checked={settings?.devModel ?? false}
-          disabled={settings === null}
-          onChange={(e) => props.onToggleDevModel(e.target.checked)}
-        />
-        Dev model (Haiku)
-      </label>
+      <button
+        className={settingsOpen ? 'settings-button on' : 'settings-button'}
+        onClick={props.onSettings}
+        title="Settings (Ctrl+,)"
+      >
+        Settings
+        {settingsError && (
+          <span className="settings-alert" title="settings.json has a problem">
+            !
+          </span>
+        )}
+      </button>
     </nav>
   )
 }
