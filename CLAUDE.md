@@ -38,6 +38,13 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - electron-vite 5 needs Vite 7 (so `@vitejs/plugin-react@5`). typescript-eslint needs TypeScript < 6.1, so TS is pinned to 5.9.
 - Auth: ACP `auth_required` is JSON-RPC code `-32000`. With `clientCapabilities.auth.terminal: true`, the Claude adapter offers terminal methods ("Claude Subscription", "Anthropic Console") whose `args` are appended to the adapter's own command. `session/load` replays history as `session/update`s; ignore them.
 
+## Verified external APIs (M7)
+- The Claude adapter advertises `sessionCapabilities` `list` and `delete`, `promptCapabilities` `image` and `embeddedContext`. `session/list` with an empty `cwd` lists every project's sessions, so never send one. `session/delete` removes Claude Code's transcript.
+- Its model is the config option with `category: "model"`; `session/set_config_option` takes `{ sessionId, configId, value }`. The model chosen in a session persists in its transcript across `session/load`.
+- It sends `available_commands_update` right after `session/new`, possibly before the response, so updates for an unknown ACP session id are buffered.
+- Without the client `terminal` capability, a command's output arrives as `content` text in a console code block; edits arrive as `diff` content.
+- `/mcp` is a prompt the adapter answers itself with a markdown list of server statuses.
+
 ## Git
 - Work on `dev`; open one PR per milestone against `main`.
 

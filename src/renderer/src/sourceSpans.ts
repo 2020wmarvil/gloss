@@ -1,7 +1,8 @@
 // A remark plugin that renders every run of text as spans carrying their source
 // offsets (data-src, data-src-end), so a DOM selection can be mapped back to the
 // source markdown. It also splits runs at selection-anchor boundaries to mark
-// anchored text and adds a count chip after each anchor.
+// anchored text and adds a count chip after each anchor, and colors code blocks
+// (the highlight token spans carry source offsets like any other run).
 import type { ElementContent } from 'hast'
 import type { Nodes, Root } from 'mdast'
 import { nodeOffsets } from './source'
@@ -18,12 +19,21 @@ export type Mark = {
   title?: string
 }
 
-type TextNode = { type: 'text' | 'inlineCode' | 'code'; value: string; position?: Nodes['position']; data?: Record<string, unknown> }
+type TextNode = {
+  type: 'text' | 'inlineCode' | 'code'
+  value: string
+  lang?: string | null
+  position?: Nodes['position']
+  data?: Record<string, unknown>
+}
+
+/** Per-character colors for a code block's text, or null to leave it plain. */
+export type CodeColors = (code: string, lang: string | null | undefined) => (string | undefined)[] | null
 
 const TEXT_TYPES = new Set(['text', 'inlineCode', 'code'])
 
-export function remarkSourceSpans(options: { marks: Mark[] }) {
-  const { marks } = options
+export function remarkSourceSpans(options: { marks: Mark[]; colors?: CodeColors }) {
+  const { marks, colors: colorsFor } = options
   return (tree: Root, file: { value: unknown }): void => {
     const source = String(file.value)
 
@@ -69,16 +79,25 @@ export function remarkSourceSpans(options: { marks: Mark[] }) {
     runs.forEach(({ node, offsets, parent }, r) => {
       const children: ElementContent[] = []
       const outside: ElementContent[] = []
+      const colors = node.type === 'code' ? (colorsFor?.(node.value, node.lang) ?? null) : null
       let i0 = 0
       for (let i = 1; i <= offsets.length; i++) {
-        if (i < offsets.length && markAt(offsets[i]) === markAt(offsets[i0])) continue
+        if (
+          i < offsets.length &&
+          markAt(offsets[i]) === markAt(offsets[i0]) &&
+          (!colors || colors[i] === colors[i0])
+        ) {
+          continue
+        }
         const mark = markAt(offsets[i0])
+        const color = colors?.[i0]
         children.push({
           type: 'element',
           tagName: 'span',
           properties: {
             dataSrc: offsets[i0],
             dataSrcEnd: offsets[i - 1] + 1,
+            ...(color ? { style: `color:${color}` } : {}),
             ...(mark
               ? {
                   className: ['anchored', ...(mark.threadId ? [] : ['pending']), ...(mark.className ? [mark.className] : [])],

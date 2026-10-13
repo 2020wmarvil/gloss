@@ -7,7 +7,16 @@ export type Session = {
   cwd: string
   title: string
   createdAt: number
+  /** The model picked for this session in Gloss (a model config option value), re-applied when it is resumed. */
+  model?: string
 }
+
+/** An image or file sent with a user message (SPEC → Attachments). */
+export type Attachment =
+  /** `data` is base64. */
+  | { kind: 'image'; name: string; mimeType: string; data: string }
+  /** A text file, sent as embedded context. */
+  | { kind: 'file'; name: string; path?: string; mimeType?: string; text: string }
 
 export type Message = {
   id: string
@@ -22,6 +31,8 @@ export type Message = {
   /** null = main thread. */
   threadId: string | null
   acpMessageId?: string
+  /** User messages: images and files sent with it. */
+  attachments?: Attachment[]
 }
 
 export type ToolCall = {
@@ -54,6 +65,31 @@ export type Thread = {
 }
 
 export type AgentInfo = { id: string; name: string }
+
+/** A folder Gloss groups sessions by. */
+export type Project = { path: string; name: string }
+
+/** One of the agent's own sessions for a folder that Gloss hasn't imported. */
+export type AgentSession = { acpSessionId: string; title: string; updatedAt?: string }
+
+export type ModelOption = { value: string; name: string; description?: string }
+
+export type SlashCommand = { name: string; description: string; hint?: string }
+
+/** What the agent reports about a session while it is attached: shown in the status line. */
+export type SessionLive = {
+  /** The session's ACP session is live on a running agent. */
+  attached: boolean
+  /** The agent's model config option, if it has one. */
+  model: { configId: string; current: string; options: ModelOption[] } | null
+  commands: SlashCommand[]
+  /** Context window use, from the agent's usage updates. */
+  usage: { used: number; size: number; cost?: { amount: number; currency: string } } | null
+  /** 'bypass': the agent's bypass mode is on. 'auto': Gloss auto-approves permission requests instead. */
+  permissions: 'bypass' | 'auto' | null
+  /** What the agent accepts in a prompt besides text. */
+  accepts: { image: boolean; file: boolean }
+}
 
 export type AuthMethodInfo = {
   id: string

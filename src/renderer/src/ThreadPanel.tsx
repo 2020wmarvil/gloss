@@ -1,9 +1,11 @@
 // The side panel for one thread: anchor quote, the thread's messages, composer.
 import { useEffect } from 'react'
+import type { Attachment, SessionLive } from '@shared/types'
 import { wireTag } from '@shared/wire'
 import type { OpenSession, Panel } from './App'
 import { itemSource, listItemSpans } from './anchors'
 import { Composer } from './Composer'
+import { ExportMenu } from './ExportMenu'
 import { Log, logItems, type Notice } from './Log'
 import { Markdown } from './Markdown'
 
@@ -14,12 +16,17 @@ type Props = {
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
   notices: Notice[]
-  onSend(text: string): void
+  live: SessionLive
+  onSend(text: string, attachments: Attachment[]): void
   onCancel(): void
   onClose(): void
+  onCopyMarkdown(threadId: string): void
+  onSaveMarkdown(threadId: string): void
 }
 
-export function ThreadPanel({ open, panel, label, runningThread, notices, onSend, onCancel, onClose }: Props): React.JSX.Element {
+export function ThreadPanel(props: Props): React.JSX.Element {
+  const { open, panel, label, runningThread, notices, live, onSend, onCancel, onClose } = props
+  const threadId = panel.threadId
   const running = runningThread !== undefined
   const runningHere = running && panel.threadId !== null && runningThread === panel.threadId
 
@@ -47,6 +54,13 @@ export function ThreadPanel({ open, panel, label, runningThread, notices, onSend
         <h2>{isSelection && panel.threadId === null ? 'New thread' : 'Thread'}</h2>
         <span className="mono">{label}</span>
         {runningHere && <span className="status">Agent is working…</span>}
+        {threadId !== null && (
+          <ExportMenu
+            label="thread"
+            onCopy={() => props.onCopyMarkdown(threadId)}
+            onSave={() => props.onSaveMarkdown(threadId)}
+          />
+        )}
         <button className="close" onClick={onClose} aria-label="Close thread" title="Close (Esc)">
           ×
         </button>
@@ -70,6 +84,9 @@ export function ThreadPanel({ open, panel, label, runningThread, notices, onSend
         placeholder="Reply in thread"
         running={running}
         autoFocus
+        primary
+        commands={live.commands}
+        accepts={live.accepts}
         onSend={onSend}
         onCancel={onCancel}
         footer={<div className="mono wire">sent as: {wireTag(panel.anchor.text)} …</div>}

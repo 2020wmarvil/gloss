@@ -135,7 +135,7 @@ describe('marks', () => {
     const blockChip = chips[chips.length - 1]
     expect(blockChip.closest('pre')).toBeNull()
     expect(blockChip.parentElement?.className).toBe('anchor-chips')
-    expect(blockChip.parentElement?.previousElementSibling?.tagName).toBe('PRE')
+    expect(blockChip.parentElement?.previousElementSibling?.classList.contains('code-block')).toBe(true)
 
     // The marks themselves stay inside the code.
     expect(root.querySelector('code .anchored[data-thread="inline"]')?.textContent).toBe('retry')

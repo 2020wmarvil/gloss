@@ -1,33 +1,42 @@
 // The main thread: messages and tool calls with threadId == null.
 import { useRef } from 'react'
-import type { Message, Thread } from '@shared/types'
+import type { GitStatus } from '@shared/ipc'
+import type { Attachment, Message, SessionLive, Thread } from '@shared/types'
 import type { OpenSession, Panel } from './App'
 import type { ListItemSpan } from './anchors'
 import { Composer } from './Composer'
+import { ExportMenu } from './ExportMenu'
 import { Log, logItems, type Notice } from './Log'
 import { Markdown } from './Markdown'
 import { SelectionPopover, type SourceSelection } from './SelectionPopover'
 import { resolveSelection } from './source'
 import type { Mark } from './sourceSpans'
+import { StatusLine } from './StatusLine'
 
 type Props = {
   open: OpenSession
   agentName: string
+  live: SessionLive
+  git: GitStatus | null
+  devModel: boolean
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
   notices: Notice[]
   panel: Panel | null
   /** Label of the thread whose turn is running, e.g. "item 2". */
   runningLabel: string | null
-  onSend(text: string): void
+  onSend(text: string, attachments: Attachment[]): void
   onCancel(): void
+  onSetModel(value: string): Promise<void>
+  onCopyMarkdown(): void
+  onSaveMarkdown(): void
   onOpenItem(message: Message, span: ListItemSpan): void
   onOpenSelection(message: Message, selection: SourceSelection): void
   onOpenThread(threadId: string): void
 }
 
 export function Conversation(props: Props): React.JSX.Element {
-  const { open, agentName, runningThread, notices, panel } = props
+  const { open, agentName, live, runningThread, notices, panel } = props
   const { session } = open
   const running = runningThread !== undefined
   const mainRef = useRef<HTMLElement>(null)
@@ -95,18 +104,9 @@ export function Conversation(props: Props): React.JSX.Element {
   return (
     <main className="conversation" ref={mainRef}>
       <header>
-        <h1>{session.title}</h1>
-        <span className="mono" title={session.cwd}>
-          {agentName} · {session.cwd}
-        </span>
-        {running &&
-          (runningThread === null ? (
-            <span className="status">Agent is working…</span>
-          ) : (
-            <button className="status link" onClick={() => props.onOpenThread(runningThread)}>
-              Agent is working in {props.runningLabel ?? 'a thread'}
-            </button>
-          ))}
+        <h1 title={session.title}>{session.title}</h1>
+        <span className="mono">{agentName}</span>
+        <ExportMenu label="session" onCopy={props.onCopyMarkdown} onSave={props.onSaveMarkdown} />
       </header>
       <Log
         className="log"
@@ -119,8 +119,22 @@ export function Conversation(props: Props): React.JSX.Element {
         placeholder="Message the agent"
         running={running}
         autoFocus={panel === null}
+        primary={panel === null}
+        commands={live.commands}
+        accepts={live.accepts}
         onSend={props.onSend}
         onCancel={props.onCancel}
+      />
+      <StatusLine
+        session={session}
+        live={live}
+        git={props.git}
+        devModel={props.devModel}
+        runningThread={runningThread}
+        runningLabel={props.runningLabel}
+        onOpenThread={props.onOpenThread}
+        onSetModel={props.onSetModel}
+        onCommand={(text) => props.onSend(text, [])}
       />
       <SelectionPopover scope={mainRef} messages={open.messages} onReply={props.onOpenSelection} />
     </main>
