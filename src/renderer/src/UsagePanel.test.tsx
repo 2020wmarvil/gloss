@@ -19,12 +19,12 @@ const props: ComponentProps<typeof StatusLine> = {
   git: null, pr: null, running: false,
   queue: { items: [], paused: false }, onResumeQueue() {}, async onSetChoice() {}, onCommand
 }
-function mount(fetch: () => Promise<PlanUsage | null>): void {
+function mount(fetch: () => Promise<PlanUsage | null>, overrides: Partial<ComponentProps<typeof StatusLine>> = {}): void {
   window.gloss = { sessions: { planUsage: fetch } } as unknown as GlossApi
   const el = document.createElement('div')
   document.body.replaceChildren(el)
   root = createRoot(el)
-  act(() => root!.render(<StatusLine {...props} />))
+  act(() => root!.render(<StatusLine {...props} {...overrides} />))
 }
 async function click(selector: string): Promise<void> {
   await act(async () => document.querySelector<HTMLButtonElement>(selector)!.click())
@@ -32,6 +32,21 @@ async function click(selector: string): Promise<void> {
 afterEach(() => { act(() => root?.unmount()); root = null; vi.clearAllMocks() })
 
 describe('usage popup', () => {
+  it.each([true, false])('opens Codex usage during a turn, context available: %s', async (hasContext) => {
+    const fetch = vi.fn(async () => usage)
+    mount(fetch, {
+      session: { ...props.session, agentId: 'codex' }, running: true,
+      live: { ...props.live, commands: [{ name: 'status', description: 'Status' }],
+        usage: hasContext ? props.live.usage : null, rateLimits: [] }
+    })
+    expect(document.querySelector('.usage-trigger')?.textContent).toContain(hasContext ? '20%' : 'Usage')
+    expect(fetch).not.toHaveBeenCalled()
+    await click('.usage-trigger')
+    expect(fetch).toHaveBeenCalledWith('s1')
+    expect(document.querySelector('[aria-label="Session limit"]')).not.toBeNull()
+    expect(onCommand).not.toHaveBeenCalled()
+  })
+
   it('fetches only on open, works during a turn, and never sends a command', async () => {
     let resolve!: (value: PlanUsage) => void
     const fetch = vi.fn(() => new Promise<PlanUsage>((r) => { resolve = r }))

@@ -54,4 +54,20 @@ describe('plan usage', () => {
     await expect(source.get('claude', '/project')).rejects.toThrow('offline')
     expect(await source.get('claude', '/project')).toEqual(planUsage(response))
   })
+
+  it('keeps Claude and Codex requests and caches separate', async () => {
+    const claude = planUsage(response)
+    const codex = { ...claude, plan: 'Plus', limits: [] }
+    const fetchClaude = vi.fn(async () => claude)
+    const fetchCodex = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(codex)
+    const source = new UsageSource(fetchClaude, fetchCodex)
+    await expect(source.get('codex', '/project')).rejects.toThrow('offline')
+    expect(await Promise.all([
+      source.get('claude', '/project'), source.get('codex', '/project'), source.get('codex', '/project')
+    ])).toEqual([claude, codex, codex])
+    expect(await source.get('claude', '/project')).toEqual(claude)
+    expect(await source.get('codex', '/project')).toEqual(codex)
+    expect(fetchClaude).toHaveBeenCalledTimes(1)
+    expect(fetchCodex).toHaveBeenCalledTimes(2)
+  })
 })

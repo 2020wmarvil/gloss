@@ -12,6 +12,8 @@ export type GlobalSettings = {
   theme: ThemeSetting
   /** How the sidebar sorts a project's sessions. */
   sessionOrder: SessionOrder
+  /** Show reply buttons on top-level numbered and bulleted list items. */
+  listItemReplies: boolean
 }
 
 /** Settings for one project folder, under `projects` keyed by its path. None exist yet (M7+). */
@@ -30,6 +32,13 @@ export type SettingField = {
 }
 
 export const SETTING_FIELDS: readonly SettingField[] = [
+  {
+    key: 'listItemReplies',
+    scope: 'global',
+    type: 'boolean',
+    label: 'List item replies',
+    description: 'Show reply buttons on numbered and bulleted list items. When off, select text to reply to it.'
+  },
   {
     key: 'defaultAgent',
     scope: 'global',

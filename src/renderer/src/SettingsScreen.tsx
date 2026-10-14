@@ -64,18 +64,7 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
         {saveError && <p className="settings-problem">{saveError}</p>}
 
         <section>
-          <div className="label">File</div>
-          <div className="settings-file">
-            <span className="mono" title={state.path}>
-              {state.path}
-            </span>
-            <button onClick={() => void openFile()}>Open in editor</button>
-          </div>
-          {openError && <p className="settings-problem">Couldn&apos;t open the file: {openError}</p>}
-        </section>
-
-        <section>
-          <div className="label">Global</div>
+          <h2 className="label">Global</h2>
           {SETTING_FIELDS.filter((f) => f.scope === 'global' && !f.hidden).map((f) => (
             <Field
               key={f.key}
@@ -87,7 +76,7 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
         </section>
 
         <section>
-          <div className="label">Project</div>
+          <h2 className="label">Project</h2>
           {projectPath ? (
             <>
               <p className="mono">{projectPath}</p>
@@ -99,8 +88,19 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
         </section>
 
         <section>
-          <div className="label">Keyboard shortcuts</div>
+          <h2 className="label">Keyboard shortcuts</h2>
           <Shortcuts />
+        </section>
+
+        <section>
+          <h2 className="label">Settings file</h2>
+          <div className="settings-file">
+            <span className="mono" title={state.path}>
+              {state.path}
+            </span>
+            <button onClick={() => void openFile()}>Open in editor</button>
+          </div>
+          {openError && <p className="settings-problem">Couldn&apos;t open the file: {openError}</p>}
         </section>
       </div>
     </main>
@@ -117,10 +117,10 @@ function Shortcuts(): React.JSX.Element {
           <dl>
             {group.shortcuts.map((s) => (
               <div key={s.action} className="shortcut">
-                <dt>
+                <dt className="shortcut-keys">
                   {s.keys.map((combo, i) => (
-                    <span key={i}>
-                      {i > 0 && <span className="muted"> or </span>}
+                    <span className="shortcut-combo" key={i}>
+                      {i > 0 && <span className="shortcut-or muted">or</span>}
                       {combo.map((k, j) => (
                         <span key={j}>
                           {j > 0 && '+'}
@@ -142,38 +142,39 @@ function Shortcuts(): React.JSX.Element {
 
 function Field(props: { field: SettingField; value: unknown; onChange(value: unknown): void }): React.JSX.Element {
   const { field, value } = props
-  switch (field.type) {
-    case 'enum':
-      return (
-        <label className="setting">
-          <select value={String(value)} onChange={(e) => props.onChange(e.target.value)}>
-            {field.options?.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <span>
-            <span className="setting-label">{field.label}</span>
-            <span className="setting-desc">{field.description}</span>
-            <span className="setting-key mono">{field.key}</span>
-          </span>
+  const id = `setting-${field.key}`
+  return (
+    <div className="setting">
+      <div className="setting-copy">
+        <label className="setting-label" htmlFor={id}>
+          {field.label}
         </label>
-      )
-    case 'boolean':
-      return (
-        <label className="setting">
-          <input
-            type="checkbox"
-            checked={value === true}
-            onChange={(e) => props.onChange(e.target.checked)}
-          />
-          <span>
-            <span className="setting-label">{field.label}</span>
-            <span className="setting-desc">{field.description}</span>
-            <span className="setting-key mono">{field.key}</span>
-          </span>
-        </label>
-      )
-  }
+        <p className="setting-desc" id={`${id}-description`}>
+          {field.description}
+        </p>
+      </div>
+      {field.type === 'enum' ? (
+        <select
+          id={id}
+          aria-describedby={`${id}-description`}
+          value={String(value)}
+          onChange={(e) => props.onChange(e.target.value)}
+        >
+          {field.options?.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          id={id}
+          type="checkbox"
+          aria-describedby={`${id}-description`}
+          checked={value === true}
+          onChange={(e) => props.onChange(e.target.checked)}
+        />
+      )}
+    </div>
+  )
 }

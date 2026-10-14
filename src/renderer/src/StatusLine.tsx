@@ -191,7 +191,7 @@ export function StatusLine(props: Props): React.JSX.Element {
           <span className="status-item queue-count">{props.queue.items.length} queued</span>
         ))}
 
-      {session.agentId === 'claude' ? (
+      {session.agentId === 'claude' || session.agentId === 'codex' ? (
         <Popover key={session.id} label={pct !== null || usage?.cost || live.rateLimits.length ? usageLabel : 'Usage'}
           title="Usage details" className="status-item usage-trigger">
           {() => <UsagePanel sessionId={session.id} context={usage} />}

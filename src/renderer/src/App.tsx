@@ -852,6 +852,7 @@ export function App(): React.JSX.Element {
         <Conversation
           key={open.session.id}
           open={open}
+          listItemReplies={settings?.global.listItemReplies ?? false}
           agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
           live={live}
           history={sent}

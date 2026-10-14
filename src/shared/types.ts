@@ -143,7 +143,7 @@ export type RateLimit = {
   resetsAt?: number
 }
 
-/** Plan usage the usage popup asks the agent for (Claude Code's `/usage` data). */
+/** Plan usage the popup asks the agent for (Claude's /usage or Codex's /status data). */
 export type PlanUsage = {
   /** The subscription, e.g. "Pro"; null without one. */
   plan: string | null

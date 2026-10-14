@@ -58,6 +58,34 @@ describe('Markdown', () => {
     expect(html).toMatch(/<li><span><span data-src="\d+" data-src-end="\d+">nested<\/span><\/span><\/li>/)
   })
 
+  it('renders ordinary lists when list item replies are off, keeping selection anchors', () => {
+    const html = renderToStaticMarkup(
+      <Markdown
+        text={'1. First\n   - nested\n2. Second\n\n- Third'}
+        listItemReplies={false}
+        anchors={{
+          replyCount: () => 3,
+          activeIndex: 0,
+          runningIndex: null,
+          onOpenItem: () => {},
+          marks: [{ start: 3, end: 8, threadId: 'selection-thread' }],
+          threadCount: () => 2,
+          runningThread: null,
+          onOpenThread: () => {}
+        }}
+      />
+    )
+    expect(html).toContain('<ol>')
+    expect(html).toContain('<ul>')
+    expect(html).not.toContain('with-anchors')
+    expect(html).not.toContain('anchor-item')
+    expect(html).not.toContain('anchor-marker')
+    expect(html).not.toContain('Reply to item')
+    expect(html).not.toContain('Open thread on item')
+    expect(html).toContain('data-src=')
+    expect(html).toContain('aria-label="Open thread, 2 replies"')
+  })
+
   it('never loads images', () => {
     const html = render('![tracker](https://example.com/pixel.png)')
     expect(html).not.toContain('<img')
