@@ -16,7 +16,7 @@ describe('agentEnv', () => {
     expect(codex.command).toBe(process.execPath)
     expect(codex.args).toEqual([require.resolve('@agentclientprotocol/codex-acp/dist/index.js')])
     expect(codex.bypassModeId).toBe('agent-full-access')
-    expect(agentEnv(codex, {})).toEqual({ ELECTRON_RUN_AS_NODE: '1' })
+    expect(agentEnv(codex, {})).toEqual({ ELECTRON_RUN_AS_NODE: '1', DISABLE_MCP_CONFIG_FILTERING: 'true' })
     expect(listAgents()).toEqual([
       { id: 'claude', name: 'Claude Code' },
       { id: 'codex', name: 'Codex' }

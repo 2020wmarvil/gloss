@@ -3,6 +3,7 @@
 
 import { type FSWatcher, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { mcpError } from '../shared/mcp'
 import type { SettingsPatch, SettingsState } from '../shared/ipc'
 import {
   type GlobalSettings,
@@ -18,6 +19,20 @@ type Raw = Record<string, unknown>
 /** What a new or saved file's `$schema` points at; editors resolve it next to the file. */
 const SCHEMA_REF = `./${SCHEMA_FILE}`
 
+const pairsSchema = { type: 'array', items: { type: 'object', required: ['name', 'value'], properties: { name: { type: 'string', minLength: 1 }, value: { type: 'string' } } } }
+const mcpSchema = {
+  type: 'array', items: { oneOf: [
+    { type: 'object', required: ['name', 'command', 'args', 'env'], not: { required: ['type'] }, properties: {
+      name: { type: 'string', minLength: 1 }, command: { type: 'string', minLength: 1 },
+      args: { type: 'array', items: { type: 'string' } }, env: pairsSchema
+    } },
+    { type: 'object', required: ['type', 'name', 'url', 'headers'], properties: {
+      type: { enum: ['http', 'sse'] }, name: { type: 'string', minLength: 1 },
+      url: { type: 'string', pattern: '^https?://' }, headers: pairsSchema
+    } }
+  ] }
+}
+
 function isObject(value: unknown): value is Raw {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -29,6 +44,7 @@ function fields(scope: SettingField['scope']): SettingField[] {
 /** Why `value` isn't valid for `field`, or null if it is. */
 function checkValue(field: SettingField, value: unknown): string | null {
   switch (field.type) {
+    case 'mcp': return mcpError(value)
     case 'boolean':
       return typeof value === 'boolean' ? null : `expected true or false, got ${JSON.stringify(value)}`
     case 'enum': {
@@ -97,7 +113,7 @@ export function settingsSchema(defaults: GlobalSettings): object {
       fields(scope).map((f) => [
         f.key,
         {
-          type: f.type === 'enum' ? 'string' : f.type,
+          ...(f.type === 'mcp' ? mcpSchema : { type: f.type === 'enum' ? 'string' : f.type }),
           ...(f.options ? { enum: f.options.map((o) => o.value) } : {}),
           description: f.description,
           default: defaultsFor?.[f.key]

@@ -29,6 +29,8 @@ type FakeAgent = {
   loads: string[]
   /** The `_meta` of each session/new and session/load, in order. */
   metas: { method: 'new' | 'load'; meta: unknown }[]
+  mcpCapabilities: acp.McpCapabilities
+  mcpRequests: { method: 'new' | 'load'; servers: acp.McpServer[] }[]
   authenticated: string[]
   connections: number
   /** Session modes reported by session/new and session/load; null = the agent has none. */
@@ -92,6 +94,8 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
     prompts: [],
     loads: [],
     metas: [],
+    mcpCapabilities: {},
+    mcpRequests: [],
     authenticated: [],
     connections: 0,
     modes: null,
@@ -169,6 +173,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       agentCapabilities: {
         loadSession: state.loadSession,
         promptCapabilities: state.promptCapabilities,
+        mcpCapabilities: state.mcpCapabilities,
         sessionCapabilities: {
           ...(state.canList ? { list: {} } : {}),
           ...(state.canDelete ? { delete: {} } : {}),
@@ -220,6 +225,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
     .onRequest(acp.methods.agent.session.new, async (ctx) => {
       const sessionId = `acp-${state.connections}-${next++}`
       state.metas.push({ method: 'new', meta: ctx.params._meta })
+      state.mcpRequests.push({ method: 'new', servers: ctx.params.mcpServers })
       state.sessions.add(sessionId)
       state.cwds.set(sessionId, ctx.params.cwd)
       if (state.commands.length > 0) {
@@ -239,6 +245,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       const { sessionId } = ctx.params
       state.loads.push(sessionId)
       state.metas.push({ method: 'load', meta: ctx.params._meta })
+      state.mcpRequests.push({ method: 'load', servers: ctx.params.mcpServers })
       if (state.failLoad) throw acp.RequestError.internalError(undefined, 'transcript unreadable')
       if (state.loadInUse) {
         throw acp.RequestError.invalidRequest(
@@ -331,6 +338,7 @@ describe('SessionManager', () => {
   let state: FakeAgent
   let manager: SessionManager
   let runInTerminal: ReturnType<typeof vi.fn>
+  let servers: import('../shared/mcp').McpServer[]
 
   function makeManager(): SessionManager {
     return new SessionManager({
@@ -340,7 +348,8 @@ describe('SessionManager', () => {
       agentEnv: () => ({ FAKE: '1' }),
       connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
       runInTerminal: runInTerminal as never,
-      now: () => 1000
+      now: () => 1000,
+      mcpServers: () => servers
     })
   }
 
@@ -348,6 +357,7 @@ describe('SessionManager', () => {
     store = new Store(':memory:')
     events = []
     state = fakeAgent()
+    servers = []
     runInTerminal = vi.fn(async () => 0)
     manager = makeManager()
   })
@@ -355,6 +365,61 @@ describe('SessionManager', () => {
   afterEach(async () => {
     await manager.dispose()
     store.close()
+  })
+
+  it('keeps a running turn on its MCP configuration and reloads for the queued follow-up', async () => {
+    state.canClose = true
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    state.script = async ({ say }) => { await gate; await say('done'); return 'end_turn' }
+    const session = await manager.createSession('/project', 'claude')
+    const first = manager.send(session.id, 'first', null)
+    await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+    servers = [{ name: 'next-tools', command: '/tools/mcp', args: [], env: [] }]
+    await manager.refreshSession(session.id)
+    expect(state.closes).toEqual([])
+    expect(await manager.send(session.id, 'next', null)).toEqual({ queued: true })
+    release()
+    await first
+    await vi.waitFor(() => expect(events.filter((e) => e.type === 'turnEnd' && e.sessionId === session.id)).toHaveLength(2))
+    expect(state.mcpRequests).toEqual([{ method: 'new', servers: [] }, { method: 'load', servers }])
+    expect(state.prompts).toEqual(['first', 'next'])
+  })
+
+  it('passes project MCP servers to creation and resume, preserving threads', async () => {
+    servers = [{ name: 'tools', command: '/tools/mcp', args: ['--local'], env: [{ name: 'MODE', value: 'test' }] }]
+    const session = await manager.createSession('/project', 'claude')
+    await manager.send(session.id, 'hello', null)
+    const answer = store.listMessages(session.id).find((m) => m.role === 'agent')!
+    const thread = manager.createThread(session.id, answer.id, { kind: 'selection', start: 0, end: 5, text: 'Hello' })
+    await manager.dispose()
+    manager = makeManager()
+    await manager.send(session.id, 'again', thread.id)
+    expect(state.mcpRequests).toEqual([{ method: 'new', servers }, { method: 'load', servers }])
+    expect(store.listThreads(session.id)).toContainEqual(thread)
+  })
+
+  it('rejects unsupported MCP transport before creating a session', async () => {
+    servers = [{ type: 'sse', name: 'remote', url: 'https://example.com/mcp', headers: [] }]
+    await expect(manager.createSession('/project', 'codex')).rejects.toThrow(/does not support SSE/)
+    expect(state.mcpRequests).toEqual([])
+    expect(store.listSessions()).toEqual([])
+    state.mcpCapabilities = { sse: true }
+    await manager.restartIdleAgent('codex')
+    await manager.createSession('/project', 'codex')
+    expect(state.mcpRequests[0].servers).toEqual(servers)
+  })
+
+  it('reloads changed MCP settings before the next prompt without replacing the session', async () => {
+    state.canClose = true
+    const session = await manager.createSession('/project', 'claude')
+    await manager.send(session.id, 'first', null)
+    servers = [{ name: 'new-tools', command: '/tools/mcp', args: [], env: [] }]
+    await manager.send(session.id, 'second', null)
+    expect(state.closes).toEqual([session.acpSessionId])
+    expect(state.mcpRequests.at(-1)).toEqual({ method: 'load', servers })
+    expect(store.getSession(session.id)?.acpSessionId).toBe(session.acpSessionId)
+    expect(store.listMessages(session.id).filter((m) => m.role === 'user').map((m) => m.text)).toEqual(['first', 'second'])
   })
 
   it('creates a session, streams a turn and persists it', async () => {

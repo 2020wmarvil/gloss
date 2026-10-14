@@ -14,15 +14,17 @@ export type GlobalSettings = {
   sessionOrder: SessionOrder
   /** Show reply buttons on top-level numbered and bulleted list items. */
   listItemReplies: boolean
+  /** Tools made available to both agents in every project. */
+  mcpServers: import('./mcp').McpServer[]
 }
 
-/** Settings for one project folder, under `projects` keyed by its path. None exist yet (M7+). */
-export type ProjectSettings = Record<string, never>
+/** Settings for one project folder, under `projects` keyed by its path. */
+export type ProjectSettings = { mcpServers?: import('./mcp').McpServer[] }
 
 export type SettingField = {
   key: string
   scope: 'global' | 'project'
-  type: 'boolean' | 'enum'
+  type: 'boolean' | 'enum' | 'mcp'
   label: string
   description: string
   /** For enum fields: the allowed values and how the screen labels them. */
@@ -32,6 +34,14 @@ export type SettingField = {
 }
 
 export const SETTING_FIELDS: readonly SettingField[] = [
+  {
+    key: 'mcpServers', scope: 'global', type: 'mcp', label: 'MCP servers',
+    description: 'Tools shared by agents in all projects. Applied on the next turn or resume.', hidden: true
+  },
+  {
+    key: 'mcpServers', scope: 'project', type: 'mcp', label: 'MCP servers',
+    description: 'Legacy project servers. Import into global MCP settings to use them.', hidden: true
+  },
   {
     key: 'listItemReplies',
     scope: 'global',

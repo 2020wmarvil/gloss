@@ -172,12 +172,13 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 Remaining work for M13, in separate PRs:
 
-- **Gloss-managed MCP servers:** a per-project list of MCP servers passed through ACP's `mcpServers` in `session/new` and `session/load`, so agents share tools. Only transports the selected agent advertises are allowed.
-- **Continue with another agent:** an explicit action such as "Continue this conversation with Codex" or "Continue this thread with Claude Code". Create a new session for the destination agent, seeded with a reviewable summary and selected conversation or thread context. Preserve and link back to the original session. This is a context handoff, not a conversion of the original agent's session history. Design the context preview and selection before implementation.
+Global shared MCP configuration is implemented for review: validated settings and schema, a global server list with Add/Edit/Remove and one-time imports from Claude and Codex, capability checks, and server lists on new/load. Changes apply before the next prompt or idle resume.
+
+- **Gloss-managed MCP servers:** a global list of MCP servers passed through ACP's `mcpServers` in `session/new` and `session/load`, so agents share tools. Only transports the selected agent advertises are allowed.
 
 **Codex support is done when:** a new Codex session works end to end, including sign-in, threads, model selection and resume (or a lost-context notice if resume is unavailable).
 
-**M13 is done when:** shared MCP configuration works across agents and a user can review and hand off a conversation or thread to another agent without changing the original.
+**M13 is done when:** global MCP configuration works across agents, with reviewed one-time imports from native agent settings.
 
 ## M14 — Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
@@ -252,6 +253,19 @@ Drive Gloss from a phone while the desktop app runs the agents. The desktop stay
 
 **Done when:** you can pair a phone by scanning a QR code, see the same sessions as the desktop, start and steer a turn in a thread from the phone while watching it stream on both, and a revoked phone can no longer connect.
 
+## M19: Shared skills and plugin marketplaces (future)
+Build on M13's global MCP settings and reviewed one-time imports. Start with shared skills, then add plugin discovery, marketplace search and installation. Update `SPEC.md` and design the library, search results and import/install previews before implementation.
+
+- **Global skill library:** one Gloss-managed library available to Claude Code and Codex across projects. List skills with their description, source and agent compatibility, with Add, Edit and Remove actions. Verify how each installed agent discovers skills and refreshes them before choosing the storage and delivery mechanism.
+- **One-time skill import:** discover native user and known-project skills from either agent. Preview the instructions and supporting files, select what to copy, and resolve name collisions before saving. Preserve relative references and bundled resources. Original files stay unchanged; later edits are managed in Gloss without ongoing synchronization.
+- **Compatibility is explicit:** detect agent-specific tools, paths and conventions. Explain any required adaptation before import; do not claim a skill works with both agents just because its instructions were copied. Show when a new session or agent restart is required to pick up a change.
+- **Plugin discovery:** list native plugins and their components, including skills, MCP servers, hooks and agent-specific features. Preview which components can be shared and which remain available only through their original agent.
+- **Search plugin libraries and marketplaces:** browse and search supported agent catalogs from Gloss, and let the user add a marketplace source where supported. Show the source, publisher, description, version and agent compatibility in results, with a detail view of the plugin's components and requirements. Verify available catalog and installation APIs before choosing the initial sources; identify unsupported sources and unavailable results clearly.
+- **Add plugins from search:** select a result, review its components, dependencies, requested access and installation destination, then install through the supported agent mechanism. Make clear whether the plugin is available to one agent or both, and offer importing compatible components into Gloss's shared library where appropriate. Report progress, authentication requirements, failures and any required restart. Track installed source/version and provide a remove action; preserve pre-existing native installations and shared components when removing a Gloss-added plugin.
+- **Import compatible plugin components:** copy selected portable skills into the global library and supported MCP definitions into M13's global list, with the same duplicate and compatibility checks. Do not silently transfer hooks, installation scripts or unsupported features, or modify the source plugin. Importing a component does not install or execute the whole plugin.
+
+**Done when:** a user can review and import a skill once, use it with both agents where compatible, search a supported marketplace, and install and remove a selected plugin from Gloss. Plugin previews identify what can be shared and what stays agent-specific. Imports leave original agent files unchanged, installations use the reviewed destination, and shared skills and installed-plugin records survive restart.
+
 ## Future work (after the milestones)
 Ideas worth building once the milestones are done. Not scheduled; first item first.
 
@@ -267,6 +281,7 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 - **M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.
 - **M17:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.
 - **M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.
+- **M19:** the global skill library, skill import preview and conflict resolution, marketplace search and source management, and plugin compatibility, installation and removal.
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
