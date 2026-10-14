@@ -117,6 +117,9 @@ Make the agent's session the source of truth, so one session can be continued in
 **Done when:** a session started in Gloss with threads can be continued with `claude --resume`, and back in Gloss the CLI turns show in the main thread, the threads are intact, and the agent remembers both.
 
 ## M10 — Search
+
+Implemented for review: FTS5 indexes and migration, scoped search dialog, safe highlighted excerpts, message/thread/tool navigation, and `Ctrl+Shift+F`. Searches history loaded into Gloss.
+
 Find anything you discussed: "where did we decide the cache key format?"
 
 - Full-text search across sessions, threads, agent messages and tool-call output, using SQLite FTS5 (available in Electron's `node:sqlite`). Indexed as messages are stored; existing data indexed by a migration.

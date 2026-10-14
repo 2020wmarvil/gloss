@@ -6,6 +6,7 @@ import type { Anchor, Attachment } from '../shared/types'
 import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, listAgents } from './agents'
 import { Store } from './db'
+import type { SearchRequest } from '../shared/search'
 import { toMarkdown } from './export'
 import { gitStatus, pullRequest } from './git'
 import { SessionManager } from './sessions'
@@ -228,6 +229,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   )
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
+  ipcMain.handle(IPC.search, (_e, request: SearchRequest) => store!.search(request))
   ipcMain.handle(IPC.history, () => manager.messageHistory())
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
     manager.createSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))

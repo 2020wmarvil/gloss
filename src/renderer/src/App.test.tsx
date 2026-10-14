@@ -255,3 +255,50 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
   await select('a')
   expect(el.querySelector('.thread-panel .anchor-quote')!.textContent).toContain('The item')
 })
+
+it('opens search anywhere and reveals matches in another session, its thread, or tool output', async () => {
+  const session = (id: string): object => ({ id, title: id, cwd: '/project', agentId: 'claude', createdAt: 1 })
+  const thread = { id: 't', sessionId: 'b', anchorMessageId: 'anchor', anchor: { kind: 'selection', text: 'cache', start: 0, end: 5 }, createdAt: 1 }
+  const opened = vi.fn(async (id: string) => ({
+    session: session(id),
+    messages: id === 'a' ? [] : [
+      { id: 'anchor', sessionId: id, seq: 0, role: 'agent', text: 'cache format', threadId: null },
+      { id: 'reply', sessionId: id, seq: 1, role: 'agent', text: 'cache thread response', threadId: 't' }
+    ],
+    toolCalls: id === 'a' ? [] : [{ id: 'tool', sessionId: id, messageSeq: 2, threadId: 't', title: 'Read cache', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'cache tool output' } }] }],
+    plans: [], threads: id === 'a' ? [] : [thread], turn: null,
+    live: { attached: false, model: null, effort: null, commands: [], usage: null, rateLimits: [], permissions: null, accepts: { image: false, file: false }, steering: false },
+    queue: { items: [], paused: false }
+  }))
+  const search = vi.fn(async () => ({ results: [
+    { id: 'reply', kind: 'agent', threadId: 't' }, { id: 'tool', kind: 'tool', threadId: 't' }, { id: 'anchor', kind: 'agent', threadId: null }
+  ].map((r) => ({ ...r, sessionId: 'b', sessionTitle: 'b', cwd: '/project', threadQuote: r.threadId ? 'cache' : null, snippet: 'cache match' })), more: false }))
+  window.gloss = {
+    search, history: async () => [],
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false }, projects: {}, error: null, path: '/settings.json' }) },
+    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
+    projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
+    sessions: { list: async () => [session('a'), session('b')], open: opened, refresh: async () => {} },
+    git: { status: async () => null, pullRequest: async () => null }, onEvent: () => () => {}
+  } as unknown as typeof window.gloss
+  vi.stubGlobal('CSS', { escape: (value: string) => value })
+  const el = document.createElement('div')
+  document.body.replaceChildren(el)
+  root = createRoot(el)
+  await act(async () => root!.render(<App />))
+  for (const [index, target] of [[0, 'reply'], [1, 'tool:tool'], [2, 'anchor']] as const) {
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F', ctrlKey: true, shiftKey: true })))
+    const input = el.querySelector<HTMLInputElement>('[aria-label="Search conversations"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'cache')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 180)))
+    await act(async () => (el.querySelectorAll('.search-result')[index] as HTMLButtonElement).click())
+    expect(opened).toHaveBeenLastCalledWith('b')
+    expect(el.querySelector(`[data-message-id="${target}"]`)!.classList.contains('revealed')).toBe(true)
+    expect(el.querySelector('.search-dialog')).toBeNull()
+    if (index === 1) expect(el.querySelector('.tool.open')!.textContent).toContain('cache tool output')
+    if (index === 2) expect(el.querySelector('[aria-label="Thread"]')).toBeNull()
+  }
+})

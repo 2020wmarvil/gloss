@@ -1,3 +1,4 @@
+import type { SearchRequest, SearchResponse } from './search'
 // The IPC contract between the main process and the renderer.
 // Type-only (plus channel names): nothing here may pull runtime code into the sandboxed preload.
 import type { GlobalSettings, ProjectSettings } from './settings'
@@ -108,6 +109,7 @@ export type GlossEvent =
   | { type: 'settings'; state: SettingsState }
 
 export type GlossApi = {
+  search(request: SearchRequest): Promise<SearchResponse>
   agents: {
     list(): Promise<AgentInfo[]>
   }
@@ -203,6 +205,7 @@ export type GlossApi = {
 }
 
 export const IPC = {
+  search: 'gloss:search',
   agentsList: 'gloss:agents:list',
   projectsList: 'gloss:projects:list',
   projectsOpen: 'gloss:projects:open',

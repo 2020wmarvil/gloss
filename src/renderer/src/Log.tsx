@@ -109,7 +109,7 @@ export function Log({ items, className, empty, renderAgent, reveal }: Props): Re
                 </div>
               )
             case 'tool':
-              return <ToolRow key={item.toolCall.id} toolCall={item.toolCall} />
+              return <ToolRow key={item.toolCall.id} toolCall={item.toolCall} revealed={reveal?.messageId === `tool:${item.toolCall.id}`} />
             case 'plan':
               return <PlanChecklist key={item.plan.id} plan={item.plan} />
             case 'notice':
@@ -126,11 +126,12 @@ export function Log({ items, className, empty, renderAgent, reveal }: Props): Re
 }
 
 /** A tool call: one line, expanding to what it did. Collapsed by default. */
-function ToolRow({ toolCall }: { toolCall: ToolCall }): React.JSX.Element {
+function ToolRow({ toolCall, revealed }: { toolCall: ToolCall; revealed: boolean }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  useLayoutEffect(() => { if (revealed) setOpen(true) }, [revealed])
   const expandable = hasDetails(toolCall)
   return (
-    <div className={`tool status-${toolCall.status}${open ? ' open' : ''}`}>
+    <div data-message-id={`tool:${toolCall.id}`} className={`tool status-${toolCall.status}${open ? ' open' : ''}${revealed ? ' revealed' : ''}`}>
       <button
         className="tool-row"
         aria-expanded={expandable ? open : undefined}

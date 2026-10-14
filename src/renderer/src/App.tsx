@@ -1,3 +1,5 @@
+import type { SearchResult } from '@shared/search'
+import { SearchDialog } from './SearchDialog'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GitStatus, GlossEvent, PullRequest, SettingsPatch, SettingsState } from '@shared/ipc'
 import { sameFolder } from '@shared/paths'
@@ -101,6 +103,7 @@ function threadName(anchor: Anchor): string {
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
   const [agents, setAgents] = useState<AgentInfo[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [projectPath, setProjectPath] = useState<string | null>(null)
@@ -235,7 +238,7 @@ export function App(): React.JSX.Element {
   )
 
   const selectSession = useCallback(
-    async (id: string, threadId: string | null = null): Promise<void> => {
+    async (id: string, threadId: string | null = null, target?: SearchResult): Promise<void> => {
       setShowSettings(false)
       const switching = openId.current !== id
       if (switching) {
@@ -247,6 +250,9 @@ export function App(): React.JSX.Element {
       openId.current = id
       const view = await window.gloss.sessions.open(id)
       if (openId.current !== id) return
+      if (target && !(target.kind === 'tool' ? view.toolCalls : view.messages).some((item) => item.id === target.id)) {
+        throw new Error('This result is no longer in the session. Search again.')
+      }
       if (switching) setPanel(panels.current.get(id) ?? null)
       lastSeq.current = Math.max(-1, ...view.messages.map((m) => m.seq), ...view.toolCalls.map((t) => t.messageSeq))
       setOpen({
@@ -272,6 +278,13 @@ export function App(): React.JSX.Element {
     },
     [refreshGit, showPanel, leaveSession]
   )
+
+  async function openSearchResult(result: SearchResult): Promise<void> {
+    await selectSession(result.sessionId, result.threadId, result)
+    if (openId.current !== result.sessionId) return
+    if (result.threadId === null) setPanel(null)
+    setReveal({ messageId: result.kind === 'tool' ? `tool:${result.id}` : result.id, key: Date.now() })
+  }
 
   /** Shows a project: its most recent session, or none. */
   const selectProject = useCallback(
@@ -668,6 +681,12 @@ export function App(): React.JSX.Element {
   const shortcuts = useRef<(e: KeyboardEvent) => void>(() => {})
   shortcuts.current = (e: KeyboardEvent) => {
     const mod = e.ctrlKey || e.metaKey
+    if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+      e.preventDefault()
+      setShowSearch(true)
+      return
+    }
+    if (showSearch) return
     // Alt+Left / Alt+Right: back and forward. Not in a text field on macOS, where Option+arrow moves by word.
     if (e.altKey && !mod && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       const editable = e.target instanceof HTMLElement && (e.target.isContentEditable || e.target.matches('input, textarea'))
@@ -830,6 +849,7 @@ export function App(): React.JSX.Element {
         onDelete={(id) => void deleteSession(id)}
         onCopyMarkdown={(id) => exportMarkdown(id, null, 'copy')}
         onSaveMarkdown={(id) => exportMarkdown(id, null, 'save')}
+        onSearch={() => setShowSearch(true)}
         onSettings={() => setShowSettings((on) => !on)}
       />
       <ResizeHandle
@@ -961,6 +981,7 @@ export function App(): React.JSX.Element {
           )}
         </>
       )}
+      {showSearch && <SearchDialog sessionId={sessionId ?? null} cwd={projectPath} onClose={() => setShowSearch(false)} onOpen={openSearchResult} />}
       {signIn && (
         <SignInDialog
           request={signIn}
