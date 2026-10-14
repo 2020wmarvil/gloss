@@ -8,6 +8,24 @@ import { parseSettings, patchArg, samePath, SettingsFile } from './settings'
 const defaults = { defaultAgent: 'claude' as const, theme: 'system' as const, sessionOrder: 'created' as const, listItemReplies: false }
 
 describe('parseSettings', () => {
+  it('rejects MCP names that collide in Codex, preserving distinct names as entered', () => {
+    const server = { command: '/tools/mcp', args: [], env: [] }
+    for (const name of ['team tools', 'team\ttools', 'team\u00a0tools', 'team\u2003tools']) {
+      const mcpServers = [{ ...server, name }, { ...server, name: 'team_tools' }]
+      expect(parseSettings(JSON.stringify({ projects: { '/project': { mcpServers } } }), defaults)).toMatchObject({
+        ok: false, error: expect.stringContaining('duplicate name')
+      })
+      expect(() => patchArg({ project: { path: '/project', values: { mcpServers } } })).toThrow(/duplicate name/)
+    }
+    const mcpServers = [{ ...server, name: 'team tools' }, { ...server, name: 'other_tools' }]
+    expect(parseSettings(JSON.stringify({ projects: { '/project': { mcpServers } } }), defaults)).toMatchObject({
+      ok: true, projects: { '/project': { mcpServers } }
+    })
+    expect(patchArg({ project: { path: '/project', values: { mcpServers } } })).toEqual({
+      project: { path: '/project', values: { mcpServers } }
+    })
+  })
+
   it('validates project MCP servers in files and renderer patches', () => {
     const servers = [{ name: 'tools', command: '/tools/mcp', args: [], env: [] }, { type: 'http', name: 'remote', url: 'https://example.com/mcp', headers: [] }]
     expect(parseSettings(JSON.stringify({ projects: { '/project': { mcpServers: servers } } }), defaults)).toMatchObject({ ok: true, projects: { '/project': { mcpServers: servers } } })

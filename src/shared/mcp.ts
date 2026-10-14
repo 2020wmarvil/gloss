@@ -13,8 +13,10 @@ export function mcpError(value: unknown): string | null {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return `${prefix}: expected an object`
     const s = item as Record<string, unknown>
     if (typeof s.name !== 'string' || !s.name.trim()) return `${prefix}: name is required`
-    if (names.has(s.name)) return `${prefix}: duplicate name ${s.name}`
-    names.add(s.name)
+    // Codex replaces Unicode whitespace with underscores before configuring servers.
+    const name = s.name.replace(/\p{White_Space}/gu, '_')
+    if (names.has(name)) return `${prefix}: duplicate name ${s.name} after replacing whitespace with underscores`
+    names.add(name)
     const pairs = (v: unknown): boolean => Array.isArray(v) && v.every((p) =>
       p && typeof p === 'object' && typeof p.name === 'string' && p.name.trim() && typeof p.value === 'string')
     if (s.type === 'http' || s.type === 'sse') {
