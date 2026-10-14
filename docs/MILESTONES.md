@@ -253,6 +253,17 @@ Drive Gloss from a phone while the desktop app runs the agents. The desktop stay
 
 **Done when:** you can pair a phone by scanning a QR code, see the same sessions as the desktop, start and steer a turn in a thread from the phone while watching it stream on both, and a revoked phone can no longer connect.
 
+## M19: Shared skills and plugin discovery (future)
+Build on M13's global MCP settings and reviewed one-time imports. Start with shared skills, then add plugin discovery and compatibility previews. Update `SPEC.md` and design the library and import preview before implementation.
+
+- **Global skill library:** one Gloss-managed library available to Claude Code and Codex across projects. List skills with their description, source and agent compatibility, with Add, Edit and Remove actions. Verify how each installed agent discovers skills and refreshes them before choosing the storage and delivery mechanism.
+- **One-time skill import:** discover native user and known-project skills from either agent. Preview the instructions and supporting files, select what to copy, and resolve name collisions before saving. Preserve relative references and bundled resources. Original files stay unchanged; later edits are managed in Gloss without ongoing synchronization.
+- **Compatibility is explicit:** detect agent-specific tools, paths and conventions. Explain any required adaptation before import; do not claim a skill works with both agents just because its instructions were copied. Show when a new session or agent restart is required to pick up a change.
+- **Plugin discovery:** list native plugins and their components, including skills, MCP servers, hooks and agent-specific features. Preview which components can be shared and which remain available only through their original agent.
+- **Import compatible plugin components:** copy selected portable skills into the global library and supported MCP definitions into M13's global list, with the same duplicate and compatibility checks. Do not silently transfer hooks, installation scripts or unsupported features, or modify the source plugin. Importing a component does not install or execute the whole plugin.
+
+**Done when:** a user can review and import a skill once, use it with both agents where compatible, and inspect a plugin to import supported components while clearly seeing what stays agent-specific. Original agent files remain unchanged, and the shared library survives restart.
+
 ## Future work (after the milestones)
 Ideas worth building once the milestones are done. Not scheduled; first item first.
 
@@ -268,6 +279,7 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 - **M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.
 - **M17:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.
 - **M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.
+- **M19:** the global skill library, skill import preview and conflict resolution, and plugin component compatibility and import.
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
