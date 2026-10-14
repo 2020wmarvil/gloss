@@ -18,8 +18,12 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: [['Mod', 'Shift', 'Tab'], ['Mod', 'PageUp']], action: 'Previous session in the project' },
       { keys: [['Mod', 'L']], action: 'Focus the composer' },
       { keys: [['Mod', 'Shift', 'T']], action: 'Show or hide the side panel' },
+      { keys: [['Mod', 'J']], action: 'Go to where the agent is working, or last worked' },
+      { keys: [['Mod', 'Shift', 'Q']], action: 'Show the queue' },
       { keys: [['Mod', ',']], action: 'Open or close settings' },
-      { keys: [['Esc']], action: 'Collapse the side panel, close settings or a menu' }
+      { keys: [['Alt', '←'], ['Mouse back']], action: 'Back to the previous session, thread or settings' },
+      { keys: [['Alt', '→'], ['Mouse forward']], action: 'Forward again' },
+      { keys: [['Esc']], action: 'Close settings or a menu' }
     ]
   },
   {
@@ -38,7 +42,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: [['/']], action: 'At the start, list the slash commands' },
       { keys: [['↑'], ['↓']], action: 'Move through the slash commands' },
       { keys: [['Tab'], ['Enter']], action: 'Complete the slash command (Enter on an exact match sends it)' },
-      { keys: [['Esc']], action: 'Dismiss the slash commands' }
+      { keys: [['Esc']], action: 'Dismiss the slash commands; otherwise, in the working thread, cancel the turn' }
     ]
   },
   {

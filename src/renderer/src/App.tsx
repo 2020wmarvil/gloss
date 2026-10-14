@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GitStatus, GlossEvent, PullRequest, SettingsPatch, SettingsState } from '@shared/ipc'
 import { sameFolder } from '@shared/paths'
+import type { GlobalSettings } from '@shared/settings'
 import type {
   AgentInfo,
   AgentSession,
@@ -18,17 +19,17 @@ import type {
   ToolCall
 } from '@shared/types'
 import { truncate } from '@shared/wire'
-import { itemLabel, listItemSpans, type ListItemSpan } from './anchors'
-import { FOCUS_COMPOSER, type ComposerQueue } from './Composer'
+import type { ListItemSpan } from './anchors'
+import { FOCUS_COMPOSER, FOCUS_MAIN_COMPOSER, type ComposerQueue } from './Composer'
 import { errorText } from './errors'
-import { Conversation } from './Conversation'
+import { Conversation, type StripThread } from './Conversation'
 import type { Notice } from './Log'
-import { Sidebar } from './Sidebar'
+import { Sidebar, type ListedAgentSession } from './Sidebar'
 import type { SourceSelection } from './SelectionPopover'
 import { SettingsScreen } from './SettingsScreen'
 import { SignInDialog } from './SignInDialog'
 import { ThreadPanel } from './ThreadPanel'
-import { SideRail, ThreadsOverview } from './ThreadsOverview'
+import { SideRail, ThreadsOverview, type SideTab } from './ThreadsOverview'
 import {
   clampWidth,
   ResizeHandle,
@@ -38,6 +39,7 @@ import {
   useStoredWidth,
   useWindowWidth
 } from './resize'
+import { modKey } from './shortcuts'
 import { applyTheme } from './theme'
 
 export type OpenSession = {
@@ -50,6 +52,13 @@ export type OpenSession = {
 
 /** The thread shown in the side panel. threadId is null until the first message creates the thread. */
 export type Panel = { anchorMessageId: string; anchor: Anchor; threadId: string | null }
+
+/** A place back and forward return to: the settings screen, or a session and its open thread. */
+type View = { sessionId: string; threadId: string | null } | 'settings'
+
+function sameView(a: View | undefined, b: View): boolean {
+  return a === b || (a !== undefined && a !== 'settings' && b !== 'settings' && a.sessionId === b.sessionId && a.threadId === b.threadId)
+}
 
 export type SignInRequest = { agentId: string; agentName: string; methods: AuthMethodInfo[] }
 
@@ -84,21 +93,15 @@ function upsert<T extends { id: string }>(list: T[], item: T): T[] {
   return next
 }
 
-/** A short name for an anchor: "item 2", or the quoted start of a selection. */
-function anchorLabel(open: OpenSession, anchorMessageId: string, anchor: Anchor): string {
-  if (anchor.kind === 'listItem') {
-    const message = open.messages.find((m) => m.id === anchorMessageId)
-    const span = message ? listItemSpans(message.text)[anchor.path[0]] : undefined
-    return `item ${message && span ? itemLabel(message.text, span) : anchor.path[0] + 1}`
-  }
-  return `“${truncate(anchor.text, 32)}”`
+/** A thread's name: the start of the list item or selection it replies to. */
+function threadName(anchor: Anchor): string {
+  return truncate(anchor.text, 40)
 }
 
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [agents, setAgents] = useState<AgentInfo[]>([])
-  const [chosenAgent, setChosenAgent] = useState<string | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
@@ -107,10 +110,18 @@ export function App(): React.JSX.Element {
   const [agentSessionErrors, setAgentSessionErrors] = useState<Record<string, string | null>>({})
   const [importing, setImporting] = useState<string | null>(null)
   const [open, setOpen] = useState<OpenSession | null>(null)
-  /** The thread in the side panel; null shows the threads overview. */
+  /** The thread in the side panel; null shows the threads overview. Kept while the panel is collapsed. */
   const [panel, setPanel] = useState<Panel | null>(null)
+  const panelRef = useRef(panel)
+  panelRef.current = panel
+  /** Session id → its side panel's thread, while another session is open (not kept across restarts). */
+  const panels = useRef(new Map<string, Panel | null>())
+  /** A message to scroll to and highlight, in whichever log shows it. */
+  const [reveal, setReveal] = useState<{ messageId: string; key: number } | null>(null)
   /** The side panel is expanded. It starts collapsed on every launch. */
   const [sideOpen, setSideOpen] = useState(false)
+  /** The overview's tab: the threads, or the queue. */
+  const [sideTab, setSideTab] = useState<SideTab>('threads')
   /** sessionId → threadId of its running turn. */
   const [running, setRunning] = useState<Record<string, string | null>>({})
   const [notices, setNotices] = useState<Record<string, Notice[]>>({})
@@ -126,13 +137,15 @@ export function App(): React.JSX.Element {
   const [threadStored, setThreadPanelWidth] = useStoredWidth('gloss.threadPanelWidth')
 
   const openId = useRef<string | null>(null)
+  /** Views visited, and the current one; `moving` while back or forward restores one. */
+  const history = useRef<{ views: View[]; at: number; moving: boolean }>({ views: [], at: -1, moving: false })
   /** The open session's folder, for refreshing its git status. */
   const openCwd = useRef<string | null>(null)
   const lastSeq = useRef(-1)
   /** "cwd\0branch" → its pull request, so switching sessions shows it straight away. */
   const prCache = useRef(new Map<string, PullRequest | null>())
   const project = projects.find((p) => projectPath !== null && sameFolder(p.path, projectPath)) ?? null
-  const agent = settings ? agents.find((a) => a.id === (chosenAgent ?? settings.global.defaultAgent)) ?? agents[0] : undefined
+  const agent = settings ? agents.find((a) => a.id === settings.global.defaultAgent) ?? agents[0] : undefined
 
   /** Opens a thread in the side panel, expanding it. */
   const showPanel = useCallback(
@@ -143,10 +156,20 @@ export function App(): React.JSX.Element {
     [setSideOpen]
   )
 
-  const collapseSide = useCallback(() => {
+  /** Opens the side panel on its Queue tab. */
+  const showQueue = useCallback(() => {
     setPanel(null)
-    setSideOpen(false)
-  }, [setSideOpen])
+    setSideTab('queue')
+    setSideOpen(true)
+  }, [])
+
+  /** Collapses the side panel; it reopens on the same thread. */
+  const collapseSide = useCallback(() => setSideOpen(false), [])
+
+  /** Remembers the open session's thread for when it is shown again. */
+  const leaveSession = useCallback(() => {
+    if (openId.current) panels.current.set(openId.current, panelRef.current)
+  }, [])
 
   const addNotice = useCallback((sessionId: string, threadId: string | null, text: string) => {
     setNotices((all) => ({
@@ -189,26 +212,32 @@ export function App(): React.JSX.Element {
 
   const refreshProjects = useCallback(async () => setProjects(await window.gloss.projects.list()), [])
 
+  /** Lists every agent's own sessions in the project. */
   const loadAgentSessions = useCallback(
     async (path: string) => {
-      if (!agent) return
-      const key = agentSessionsKey(path, agent.id)
-      setAgentSessionErrors((all) => ({ ...all, [key]: null }))
-      try {
-        const list = await window.gloss.projects.agentSessions(path, agent.id)
-        setAgentSessions((all) => ({ ...all, [key]: list }))
-      } catch (err) {
-        setAgentSessionErrors((all) => ({ ...all, [key]: `Couldn't list ${agent.name} sessions: ${errorText(err)}` }))
-        setAgentSessions((all) => ({ ...all, [key]: [] }))
-      }
+      await Promise.all(
+        agents.map(async (a) => {
+          const key = agentSessionsKey(path, a.id)
+          setAgentSessionErrors((all) => ({ ...all, [key]: null }))
+          try {
+            const list = await window.gloss.projects.agentSessions(path, a.id)
+            setAgentSessions((all) => ({ ...all, [key]: list }))
+          } catch (err) {
+            setAgentSessionErrors((all) => ({ ...all, [key]: `Couldn't list ${a.name} sessions: ${errorText(err)}` }))
+            setAgentSessions((all) => ({ ...all, [key]: [] }))
+          }
+        })
+      )
     },
-    [agent]
+    [agents]
   )
 
   const selectSession = useCallback(
     async (id: string, threadId: string | null = null): Promise<void> => {
       setShowSettings(false)
-      if (openId.current !== id) {
+      const switching = openId.current !== id
+      if (switching) {
+        leaveSession()
         setPanel(null)
         setGit(null)
         setPr(null)
@@ -216,6 +245,7 @@ export function App(): React.JSX.Element {
       openId.current = id
       const view = await window.gloss.sessions.open(id)
       if (openId.current !== id) return
+      if (switching) setPanel(panels.current.get(id) ?? null)
       lastSeq.current = Math.max(-1, ...view.messages.map((m) => m.seq), ...view.toolCalls.map((t) => t.messageSeq))
       setOpen({
         session: view.session,
@@ -238,7 +268,7 @@ export function App(): React.JSX.Element {
       const thread = threadId ? view.threads.find((t) => t.id === threadId) : undefined
       if (thread) showPanel({ anchorMessageId: thread.anchorMessageId, anchor: thread.anchor, threadId: thread.id })
     },
-    [refreshGit, showPanel]
+    [refreshGit, showPanel, leaveSession]
   )
 
   /** Shows a project: its most recent session, or none. */
@@ -249,12 +279,13 @@ export function App(): React.JSX.Element {
       if (first) {
         if (first.id !== openId.current) void selectSession(first.id)
       } else {
+        leaveSession()
         openId.current = null
         setOpen(null)
         setPanel(null)
       }
     },
-    [selectSession]
+    [selectSession, leaveSession]
   )
 
   const onEvent = useCallback(
@@ -265,6 +296,7 @@ export function App(): React.JSX.Element {
           setOpen((o) => (o && o.session.id === event.session.id ? { ...o, session: event.session } : o))
           break
         case 'sessionDeleted':
+          panels.current.delete(event.sessionId)
           setSessions((list) => list.filter((s) => s.id !== event.sessionId))
           if (event.deletedOutside) {
             setSidebarError(`“${event.deletedOutside.title}” was deleted outside Gloss, so it was removed here too.`)
@@ -280,6 +312,7 @@ export function App(): React.JSX.Element {
           if (openId.current === event.sessionId) void selectSession(event.sessionId)
           break
         case 'sessionCleared':
+          panels.current.delete(event.sessionId)
           setNotices((all) => ({ ...all, [event.sessionId]: [] }))
           if (openId.current === event.sessionId) {
             lastSeq.current = -1
@@ -405,13 +438,13 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener('focus', onFocus)
   }, [projectPath, loadAgentSessions])
 
-  async function newSession(): Promise<void> {
+  async function newSession(agentId = agent?.id): Promise<void> {
     if (!projectPath) return openProject()
-    if (!agent) return
+    if (!agentId) return
     setSidebarError(null)
     setCreating(true)
     try {
-      const session = await window.gloss.sessions.create(projectPath, agent.id)
+      const session = await window.gloss.sessions.create(projectPath, agentId)
       await selectSession(session.id)
       void refreshProjects()
     } catch (err) {
@@ -429,16 +462,14 @@ export function App(): React.JSX.Element {
     selectProject(p.path, sessions)
   }
 
-  async function importSession(a: AgentSession): Promise<void> {
-    if (!projectPath || !agent) return
+  async function importSession(a: ListedAgentSession): Promise<void> {
+    if (!projectPath) return
     setSidebarError(null)
     setImporting(a.acpSessionId)
     try {
-      const session = await window.gloss.sessions.import(projectPath, agent.id, a.acpSessionId, a.title, a.updatedAt)
-      setAgentSessions((all) => ({
-        ...all,
-        [agentSessionsKey(projectPath, agent.id)]: (all[agentSessionsKey(projectPath, agent.id)] ?? []).filter((x) => x.acpSessionId !== a.acpSessionId)
-      }))
+      const session = await window.gloss.sessions.import(projectPath, a.agentId, a.acpSessionId, a.title, a.updatedAt)
+      const key = agentSessionsKey(projectPath, a.agentId)
+      setAgentSessions((all) => ({ ...all, [key]: (all[key] ?? []).filter((x) => x.acpSessionId !== a.acpSessionId) }))
       await selectSession(session.id)
     } catch (err) {
       setSidebarError(`Couldn't open that session: ${errorText(err)}`)
@@ -570,10 +601,73 @@ export function App(): React.JSX.Element {
     setSettings(await window.gloss.settings.update(patch))
   }
 
+  /** Puts the caret in the main conversation's composer, or the side panel's, once it shows. */
+  function focusComposer(main: boolean): void {
+    setTimeout(() => window.dispatchEvent(new Event(main ? FOCUS_MAIN_COMPOSER : FOCUS_COMPOSER)))
+  }
+
+  /** Where the agent works, or last worked: the running turn's thread, else the latest sent message's. */
+  function jumpToWork(): void {
+    if (!open) return
+    const sessionRunning = open.session.id in running
+    const last = open.messages.reduce<Message | undefined>(
+      (latest, m) => (m.role === 'user' && (!latest || m.seq > latest.seq) ? m : latest),
+      undefined
+    )
+    const threadId = sessionRunning ? running[open.session.id] : last?.threadId
+    if (threadId === undefined) return
+    setShowSettings(false)
+    if (threadId !== null) openThread(threadId)
+    focusComposer(threadId === null)
+  }
+
+  /** Scrolls to a sent message and highlights it, opening its thread. */
+  function revealMessage(message: Message): void {
+    setShowSettings(false)
+    if (message.threadId !== null) openThread(message.threadId)
+    setReveal({ messageId: message.id, key: Date.now() })
+  }
+
+  // The highlight fades; a log shown later mustn't scroll to it again.
+  useEffect(() => {
+    if (!reveal) return
+    const timer = setTimeout(() => setReveal(null), 2500)
+    return () => clearTimeout(timer)
+  }, [reveal])
+
+  /** Back (-1) or forward (1) through the views visited, skipping deleted sessions. */
+  async function go(step: -1 | 1): Promise<void> {
+    const h = history.current
+    let i = h.at + step
+    const gone = (v: View): boolean => v !== 'settings' && !sessions.some((s) => s.id === v.sessionId)
+    while (h.views[i] && gone(h.views[i])) i += step
+    const view = h.views[i]
+    if (!view || h.moving) return
+    h.at = i
+    if (view === 'settings') return setShowSettings(true)
+    h.moving = true
+    try {
+      setShowSettings(false)
+      if (view.sessionId !== openId.current) await selectSession(view.sessionId, view.threadId)
+      else if (view.threadId) openThread(view.threadId)
+      else setPanel(null)
+    } finally {
+      h.moving = false
+    }
+  }
+
   // Keyboard shortcuts (SPEC → Keyboard shortcuts). Esc closes panels in their own components.
   const shortcuts = useRef<(e: KeyboardEvent) => void>(() => {})
   shortcuts.current = (e: KeyboardEvent) => {
     const mod = e.ctrlKey || e.metaKey
+    // Alt+Left / Alt+Right: back and forward. Not in a text field on macOS, where Option+arrow moves by word.
+    if (e.altKey && !mod && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      const editable = e.target instanceof HTMLElement && (e.target.isContentEditable || e.target.matches('input, textarea'))
+      if (editable && modKey() === 'Cmd') return
+      e.preventDefault()
+      void go(e.key === 'ArrowLeft' ? -1 : 1)
+      return
+    }
     if (!mod) return
     if (e.key === ',') {
       e.preventDefault()
@@ -585,6 +679,15 @@ export function App(): React.JSX.Element {
       e.preventDefault()
       if (sideOpen) collapseSide()
       else setSideOpen(true)
+    } else if (e.key.toLowerCase() === 'q' && e.shiftKey && !e.altKey) {
+      e.preventDefault()
+      if (open) {
+        setShowSettings(false)
+        showQueue()
+      }
+    } else if (e.key.toLowerCase() === 'j' && !e.shiftKey && !e.altKey) {
+      e.preventDefault()
+      jumpToWork()
     } else if (e.key.toLowerCase() === 'l' && !e.shiftKey) {
       e.preventDefault()
       setShowSettings(false)
@@ -599,25 +702,77 @@ export function App(): React.JSX.Element {
       void selectSession(next.id)
     }
   }
+  const goRef = useRef(go)
+  goRef.current = go
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => shortcuts.current(e)
     // Files dropped outside the composer must not navigate the window.
     const block = (e: DragEvent): void => e.preventDefault()
+    // The mouse's back and forward buttons.
+    const onMouse = (e: MouseEvent): void => {
+      if (e.button !== 3 && e.button !== 4) return
+      e.preventDefault()
+      if (e.type === 'mouseup') void goRef.current(e.button === 3 ? -1 : 1)
+    }
     window.addEventListener('keydown', onKey)
     window.addEventListener('dragover', block)
     window.addEventListener('drop', block)
+    window.addEventListener('mousedown', onMouse)
+    window.addEventListener('mouseup', onMouse)
     return () => {
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('dragover', block)
       window.removeEventListener('drop', block)
+      window.removeEventListener('mousedown', onMouse)
+      window.removeEventListener('mouseup', onMouse)
     }
   }, [])
 
   const closeSettings = useCallback(() => setShowSettings(false), [])
 
+  /** The agents' own sessions in the shown project; null until each agent has listed them. */
+  const listedAgentSessions: ListedAgentSession[] | null = !projectPath
+    ? []
+    : agents.some((a) => !(agentSessionsKey(projectPath, a.id) in agentSessions))
+      ? null
+      : agents.flatMap((a) => agentSessions[agentSessionsKey(projectPath, a.id)].map((x) => ({ ...x, agentId: a.id })))
+  const agentSessionsError = projectPath
+    ? agents.map((a) => agentSessionErrors[agentSessionsKey(projectPath, a.id)]).filter(Boolean).join(' ') || null
+    : null
+
   const sessionId = open?.session.id
+  /** The panel's thread while it is expanded. */
+  const shownPanel = sideOpen ? panel : null
+  const panelThread = shownPanel?.threadId ?? null
+  // Each new view goes on the history, dropping the views ahead of it. Not while one is
+  // restored, nor while another session loads (its panel is already cleared).
+  useEffect(() => {
+    const h = history.current
+    if (h.moving) return
+    let view: View
+    if (showSettings) view = 'settings'
+    else if (sessionId && openId.current === sessionId) view = { sessionId, threadId: panelThread }
+    else return
+    if (sameView(h.views[h.at], view)) return
+    h.views = [...h.views.slice(0, h.at + 1), view]
+    h.at = h.views.length - 1
+  }, [showSettings, sessionId, panelThread])
   const runningThread = sessionId !== undefined && sessionId in running ? running[sessionId] : undefined
   const runningThreadRow = open?.threads.find((t) => t.id === runningThread)
+  /** The thread a turn runs in, else the thread of the latest message sent in one, with its state. */
+  const lastThreadMessage = open?.messages.reduce<Message | undefined>(
+    (latest, m) => (m.role === 'user' && m.threadId !== null && (!latest || m.seq > latest.seq) ? m : latest),
+    undefined
+  )
+  const lastThreadId = typeof runningThread === 'string' ? runningThread : lastThreadMessage?.threadId
+  const lastThreadRow = open?.threads.find((t) => t.id === lastThreadId)
+  const lastThread: StripThread | null = lastThreadRow
+    ? {
+        id: lastThreadRow.id,
+        name: threadName(lastThreadRow.anchor),
+        state: lastThreadRow.id === runningThread ? 'working' : (lastThreadMessage?.outcome ?? null)
+      }
+    : null
   const sessionNotices = sessionId ? (notices[sessionId] ?? []) : []
   const live = (sessionId && lives[sessionId]) || NO_LIVE
   const queue = (sessionId && queues[sessionId]) || NO_QUEUE
@@ -639,17 +794,17 @@ export function App(): React.JSX.Element {
     <div className="app">
       <Sidebar
         agents={agents}
-        selectedAgent={agent?.id ?? ''}
-        onSelectAgent={setChosenAgent}
+        defaultAgent={agent?.id ?? ''}
+        onSetDefaultAgent={(id) => void updateSettings({ global: { defaultAgent: id as GlobalSettings['defaultAgent'] } })}
         width={sidebarWidth}
         projects={projects}
         project={project}
         sessions={sessions}
         openId={sessionId ?? null}
         running={running}
-        agentSessions={projectPath ? (agentSessions[agentSessionsKey(projectPath, agent?.id ?? '')] ?? null) : []}
+        agentSessions={listedAgentSessions}
         order={settings?.global.sessionOrder ?? 'created'}
-        agentSessionsError={projectPath && agent ? agentSessionErrors[agentSessionsKey(projectPath, agent.id)] ?? null : null}
+        agentSessionsError={agentSessionsError}
         importing={importing}
         creating={creating}
         createError={sidebarError}
@@ -659,7 +814,7 @@ export function App(): React.JSX.Element {
         onOpenProject={() => void openProject()}
         onDeleteProject={(path) => void deleteProject(path)}
         onSelect={(id) => void selectSession(id)}
-        onNew={() => void newSession()}
+        onNew={(agentId) => void newSession(agentId)}
         onImport={(a) => void importSession(a)}
         onRename={(id, title) =>
           void window.gloss.sessions.rename(id, title).catch((err: unknown) => setSidebarError(errorText(err)))
@@ -694,11 +849,10 @@ export function App(): React.JSX.Element {
           git={git}
           pr={pr}
           runningThread={runningThread}
-          runningLabel={
-            runningThreadRow ? anchorLabel(open, runningThreadRow.anchorMessageId, runningThreadRow.anchor) : null
-          }
+          lastThread={lastThread}
           notices={sessionNotices}
-          panel={panel}
+          panel={shownPanel}
+          reveal={reveal}
           queue={queue}
           composerQueue={composerQueue(
             open.session.id,
@@ -711,6 +865,7 @@ export function App(): React.JSX.Element {
           onOpenItem={openItem}
           onOpenSelection={openSelection}
           onOpenThread={openThread}
+          onOpenQueue={showQueue}
         />
       ) : (
         <main className="empty-state">
@@ -756,13 +911,8 @@ export function App(): React.JSX.Element {
               width={threadWidth}
               open={open}
               panel={panel}
-              label={
-                panel.anchor.kind === 'selection'
-                  ? panel.threadId === null
-                    ? 'new thread'
-                    : 'selection'
-                  : anchorLabel(open, panel.anchorMessageId, panel.anchor)
-              }
+              reveal={reveal}
+              backTo={sideTab}
               runningThread={runningThread}
               notices={sessionNotices}
               live={live}
@@ -783,11 +933,17 @@ export function App(): React.JSX.Element {
             <ThreadsOverview
               width={threadWidth}
               open={open}
+              tab={sideTab}
+              onTab={setSideTab}
               runningThread={runningThread}
-              label={(t) =>
-                t.anchor.kind === 'selection' ? 'selection' : anchorLabel(open, t.anchorMessageId, t.anchor)
-              }
+              queue={queue}
+              name={(t) => threadName(t.anchor)}
               onOpenThread={openThread}
+              onReveal={revealMessage}
+              onOpenMain={() => focusComposer(true)}
+              onEditQueued={(id, text) => window.gloss.queue.edit(open.session.id, id, text)}
+              onRemoveQueued={(id) => window.gloss.queue.remove(open.session.id, id)}
+              onResumeQueue={() => window.gloss.queue.resume(open.session.id)}
               onCollapse={collapseSide}
             />
           )}

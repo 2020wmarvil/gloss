@@ -76,7 +76,7 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
 
         <section>
           <div className="label">Global</div>
-          {SETTING_FIELDS.filter((f) => f.scope === 'global').map((f) => (
+          {SETTING_FIELDS.filter((f) => f.scope === 'global' && !f.hidden).map((f) => (
             <Field
               key={f.key}
               field={f}

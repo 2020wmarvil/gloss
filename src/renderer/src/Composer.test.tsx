@@ -11,7 +11,16 @@ import { Composer } from './Composer'
 
 let root: Root | null = null
 
-function mount(draftKey: string, opts: { onSend?: (text: string) => void; commands?: SlashCommand[] } = {}): EditorView {
+function mount(
+  draftKey: string,
+  opts: {
+    onSend?: (text: string) => void
+    commands?: SlashCommand[]
+    running?: boolean
+    onCancel?: () => void
+    queued?: string[]
+  } = {}
+): EditorView {
   const el = document.createElement('div')
   document.body.replaceChildren(el)
   root = createRoot(el)
@@ -21,12 +30,14 @@ function mount(draftKey: string, opts: { onSend?: (text: string) => void; comman
         draftKey={draftKey}
         className="composer"
         placeholder="Message the agent"
-        running={false}
+        running={opts.running ?? false}
         commands={opts.commands ?? []}
         accepts={{ image: false, file: false }}
-        queue={{ items: [], paused: false, onEdit: async () => {}, onRemove: async () => {}, onResume: async () => {} }}
+        queue={{
+          items: (opts.queued ?? []).map((text, i) => ({ id: `q${i}`, threadId: null, text, attachments: [] })),
+          paused: false, onEdit: async () => {}, onRemove: async () => {}, onResume: async () => {} }}
         onSend={opts.onSend ?? (() => {})}
-        onCancel={() => {}}
+        onCancel={opts.onCancel}
       />
     )
   )
@@ -152,5 +163,42 @@ describe('Composer markdown editing', () => {
     type(view, '/compact')
     press(view, 'Enter')
     expect(onSend).toHaveBeenCalledWith('/compact', [])
+  })
+})
+
+describe('Composer cancel', () => {
+  it('offers Cancel and Escape only in the composer of the working thread', () => {
+    const onCancel = vi.fn()
+    const view = mount('s1', { running: true, onCancel, commands: [{ name: 'compact', description: 'Compact' }] })
+    expect(document.querySelector('.cancel')).not.toBeNull()
+    // Escape closes the slash commands first.
+    type(view, '/co')
+    press(view, 'Escape')
+    expect(onCancel).not.toHaveBeenCalled()
+    press(view, 'Escape')
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    act(() => (document.querySelector('.cancel') as HTMLButtonElement).click())
+    expect(onCancel).toHaveBeenCalledTimes(2)
+    unmount()
+
+    const elsewhere = mount('s2', { running: true })
+    expect(document.querySelector('.cancel')).toBeNull()
+    expect(document.querySelector('.send')!.textContent).toBe('Queue')
+    expect(press(elsewhere, 'Escape')).toBe(false)
+  })
+
+  it("doesn't cancel on Escape when idle", () => {
+    const onCancel = vi.fn()
+    const view = mount('s3', { onCancel })
+    expect(document.querySelector('.cancel')).toBeNull()
+    press(view, 'Escape')
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+})
+
+describe('Composer queue', () => {
+  it('lists the next message to run at the bottom, by the composer', () => {
+    mount('s4', { running: true, queued: ['first', 'second'] })
+    expect([...document.querySelectorAll('.queued-text')].map((t) => t.textContent)).toEqual(['second', 'first'])
   })
 })

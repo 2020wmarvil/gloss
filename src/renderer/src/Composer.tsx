@@ -23,6 +23,8 @@ type Props = {
   autoFocus?: boolean
   /** Focus on the app's "focus composer" shortcut. */
   primary?: boolean
+  /** The main conversation's composer: focused on FOCUS_MAIN_COMPOSER. */
+  main?: boolean
   footer?: ReactNode
   /** The agent's slash commands, offered after a leading "/". */
   commands: SlashCommand[]
@@ -31,10 +33,12 @@ type Props = {
   onSend(text: string, attachments: Attachment[]): void
   /** Offered while a turn runs in this composer's thread and the agent supports steering (SPEC → Steer). */
   onSteer?(text: string, attachments: Attachment[]): void
-  onCancel(): void
+  /** Given only to the composer of the thread the turn runs in: Cancel, and Escape, stop it. */
+  onCancel?(): void
 }
 
 export const FOCUS_COMPOSER = 'gloss:focus-composer'
+export const FOCUS_MAIN_COMPOSER = 'gloss:focus-main-composer'
 
 /** Unsent text, attachments and where the caret was, by draftKey, kept while Gloss runs (SPEC → Composer). */
 const drafts = new Map<string, { text: string; attachments: Attachment[]; selection?: [number, number] }>()
@@ -75,6 +79,7 @@ export function Composer({
   running,
   autoFocus,
   primary,
+  main,
   footer,
   commands,
   accepts,
@@ -103,9 +108,10 @@ export function Composer({
     }
   }, [draftKey])
 
+  // Only when shown: a turn ending elsewhere mustn't pull the caret here.
   useEffect(() => {
-    if (autoFocus && !running) ref.current?.focus()
-  }, [autoFocus, running])
+    if (autoFocus) ref.current?.focus()
+  }, [autoFocus])
 
   useEffect(() => {
     if (text || attachments.length > 0) drafts.set(draftKey, { text, attachments })
@@ -118,6 +124,13 @@ export function Composer({
     window.addEventListener(FOCUS_COMPOSER, focus)
     return () => window.removeEventListener(FOCUS_COMPOSER, focus)
   }, [primary])
+
+  useEffect(() => {
+    if (!main) return
+    const focus = (): void => ref.current?.focus()
+    window.addEventListener(FOCUS_MAIN_COMPOSER, focus)
+    return () => window.removeEventListener(FOCUS_MAIN_COMPOSER, focus)
+  }, [main])
 
   // Slash commands: offered while the text is a single "/word" at the start.
   const slash = /^\/(\S*)$/.exec(text)
@@ -181,8 +194,9 @@ export function Composer({
               <button onClick={() => void queueAction(queue.onResume)}>Resume</button>
             </p>
           )}
+          {/* The next to run at the bottom, by the composer (as in the Queue tab). */}
           <ol aria-label="Queued messages">
-            {queue.items.map((item) => (
+            {[...queue.items].reverse().map((item) => (
               <QueuedRow
                 key={item.id}
                 item={item}
@@ -282,7 +296,12 @@ export function Composer({
               return true
             }}
             onKeyDown={(e) => {
-              if (matches.length === 0 || e.isComposing) return false
+              if (e.isComposing) return false
+              if (matches.length === 0) {
+                if (e.key !== 'Escape' || !running || !onCancel) return false
+                onCancel()
+                return true
+              }
               if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 setPick((picked + (e.key === 'ArrowDown' ? 1 : matches.length - 1)) % matches.length)
                 return true
@@ -301,8 +320,8 @@ export function Composer({
             }}
             onSubmit={submit}
           />
-          {running && (
-            <button className="cancel" onClick={onCancel}>
+          {running && onCancel && (
+            <button className="cancel" onClick={onCancel} title="Stop the running turn (Esc)">
               Cancel
             </button>
           )}
@@ -333,7 +352,15 @@ export function Composer({
 }
 
 /** A queued message: its text (editable in place), attachments, Edit and Remove. */
-function QueuedRow(props: { item: QueuedMessage; onEdit(text: string): Promise<boolean>; onRemove(): void }): React.JSX.Element {
+export function QueuedRow(props: {
+  item: QueuedMessage
+  onEdit(text: string): Promise<boolean>
+  onRemove(): void
+  /** Above the text, e.g. the thread it runs in (the Queue tab). */
+  label?: ReactNode
+  /** Clicking the row outside its buttons. */
+  onOpen?(): void
+}): React.JSX.Element {
   const { item } = props
   const [draft, setDraft] = useState<string | null>(null)
 
@@ -346,7 +373,16 @@ function QueuedRow(props: { item: QueuedMessage; onEdit(text: string): Promise<b
     <li className="queued">
       {draft === null ? (
         <>
-          <span className="queued-text">
+          <span
+            className={props.onOpen ? 'queued-text link' : 'queued-text'}
+            role={props.onOpen ? 'button' : undefined}
+            tabIndex={props.onOpen ? 0 : undefined}
+            onClick={props.onOpen}
+            onKeyDown={(e) => {
+              if (props.onOpen && e.key === 'Enter') props.onOpen()
+            }}
+          >
+            {props.label}
             {item.text}
             {files > 0 && <span className="muted"> (+{files === 1 ? '1 attachment' : `${files} attachments`})</span>}
           </span>

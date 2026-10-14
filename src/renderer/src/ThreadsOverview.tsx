@@ -1,8 +1,10 @@
-// The side panel's overview of a session's threads, and the rail it collapses to
+// The side panel's overview of a session's threads and its queue, and the rail it collapses to
 // (SPEC → Conversation view → Side panel).
-import { useEffect } from 'react'
-import type { Thread } from '@shared/types'
+import { useLayoutEffect, useRef, useState } from 'react'
+import type { Message, MessageQueue, Thread } from '@shared/types'
 import type { OpenSession } from './App'
+import { QueuedRow } from './Composer'
+import { errorText } from './errors'
 import { ago } from './Sidebar'
 
 export type ThreadSummary = {
@@ -12,7 +14,7 @@ export type ThreadSummary = {
   lastActivity: number
 }
 
-/** The session's threads with their reply counts, most recent activity first. */
+/** The session's threads with their reply counts, oldest first. */
 export function threadSummaries(open: OpenSession): ThreadSummary[] {
   const byThread = new Map<string, ThreadSummary>(
     open.threads.map((t) => [t.id, { thread: t, replies: 0, lastActivity: t.createdAt }])
@@ -23,7 +25,7 @@ export function threadSummaries(open: OpenSession): ThreadSummary[] {
     s.replies++
     if (m.createdAt !== undefined && m.createdAt > s.lastActivity) s.lastActivity = m.createdAt
   }
-  return [...byThread.values()].sort((a, b) => b.lastActivity - a.lastActivity)
+  return [...byThread.values()].sort((a, b) => a.thread.createdAt - b.thread.createdAt)
 }
 
 const threadsIcon = (
@@ -50,29 +52,46 @@ export function SideRail(props: { count: number; running: boolean; onExpand(): v
   )
 }
 
+export type SideTab = 'threads' | 'queue'
+
 type Props = {
   /** Width the user dragged the panel to; null = the CSS default. */
   width: number | null
   open: OpenSession
+  tab: SideTab
+  onTab(tab: SideTab): void
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
-  /** "item 2", or "selection". */
-  label(thread: Thread): string
+  /** The session's queued messages, in the order they will run. */
+  queue: MessageQueue
+  /** A thread's name, from the start of what it replies to. */
+  name(thread: Thread): string
   onOpenThread(threadId: string): void
+  /** Scrolls to a sent message and highlights it, opening its thread. */
+  onReveal(message: Message): void
+  /** Focuses the main conversation's composer, for its queued messages. */
+  onOpenMain(): void
+  onEditQueued(id: string, text: string): Promise<void>
+  onRemoveQueued(id: string): Promise<void>
+  onResumeQueue(): Promise<void>
   onCollapse(): void
 }
 
 export function ThreadsOverview(props: Props): React.JSX.Element {
-  const { onCollapse } = props
+  const { onCollapse, queue } = props
   const summaries = threadSummaries(props.open)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onCollapse()
+  async function queueAction(action: () => Promise<void>): Promise<boolean> {
+    setError(null)
+    try {
+      await action()
+      return true
+    } catch (err) {
+      setError(errorText(err))
+      return false
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onCollapse])
+  }
 
   return (
     <aside
@@ -81,44 +100,149 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
       style={props.width === null ? undefined : { flexBasis: props.width }}
     >
       <header>
-        <h2>Threads</h2>
-        <span className="mono">{summaries.length}</span>
-        <button className="close" onClick={onCollapse} aria-label="Hide panel" title="Hide panel (Esc)">
+        <div className="side-tabs" role="tablist">
+          <button role="tab" aria-selected={props.tab === 'threads'} onClick={() => props.onTab('threads')}>
+            Threads <span className="mono">{summaries.length}</span>
+          </button>
+          <button
+            role="tab"
+            aria-selected={props.tab === 'queue'}
+            onClick={() => props.onTab('queue')}
+            title="Queue (Ctrl+Shift+Q)"
+          >
+            Queue <span className="mono">{queue.items.length}</span>
+          </button>
+        </div>
+        <button className="close" onClick={onCollapse} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
           »
         </button>
       </header>
-      <div className="thread-list">
-        {summaries.length === 0 && (
-          <p className="muted empty">
-            No threads yet. Reply to a list item, or select text in an agent message, to start one.
-          </p>
-        )}
-        {summaries.map(({ thread, replies, lastActivity }) => {
-          const running = props.runningThread === thread.id
-          return (
-            <button key={thread.id} className="thread-row" onClick={() => props.onOpenThread(thread.id)}>
-              <span className="mono">{props.label(thread)}</span>
-              <span className="thread-quote">
-                {thread.anchor.kind === 'selection' ? `“${thread.anchor.text}”` : thread.anchor.text}
-              </span>
-              <span className="thread-meta">
-                <span>
-                  {replies} {replies === 1 ? 'reply' : 'replies'}
+      {props.tab === 'threads' ? (
+        <div className="thread-list">
+          {summaries.length === 0 && (
+            <p className="muted empty">
+              No threads yet. Reply to a list item, or select text in an agent message, to start one.
+            </p>
+          )}
+          {summaries.map(({ thread, replies, lastActivity }) => {
+            const running = props.runningThread === thread.id
+            const queued = queue.items.filter((q) => q.threadId === thread.id).length
+            return (
+              <button key={thread.id} className="thread-row" onClick={() => props.onOpenThread(thread.id)}>
+                <span className="thread-quote">
+                  {thread.anchor.kind === 'selection' ? `“${thread.anchor.text}”` : thread.anchor.text}
                 </span>
-                <span title={new Date(lastActivity).toLocaleString()}>
-                  {ago(lastActivity) === 'now' ? 'just now' : `${ago(lastActivity)} ago`}
-                </span>
-                {running && (
-                  <span className="thread-working">
-                    <span className="running-dot" aria-hidden />
-                    working
+                <span className="thread-meta">
+                  <span>
+                    {replies} {replies === 1 ? 'reply' : 'replies'}
                   </span>
-                )}
-              </span>
-            </button>
-          )
-        })}
-      </div>
+                  <span title={new Date(lastActivity).toLocaleString()}>
+                    {ago(lastActivity) === 'now' ? 'just now' : `${ago(lastActivity)} ago`}
+                  </span>
+                  {running && (
+                    <span className="thread-working">
+                      <span className="running-dot" aria-hidden />
+                      working
+                    </span>
+                  )}
+                  {queued > 0 && <span className="thread-queued">{queued > 1 ? `${queued} queued` : 'queued'}</span>}
+                  {queued > 0 && queue.paused && <span className="thread-paused">paused</span>}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <QueueTimeline {...props} queueAction={queueAction} error={error} />
+      )}
     </aside>
+  )
+}
+
+/**
+ * The Queue tab: what will run on top (the next message at the bottom of it), then
+ * every message sent in the session, newest first, so the turn in progress moves up.
+ */
+function QueueTimeline(
+  props: Props & { queueAction(action: () => Promise<void>): Promise<boolean>; error: string | null }
+): React.JSX.Element {
+  const { queue, open, queueAction } = props
+  const now = useRef<HTMLDivElement>(null)
+  const sent = open.messages.filter((m) => m.role === 'user').sort((a, b) => b.seq - a.seq)
+  const working = props.runningThread !== undefined ? sent[0] : undefined
+  const threadOf = (threadId: string | null): Thread | undefined =>
+    threadId === null ? undefined : open.threads.find((t) => t.id === threadId)
+  const where = (threadId: string | null): string => {
+    const thread = threadOf(threadId)
+    return thread ? props.name(thread) : threadId === null ? 'Main conversation' : 'A thread'
+  }
+
+  // Opens on the turn in progress, between what waits and what was sent.
+  useLayoutEffect(() => {
+    now.current?.scrollIntoView?.({ block: 'center' })
+  }, [])
+
+  return (
+    <div className="thread-list queue-list">
+      {queue.items.length === 0 && sent.length === 0 && (
+        <p className="muted empty">Nothing sent yet. Messages sent while a turn runs wait here, in the order they will run.</p>
+      )}
+      {queue.paused && queue.items.length > 0 && (
+        <p className="queue-paused">
+          Queue paused: the last turn didn&apos;t finish.
+          <button onClick={() => void queueAction(props.onResumeQueue)}>Resume</button>
+        </p>
+      )}
+      {props.error && <p className="composer-error">{props.error}</p>}
+      {queue.items.length > 0 && (
+        <>
+          <div className="timeline-label">Queued · next at the bottom</div>
+          <ol aria-label="Queued messages">
+            {[...queue.items].reverse().map((item) => {
+              const thread = threadOf(item.threadId)
+              return (
+                <QueuedRow
+                  key={item.id}
+                  item={item}
+                  label={
+                    <span className="queued-where">
+                      <span className="state-dot" data-state={queue.paused ? 'paused' : 'queued'} aria-hidden /> {where(item.threadId)}
+                    </span>
+                  }
+                  onOpen={() => (thread ? props.onOpenThread(thread.id) : props.onOpenMain())}
+                  onEdit={(text) => queueAction(() => props.onEditQueued(item.id, text))}
+                  onRemove={() => void queueAction(() => props.onRemoveQueued(item.id))}
+                />
+              )
+            })}
+          </ol>
+        </>
+      )}
+      <div ref={now} className="timeline-now" aria-hidden />
+      {sent.length > 0 && (
+        <>
+          <div className="timeline-label">Sent · newest first</div>
+          <ol aria-label="Sent messages">
+            {sent.map((m) => (
+              <li key={m.id} className={m === working ? 'sent-row working' : 'sent-row'}>
+                <button onClick={() => props.onReveal(m)}>
+                  <span className="queued-where">
+                    <span className="state-dot" data-state={m === working ? 'working' : m.outcome} aria-hidden />{' '}
+                    {where(m.threadId)}
+                    {m.createdAt !== undefined && (
+                      <span className="sent-when" title={new Date(m.createdAt).toLocaleString()}>
+                        {' '}
+                        · {ago(m.createdAt) === 'now' ? 'just now' : `${ago(m.createdAt)} ago`}
+                      </span>
+                    )}
+                  </span>
+                  <span className="sent-text">{m.text}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+    </div>
   )
 }

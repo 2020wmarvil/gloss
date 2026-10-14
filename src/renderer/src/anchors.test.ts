@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { itemLabel, itemSource, listItemSpans } from './anchors'
+import { itemSource, listItemSpans } from './anchors'
 
 const REVIEW = [
   'Here is what I found in `services/orders`:',
@@ -33,19 +33,11 @@ describe('listItemSpans', () => {
     for (const s of spans) expect(REVIEW.slice(s.start, s.end)).toMatch(/^(\d\.|-) /)
   })
 
-  it('quotes an item without its marker and labels it with its number', () => {
-    const [first, , third, bullet] = listItemSpans(REVIEW)
+  it('quotes an item without its marker', () => {
+    const [first] = listItemSpans(REVIEW)
     expect(itemSource(REVIEW, first)).toBe(
       '**Cache invalidation races the write path.** `invalidate()` runs before commit.'
     )
-    expect(itemLabel(REVIEW, third)).toBe('3')
-    expect(itemLabel(REVIEW, bullet)).toBe('4')
-  })
-
-  it('respects an ordered list start number', () => {
-    const md = '7. seven\n8. eight\n'
-    const spans = listItemSpans(md)
-    expect(spans.map((s) => itemLabel(md, s))).toEqual(['7', '8'])
   })
 
   it('returns nothing for messages without lists', () => {

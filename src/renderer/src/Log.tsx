@@ -32,21 +32,36 @@ export function logItems(open: OpenSession, notices: Notice[], threadId: string 
   ].sort((a, b) => a.seq - b.seq)
 }
 
+/** A message to scroll to and highlight; `key` repeats it for the same message. */
+export type Reveal = { messageId: string; key: number }
+
 type Props = {
   items: LogItem[]
   className: string
   empty: ReactNode
   renderAgent(message: Message): ReactNode
+  reveal?: Reveal | null
 }
 
 /** A scrolling log that sticks to the bottom while new output arrives. */
-export function Log({ items, className, empty, renderAgent }: Props): React.JSX.Element {
+export function Log({ items, className, empty, renderAgent, reveal }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
   useLayoutEffect(() => {
     const el = ref.current
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
   })
+
+  // After the stick-to-bottom scroll above, so it wins.
+  useLayoutEffect(() => {
+    const target = reveal && ref.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(reveal.messageId)}"]`)
+    if (!target) return
+    stickToBottom.current = false
+    target.scrollIntoView?.({ block: 'center' })
+    target.classList.remove('revealed')
+    void target.offsetWidth // restarts the highlight animation
+    target.classList.add('revealed')
+  }, [reveal])
 
   return (
     <div
@@ -63,7 +78,11 @@ export function Log({ items, className, empty, renderAgent }: Props): React.JSX.
           switch (item.kind) {
             case 'message':
               return item.message.role === 'user' ? (
-                <div key={item.message.id} className={item.message.steered ? 'you steered' : 'you'}>
+                <div
+                  key={item.message.id}
+                  className={item.message.steered ? 'you steered' : 'you'}
+                  data-message-id={item.message.id}
+                >
                   {item.message.steered && (
                     <span className="steered-label" title="Sent into the running turn">
                       steered

@@ -1,7 +1,7 @@
 // SQLite persistence (node:sqlite). For agents that share their sessions, the log is a
 // cache of the agent's own copy; threads and the rest are Gloss's own (SPEC → Shared sessions).
 import { DatabaseSync } from 'node:sqlite'
-import type { Anchor, Attachment, Message, Plan, PlanEntry, Session, Thread, ToolCall } from '../shared/types'
+import type { Anchor, Attachment, Message, Plan, PlanEntry, Session, Thread, ToolCall, TurnOutcome } from '../shared/types'
 
 // Append-only. Each entry upgrades the schema by one version (PRAGMA user_version).
 const MIGRATIONS = [
@@ -84,6 +84,9 @@ const MIGRATIONS = [
   `,
   `
   ALTER TABLE sessions ADD COLUMN effort TEXT;
+  `,
+  `
+  ALTER TABLE messages ADD COLUMN outcome TEXT;
   `
 ]
 
@@ -122,6 +125,7 @@ function toMessage(r: Row): Message {
   if (r.attachments != null) m.attachments = JSON.parse(r.attachments as string) as Attachment[]
   if (r.steered) m.steered = true
   if (r.created_at != null) m.createdAt = Number(r.created_at)
+  if (r.outcome != null) m.outcome = r.outcome as TurnOutcome
   return m
 }
 
@@ -312,6 +316,10 @@ export class Store {
 
   updateMessageText(id: string, text: string): void {
     this.db.prepare('UPDATE messages SET text = ? WHERE id = ?').run(text, id)
+  }
+
+  setMessageOutcome(id: string, outcome: TurnOutcome): void {
+    this.db.prepare('UPDATE messages SET outcome = ? WHERE id = ?').run(outcome, id)
   }
 
   /**

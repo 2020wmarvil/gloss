@@ -1,12 +1,12 @@
 // The main thread: messages and tool calls with threadId == null.
 import { useRef } from 'react'
 import type { GitStatus, PullRequest } from '@shared/ipc'
-import type { Attachment, Message, MessageQueue, SessionLive, Thread } from '@shared/types'
+import type { Attachment, Message, MessageQueue, SessionLive, Thread, TurnOutcome } from '@shared/types'
 import type { OpenSession, Panel } from './App'
 import type { ListItemSpan } from './anchors'
 import { Composer, type ComposerQueue } from './Composer'
 
-import { Log, logItems, type Notice } from './Log'
+import { Log, logItems, type Notice, type Reveal } from './Log'
 import { Markdown } from './Markdown'
 import { SelectionPopover, type SourceSelection } from './SelectionPopover'
 import { resolveSelection } from './source'
@@ -23,8 +23,9 @@ type Props = {
   runningThread: string | null | undefined
   notices: Notice[]
   panel: Panel | null
-  /** Label of the thread whose turn is running, e.g. "item 2". */
-  runningLabel: string | null
+  reveal: Reveal | null
+  /** The thread the agent works in, or last worked in, for the activity strip; null if none ever did. */
+  lastThread: StripThread | null
   /** The whole session's queue, for the status line. */
   queue: MessageQueue
   /** The main thread's part of it, for the composer. */
@@ -37,11 +38,8 @@ type Props = {
   onOpenItem(message: Message, span: ListItemSpan): void
   onOpenSelection(message: Message, selection: SourceSelection): void
   onOpenThread(threadId: string): void
-}
-
-function lastUserMessage(messages: Message[]): Message | undefined {
-  for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === 'user') return messages[i]
-  return undefined
+  /** Opens the side panel's Queue tab. */
+  onOpenQueue(): void
 }
 
 export function Conversation(props: Props): React.JSX.Element {
@@ -121,6 +119,13 @@ export function Conversation(props: Props): React.JSX.Element {
         items={logItems(open, notices, null)}
         empty={<p className="muted">Send a message to start.</p>}
         renderAgent={renderAgent}
+        reveal={props.reveal}
+      />
+      <ActivityStrip
+        thread={props.lastThread}
+        queued={props.queue.items.length}
+        onOpenThread={props.onOpenThread}
+        onOpenQueue={props.onOpenQueue}
       />
       <Composer
         draftKey={session.id}
@@ -129,28 +134,68 @@ export function Conversation(props: Props): React.JSX.Element {
         running={running}
         autoFocus={panel === null}
         primary={panel === null}
+        main
         commands={live.commands}
         accepts={live.accepts}
         queue={props.composerQueue}
         onSend={props.onSend}
         onSteer={live.steering && runningThread === null ? props.onSteer : undefined}
-        onCancel={props.onCancel}
+        onCancel={runningThread === null ? props.onCancel : undefined}
       />
       <StatusLine
         session={session}
         live={live}
         git={props.git}
         pr={props.pr}
-        runningThread={runningThread}
-        runningLabel={props.runningLabel}
-        steered={running && lastUserMessage(open.messages)?.steered === true}
+        running={running}
         queue={props.queue}
         onResumeQueue={() => void props.composerQueue.onResume()}
-        onOpenThread={props.onOpenThread}
         onSetChoice={props.onSetChoice}
         onCommand={(text) => props.onSend(text, [])}
       />
       <SelectionPopover scope={mainRef} messages={open.messages} onReply={props.onOpenSelection} />
     </main>
+  )
+}
+
+/** The strip's thread, and the state of its latest turn (null: Gloss didn't see it end). */
+export type StripThread = { id: string; name: string; state: 'working' | TurnOutcome | null }
+
+const STRIP_VERB = {
+  working: 'Working in',
+  completed: 'Done in',
+  cancelled: 'Cancelled in',
+  failed: 'Failed in',
+  unknown: 'Last worked in'
+} as const
+
+/**
+ * Above the composer once a thread has had a turn: the thread the agent works in, or
+ * last worked in, and what is queued. It stays put rather than coming and going.
+ */
+function ActivityStrip(props: {
+  thread: StripThread | null
+  queued: number
+  onOpenThread(threadId: string): void
+  onOpenQueue(): void
+}): React.JSX.Element | null {
+  const { thread, queued } = props
+  if (thread === null && queued === 0) return null
+  return (
+    <div className="activity-strip" role="status">
+      {thread !== null && (
+        <button className="activity-thread" onClick={() => props.onOpenThread(thread.id)} title="Open the thread">
+          <span className="state-dot" data-state={thread.state ?? undefined} aria-hidden />
+          <span className="activity-name">
+            {STRIP_VERB[thread.state ?? 'unknown']} “{thread.name}”
+          </span>
+        </button>
+      )}
+      {queued > 0 && (
+        <button className="activity-queued" onClick={props.onOpenQueue} title="Show the queue (Ctrl+Shift+Q)">
+          {queued} queued
+        </button>
+      )}
+    </div>
   )
 }
