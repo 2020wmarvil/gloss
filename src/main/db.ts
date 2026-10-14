@@ -364,6 +364,19 @@ export class Store {
     return r ? toMessage(r as Row) : undefined
   }
 
+  /**
+   * The text of the user's messages in every session, newest first, each once (at its
+   * latest use): the composers' history (SPEC → Composer → History).
+   */
+  messageHistory(limit = 500): string[] {
+    const rows = this.db
+      .prepare(
+        "SELECT text FROM messages WHERE role = 'user' AND text <> '' GROUP BY text ORDER BY MAX(COALESCE(created_at, 0)) DESC, MAX(rowid) DESC LIMIT ?"
+      )
+      .all(limit) as { text: string }[]
+    return rows.map((r) => r.text)
+  }
+
   /** The session's latest user message. */
   lastUserMessage(sessionId: string): Message | undefined {
     const r = this.db

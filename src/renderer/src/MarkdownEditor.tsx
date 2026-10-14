@@ -25,6 +25,8 @@ type Props = {
   onKeyDown?(e: KeyboardEvent): boolean
   /** Enter outside a code block (`send`), or Ctrl/Cmd+Enter (`steer`). */
   onSubmit(how: 'send' | 'steer'): void
+  /** The caret or selection moved without an edit (a click, an arrow key). */
+  onSelectionChange?(): void
   /** Files pasted into the editor; return true when they were taken. */
   onPasteFiles?(files: File[]): boolean
   ref?: Ref<MarkdownEditorHandle>
@@ -269,6 +271,7 @@ export function MarkdownEditor(props: Props): React.JSX.Element {
             const main = u.state.selection.main
             lastSelection.current = [main.anchor, main.head]
             if (u.docChanged) latest.current.onChange(u.state.doc.toString())
+            else if (u.selectionSet) latest.current.onSelectionChange?.()
           })
         ]
       })

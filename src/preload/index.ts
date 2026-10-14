@@ -11,6 +11,7 @@ const api: GlossApi = {
     agentSessions: (path, agentId) => ipcRenderer.invoke(IPC.projectsAgentSessions, path, agentId),
     delete: (path) => ipcRenderer.invoke(IPC.projectsDelete, path)
   },
+  history: () => ipcRenderer.invoke(IPC.history),
   sessions: {
     list: () => ipcRenderer.invoke(IPC.sessionsList),
     create: (cwd, agentId) => ipcRenderer.invoke(IPC.sessionsCreate, cwd, agentId),
@@ -34,8 +35,8 @@ const api: GlossApi = {
     create: (sessionId, anchorMessageId, anchor) =>
       ipcRenderer.invoke(IPC.threadsCreate, sessionId, anchorMessageId, anchor)
   },
-  send: (sessionId, text, threadId, attachments) =>
-    ipcRenderer.invoke(IPC.send, sessionId, text, threadId, attachments),
+  send: (sessionId, text, threadId, attachments, fromThread) =>
+    ipcRenderer.invoke(IPC.send, sessionId, text, threadId, attachments, fromThread ?? null),
   steer: (sessionId, text, threadId, attachments) =>
     ipcRenderer.invoke(IPC.steer, sessionId, text, threadId, attachments),
   cancel: (sessionId) => ipcRenderer.invoke(IPC.cancel, sessionId),

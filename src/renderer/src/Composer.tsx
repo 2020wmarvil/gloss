@@ -30,11 +30,15 @@ type Props = {
   commands: SlashCommand[]
   /** What the agent accepts besides text. */
   accepts: { image: boolean; file: boolean }
+  /** Messages sent in every session, newest first: Up and Down recall them (SPEC → Composer → History). */
+  history?: string[]
   onSend(text: string, attachments: Attachment[]): void
   /** Offered while a turn runs in this composer's thread and the agent supports steering (SPEC → Steer). */
   onSteer?(text: string, attachments: Attachment[]): void
   /** Given only to the composer of the thread the turn runs in: Cancel, and Escape, stop it. */
   onCancel?(): void
+  /** A thread's composer: sends the message to the main conversation instead (SPEC → Send to main). */
+  onSendToMain?(text: string, attachments: Attachment[]): void
 }
 
 export const FOCUS_COMPOSER = 'gloss:focus-composer'
@@ -84,9 +88,11 @@ export function Composer({
   commands,
   accepts,
   queue,
+  history = [],
   onSend,
   onSteer,
-  onCancel
+  onCancel,
+  onSendToMain
 }: Props): React.JSX.Element {
   const [text, setText] = useState(() => drafts.get(draftKey)?.text ?? '')
   const [attachments, setAttachments] = useState<Attachment[]>(() => drafts.get(draftKey)?.attachments ?? [])
@@ -95,6 +101,8 @@ export function Composer({
   const [pick, setPick] = useState(0)
   const [dismissed, setDismissed] = useState<string | null>(null)
   const ref = useRef<MarkdownEditorHandle>(null)
+  /** The history entry shown (0 = newest) and the draft it replaced; null when not browsing. */
+  const browsing = useRef<{ index: number; draft: string } | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
   // The caret goes back where it was when the user switched away (before the focus below).
@@ -160,11 +168,36 @@ export function Composer({
 
   const steer = running ? onSteer : undefined
 
-  function submit(how: 'send' | 'steer' = 'send'): void {
+  /**
+   * Up on the first line starts cycling through the history: from then on Up shows the
+   * previous entry and Down the next, whatever line the caret is on (the editor puts it
+   * at the end of each), and Down past the newest brings the draft back. Editing or
+   * moving the caret stops cycling. Returns whether it took the key.
+   */
+  function recall(dir: 1 | -1): boolean {
+    const current = browsing.current
+    if (!current) {
+      const [anchor, head] = ref.current?.selection() ?? [0, 0]
+      if (dir === -1 || anchor !== head || text.slice(0, head).includes('\n')) return false
+    }
+    const index = (current?.index ?? -1) + dir
+    // At the oldest entry, Up stays put rather than moving the caret.
+    if (index >= history.length) return current !== null
+    const value = index < 0 ? current!.draft : history[index]
+    browsing.current = index < 0 ? null : { index, draft: current?.draft ?? text }
+    // A recalled "/command" shouldn't open the slash menu, which would take the arrows.
+    setDismissed(value)
+    setText(value)
+    return true
+  }
+
+  function submit(how: 'send' | 'steer' | 'main' = 'send'): void {
     const trimmed = text.trim()
     if (!trimmed && attachments.length === 0) return
     if (how === 'steer' && steer) steer(trimmed, attachments)
+    else if (how === 'main' && onSendToMain) onSendToMain(trimmed, attachments)
     else onSend(trimmed, attachments)
+    browsing.current = null
     setText('')
     setAttachments([])
     setError(null)
@@ -287,9 +320,13 @@ export function Composer({
             ariaLabel={placeholder}
             value={text}
             onChange={(value) => {
+              // Editing a recalled message makes it the draft.
+              const shown = browsing.current
+              if (shown && value !== history[shown.index]) browsing.current = null
               setText(value)
               setPick(0)
             }}
+            onSelectionChange={() => (browsing.current = null)}
             onPasteFiles={(files) => {
               if (canAttach) void addFiles(files)
               else setError("The agent doesn't accept images or files.")
@@ -298,6 +335,8 @@ export function Composer({
             onKeyDown={(e) => {
               if (e.isComposing) return false
               if (matches.length === 0) {
+                const plain = !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+                if (plain && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) return recall(e.key === 'ArrowUp' ? 1 : -1)
                 if (e.key !== 'Escape' || !running || !onCancel) return false
                 onCancel()
                 return true
@@ -333,6 +372,20 @@ export function Composer({
               title="Send into the running turn now (Ctrl+Enter)"
             >
               Steer
+            </button>
+          )}
+          {onSendToMain && (
+            <button
+              className="to-main"
+              onClick={() => submit('main')}
+              disabled={!text.trim() && attachments.length === 0}
+              title={
+                running
+                  ? 'Queue it in the main conversation instead of this thread'
+                  : 'Send it to the main conversation instead of this thread'
+              }
+            >
+              {running ? 'Queue to main' : 'Send to main'}
             </button>
           )}
           <button

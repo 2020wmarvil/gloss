@@ -105,6 +105,8 @@ export function App(): React.JSX.Element {
   const [projects, setProjects] = useState<Project[]>([])
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
+  /** Messages sent in every session, newest first, each once (SPEC → Composer → History). */
+  const [sent, setSent] = useState<string[]>([])
   /** Project path and agent id → the agent's sessions there that Gloss has no record of. */
   const [agentSessions, setAgentSessions] = useState<Record<string, AgentSession[]>>({})
   const [agentSessionErrors, setAgentSessionErrors] = useState<Record<string, string | null>>({})
@@ -338,6 +340,8 @@ export function App(): React.JSX.Element {
                 : list
             )
           }
+          const { role, text } = event.message
+          if (role === 'user' && text) setSent((h) => (h[0] === text ? h : [text, ...h.filter((t) => t !== text)]))
           if (event.message.sessionId !== openId.current) break
           lastSeq.current = Math.max(lastSeq.current, event.message.seq)
           setOpen((o) => (o ? { ...o, messages: upsert(o.messages, event.message) } : o))
@@ -401,6 +405,7 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     void window.gloss.settings.get().then(setSettings)
+    void window.gloss.history().then(setSent)
     void window.gloss.agents.list().then(setAgents)
     void Promise.all([window.gloss.projects.list(), window.gloss.sessions.list()]).then(([ps, list]) => {
       setProjects(ps)
@@ -574,7 +579,9 @@ export function App(): React.JSX.Element {
     text: string,
     attachments: Attachment[],
     target: Panel | null,
-    how: 'send' | 'steer' = 'send'
+    how: 'send' | 'steer' = 'send',
+    /** A main-thread message sent from this thread (SPEC → Send to main). */
+    fromThread: string | null = null
   ): Promise<void> {
     if (!open) return
     const sessionId = open.session.id
@@ -591,7 +598,8 @@ export function App(): React.JSX.Element {
         }
       }
       // Turn errors arrive as turnEnd events.
-      await (how === 'steer' ? window.gloss.steer : window.gloss.send)(sessionId, text, threadId, attachments)
+      if (how === 'steer') await window.gloss.steer(sessionId, text, threadId, attachments)
+      else await window.gloss.send(sessionId, text, threadId, attachments, fromThread)
     } catch (err) {
       addNotice(sessionId, threadId, errorText(err))
     }
@@ -846,6 +854,7 @@ export function App(): React.JSX.Element {
           open={open}
           agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
           live={live}
+          history={sent}
           git={git}
           pr={pr}
           runningThread={runningThread}
@@ -916,6 +925,7 @@ export function App(): React.JSX.Element {
               runningThread={runningThread}
               notices={sessionNotices}
               live={live}
+              history={sent}
               // A thread that doesn't exist yet has nothing queued.
               queue={composerQueue(
                 open.session.id,
@@ -923,6 +933,7 @@ export function App(): React.JSX.Element {
               )}
               onSend={(text, attachments) => void send(text, attachments, panel)}
               onSteer={(text, attachments) => void send(text, attachments, panel, 'steer')}
+              onSendToMain={(text, attachments) => void send(text, attachments, null, 'send', panel.threadId)}
               onCancel={() => void window.gloss.cancel(open.session.id)}
               onBack={() => setPanel(null)}
               onClose={collapseSide}

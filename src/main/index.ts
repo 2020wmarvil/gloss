@@ -228,6 +228,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   )
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
+  ipcMain.handle(IPC.history, () => manager.messageHistory())
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
     manager.createSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
   )
@@ -283,8 +284,16 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.threadsCreate, (_e, sessionId: unknown, anchorMessageId: unknown, anchor: unknown) =>
     manager.createThread(str(sessionId, 'sessionId'), str(anchorMessageId, 'anchorMessageId'), anchorArg(anchor))
   )
-  ipcMain.handle(IPC.send, (_e, sessionId: unknown, text: unknown, threadId: unknown, attachments: unknown) =>
-    manager.send(str(sessionId, 'sessionId'), str(text, 'text'), threadArg(threadId), attachmentsArg(attachments))
+  ipcMain.handle(
+    IPC.send,
+    (_e, sessionId: unknown, text: unknown, threadId: unknown, attachments: unknown, fromThread: unknown) =>
+      manager.send(
+        str(sessionId, 'sessionId'),
+        str(text, 'text'),
+        threadArg(threadId),
+        attachmentsArg(attachments),
+        threadArg(fromThread)
+      )
   )
   ipcMain.handle(IPC.steer, (_e, sessionId: unknown, text: unknown, threadId: unknown, attachments: unknown) =>
     manager.steer(str(sessionId, 'sessionId'), str(text, 'text'), threadArg(threadId), attachmentsArg(attachments))

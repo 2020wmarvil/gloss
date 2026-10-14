@@ -19,6 +19,7 @@ it("starts sessions with the default agent or one from the menu, and lists every
   const state = { global: { defaultAgent: 'codex', theme: 'light', sessionOrder: 'created' }, projects: {}, error: null, path: '/settings.json' }
   const update = vi.fn(async (patch: { global: object }) => ({ ...state, global: { ...state.global, ...patch.global } }))
   window.gloss = {
+    history: async () => [],
     settings: { get: async () => state, update },
     agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'codex', name: 'Codex' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: list },
@@ -64,6 +65,7 @@ it('goes back and forward through the sessions and settings visited with the mou
     queue: { items: [], paused: false }
   }))
   window.gloss = {
+    history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created' }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
@@ -113,6 +115,7 @@ it('shows where the agent works and what waits, jumps there, and lists the queue
   })
   const remove = vi.fn(async () => {})
   window.gloss = {
+    history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created' }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
@@ -209,6 +212,7 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
     b: { messages: [{ id: 'b1', sessionId: 'b', seq: 1, role: 'user', text: 'only main', threadId: null }], threads: [] }
   }
   window.gloss = {
+    history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created' }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },

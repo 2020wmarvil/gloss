@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { AGENT_INSTRUCTIONS } from '../shared/wire'
 import { agentEnv, getAgentConfig, listAgents, type AgentConfig } from './agents'
 
 const config: AgentConfig = {
@@ -29,5 +30,14 @@ describe('agentEnv', () => {
 
   it("turns on Claude Code's todo tools, so it reports plans", () => {
     expect(agentEnv(getAgentConfig('claude'), {}).CLAUDE_CODE_ENABLE_TODO_TOOLS).toBe('1')
+  })
+
+  it("gives each agent Gloss's instructions in the form it takes them", () => {
+    const claude = { systemPrompt: { append: AGENT_INSTRUCTIONS } }
+    expect(getAgentConfig('claude').sessionMeta).toEqual({ new: claude, load: claude })
+    // Codex keeps them in the thread; its session/load ignores them.
+    expect(getAgentConfig('codex').sessionMeta).toEqual({
+      new: { jetbrains: { air: { customInstructions: AGENT_INSTRUCTIONS } } }
+    })
   })
 })

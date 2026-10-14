@@ -6,7 +6,7 @@ import { AgentConnection } from './acp'
 import type { AgentConfig } from './agents'
 import { Store } from './db'
 import { SessionManager } from './sessions'
-import { wireTag } from '../shared/wire'
+import { toMainTag, wireTag } from '../shared/wire'
 
 type Script = (ctx: {
   sessionId: string
@@ -27,6 +27,8 @@ type FakeAgent = {
   sessions: Set<string>
   prompts: string[]
   loads: string[]
+  /** The `_meta` of each session/new and session/load, in order. */
+  metas: { method: 'new' | 'load'; meta: unknown }[]
   authenticated: string[]
   connections: number
   /** Session modes reported by session/new and session/load; null = the agent has none. */
@@ -89,6 +91,7 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
     sessions: new Set(),
     prompts: [],
     loads: [],
+    metas: [],
     authenticated: [],
     connections: 0,
     modes: null,
@@ -216,6 +219,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
     })
     .onRequest(acp.methods.agent.session.new, async (ctx) => {
       const sessionId = `acp-${state.connections}-${next++}`
+      state.metas.push({ method: 'new', meta: ctx.params._meta })
       state.sessions.add(sessionId)
       state.cwds.set(sessionId, ctx.params.cwd)
       if (state.commands.length > 0) {
@@ -234,6 +238,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
     .onRequest(acp.methods.agent.session.load, async (ctx) => {
       const { sessionId } = ctx.params
       state.loads.push(sessionId)
+      state.metas.push({ method: 'load', meta: ctx.params._meta })
       if (state.failLoad) throw acp.RequestError.internalError(undefined, 'transcript unreadable')
       if (state.loadInUse) {
         throw acp.RequestError.invalidRequest(
@@ -308,7 +313,8 @@ const config: AgentConfig = {
   name: 'Fake Agent',
   command: 'fake-agent',
   args: ['--acp'],
-  bypassModeId: 'bypass'
+  bypassModeId: 'bypass',
+  sessionMeta: { new: { instructions: 'new' }, load: { instructions: 'load' } }
 }
 
 const MODES: acp.SessionModeState = {
@@ -890,6 +896,44 @@ describe('SessionManager', () => {
       expect(state.prompts.at(-1)).toBe('and 3')
       const back = manager.openSession(sessionId).messages.find((m) => m.text === 'ok, do 1 and 2')!
       expect(back.wireText).toBe('[re: the main conversation, not the thread above]\nok, do 1 and 2')
+    })
+
+    it('sends a reply to the main conversation from a thread, tagged as continuing it', async () => {
+      const { sessionId, reviewId } = await reviewed()
+      const thread = manager.createThread(sessionId, reviewId, { kind: 'listItem', path: [0], text: 'Cache invalidation' })
+      await manager.send(sessionId, 'why?', thread.id)
+      await manager.send(sessionId, 'fine, let us do all of them', null, [], thread.id)
+      expect(state.prompts.at(-1)).toBe(
+        '[re: "Cache invalidation", continued in the main conversation]\nfine, let us do all of them'
+      )
+      expect(events.findLast((e) => e.type === 'turnStart')).toEqual({ type: 'turnStart', sessionId, threadId: null })
+      const sent = manager.openSession(sessionId).messages.find((m) => m.text === 'fine, let us do all of them')!
+      expect(sent.threadId).toBeNull()
+      // It already left the thread: the next main message goes untagged.
+      await manager.send(sessionId, 'and test it', null)
+      expect(state.prompts.at(-1)).toBe('and test it')
+      await expect(manager.send(sessionId, 'x', thread.id, [], thread.id)).rejects.toThrow()
+    })
+
+    it('queues a reply sent to main during a turn with its tag', async () => {
+      const { sessionId, reviewId } = await reviewed()
+      const thread = manager.createThread(sessionId, reviewId, { kind: 'listItem', path: [0], text: 'Cache invalidation' })
+      let release!: () => void
+      const gate = new Promise<void>((r) => (release = r))
+      state.script = async ({ say }) => {
+        await gate
+        await say('ok')
+        return 'end_turn'
+      }
+      const turn = manager.send(sessionId, 'why?', thread.id)
+      await vi.waitFor(() => expect(state.prompts).toHaveLength(2))
+      await expect(manager.send(sessionId, 'moving on', null, [], thread.id)).resolves.toEqual({ queued: true })
+      expect(manager.openSession(sessionId).queue.items).toMatchObject([{ threadId: null, fromThread: thread.id }])
+      release()
+      await turn
+      await vi.waitFor(() =>
+        expect(state.prompts.at(-1)).toBe('[re: "Cache invalidation", continued in the main conversation]\nmoving on')
+      )
     })
 
     it('truncates long anchors in the wire tag', async () => {
@@ -1626,6 +1670,31 @@ describe('SessionManager', () => {
       // Messages from elsewhere are timed by the agent's last change before the load.
       expect(view.messages[4].createdAt).toBe(Date.parse(changed))
       expect(events).toContainEqual({ type: 'sessionSynced', sessionId: session.id })
+    })
+
+    it("gives the agent Gloss's instructions on session/new and session/load", async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'one', null)
+      cliTurn(session.acpSessionId, 'from the cli', 'cli answer')
+      await manager.refreshSession(session.id)
+      expect(state.metas).toEqual([
+        { method: 'new', meta: { instructions: 'new' } },
+        { method: 'load', meta: { instructions: 'load' } }
+      ])
+    })
+
+    it('places a reply sent to main from elsewhere in the main thread', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'first', null)
+      const answer = manager.openSession(session.id).messages[1]
+      const thread = manager.createThread(session.id, answer.id, { kind: 'selection', start: 0, end: 3, text: 'Re:' })
+      await manager.send(session.id, 'in thread', thread.id)
+      cliTurn(session.acpSessionId, `${toMainTag('Re:')}\nback to main`, 'main answer')
+      await manager.refreshSession(session.id)
+      expect(manager.openSession(session.id).messages.slice(4).map((m) => [m.text, m.threadId])).toEqual([
+        ['back to main', null],
+        ['main answer', null]
+      ])
     })
 
     it("doesn't reload when nothing changed elsewhere", async () => {

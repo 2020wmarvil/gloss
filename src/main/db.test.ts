@@ -50,6 +50,21 @@ describe('Store', () => {
     store.close()
   })
 
+  it("lists the user's messages from every session, newest first and each once", () => {
+    const store = new Store(':memory:')
+    for (const id of ['a', 'b']) {
+      store.insertSession({ id, agentId: 'claude', acpSessionId: id, cwd: '/w', title: id, createdAt: 1 })
+    }
+    store.insertMessage({ id: 'm0', sessionId: 'a', seq: 0, role: 'user', text: '/review XYZ', threadId: null, createdAt: 1 })
+    store.insertMessage({ id: 'm1', sessionId: 'a', seq: 1, role: 'agent', text: 'done', threadId: null, createdAt: 2 })
+    store.insertMessage({ id: 'm2', sessionId: 'b', seq: 0, role: 'user', text: 'why?', threadId: 't', createdAt: 3 })
+    store.insertMessage({ id: 'm3', sessionId: 'b', seq: 1, role: 'user', text: '/review XYZ', threadId: null, createdAt: 4 })
+    store.insertMessage({ id: 'm4', sessionId: 'b', seq: 2, role: 'user', text: '', threadId: null, createdAt: 5 })
+    expect(store.messageHistory()).toEqual(['/review XYZ', 'why?'])
+    expect(store.messageHistory(1)).toEqual(['/review XYZ'])
+    store.close()
+  })
+
   it('resequences the log, inserting new entries where they belong', () => {
     const store = new Store(':memory:')
     store.insertSession({ id: 's', agentId: 'claude', acpSessionId: 'a', cwd: '/w', title: 'w', createdAt: 1 })
