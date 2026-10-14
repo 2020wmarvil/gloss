@@ -1,5 +1,5 @@
 import type { SearchRequest, SearchResponse } from './search'
-import type { HandoffRequest } from './handoff'
+import type { HandoffRequest, PreparedHandoff } from './handoff'
 // The IPC contract between the main process and the renderer.
 // Type-only (plus channel names): nothing here may pull runtime code into the sandboxed preload.
 import type { GlobalSettings, ProjectSettings } from './settings'
@@ -129,6 +129,9 @@ export type GlossApi = {
     create(cwd: string, agentId: string): Promise<Session>
     /** Creates a new session with reviewed context and starts its first turn. */
     handoff(request: HandoffRequest): Promise<Session>
+    prepareHandoff(sessionId: string, threadId: string | null): Promise<PreparedHandoff>
+    cancelHandoffPreparation(sessionId: string): Promise<void>
+    discardHandoff(preparedId: string): Promise<void>
     /**
      * Opens one of the agent's sessions in Gloss: its history becomes the log, placed in threads by its tags.
      * `listedAt` (the agent's `updatedAt` in its listing) stands in for when it was made, so it keeps its place.
@@ -217,6 +220,9 @@ export const IPC = {
   sessionsList: 'gloss:sessions:list',
   sessionsCreate: 'gloss:sessions:create',
   sessionsHandoff: 'gloss:sessions:handoff',
+  sessionsPrepareHandoff: 'gloss:sessions:prepareHandoff',
+  sessionsCancelHandoffPreparation: 'gloss:sessions:cancelHandoffPreparation',
+  sessionsDiscardHandoff: 'gloss:sessions:discardHandoff',
   sessionsImport: 'gloss:sessions:import',
   sessionsOpen: 'gloss:sessions:open',
   sessionsRefresh: 'gloss:sessions:refresh',

@@ -49,7 +49,7 @@ Search covers history already loaded into Gloss. Open an agent session from the 
 
 In **Settings > Project > MCP servers**, configure tools once for both Claude Code and Codex. The editor accepts a JSON list with examples for stdio and HTTP servers. Save it there or edit `settings.json`; changes apply on the next turn or idle resume. Unsupported transports show an error (Codex does not support SSE).
 
-Choose **Continue with...** in an idle conversation or thread to hand work to another agent. Edit the summary, select messages, and review the prompt before creating the new session. Messages transfer as text; attachments and tool output stay in the source. The destination has **Open source** to return to the original conversation or thread.
+Choose **Continue with...** in an idle conversation or thread to hand work to another agent. The source agent writes a summary for review; if it has exhausted its usage, Gloss uses a local blurb. The destination receives that summary and a path to a saved transcript containing messages, tool output and text attachments (images are listed by name). A thread handoff includes only that thread and its anchor. The destination has **Open source** to return to the original conversation or thread.
 
 ### Dev model toggle
 

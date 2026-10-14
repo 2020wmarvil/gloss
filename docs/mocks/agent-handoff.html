@@ -1,35 +1,47 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en"><meta charset="utf-8"><title>Gloss: agent handoff</title>
 <style>
 body { font: 14px system-ui; background: #eee; color: #222; margin: 40px; }
 main { max-width: 760px; margin: auto; padding: 24px; background: white; border-radius: 12px; }
 header, footer { display: flex; justify-content: space-between; gap: 12px; }
-label { display: block; margin: 16px 0 8px; } textarea { width: 100%; box-sizing: border-box; }
-section { max-height: 200px; overflow: auto; border: 1px solid #ccc; padding: 12px; }
+label { display: block; margin: 16px 0 8px; }
+section { max-height: 260px; overflow: auto; border: 1px solid #ccc; padding: 12px; border-radius: 6px; }
 pre { white-space: pre-wrap; background: #f5f5f5; padding: 12px; } button, select { padding: 8px; }
+.notice { padding: 12px; background: #fff5d9; border-radius: 6px; }
 </style>
 <main>
 <header><h2>Continue with another agent</h2><button>Cancel</button></header>
 <p>Creates a new session in this project with a link back to this conversation.</p>
-<label>Agent <select><option>Codex</option><option>Claude Code</option></select></label>
-<label for="summary">Summary (edit before continuing)</label>
-<textarea id="summary" rows="5">Continue work on shared project MCP settings. Configuration now reaches new and resumed sessions. Next: test reloads during active turns.</textarea>
-<label>Include messages</label>
-<p><button>Select all</button> <button>Clear selection</button></p>
-<section><label><input type="checkbox" checked> You / Main: Let's do M13.</label>
-<label><input type="checkbox" checked> Agent / Main: Shared MCP configuration is wired into creation and resume.</label>
-<label><input type="checkbox"> You / Thread: What about SSE?</label></section>
-<p>Messages are copied as text. Attachments and tool output stay in the source session.</p>
-<details open><summary>Preview what will be sent</summary><pre>You are continuing work handed off from another agent.
-Source: M13 / Claude Code / Main conversation
+<label>Agent <select><option>Codex</option></select></label>
+<p><strong>Summary from the source agent</strong></p>
+<section>
+<p>Implement shared project MCP configuration for Claude Code and Codex.</p>
+<ul>
+<li>Configuration now reaches new and resumed sessions.</li>
+<li>Unsupported remote transports fail visibly. Codex supports HTTP; Claude also supports SSE.</li>
+<li>Settings, session and renderer tests pass.</li>
+<li>Next: test reloads while a source turn is running, then review the PR.</li>
+<li>Relevant files: src/main/sessions.ts, src/main/acp.ts, src/shared/mcp.ts.</li>
+</ul>
+</section>
+<p>The destination agent will read a saved transcript of this conversation and its threads for the full context.</p>
+<details><summary>Preview what will be sent</summary><pre>You are continuing work handed off from another agent in Gloss.
+Source: M13 / claude / Conversation
+Project: C:/projects/gloss
 
-Summary:
-Continue work on shared project MCP settings...
+Handoff summary:
+Implement shared project MCP configuration...
 
-Selected conversation context:
-You / Main: Let's do M13.
-Agent / Main: Shared MCP configuration is wired into creation and resume.
-
-Use this context to continue the work. Ask if the next step is unclear.</pre></details>
-<footer><p>The source session is preserved.</p><button>Create handoff</button></footer>
+Transcript snapshot: "C:/Users/example/AppData/Roaming/Gloss/handoffs/snapshot.md"
+Read this local Markdown file for the full context before continuing.
+Use the summary as the handoff guidance and the transcript as historical context.</pre></details>
+<p>Generating a summary uses one source-agent turn and records it in the source conversation. Transcript snapshots include tool output and text attachments; images are listed by name.</p>
+<footer><span></span><button>Continue</button></footer>
+<hr>
+<details><summary>Other states</summary>
+<p>Preparing: <strong>Generating a handoff summary with Claude Code...</strong> (Continue disabled; Cancel stops this summary only).</p>
+<p class="notice">Claude Code hit a usage limit. Using the local blurb.</p>
+<p>Fallback: show the local title and latest useful response excerpt in the same summary area. The transcript reference remains available.</p>
+<p>Error: Connection lost. <button>Retry summary</button> (Continue disabled).</p>
+</details>
 </main></html>

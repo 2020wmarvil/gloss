@@ -996,7 +996,7 @@ export function App(): React.JSX.Element {
       {showSearch && <SearchDialog sessionId={sessionId ?? null} cwd={projectPath} onClose={() => setShowSearch(false)} onOpen={openSearchResult} />}
       {handoff && open?.session.id === handoff.sessionId && <HandoffDialog
         key={`${handoff.sessionId}:${handoff.threadId}`} open={open} threadId={handoff.threadId} agents={agents}
-        running={runningThread !== undefined} onClose={() => setHandoff(null)}
+        onClose={() => setHandoff(null)}
         onCreated={(session) => {
           setHandoff(null)
           void selectSession(session.id).catch((err: unknown) => setSidebarError(`Handoff created. Couldn't open it: ${errorText(err)}`))

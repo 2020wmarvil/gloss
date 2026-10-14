@@ -1,4 +1,7 @@
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as acp from '@agentclientprotocol/sdk'
 import type { GlossEvent } from '../shared/ipc'
@@ -339,6 +342,7 @@ describe('SessionManager', () => {
   let manager: SessionManager
   let runInTerminal: ReturnType<typeof vi.fn>
   let servers: import('../shared/mcp').McpServer[]
+  let handoffDir: string
 
   function makeManager(): SessionManager {
     return new SessionManager({
@@ -349,11 +353,13 @@ describe('SessionManager', () => {
       connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
       runInTerminal: runInTerminal as never,
       now: () => 1000,
-      mcpServers: () => servers
+      mcpServers: () => servers,
+      handoffDir
     })
   }
 
   beforeEach(() => {
+    handoffDir = mkdtempSync(join(tmpdir(), 'gloss-handoff-test-'))
     store = new Store(':memory:')
     events = []
     state = fakeAgent()
@@ -365,6 +371,7 @@ describe('SessionManager', () => {
   afterEach(async () => {
     await manager.dispose()
     store.close()
+    rmSync(handoffDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
   })
 
   it('passes project MCP servers to creation and resume, preserving threads', async () => {
@@ -380,58 +387,141 @@ describe('SessionManager', () => {
     expect(store.listThreads(session.id)).toContainEqual(thread)
   })
 
-  it('hands selected thread context to another agent and preserves source data and provenance on resume', async () => {
+  it('generates a thread summary, freezes its transcript and preserves provenance after resume and source deletion', async () => {
     const source = await manager.createSession('/project', 'claude')
     await manager.send(source.id, 'main request', null)
     const answer = store.listMessages(source.id).find((m) => m.role === 'agent')!
     const thread = manager.createThread(source.id, answer.id, { kind: 'selection', start: 0, end: 5, text: 'Hello' })
     await manager.send(source.id, 'thread request', thread.id)
     const before = store.listMessages(source.id)
-    const selected = before.filter((m) => m.threadId === thread.id)
-    const destination = await manager.handoff({ sessionId: source.id, threadId: thread.id, agentId: 'codex', summary: 'Use the existing helper. Continue with tests.', messageIds: [selected[0].id] })
+    state.script = async ({ say }) => { await say('Use the existing helper. '); await say('Next: run the tests.'); return 'end_turn' }
+    const prepared = await manager.prepareHandoff(source.id, thread.id)
+    expect(prepared.summaryKind).toBe('agent')
+    expect(prepared.summary).toBe('Use the existing helper. Next: run the tests.')
+    expect(state.prompts.at(-1)).toContain('Focus only on the thread')
+    expect(state.prompts.at(-1)).toContain('Do not call tools')
+    const transcript = readFileSync(prepared.transcriptPath, 'utf8')
+    expect(transcript).toContain('thread request')
+    expect(transcript).not.toContain('## You / Main conversation')
+    expect(transcript).not.toContain('Prepare a concise handoff summary')
+    expect(store.listMessages(source.id).slice(0, before.length)).toEqual(before)
+    const summaryMessages = store.listMessages(source.id).slice(before.length)
+    expect(summaryMessages.every((m) => m.threadId === thread.id)).toBe(true)
+    expect(summaryMessages.at(-1)?.text).toBe(prepared.summary)
+    const destination = await manager.handoff({ preparedId: prepared.id, agentId: 'codex' })
     await vi.waitFor(() => expect(events.some((e) => e.type === 'turnEnd' && e.sessionId === destination.id)).toBe(true))
     expect(destination.agentId).toBe('codex')
     expect(destination.cwd).toBe(source.cwd)
-    expect(destination.acpSessionId).not.toBe(source.acpSessionId)
-    expect(destination.handoff).toEqual({ sessionId: source.id, threadId: thread.id, title: store.getSession(source.id)!.title, agentId: 'claude', quote: 'Hello' })
+    expect(destination.handoff).toMatchObject({ sessionId: source.id, threadId: thread.id, agentId: 'claude', quote: 'Hello', transcriptPath: prepared.transcriptPath })
     const seed = store.listMessages(destination.id)[0]
-    expect(seed.threadId).toBeNull()
-    expect(seed.text).toContain('Use the existing helper')
-    expect(seed.text).toContain('thread request')
-    expect(seed.text).not.toContain('You / Main conversation:\nmain request')
-    expect(seed.text).not.toContain(selected[1].text)
-    expect(store.listMessages(source.id)).toEqual(before)
-    expect(store.listThreads(source.id)).toEqual([thread])
+    expect(seed.text).toBe(prepared.prompt)
+    expect(seed.text).toContain(prepared.transcriptPath.replaceAll('\\', '\\\\'))
+    expect(seed.text).not.toContain('thread request')
     await manager.dispose()
     manager = makeManager()
     await manager.send(destination.id, 'continue', null)
     expect(store.getSession(destination.id)?.handoff).toEqual(destination.handoff)
+    await manager.deleteSession(source.id)
+    expect(readFileSync(prepared.transcriptPath, 'utf8')).toBe(transcript)
   })
 
-  it('validates handoff requests before creating an agent session', async () => {
+  it('validates preparations and consumes each reviewed handoff only once', async () => {
     const source = await manager.createSession('/project', 'claude')
     await manager.send(source.id, 'hello', null)
-    const other = await manager.createSession('/other', 'claude')
-    await manager.send(other.id, 'secret', null)
-    const base = { sessionId: source.id, threadId: null, agentId: 'codex', summary: 'Continue tests', messageIds: [] as string[] }
-    for (const request of [
-      { ...base, agentId: 'claude' }, { ...base, summary: '' }, { ...base, threadId: 'gone' },
-      { ...base, messageIds: ['gone'] }, { ...base, messageIds: [store.listMessages(other.id)[0].id] },
-      { ...base, messageIds: Array(201).fill('x') }, { ...base, summary: 'x'.repeat(16_001) }
-    ]) await expect(manager.handoff(request)).rejects.toThrow()
-    expect(store.listSessions()).toHaveLength(2)
-    expect(state.mcpRequests.filter((r) => r.method === 'new')).toHaveLength(2)
+    await expect(manager.prepareHandoff(source.id, 'gone')).rejects.toThrow(/thread/)
+    await expect(manager.prepareHandoff('gone', null)).rejects.toThrow(/Unknown session/)
+    const prepared = await manager.prepareHandoff(source.id, null)
+    await expect(manager.handoff({ preparedId: prepared.id, agentId: 'claude' })).rejects.toThrow(/different agent/)
+    await expect(manager.handoff({ preparedId: 'gone', agentId: 'codex' })).rejects.toThrow(/no longer available/)
+    expect(store.listSessions()).toHaveLength(1)
+    const destination = await manager.handoff({ preparedId: prepared.id, agentId: 'codex' })
+    await expect(manager.handoff({ preparedId: prepared.id, agentId: 'codex' })).rejects.toThrow(/no longer available/)
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'turnEnd' && e.sessionId === destination.id)).toBe(true))
   })
 
-  it('preserves a created handoff with a failed destination turn so it can be retried', async () => {
+  it('keeps a failed destination turn available for retry with its transcript intact', async () => {
     const source = await manager.createSession('/project', 'claude')
     await manager.send(source.id, 'hello', null)
+    const prepared = await manager.prepareHandoff(source.id, null)
     state.script = async () => { throw acp.RequestError.internalError() }
-    const destination = await manager.handoff({ sessionId: source.id, threadId: null, agentId: 'codex', summary: 'Continue with the helper', messageIds: [] })
+    const destination = await manager.handoff({ preparedId: prepared.id, agentId: 'codex' })
     await vi.waitFor(() => expect(events.some((e) => e.type === 'turnEnd' && e.sessionId === destination.id && e.error)).toBe(true))
-    expect(store.getSession(destination.id)?.handoff?.sessionId).toBe(source.id)
     expect(store.listMessages(destination.id)[0].outcome).toBe('failed')
+    expect(existsSync(prepared.transcriptPath)).toBe(true)
     expect(store.getSession(source.id)).toBeDefined()
+  })
+
+  it('uses the local blurb without a summary turn when the source already reports exhausted usage', async () => {
+    state.script = async ({ say, update }) => {
+      await say('Implemented the cache helper; next run its tests.')
+      await update({ sessionUpdate: 'usage_update', used: 1000, size: 200000, _meta: { '_claude/rateLimit': { status: 'rejected', rateLimitType: 'five_hour', resetsAt: 1791873000 } } })
+      return 'end_turn'
+    }
+    const source = await manager.createSession('/project', 'claude')
+    await manager.send(source.id, 'work', null)
+    const prepared = await manager.prepareHandoff(source.id, null)
+    expect(prepared).toMatchObject({ summaryKind: 'blurb', fallbackReason: 'usage' })
+    expect(prepared.summary).toContain('Implemented the cache helper')
+    expect(state.prompts).toHaveLength(1)
+    expect(readFileSync(prepared.transcriptPath, 'utf8')).toContain('Implemented the cache helper')
+  })
+
+  it('falls back on a usage-limit response but does not mistake summary prose about limits for a failure', async () => {
+    const source = await manager.createSession('/project', 'claude')
+    await manager.send(source.id, 'work', null)
+    state.script = async ({ say }) => { await say("You've hit your limit. Try again tomorrow."); return 'end_turn' }
+    const fallback = await manager.prepareHandoff(source.id, null)
+    expect(fallback).toMatchObject({ summaryKind: 'blurb', fallbackReason: 'usage' })
+    expect(fallback.summary).toContain('Hello world')
+    expect(fallback.summary).not.toContain("You've hit your limit")
+    state.script = async ({ say }) => { await say('Implemented rate limits in the status line. Next: test reset intervals.'); return 'end_turn' }
+    const summary = await manager.prepareHandoff(source.id, null)
+    expect(summary.summaryKind).toBe('agent')
+    expect(summary.fallbackReason).toBeUndefined()
+  })
+
+  it('reports unrelated summary failures and cleans up discarded snapshots', async () => {
+    const source = await manager.createSession('/project', 'claude')
+    await manager.send(source.id, 'work', null)
+    state.script = async () => { throw acp.RequestError.internalError() }
+    await expect(manager.prepareHandoff(source.id, null)).rejects.toThrow(/generate the handoff summary/)
+    state.script = async ({ say }) => { await say('Summary'); return 'end_turn' }
+    const prepared = await manager.prepareHandoff(source.id, null)
+    manager.discardHandoff(prepared.id)
+    expect(existsSync(prepared.transcriptPath)).toBe(false)
+    await expect(manager.handoff({ preparedId: prepared.id, agentId: 'codex' })).rejects.toThrow(/no longer available/)
+  })
+
+  it('falls back on quota request errors and retains a prepared summary after destination creation errors', async () => {
+    const source = await manager.createSession('/project', 'claude')
+    await manager.send(source.id, 'work', null)
+    state.script = async () => { throw new acp.RequestError(-32603, 'Insufficient quota: usage limit reached') }
+    const prepared = await manager.prepareHandoff(source.id, null)
+    expect(prepared).toMatchObject({ summaryKind: 'blurb', fallbackReason: 'usage' })
+    servers = [{ type: 'sse', name: 'unsupported', url: 'https://example.com/mcp', headers: [] }]
+    await expect(manager.handoff({ preparedId: prepared.id, agentId: 'codex' })).rejects.toThrow(/SSE/)
+    expect(existsSync(prepared.transcriptPath)).toBe(true)
+    expect(store.listSessions()).toHaveLength(1)
+    servers = []
+    state.script = async ({ say }) => { await say('continued'); return 'end_turn' }
+    const destination = await manager.handoff({ preparedId: prepared.id, agentId: 'codex' })
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'turnEnd' && e.sessionId === destination.id)).toBe(true))
+  })
+
+  it('cancels only the source summary turn when preparation is dismissed', async () => {
+    const source = await manager.createSession('/project', 'claude')
+    await manager.send(source.id, 'work', null)
+    state.script = async ({ cancelled }) => { await cancelled; return 'cancelled' }
+    const prepared = manager.prepareHandoff(source.id, null)
+    const rejected = expect(prepared).rejects.toThrow(/cancelled/)
+    await vi.waitFor(() => expect(state.prompts).toHaveLength(2))
+    await expect(manager.prepareHandoff(source.id, null)).rejects.toThrow(/finish/)
+    await manager.cancelHandoffPreparation(source.id)
+    await rejected
+    state.script = async ({ say }) => { await say('next'); return 'end_turn' }
+    await manager.send(source.id, 'next', null)
+    await manager.cancelHandoffPreparation(source.id)
+    expect(store.listMessages(source.id).at(-2)?.outcome).toBe('completed')
   })
 
   it('rejects unsupported MCP transport before creating a session', async () => {

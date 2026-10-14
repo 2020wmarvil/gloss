@@ -174,14 +174,14 @@ Remaining M13 features are implemented for review in two parts:
 
 Shared project MCP configuration is implemented for review: validated settings and schema, a project settings editor, capability checks, and server lists on new/load. Changes apply before the next prompt or idle resume.
 
-Cross-agent handoff is implemented for review: conversation and thread actions, editable summaries, message selection and exact prompt preview, new destination sessions and persistent source links. The first version copies message text; attachments and tool output stay in the source.
+Cross-agent handoff is implemented for review: conversation and thread actions, source-agent summaries with a local blurb fallback when usage is exhausted, exact prompt preview, immutable transcript snapshots, new destination sessions and persistent source links.
 
 - **Gloss-managed MCP servers:** a per-project list of MCP servers passed through ACP's `mcpServers` in `session/new` and `session/load`, so agents share tools. Only transports the selected agent advertises are allowed.
-- **Continue with another agent:** an explicit action such as "Continue this conversation with Codex" or "Continue this thread with Claude Code". Create a new session for the destination agent, seeded with a reviewable summary and selected conversation or thread context. Preserve and link back to the original session. This is a context handoff, not a conversion of the original agent's session history. Design the context preview and selection before implementation.
+- **Continue with another agent:** an explicit action such as "Continue this conversation with Codex" or "Continue this thread with Claude Code". Create a new session for the destination agent, seeded with a reviewable source-agent summary (or a local blurb if usage is exhausted) and a reference to a saved conversation or thread transcript. Preserve and link back to the original session. This is a context handoff, not a conversion of the original agent's session history. Design the summary and transcript preview before implementation.
 
 **Codex support is done when:** a new Codex session works end to end, including sign-in, threads, model selection and resume (or a lost-context notice if resume is unavailable).
 
-**M13 is done when:** shared MCP configuration works across agents and a user can review and hand off a conversation or thread to another agent without changing the original.
+**M13 is done when:** shared MCP configuration works across agents and a user can review and hand off a conversation or thread to another agent while preserving the original's prior messages and threads.
 
 ## M14 — Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.

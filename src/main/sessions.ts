@@ -2,6 +2,8 @@
 // The agent sees one linear ACP session per Gloss session. When the agent can load
 // its sessions, its copy is the source of truth for the log (SPEC → Shared sessions).
 import { randomUUID } from 'node:crypto'
+import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import type * as acp from '@agentclientprotocol/sdk'
 import { pathToFileURL } from 'node:url'
 import type { GlossEvent, SessionView, TurnResult } from '../shared/ipc'
@@ -26,7 +28,8 @@ import type {
 } from '../shared/types'
 import { wireText } from '../shared/wire'
 import type { McpServer } from '../shared/mcp'
-import { handoffText, MAX_HANDOFF_CHARS, type HandoffRequest } from '../shared/handoff'
+import { handoffSummary, handoffText, isUsageLimit, isUsageNotice, summaryPrompt, type HandoffRequest, type PreparedHandoff } from '../shared/handoff'
+import { handoffTranscript } from './handoff-transcript'
 import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, type AgentHandlers, type SteerOutcome } from './acp'
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
@@ -45,6 +48,7 @@ export type SessionManagerDeps = {
   runInTerminal: TerminalRunner
   now?(): number
   mcpServers?(cwd: string): McpServer[]
+  handoffDir?: string
 }
 
 type Turn = {
@@ -123,6 +127,8 @@ export class SessionGoneError extends Error {
 }
 
 export class SessionManager {
+  private readonly handoffPreparations = new Map<string, { cancelled: boolean; turn?: Turn }>()
+  private readonly handoffDrafts = new Map<string, { prepared: PreparedHandoff; session: Session; thread?: Thread; claimed: boolean }>()
   private readonly runtimes = new Map<string, SessionRuntime>()
   /** ACP session id → Gloss session id. */
   private readonly byAcpId = new Map<string, string>()
@@ -252,6 +258,8 @@ export class SessionManager {
 
   async dispose(): Promise<void> {
     this.disposed = true
+    for (const job of this.handoffPreparations.values()) job.cancelled = true
+    for (const id of this.handoffDrafts.keys()) this.discardHandoff(id)
     const pending = [...this.agents.values()].map((s) => s.connection)
     this.agents.clear()
     for (const p of pending) {
@@ -376,40 +384,102 @@ export class SessionManager {
     return created
   }
 
-  /** A reviewed snapshot becomes the first prompt of a new session with another agent. */
-  async handoff(request: HandoffRequest): Promise<Session> {
-    if (!request || typeof request.sessionId !== 'string' || typeof request.agentId !== 'string' ||
-      (request.threadId !== null && typeof request.threadId !== 'string') ||
-      typeof request.summary !== 'string' || !request.summary.trim() || request.summary.length > 16_000 ||
-      !Array.isArray(request.messageIds) || request.messageIds.length > 200 ||
-      !request.messageIds.every((id) => typeof id === 'string') || new Set(request.messageIds).size !== request.messageIds.length) {
-      throw new Error('Invalid handoff. Add a summary and select at most 200 messages.')
+  /** Summarizes in the source session, then freezes the work preceding that turn. */
+  async prepareHandoff(sessionId: string, threadId: string | null): Promise<PreparedHandoff> {
+    if (!this.deps.handoffDir) throw new Error('Handoff transcript storage is not configured.')
+    const source = this.session(sessionId)
+    const rt = this.runtime(sessionId)
+    if (rt.turn || rt.attaching || this.handoffPreparations.has(sessionId)) throw new Error('Wait for the source session to finish before handing it off.')
+    const threads = this.deps.store.listThreads(sessionId)
+    const thread = threads.find((t) => t.id === threadId)
+    if (threadId !== null && !thread) throw new Error('The source thread no longer exists.')
+    const job: { cancelled: boolean; turn?: Turn } = { cancelled: false }
+    this.handoffPreparations.set(sessionId, job)
+    try {
+      let messages = this.deps.store.listMessages(sessionId)
+      let tools = this.deps.store.listToolCalls(sessionId)
+      let summary = handoffSummary(source, thread, messages)
+      let summaryKind: PreparedHandoff['summaryKind'] = 'blurb'
+      let fallbackReason: PreparedHandoff['fallbackReason']
+      const empty = !messages.some((m) => !thread || m.threadId === thread.id)
+      const exhausted = rt.live.rateLimits.some((l) => l.status === 'rejected' && (!l.resetsAt || l.resetsAt > this.now()))
+      if (empty) fallbackReason = 'empty'
+      else if (exhausted) fallbackReason = 'usage'
+      else {
+        const pending = this.runTurn(sessionId, summaryPrompt(thread), threadId, [])
+        job.turn = rt.turn
+        const result = await pending
+        if (job.cancelled || result.stopReason === 'cancelled') throw new Error('Summary generation was cancelled.')
+        const prompt = this.deps.store.getMessage(job.turn!.messageIds[0])
+        if (!prompt) throw new Error('The source conversation changed while preparing the handoff. Try again.')
+        const all = this.deps.store.listMessages(sessionId)
+        const nextUser = all.find((m) => m.role === 'user' && m.seq > prompt.seq && !job.turn!.messageIds.includes(m.id))?.seq ?? Infinity
+        const output = all.filter((m) => m.role === 'agent' && m.seq > prompt.seq && m.seq < nextUser && m.threadId === threadId).map((m) => m.text).join('\n\n').trim()
+        // A reload may have brought in external history. Snapshot that history too,
+        // excluding the summary request/answer and any queued follow-up.
+        messages = all.filter((m) => m.seq < prompt.seq)
+        tools = this.deps.store.listToolCalls(sessionId).filter((t) => t.messageSeq < prompt.seq)
+        summary = handoffSummary(source, thread, messages)
+        if ((result.error && isUsageLimit(result.error)) || isUsageNotice(output)) fallbackReason = 'usage'
+        else if (result.error) throw new Error(`Couldn't generate the handoff summary: ${result.error}`)
+        else if (result.stopReason !== 'end_turn' || !output) throw new Error('The agent did not finish a handoff summary. Try again.')
+        else if (output.length > 16_000) throw new Error('The agent returned an oversized summary. Try again.')
+        else { summary = output; summaryKind = 'agent' }
+      }
+      if (job.cancelled || this.disposed) throw new Error('Summary generation was cancelled.')
+      const id = randomUUID()
+      const dir = resolve(this.deps.handoffDir)
+      mkdirSync(dir, { recursive: true })
+      const transcriptPath = join(dir, `${id}.md`)
+      writeFileSync(transcriptPath, handoffTranscript(source, thread, messages, tools, this.deps.store.listThreads(sessionId)), { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+      const prepared: PreparedHandoff = { id, summary, summaryKind, transcriptPath, prompt: '', ...(fallbackReason ? { fallbackReason } : {}) }
+      prepared.prompt = handoffText(source, thread, prepared)
+      this.handoffDrafts.set(id, { prepared, session: source, thread, claimed: false })
+      return prepared
+    } finally {
+      if (this.handoffPreparations.get(sessionId) === job) this.handoffPreparations.delete(sessionId)
     }
-    const source = this.session(request.sessionId)
+  }
+
+  async cancelHandoffPreparation(sessionId: string): Promise<void> {
+    const job = this.handoffPreparations.get(sessionId)
+    if (!job) return
+    job.cancelled = true
+    // Never cancel a queued follow-up or another turn that started after the summary.
+    if (job.turn && this.runtimes.get(sessionId)?.turn === job.turn) await this.cancel(sessionId)
+  }
+
+  discardHandoff(id: string): void {
+    const draft = this.handoffDrafts.get(id)
+    if (!draft || draft.claimed) return
+    this.handoffDrafts.delete(id)
+    try { unlinkSync(draft.prepared.transcriptPath) } catch { /* Already gone, or locked by an editor. */ }
+  }
+
+  /** The reviewed summary and transcript reference start a fresh destination turn. */
+  async handoff(request: HandoffRequest): Promise<Session> {
+    if (!request || typeof request.preparedId !== 'string' || typeof request.agentId !== 'string') throw new Error('Invalid handoff.')
+    const draft = this.handoffDrafts.get(request.preparedId)
+    if (!draft || draft.claimed) throw new Error('This handoff is no longer available. Reopen the handoff dialog.')
+    const { session: source, thread, prepared } = draft
     if (source.agentId === request.agentId) throw new Error('Choose a different agent for the handoff.')
     this.deps.getAgentConfig(request.agentId)
-    if (this.runtime(source.id).turn || this.runtime(source.id).attaching) throw new Error('Wait for the source session to finish before handing it off.')
-    const threads = this.deps.store.listThreads(source.id)
-    const thread = threads.find((t) => t.id === request.threadId)
-    if (request.threadId !== null && !thread) throw new Error('The source thread no longer exists.')
-    const ids = new Set(request.messageIds)
-    const messages = this.deps.store.listMessages(source.id).filter((m) => ids.has(m.id))
-    if (messages.length !== ids.size || (thread && messages.some((m) => m.threadId !== thread.id))) {
-      throw new Error('The selected messages are no longer available in this conversation or thread. Reopen the handoff preview.')
+    draft.claimed = true
+    try {
+      const created = await this.createSession(source.cwd, request.agentId)
+      const session = this.deps.store.updateSession(created.id, {
+        title: `Handoff: ${source.title}`.slice(0, TITLE_LENGTH), titleSet: true,
+        handoff: { sessionId: source.id, threadId: thread?.id ?? null, title: source.title, agentId: source.agentId,
+          transcriptPath: prepared.transcriptPath, ...(thread ? { quote: thread.anchor.text } : {}) }
+      })
+      this.deps.emit({ type: 'session', session })
+      this.handoffDrafts.delete(prepared.id)
+      void this.send(session.id, prepared.prompt, null).catch((err: unknown) => this.notice(session.id, null, errorMessage(err)))
+      return session
+    } catch (err) {
+      draft.claimed = false
+      throw err
     }
-    const prompt = handoffText(source, thread, request.summary, messages, threads)
-    if (prompt.length > MAX_HANDOFF_CHARS) throw new Error('Too much context. Select fewer messages or shorten the summary.')
-    const created = await this.createSession(source.cwd, request.agentId)
-    const session = this.deps.store.updateSession(created.id, {
-      title: `Handoff: ${source.title}`.slice(0, TITLE_LENGTH), titleSet: true,
-      handoff: { sessionId: source.id, threadId: request.threadId, title: source.title, agentId: source.agentId,
-        ...(thread ? { quote: thread.anchor.text } : {}) }
-    })
-    this.deps.emit({ type: 'session', session })
-    // send records the seed synchronously, then streams the destination turn. The UI
-    // can open it immediately and cancel or queue follow-ups using the normal flow.
-    void this.send(session.id, prompt, null).catch((err: unknown) => this.notice(session.id, null, errorMessage(err)))
-    return session
   }
 
   /**

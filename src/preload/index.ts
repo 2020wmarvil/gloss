@@ -17,6 +17,9 @@ const api: GlossApi = {
     list: () => ipcRenderer.invoke(IPC.sessionsList),
     create: (cwd, agentId) => ipcRenderer.invoke(IPC.sessionsCreate, cwd, agentId),
     handoff: (request) => ipcRenderer.invoke(IPC.sessionsHandoff, request),
+    prepareHandoff: (sessionId, threadId) => ipcRenderer.invoke(IPC.sessionsPrepareHandoff, sessionId, threadId),
+    cancelHandoffPreparation: (sessionId) => ipcRenderer.invoke(IPC.sessionsCancelHandoffPreparation, sessionId),
+    discardHandoff: (preparedId) => ipcRenderer.invoke(IPC.sessionsDiscardHandoff, preparedId),
     import: (cwd, agentId, acpSessionId, title, listedAt) =>
       ipcRenderer.invoke(IPC.sessionsImport, cwd, agentId, acpSessionId, title, listedAt),
     open: (id) => ipcRenderer.invoke(IPC.sessionsOpen, id),

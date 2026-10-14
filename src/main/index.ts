@@ -231,6 +231,9 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
   ipcMain.handle(IPC.sessionsHandoff, (_e, request) => manager.handoff(request))
+  ipcMain.handle(IPC.sessionsPrepareHandoff, (_e, id: unknown, threadId: unknown) => manager.prepareHandoff(str(id, 'id'), threadArg(threadId)))
+  ipcMain.handle(IPC.sessionsCancelHandoffPreparation, (_e, id: unknown) => manager.cancelHandoffPreparation(str(id, 'id')))
+  ipcMain.handle(IPC.sessionsDiscardHandoff, (_e, id: unknown) => manager.discardHandoff(str(id, 'id')))
   ipcMain.handle(IPC.search, (_e, request: SearchRequest) => store!.search(request))
   ipcMain.handle(IPC.history, () => manager.messageHistory())
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
@@ -349,6 +352,7 @@ app.whenReady().then(() => {
     emit,
     getAgentConfig,
     mcpServers: (cwd) => projectMcp(settingsFile.state().projects, cwd),
+    handoffDir: join(dataDir, 'handoffs'),
     agentEnv: (config) => agentEnv(config),
     connect: (config, env, handlers) => AgentConnection.start(config, env, handlers),
     runInTerminal
