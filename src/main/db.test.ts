@@ -17,6 +17,8 @@ describe('Store', () => {
 
     let store = new Store(path)
     store.insertSession({ id: 's', agentId: 'claude', acpSessionId: 'a', cwd: '/w', title: 'w', createdAt: 1 })
+    const handoff = { sessionId: 'original', threadId: 'thread', title: 'Original', agentId: 'codex', quote: 'anchor' }
+    store.updateSession('s', { handoff })
     expect(store.nextSeq('s')).toBe(0)
     store.insertMessage({ id: 'm0', sessionId: 's', seq: 0, role: 'user', text: 'hi', wireText: 'hi', threadId: null })
     store.upsertToolCall({ id: 't', sessionId: 's', messageSeq: 1, threadId: null, title: 'Read', status: 'pending', content: [{ type: 'content' }] })
@@ -26,6 +28,7 @@ describe('Store', () => {
 
     store = new Store(path) // migrations must be a no-op the second time
     expect(store.listSessions().map((s) => s.id)).toEqual(['s'])
+    expect(store.getSession('s')?.handoff).toEqual(handoff)
     expect(store.listMessages('s')).toEqual([
       { id: 'm0', sessionId: 's', seq: 0, role: 'user', text: 'hi', wireText: 'hi', threadId: null }
     ])

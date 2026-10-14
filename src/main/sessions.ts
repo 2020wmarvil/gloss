@@ -26,6 +26,7 @@ import type {
 } from '../shared/types'
 import { wireText } from '../shared/wire'
 import type { McpServer } from '../shared/mcp'
+import { handoffText, MAX_HANDOFF_CHARS, type HandoffRequest } from '../shared/handoff'
 import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, type AgentHandlers, type SteerOutcome } from './acp'
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
@@ -373,6 +374,42 @@ export class SessionManager {
     this.deps.emit({ type: 'session', session: created })
     await this.attached(session.id, conn, res.configOptions, permissions)
     return created
+  }
+
+  /** A reviewed snapshot becomes the first prompt of a new session with another agent. */
+  async handoff(request: HandoffRequest): Promise<Session> {
+    if (!request || typeof request.sessionId !== 'string' || typeof request.agentId !== 'string' ||
+      (request.threadId !== null && typeof request.threadId !== 'string') ||
+      typeof request.summary !== 'string' || !request.summary.trim() || request.summary.length > 16_000 ||
+      !Array.isArray(request.messageIds) || request.messageIds.length > 200 ||
+      !request.messageIds.every((id) => typeof id === 'string') || new Set(request.messageIds).size !== request.messageIds.length) {
+      throw new Error('Invalid handoff. Add a summary and select at most 200 messages.')
+    }
+    const source = this.session(request.sessionId)
+    if (source.agentId === request.agentId) throw new Error('Choose a different agent for the handoff.')
+    this.deps.getAgentConfig(request.agentId)
+    if (this.runtime(source.id).turn || this.runtime(source.id).attaching) throw new Error('Wait for the source session to finish before handing it off.')
+    const threads = this.deps.store.listThreads(source.id)
+    const thread = threads.find((t) => t.id === request.threadId)
+    if (request.threadId !== null && !thread) throw new Error('The source thread no longer exists.')
+    const ids = new Set(request.messageIds)
+    const messages = this.deps.store.listMessages(source.id).filter((m) => ids.has(m.id))
+    if (messages.length !== ids.size || (thread && messages.some((m) => m.threadId !== thread.id))) {
+      throw new Error('The selected messages are no longer available in this conversation or thread. Reopen the handoff preview.')
+    }
+    const prompt = handoffText(source, thread, request.summary, messages, threads)
+    if (prompt.length > MAX_HANDOFF_CHARS) throw new Error('Too much context. Select fewer messages or shorten the summary.')
+    const created = await this.createSession(source.cwd, request.agentId)
+    const session = this.deps.store.updateSession(created.id, {
+      title: `Handoff: ${source.title}`.slice(0, TITLE_LENGTH), titleSet: true,
+      handoff: { sessionId: source.id, threadId: request.threadId, title: source.title, agentId: source.agentId,
+        ...(thread ? { quote: thread.anchor.text } : {}) }
+    })
+    this.deps.emit({ type: 'session', session })
+    // send records the seed synchronously, then streams the destination turn. The UI
+    // can open it immediately and cancel or queue follow-ups using the normal flow.
+    void this.send(session.id, prompt, null).catch((err: unknown) => this.notice(session.id, null, errorMessage(err)))
+    return session
   }
 
   /**

@@ -68,6 +68,8 @@ describe('full-text search', () => {
       store.close()
       const db = new DatabaseSync(path)
       for (const name of ['message_search_insert', 'message_search_update', 'message_search_delete', 'tool_search_insert', 'tool_search_update', 'tool_search_delete']) db.exec(`DROP TRIGGER ${name}`)
+      // Rewind the handoff migration too, so this really is a version-9 fixture.
+      db.exec('ALTER TABLE sessions DROP COLUMN handoff')
       db.exec('DROP TABLE message_search; DROP TABLE tool_search; PRAGMA user_version = 9')
       db.close()
       store = new Store(path)

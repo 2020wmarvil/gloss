@@ -230,6 +230,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   )
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
+  ipcMain.handle(IPC.sessionsHandoff, (_e, request) => manager.handoff(request))
   ipcMain.handle(IPC.search, (_e, request: SearchRequest) => store!.search(request))
   ipcMain.handle(IPC.history, () => manager.messageHistory())
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>

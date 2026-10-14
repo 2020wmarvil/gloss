@@ -170,9 +170,11 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 **Pulled forward: Codex support (first PR).** New Codex sessions, agent selection, session labels, a default-agent setting, and the existing threading, sign-in, model and resume flows. Uses `@agentclientprotocol/codex-acp` with its bundled Codex CLI. Agent-specific launch and bypass settings stay in `AgentConfig`. Existing Claude conversations remain with Claude.
 
-Remaining work for M13, in separate PRs:
+Remaining M13 features are implemented for review in two parts:
 
 Shared project MCP configuration is implemented for review: validated settings and schema, a project settings editor, capability checks, and server lists on new/load. Changes apply before the next prompt or idle resume.
+
+Cross-agent handoff is implemented for review: conversation and thread actions, editable summaries, message selection and exact prompt preview, new destination sessions and persistent source links. The first version copies message text; attachments and tool output stay in the source.
 
 - **Gloss-managed MCP servers:** a per-project list of MCP servers passed through ACP's `mcpServers` in `session/new` and `session/load`, so agents share tools. Only transports the selected agent advertises are allowed.
 - **Continue with another agent:** an explicit action such as "Continue this conversation with Codex" or "Continue this thread with Claude Code". Create a new session for the destination agent, seeded with a reviewable summary and selected conversation or thread context. Preserve and link back to the original session. This is a context handoff, not a conversion of the original agent's session history. Design the context preview and selection before implementation.

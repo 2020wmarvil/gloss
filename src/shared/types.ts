@@ -18,6 +18,8 @@ export type Session = {
   effort?: string
   /** The agent's `updatedAt` for the session when Gloss last synced it (SPEC → Shared sessions). */
   syncedAt?: string
+  /** Provenance of a new session seeded by a cross-agent handoff. */
+  handoff?: import('./handoff').HandoffSource
 }
 
 /** An image or file sent with a user message (SPEC → Attachments). */

@@ -116,7 +116,8 @@ const MIGRATIONS = [
   CREATE TRIGGER tool_search_delete AFTER DELETE ON tool_calls BEGIN
     DELETE FROM tool_search WHERE rowid = old.rowid;
   END;
-  `
+  `,
+  `ALTER TABLE sessions ADD COLUMN handoff TEXT;`
 ]
 
 type Row = Record<string, unknown>
@@ -133,7 +134,8 @@ function toSession(r: Row): Session {
     activeAt: r.active_at != null ? Number(r.active_at) : Number(r.created_at),
     ...(r.model != null ? { model: r.model as string } : {}),
     ...(r.effort != null ? { effort: r.effort as string } : {}),
-    ...(r.synced_at != null ? { syncedAt: r.synced_at as string } : {})
+    ...(r.synced_at != null ? { syncedAt: r.synced_at as string } : {}),
+    ...(r.handoff != null ? { handoff: JSON.parse(r.handoff as string) as Session['handoff'] } : {})
   }
 }
 
@@ -274,7 +276,7 @@ export class Store {
   /** `syncedAt: null` forgets it. */
   updateSession(
     id: string,
-    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model' | 'effort'>> & { syncedAt?: string | null }
+    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model' | 'effort' | 'handoff'>> & { syncedAt?: string | null }
   ): Session {
     if (patch.acpSessionId !== undefined) {
       this.db
@@ -295,6 +297,9 @@ export class Store {
     }
     if (patch.syncedAt !== undefined) {
       this.db.prepare('UPDATE sessions SET synced_at = ? WHERE id = ?').run(patch.syncedAt, id)
+    }
+    if (patch.handoff !== undefined) {
+      this.db.prepare('UPDATE sessions SET handoff = ? WHERE id = ?').run(JSON.stringify(patch.handoff), id)
     }
     const s = this.getSession(id)
     if (!s) throw new Error(`No session ${id}`)

@@ -367,25 +367,6 @@ describe('SessionManager', () => {
     store.close()
   })
 
-  it('keeps a running turn on its MCP configuration and reloads for the queued follow-up', async () => {
-    state.canClose = true
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => { release = resolve })
-    state.script = async ({ say }) => { await gate; await say('done'); return 'end_turn' }
-    const session = await manager.createSession('/project', 'claude')
-    const first = manager.send(session.id, 'first', null)
-    await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
-    servers = [{ name: 'next-tools', command: '/tools/mcp', args: [], env: [] }]
-    await manager.refreshSession(session.id)
-    expect(state.closes).toEqual([])
-    expect(await manager.send(session.id, 'next', null)).toEqual({ queued: true })
-    release()
-    await first
-    await vi.waitFor(() => expect(events.filter((e) => e.type === 'turnEnd' && e.sessionId === session.id)).toHaveLength(2))
-    expect(state.mcpRequests).toEqual([{ method: 'new', servers: [] }, { method: 'load', servers }])
-    expect(state.prompts).toEqual(['first', 'next'])
-  })
-
   it('passes project MCP servers to creation and resume, preserving threads', async () => {
     servers = [{ name: 'tools', command: '/tools/mcp', args: ['--local'], env: [{ name: 'MODE', value: 'test' }] }]
     const session = await manager.createSession('/project', 'claude')
@@ -397,6 +378,60 @@ describe('SessionManager', () => {
     await manager.send(session.id, 'again', thread.id)
     expect(state.mcpRequests).toEqual([{ method: 'new', servers }, { method: 'load', servers }])
     expect(store.listThreads(session.id)).toContainEqual(thread)
+  })
+
+  it('hands selected thread context to another agent and preserves source data and provenance on resume', async () => {
+    const source = await manager.createSession('/project', 'claude')
+    await manager.send(source.id, 'main request', null)
+    const answer = store.listMessages(source.id).find((m) => m.role === 'agent')!
+    const thread = manager.createThread(source.id, answer.id, { kind: 'selection', start: 0, end: 5, text: 'Hello' })
+    await manager.send(source.id, 'thread request', thread.id)
+    const before = store.listMessages(source.id)
+    const selected = before.filter((m) => m.threadId === thread.id)
+    const destination = await manager.handoff({ sessionId: source.id, threadId: thread.id, agentId: 'codex', summary: 'Use the existing helper. Continue with tests.', messageIds: [selected[0].id] })
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'turnEnd' && e.sessionId === destination.id)).toBe(true))
+    expect(destination.agentId).toBe('codex')
+    expect(destination.cwd).toBe(source.cwd)
+    expect(destination.acpSessionId).not.toBe(source.acpSessionId)
+    expect(destination.handoff).toEqual({ sessionId: source.id, threadId: thread.id, title: store.getSession(source.id)!.title, agentId: 'claude', quote: 'Hello' })
+    const seed = store.listMessages(destination.id)[0]
+    expect(seed.threadId).toBeNull()
+    expect(seed.text).toContain('Use the existing helper')
+    expect(seed.text).toContain('thread request')
+    expect(seed.text).not.toContain('You / Main conversation:\nmain request')
+    expect(seed.text).not.toContain(selected[1].text)
+    expect(store.listMessages(source.id)).toEqual(before)
+    expect(store.listThreads(source.id)).toEqual([thread])
+    await manager.dispose()
+    manager = makeManager()
+    await manager.send(destination.id, 'continue', null)
+    expect(store.getSession(destination.id)?.handoff).toEqual(destination.handoff)
+  })
+
+  it('validates handoff requests before creating an agent session', async () => {
+    const source = await manager.createSession('/project', 'claude')
+    await manager.send(source.id, 'hello', null)
+    const other = await manager.createSession('/other', 'claude')
+    await manager.send(other.id, 'secret', null)
+    const base = { sessionId: source.id, threadId: null, agentId: 'codex', summary: 'Continue tests', messageIds: [] as string[] }
+    for (const request of [
+      { ...base, agentId: 'claude' }, { ...base, summary: '' }, { ...base, threadId: 'gone' },
+      { ...base, messageIds: ['gone'] }, { ...base, messageIds: [store.listMessages(other.id)[0].id] },
+      { ...base, messageIds: Array(201).fill('x') }, { ...base, summary: 'x'.repeat(16_001) }
+    ]) await expect(manager.handoff(request)).rejects.toThrow()
+    expect(store.listSessions()).toHaveLength(2)
+    expect(state.mcpRequests.filter((r) => r.method === 'new')).toHaveLength(2)
+  })
+
+  it('preserves a created handoff with a failed destination turn so it can be retried', async () => {
+    const source = await manager.createSession('/project', 'claude')
+    await manager.send(source.id, 'hello', null)
+    state.script = async () => { throw acp.RequestError.internalError() }
+    const destination = await manager.handoff({ sessionId: source.id, threadId: null, agentId: 'codex', summary: 'Continue with the helper', messageIds: [] })
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'turnEnd' && e.sessionId === destination.id && e.error)).toBe(true))
+    expect(store.getSession(destination.id)?.handoff?.sessionId).toBe(source.id)
+    expect(store.listMessages(destination.id)[0].outcome).toBe('failed')
+    expect(store.getSession(source.id)).toBeDefined()
   })
 
   it('rejects unsupported MCP transport before creating a session', async () => {
@@ -420,6 +455,25 @@ describe('SessionManager', () => {
     expect(state.mcpRequests.at(-1)).toEqual({ method: 'load', servers })
     expect(store.getSession(session.id)?.acpSessionId).toBe(session.acpSessionId)
     expect(store.listMessages(session.id).filter((m) => m.role === 'user').map((m) => m.text)).toEqual(['first', 'second'])
+  })
+
+  it('keeps a running turn on its MCP configuration and reloads for the queued follow-up', async () => {
+    state.canClose = true
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    state.script = async ({ say }) => { await gate; await say('done'); return 'end_turn' }
+    const session = await manager.createSession('/project', 'claude')
+    const first = manager.send(session.id, 'first', null)
+    await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+    servers = [{ name: 'next-tools', command: '/tools/mcp', args: [], env: [] }]
+    await manager.refreshSession(session.id)
+    expect(state.closes).toEqual([])
+    expect(await manager.send(session.id, 'next', null)).toEqual({ queued: true })
+    release()
+    await first
+    await vi.waitFor(() => expect(events.filter((e) => e.type === 'turnEnd' && e.sessionId === session.id)).toHaveLength(2))
+    expect(state.mcpRequests).toEqual([{ method: 'new', servers: [] }, { method: 'load', servers }])
+    expect(state.prompts).toEqual(['first', 'next'])
   })
 
   it('creates a session, streams a turn and persists it', async () => {

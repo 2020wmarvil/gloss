@@ -2736,3 +2736,20 @@ button.status.link {
 .mcp-settings textarea { width: 100%; box-sizing: border-box; padding: 10px; color: var(--ink); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 6px; resize: vertical; }
 .mcp-settings pre { overflow-x: auto; font-size: 12px; }
 .mcp-settings details { margin: 8px 0; }
+
+.handoff-dialog { width: min(800px, calc(100vw - 48px)); max-height: calc(100vh - 64px); overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.handoff-dialog > * { flex-shrink: 0; }
+.handoff-dialog p { margin: 0; font-size: 12px; }
+.handoff-dialog textarea { width: 100%; box-sizing: border-box; resize: vertical; padding: 10px; }
+.handoff-dialog textarea, .handoff-dialog select { background: var(--panel); color: var(--ink); font: inherit; border: 1px solid var(--line-strong); border-radius: 6px; }
+.handoff-dialog select { padding: 5px 8px; margin-left: 8px; }
+.handoff-selection-heading { display: flex; align-items: center; gap: 8px; }
+.handoff-selection-heading strong { margin-right: auto; }
+.handoff-messages { max-height: 180px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; }
+.handoff-messages label { display: flex; align-items: flex-start; gap: 10px; padding: 10px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.handoff-messages input { flex-shrink: 0; margin-top: 3px; }
+.handoff-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow-y: auto; font-size: 12px; background: var(--panel); padding: 12px; }
+.handoff-dialog footer { display: flex; justify-content: flex-end; }
+.handoff-source { padding: 8px 16px; font-size: 12px; background: var(--accent-tint); display: flex; align-items: center; gap: 8px; flex-shrink: 0; overflow-wrap: anywhere; }
+.handoff-source button { flex-shrink: 0; }
+.handoff-source span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

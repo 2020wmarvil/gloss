@@ -36,6 +36,7 @@ type Props = {
   onClose(): void
   onCopyMarkdown(threadId: string): void
   onSaveMarkdown(threadId: string): void
+  onHandoff?(): void
 }
 
 export function ThreadPanel(props: Props): React.JSX.Element {
@@ -66,6 +67,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         </button>
         {threadId === null && <h2 className="thread-label">New thread</h2>}
         {runningHere && <span className="status">Agent is working…</span>}
+        {threadId !== null && props.onHandoff && <button onClick={props.onHandoff} disabled={running} title="Continue this thread with another agent">Continue with...</button>}
         {threadId !== null && (
           <ExportMenu
             label="thread"
