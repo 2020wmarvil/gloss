@@ -172,6 +172,8 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 Remaining work for M13, in separate PRs:
 
+Shared project MCP configuration is implemented for review: validated settings and schema, a project settings editor, capability checks, and server lists on new/load. Changes apply before the next prompt or idle resume.
+
 - **Gloss-managed MCP servers:** a per-project list of MCP servers passed through ACP's `mcpServers` in `session/new` and `session/load`, so agents share tools. Only transports the selected agent advertises are allowed.
 - **Continue with another agent:** an explicit action such as "Continue this conversation with Codex" or "Continue this thread with Claude Code". Create a new session for the destination agent, seeded with a reviewable summary and selected conversation or thread context. Preserve and link back to the original session. This is a context handoff, not a conversion of the original agent's session history. Design the context preview and selection before implementation.
 

@@ -13,6 +13,7 @@ import { SessionManager } from './sessions'
 import { patchArg, SettingsFile } from './settings'
 import { runInTerminal } from './terminal'
 import { UsageSource } from './usage'
+import { projectMcp } from '../shared/mcp'
 
 let mainWindow: BrowserWindow | undefined
 let store: Store | undefined
@@ -346,6 +347,7 @@ app.whenReady().then(() => {
     store,
     emit,
     getAgentConfig,
+    mcpServers: (cwd) => projectMcp(settingsFile.state().projects, cwd),
     agentEnv: (config) => agentEnv(config),
     connect: (config, env, handlers) => AgentConnection.start(config, env, handlers),
     runInTerminal

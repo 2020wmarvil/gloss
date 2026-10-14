@@ -3,6 +3,8 @@ import type { SettingsPatch, SettingsState } from '@shared/ipc'
 import { SETTING_FIELDS, type GlobalSettings, type SettingField } from '@shared/settings'
 import { errorText } from './errors'
 import { modKey, SHORTCUTS } from './shortcuts'
+import { projectMcp } from '@shared/mcp'
+import { McpSettings } from './McpSettings'
 
 type Props = {
   state: SettingsState
@@ -80,6 +82,8 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
           {projectPath ? (
             <>
               <p className="mono">{projectPath}</p>
+              <McpSettings key={projectPath} servers={projectMcp(state.projects, projectPath)}
+                onSave={async (mcpServers) => { await onUpdate({ project: { path: projectPath, values: { mcpServers } } }) }} />
               {projectFields.length === 0 && <p className="muted">No project settings yet.</p>}
             </>
           ) : (

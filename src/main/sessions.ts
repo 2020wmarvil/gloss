@@ -25,6 +25,7 @@ import type {
   TurnOutcome
 } from '../shared/types'
 import { wireText } from '../shared/wire'
+import type { McpServer } from '../shared/mcp'
 import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, type AgentHandlers, type SteerOutcome } from './acp'
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
@@ -42,6 +43,7 @@ export type SessionManagerDeps = {
   connect(config: AgentConfig, env: NodeJS.ProcessEnv, handlers: AgentHandlers): Promise<AgentConnection>
   runInTerminal: TerminalRunner
   now?(): number
+  mcpServers?(cwd: string): McpServer[]
 }
 
 type Turn = {
@@ -60,6 +62,7 @@ type Turn = {
 }
 
 type SessionRuntime = {
+  mcpFingerprint?: string
   /** The connection the session's ACP session is live on. */
   attachedTo?: AgentConnection
   /** An attach in progress, so concurrent callers share it. */
@@ -180,6 +183,10 @@ export class SessionManager {
   /** The agent's `_meta` for session/new or session/load (SPEC → Agent instructions). */
   private sessionMeta(agentId: string, request: 'new' | 'load'): Record<string, unknown> | undefined {
     return this.deps.getAgentConfig(agentId).sessionMeta?.[request]
+  }
+
+  private mcpServers(cwd: string): McpServer[] {
+    return this.deps.mcpServers?.(cwd) ?? []
   }
 
   private handlers(agentId: string): AgentHandlers {
@@ -340,11 +347,12 @@ export class SessionManager {
   }
 
   async createSession(cwd: string, agentId: string): Promise<Session> {
+    const servers = this.mcpServers(cwd)
     let conn!: AgentConnection
     let permissions: SessionLive['permissions'] = null
     const res = await this.withAgent(agentId, async (c) => {
       conn = c
-      const created = await c.newSession(cwd, this.sessionMeta(agentId, 'new'))
+      const created = await c.newSession(cwd, this.sessionMeta(agentId, 'new'), servers)
       permissions = await this.enterBypassMode(agentId, c, created.sessionId, created.modes)
       return created
     })
@@ -360,6 +368,7 @@ export class SessionManager {
     this.deps.store.addProject(cwd, this.now())
     this.register(session.acpSessionId, session.id)
     this.runtime(session.id).attachedTo = conn
+    this.runtime(session.id).mcpFingerprint = JSON.stringify(servers)
     const created = this.session(session.id)
     this.deps.emit({ type: 'session', session: created })
     await this.attached(session.id, conn, res.configOptions, permissions)
@@ -526,6 +535,7 @@ export class SessionManager {
    */
   async clearSession(id: string): Promise<void> {
     let session = this.session(id)
+    const servers = this.mcpServers(session.cwd)
     const rt = this.runtime(id)
     if (rt.turn) throw new Error('Cancel the running turn before clearing the session.')
     // A resume in progress would attach the old agent session after this.
@@ -534,7 +544,7 @@ export class SessionManager {
     let permissions: SessionLive['permissions'] = null
     const res = await this.withAgent(session.agentId, async (c) => {
       conn = c
-      const created = await c.newSession(session.cwd, this.sessionMeta(session.agentId, 'new'))
+      const created = await c.newSession(session.cwd, this.sessionMeta(session.agentId, 'new'), servers)
       permissions = await this.enterBypassMode(session.agentId, c, created.sessionId, created.modes)
       return created
     })
@@ -547,6 +557,7 @@ export class SessionManager {
     session = this.deps.store.updateSession(id, { acpSessionId: res.sessionId, syncedAt: null })
     this.register(session.acpSessionId, id)
     rt.attachedTo = conn
+    rt.mcpFingerprint = JSON.stringify(servers)
     this.setQueue(id, { items: [], paused: false })
     this.setLive(id, { usage: null })
     this.deps.emit({ type: 'session', session })
@@ -699,8 +710,19 @@ export class SessionManager {
   /** Makes the session's ACP session live on `conn`. Concurrent callers share one attach. */
   private attach(sessionId: string, conn: AgentConnection): Promise<string> {
     const rt = this.runtime(sessionId)
-    if (rt.attachedTo === conn) return Promise.resolve(this.session(sessionId).acpSessionId)
     if (rt.attaching?.conn === conn) return rt.attaching.promise
+    if (rt.attachedTo === conn) {
+      const session = this.session(sessionId)
+      const servers = this.mcpServers(session.cwd)
+      if (rt.mcpFingerprint !== JSON.stringify(servers) && (!rt.turn || rt.turn.unsent)) {
+        conn.validateMcp(servers)
+        if (!conn.canCloseSessions || !conn.canLoadSession) {
+          return Promise.reject(new Error('MCP settings changed. Restart Gloss to apply them for this agent.'))
+        }
+        return this.reattach(sessionId, conn)
+      }
+      return Promise.resolve(session.acpSessionId)
+    }
     const promise = this.doAttach(sessionId, conn).finally(() => {
       if (rt.attaching?.promise === promise) rt.attaching = undefined
     })
@@ -715,6 +737,8 @@ export class SessionManager {
   private async doAttach(sessionId: string, conn: AgentConnection): Promise<string> {
     const rt = this.runtime(sessionId)
     const session = this.session(sessionId)
+    const servers = this.mcpServers(session.cwd)
+    conn.validateMcp(servers)
     if (!conn.canLoadSession) return this.replaceAgentSession(sessionId, conn, true)
 
     // The agent's last change, before the load changes it: the time of what the replay adds.
@@ -725,7 +749,7 @@ export class SessionManager {
     let loaded: acp.LoadSessionResponse | undefined
     let replay: acp.SessionUpdate[]
     try {
-      loaded = await conn.loadSession(session.acpSessionId, session.cwd, this.sessionMeta(session.agentId, 'load'))
+      loaded = await conn.loadSession(session.acpSessionId, session.cwd, this.sessionMeta(session.agentId, 'load'), servers)
     } catch (err) {
       if (isSessionInUse(err)) throw new Error('This session is open in Codex. Quit Codex to continue here.', { cause: err })
       if (isAuthRequired(err) || rt.importing) throw err
@@ -750,6 +774,7 @@ export class SessionManager {
     this.sync(sessionId, replay, Number.isFinite(at) ? at : this.now())
     const permissions = await this.enterBypassMode(session.agentId, conn, session.acpSessionId, loaded.modes)
     rt.attachedTo = conn
+    rt.mcpFingerprint = JSON.stringify(servers)
     await this.attached(sessionId, conn, loaded.configOptions, permissions)
     await this.recordSynced(sessionId, conn)
     return session.acpSessionId
@@ -759,12 +784,14 @@ export class SessionManager {
   private async replaceAgentSession(sessionId: string, conn: AgentConnection, notice: boolean): Promise<string> {
     const rt = this.runtime(sessionId)
     let session = this.session(sessionId)
-    const res = await conn.newSession(session.cwd, this.sessionMeta(session.agentId, 'new'))
+    const servers = this.mcpServers(session.cwd)
+    const res = await conn.newSession(session.cwd, this.sessionMeta(session.agentId, 'new'), servers)
     const permissions = await this.enterBypassMode(session.agentId, conn, res.sessionId, res.modes)
     this.byAcpId.delete(session.acpSessionId)
     session = this.deps.store.updateSession(session.id, { acpSessionId: res.sessionId, syncedAt: null })
     this.register(session.acpSessionId, session.id)
     rt.attachedTo = conn
+    rt.mcpFingerprint = JSON.stringify(servers)
     this.deps.emit({ type: 'session', session })
     await this.attached(sessionId, conn, res.configOptions, permissions)
     if (notice) {

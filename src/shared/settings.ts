@@ -16,13 +16,13 @@ export type GlobalSettings = {
   listItemReplies: boolean
 }
 
-/** Settings for one project folder, under `projects` keyed by its path. None exist yet (M7+). */
-export type ProjectSettings = Record<string, never>
+/** Settings for one project folder, under `projects` keyed by its path. */
+export type ProjectSettings = { mcpServers?: import('./mcp').McpServer[] }
 
 export type SettingField = {
   key: string
   scope: 'global' | 'project'
-  type: 'boolean' | 'enum'
+  type: 'boolean' | 'enum' | 'mcp'
   label: string
   description: string
   /** For enum fields: the allowed values and how the screen labels them. */
@@ -32,6 +32,10 @@ export type SettingField = {
 }
 
 export const SETTING_FIELDS: readonly SettingField[] = [
+  {
+    key: 'mcpServers', scope: 'project', type: 'mcp', label: 'MCP servers',
+    description: 'Tools shared by agents in this project. Applied on the next turn or resume.', hidden: true
+  },
   {
     key: 'listItemReplies',
     scope: 'global',

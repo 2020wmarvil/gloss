@@ -166,6 +166,15 @@ export class AgentConnection {
     return this.init.agentCapabilities?.promptCapabilities ?? {}
   }
 
+  /** Stdio is required by ACP v1. HTTP and SSE require advertised support. */
+  validateMcp(servers: acp.McpServer[]): void {
+    for (const server of servers) {
+      if ('type' in server && (server.type === 'acp' || this.init.agentCapabilities?.mcpCapabilities?.[server.type] !== true)) {
+        throw new Error(`This agent does not support ${server.type.toUpperCase()} MCP transport (${server.name}). Change the project's MCP settings or choose another agent.`)
+      }
+    }
+  }
+
   /** The agent's sessions in `cwd`, following pages up to `maxPages`. */
   async listSessions(cwd: string, maxPages = 10): Promise<acp.SessionInfo[]> {
     const sessions: acp.SessionInfo[] = []
@@ -205,15 +214,17 @@ export class AgentConnection {
     return this.conn.agent.request(acp.methods.agent.session.setConfigOption, { sessionId, configId, value })
   }
 
-  newSession(cwd: string, meta?: Record<string, unknown>): Promise<acp.NewSessionResponse> {
-    return this.conn.agent.request(acp.methods.agent.session.new, { cwd, mcpServers: [], ...(meta ? { _meta: meta } : {}) })
+  newSession(cwd: string, meta?: Record<string, unknown>, mcpServers: acp.McpServer[] = []): Promise<acp.NewSessionResponse> {
+    this.validateMcp(mcpServers)
+    return this.conn.agent.request(acp.methods.agent.session.new, { cwd, mcpServers, ...(meta ? { _meta: meta } : {}) })
   }
 
-  loadSession(sessionId: string, cwd: string, meta?: Record<string, unknown>): Promise<acp.LoadSessionResponse> {
+  loadSession(sessionId: string, cwd: string, meta?: Record<string, unknown>, mcpServers: acp.McpServer[] = []): Promise<acp.LoadSessionResponse> {
+    this.validateMcp(mcpServers)
     return this.conn.agent.request(acp.methods.agent.session.load, {
       sessionId,
       cwd,
-      mcpServers: [],
+      mcpServers,
       ...(meta ? { _meta: meta } : {})
     })
   }

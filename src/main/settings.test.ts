@@ -8,6 +8,14 @@ import { parseSettings, patchArg, samePath, SettingsFile } from './settings'
 const defaults = { defaultAgent: 'claude' as const, theme: 'system' as const, sessionOrder: 'created' as const, listItemReplies: false }
 
 describe('parseSettings', () => {
+  it('validates project MCP servers in files and renderer patches', () => {
+    const servers = [{ name: 'tools', command: '/tools/mcp', args: [], env: [] }, { type: 'http', name: 'remote', url: 'https://example.com/mcp', headers: [] }]
+    expect(parseSettings(JSON.stringify({ projects: { '/project': { mcpServers: servers } } }), defaults)).toMatchObject({ ok: true, projects: { '/project': { mcpServers: servers } } })
+    for (const mcpServers of [null, {}, [{ ...servers[0], args: 'bad' }], [servers[0], servers[0]], [{ ...servers[1], url: 'file:///secret' }], [{ ...servers[0], type: 'acp' }]]) {
+      expect(parseSettings(JSON.stringify({ projects: { '/project': { mcpServers } } }), defaults).ok).toBe(false)
+      expect(() => patchArg({ project: { path: '/project', values: { mcpServers } } })).toThrow()
+    }
+  })
   it('accepts and validates the list item replies toggle', () => {
     for (const listItemReplies of [true, false]) {
       expect(parseSettings(JSON.stringify({ listItemReplies }), defaults)).toMatchObject({
