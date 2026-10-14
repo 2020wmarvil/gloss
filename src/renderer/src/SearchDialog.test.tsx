@@ -1,0 +1,76 @@
+// @vitest-environment jsdom
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, expect, it, vi } from 'vitest'
+import { SearchDialog } from './SearchDialog'
+import type { SearchResponse, SearchResult } from '@shared/search'
+
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+let root: Root | undefined
+afterEach(() => { act(() => root?.unmount()); vi.useRealTimers() })
+const result: SearchResult = { id: 'm', sessionId: 's', sessionTitle: 'Project discussion', cwd: '/project', kind: 'agent', threadId: 't', threadQuote: 'Cache format', snippet: 'Use \u0001cache\u0002 <script>bad()</script>' }
+
+async function mount(search: (request: unknown) => Promise<SearchResponse>, onOpen = vi.fn(async () => {})): Promise<{ el: HTMLDivElement; input: HTMLInputElement; close: ReturnType<typeof vi.fn>; onOpen: typeof onOpen }> {
+  vi.useFakeTimers()
+  window.gloss = { search } as typeof window.gloss
+  const el = document.createElement('div')
+  document.body.replaceChildren(el)
+  root = createRoot(el)
+  const close = vi.fn()
+  await act(async () => root!.render(<SearchDialog sessionId="s" cwd="/project" onClose={close} onOpen={onOpen} />))
+  return { el, input: el.querySelector('input')!, close, onOpen }
+}
+async function type(input: HTMLInputElement, text: string): Promise<void> {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => vi.advanceTimersByTimeAsync(151))
+}
+
+it('searches with scope and type filters, highlights plain text safely, and opens a result', async () => {
+  const search = vi.fn(async () => ({ results: [result], more: true }))
+  const { el, input, onOpen, close } = await mount(search)
+  expect(document.activeElement).toBe(input)
+  await type(input, 'cache')
+  expect(search).toHaveBeenCalledWith({ query: 'cache', scope: 'all', kind: 'all', sessionId: 's', cwd: '/project' })
+  expect(el.querySelector('mark')!.textContent).toBe('cache')
+  expect(el.querySelector('script')).toBeNull()
+  expect(el.textContent).toContain('Showing the first 100')
+  const selects = el.querySelectorAll('select')
+  await act(async () => { selects[0].value = 'project'; selects[0].dispatchEvent(new Event('change', { bubbles: true })); selects[1].value = 'tool'; selects[1].dispatchEvent(new Event('change', { bubbles: true })) })
+  await act(async () => vi.advanceTimersByTimeAsync(151))
+  expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'project', kind: 'tool' }))
+  await act(async () => (el.querySelector('.search-result') as HTMLButtonElement).click())
+  expect(onOpen).toHaveBeenCalledWith(result)
+  expect(close).toHaveBeenCalled()
+})
+
+it('discards an older response, clears stale results, and reports errors', async () => {
+  let finish!: (response: SearchResponse) => void
+  const search = vi.fn().mockImplementationOnce(() => new Promise<SearchResponse>((resolve) => { finish = resolve })).mockRejectedValueOnce(new Error('Search unavailable'))
+  const { el, input } = await mount(search)
+  await type(input, 'old')
+  await type(input, 'new')
+  await act(async () => finish({ results: [result], more: false }))
+  expect(el.querySelector('.search-result')).toBeNull()
+  expect(el.querySelector('[role="alert"]')!.textContent).toContain('Search unavailable')
+  await type(input, '')
+  expect(el.querySelector('[role="alert"]')).toBeNull()
+  expect(el.textContent).toContain('Enter words')
+})
+
+it('traps focus and closes on Escape without forwarding it to the working composer', async () => {
+  const { el, input, close } = await mount(async () => ({ results: [], more: false }))
+  const buttons = el.querySelectorAll('button')
+  const last = el.querySelectorAll('select')[1]
+  last.focus()
+  await act(async () => last.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })))
+  expect(document.activeElement).toBe(buttons[0])
+  const bubbled = vi.fn()
+  window.addEventListener('keydown', bubbled)
+  await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  expect(close).toHaveBeenCalled()
+  expect(bubbled).not.toHaveBeenCalled()
+  window.removeEventListener('keydown', bubbled)
+})

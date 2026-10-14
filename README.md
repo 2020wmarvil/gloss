@@ -39,6 +39,12 @@ To reply to anything else, select text in an agent message (a phrase, part of a 
 
 Threads exist only in Gloss. The agent sees one conversation: a message sent from a thread is prefixed with `[re: "<the item's text>"]` (shown under the thread's composer) and its reply is shown in that thread. One turn runs at a time; while it runs, the header says which thread it belongs to.
 
+### Search
+
+Click **Search conversations** in the sidebar or press **Ctrl+Shift+F** (**Cmd+Shift+F** on macOS). Search messages and tool output across everything, the current project, or the current session. Put a phrase in double quotes for an exact phrase match. Open a result to jump to the message or expanded tool call, including its thread.
+
+Search covers history already loaded into Gloss. Open an agent session from the sidebar to include its history.
+
 ### Dev model toggle
 
 **Dev model (Haiku)**, in Settings, runs Claude Code with `ANTHROPIC_MODEL=haiku` so test prompts are cheap. It is on by default in development and stored in `settings.json` in Electron's user-data folder. Changing it restarts idle agents; a running turn finishes on the old model. It does not override Codex models. Judge the threading UX on the normal model; Haiku gives shorter, less list-heavy answers.

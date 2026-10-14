@@ -1,6 +1,8 @@
 // SQLite persistence (node:sqlite). For agents that share their sessions, the log is a
 // cache of the agent's own copy; threads and the rest are Gloss's own (SPEC → Shared sessions).
 import { DatabaseSync } from 'node:sqlite'
+import type { SearchRequest, SearchResponse, SearchResult } from '../shared/search'
+import { sameFolder } from '../shared/paths'
 import type { Anchor, Attachment, Message, Plan, PlanEntry, Session, Thread, ToolCall, TurnOutcome } from '../shared/types'
 
 // Append-only. Each entry upgrades the schema by one version (PRAGMA user_version).
@@ -87,6 +89,33 @@ const MIGRATIONS = [
   `,
   `
   ALTER TABLE messages ADD COLUMN outcome TEXT;
+  `,
+  `
+  CREATE VIRTUAL TABLE message_search USING fts5(body, tokenize='unicode61');
+  CREATE VIRTUAL TABLE tool_search USING fts5(body, tokenize='unicode61');
+  INSERT INTO message_search(rowid, body) SELECT rowid, text FROM messages;
+  INSERT INTO tool_search(rowid, body)
+    SELECT t.rowid, t.title || char(10) || COALESCE((SELECT group_concat(value, char(10)) FROM json_tree(t.content) WHERE type = 'text' AND key IN ('text', 'oldText', 'newText', 'path', 'uri')), '') FROM tool_calls t;
+  CREATE TRIGGER message_search_insert AFTER INSERT ON messages BEGIN
+    INSERT INTO message_search(rowid, body) VALUES (new.rowid, new.text);
+  END;
+  CREATE TRIGGER message_search_update AFTER UPDATE OF text ON messages BEGIN
+    DELETE FROM message_search WHERE rowid = old.rowid;
+    INSERT INTO message_search(rowid, body) VALUES (new.rowid, new.text);
+  END;
+  CREATE TRIGGER message_search_delete AFTER DELETE ON messages BEGIN
+    DELETE FROM message_search WHERE rowid = old.rowid;
+  END;
+  CREATE TRIGGER tool_search_insert AFTER INSERT ON tool_calls BEGIN
+    INSERT INTO tool_search(rowid, body) VALUES (new.rowid, new.title || char(10) || COALESCE((SELECT group_concat(value, char(10)) FROM json_tree(new.content) WHERE type = 'text' AND key IN ('text', 'oldText', 'newText', 'path', 'uri')), ''));
+  END;
+  CREATE TRIGGER tool_search_update AFTER UPDATE OF title, content ON tool_calls BEGIN
+    DELETE FROM tool_search WHERE rowid = old.rowid;
+    INSERT INTO tool_search(rowid, body) VALUES (new.rowid, new.title || char(10) || COALESCE((SELECT group_concat(value, char(10)) FROM json_tree(new.content) WHERE type = 'text' AND key IN ('text', 'oldText', 'newText', 'path', 'uri')), ''));
+  END;
+  CREATE TRIGGER tool_search_delete AFTER DELETE ON tool_calls BEGIN
+    DELETE FROM tool_search WHERE rowid = old.rowid;
+  END;
   `
 ]
 
@@ -285,6 +314,52 @@ export class Store {
       )
       .get(sessionId, sessionId, sessionId) as { m: number | null }
     return r.m == null ? 0 : Number(r.m) + 1
+  }
+
+  /** Literal words (AND), or a phrase in double quotes. User input is never FTS syntax. */
+  search(request: SearchRequest): SearchResponse {
+    if (!request || typeof request.query !== 'string' || request.query.length > 1000 ||
+        !['session', 'project', 'all'].includes(request.scope) ||
+        !['all', 'user', 'agent', 'tool'].includes(request.kind)) throw new Error('Invalid search')
+    if (request.scope === 'session' && typeof request.sessionId !== 'string') throw new Error('Search needs a session')
+    if (request.scope === 'project' && (typeof request.cwd !== 'string' || !request.cwd.trim())) throw new Error('Search needs a project')
+    const terms = (request.query.match(/"[^"]+"|[^\s"]+/gu) ?? []).filter((term) => /[\p{L}\p{N}]/u.test(term))
+    const query = terms.map((term) => '"' + term.replace(/^"|"$/g, '').replace(/"/g, '""') + '"').join(' AND ')
+    if (!query || !/[\p{L}\p{N}]/u.test(query)) return { results: [], more: false }
+    const sessionIds = request.scope === 'session' ? [request.sessionId!] : request.scope === 'project'
+      ? (this.db.prepare('SELECT id, cwd FROM sessions').all() as { id: string; cwd: string }[])
+        .filter((s) => sameFolder(s.cwd, request.cwd!)).map((s) => s.id)
+      : null
+    if (sessionIds?.length === 0) return { results: [], more: false }
+    const scopeSql = (alias: string): string => sessionIds ? ` AND ${alias}.session_id IN (${sessionIds.map(() => '?').join(',')})` : ''
+    const parts: string[] = []
+    const args: string[] = []
+    if (request.kind !== 'tool') {
+      parts.push(`SELECT m.id, m.session_id, m.thread_id, m.role AS kind,
+        snippet(message_search, 0, char(1), char(2), '...', 32) AS snippet, rank AS score
+        FROM message_search JOIN messages m ON m.rowid = message_search.rowid
+        WHERE message_search MATCH ? ${scopeSql('m')}
+        ${request.kind === 'all' ? '' : 'AND m.role = ?'}`)
+      args.push(query, ...(sessionIds ?? []))
+      if (request.kind !== 'all') args.push(request.kind)
+    }
+    if (request.kind === 'all' || request.kind === 'tool') {
+      parts.push(`SELECT t.id, t.session_id, t.thread_id, 'tool' AS kind,
+        snippet(tool_search, 0, char(1), char(2), '...', 32) AS snippet, rank AS score
+        FROM tool_search JOIN tool_calls t ON t.rowid = tool_search.rowid
+        WHERE tool_search MATCH ? ${scopeSql('t')}`)
+      args.push(query, ...(sessionIds ?? []))
+    }
+    const rows = this.db.prepare(`SELECT r.*, s.title, s.cwd, th.anchor FROM (${parts.join(' UNION ALL ')}) r
+      JOIN sessions s ON s.id = r.session_id LEFT JOIN threads th ON th.id = r.thread_id
+      ORDER BY r.score, s.created_at DESC, r.id LIMIT 101`).all(...args) as Row[]
+    const results: SearchResult[] = rows.slice(0, 100).map((r) => ({
+      id: r.id as string, sessionId: r.session_id as string, sessionTitle: r.title as string,
+      cwd: r.cwd as string, threadId: r.thread_id as string | null,
+      threadQuote: r.anchor ? (JSON.parse(r.anchor as string) as Anchor).text : null,
+      kind: r.kind as SearchResult['kind'], snippet: r.snippet as string
+    }))
+    return { results, more: rows.length > 100 }
   }
 
   // Messages

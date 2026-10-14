@@ -1,3 +1,4 @@
+import { modKey } from './shortcuts'
 // The sidebar (docs/mocks/sidebar-switcher.html): a project switcher and one list of
 // the project's sessions, Gloss's and the agent's own (SPEC → Projects and sessions).
 import { useEffect, useRef, useState } from 'react'
@@ -41,6 +42,7 @@ type Props = {
   onDelete(id: string): void
   onCopyMarkdown(id: string): void
   onSaveMarkdown(id: string): void
+  onSearch(): void
   onSettings(): void
 }
 
@@ -323,6 +325,7 @@ export function Sidebar(props: Props): React.JSX.Element {
         )}
       </div>
 
+      <button className="settings-button" onClick={props.onSearch} title={`${modKey()}+Shift+F`}>Search conversations</button>
       <button
         className={props.settingsOpen ? 'settings-button on' : 'settings-button'}
         onClick={props.onSettings}

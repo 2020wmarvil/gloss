@@ -13,6 +13,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
   {
     title: 'Anywhere',
     shortcuts: [
+      { keys: [['Mod', 'Shift', 'F']], action: 'Search conversations' },
       { keys: [['Mod', 'N']], action: 'New session' },
       { keys: [['Mod', 'Tab'], ['Mod', 'PageDown']], action: 'Next session in the project' },
       { keys: [['Mod', 'Shift', 'Tab'], ['Mod', 'PageUp']], action: 'Previous session in the project' },
