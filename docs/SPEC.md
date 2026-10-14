@@ -28,6 +28,8 @@ Anchors live on **agent messages**. Two kinds:
 1. **List item** (one click). Every top-level list item in a rendered agent message gets a reply affordance (a "Reply" button on hover, or a reply-count badge once a thread exists).
 2. **Text selection** (fallback). Selecting any text in an agent message (prose, code, a list item) shows a "Reply to selection" popover. The selected span becomes the anchor.
 
+Review sessions add a third kind, on the diff rather than a message: **diff lines** (see Review sessions).
+
 Anchor positions are stored as offsets into the **source markdown**, not the DOM. Use the markdown renderer's source-position info (e.g. mdast `position` in remark/unified, or `map` in markdown-it) to map the DOM selection back to source offsets. Also store the anchor's text so it can be re-found if offsets drift.
 
 ## Wire format
@@ -57,6 +59,13 @@ A message sent to the main conversation from a thread (see Composer → Send to 
 
 so the agent knows which point it answers and that the discussion moves back to the main conversation. Being in the main thread, it ends the thread: the next main message is sent unchanged.
 
+A thread on diff lines in a review session quotes the file and lines instead, with `(old)` for lines on the removed side and a range as `93-95`:
+
+```
+[re: src/main/git.ts:93 "<selected text, truncated to ~80 chars>"]
+[re: src/main/git.ts:120-124 (old) "<selected text, truncated to ~80 chars>"]
+```
+
 ### Agent instructions
 
 Every session gives the agent this text, so it reads the tags as Gloss means them (`AGENT_INSTRUCTIONS` in `src/shared/wire.ts`):
@@ -83,6 +92,7 @@ type Session = {
   model?: string             // model config value picked in Gloss; re-applied on resume
   effort?: string            // effort (thought_level) config value picked in Gloss; re-applied after the model
   syncedAt?: string          // the agent's updatedAt for this session when Gloss last synced it (see Shared sessions)
+  review?: { baseRef: string }  // a review session (see Review sessions): the branch it is reviewed against, e.g. 'main'
 }
 
 type Attachment =
@@ -125,10 +135,14 @@ type Plan = {                 // the agent's plan for one turn, rendered as a ch
 type Thread = {
   id: string
   sessionId: string
-  anchorMessageId: string    // the agent message the anchor lives in (any thread)
+  anchorMessageId: string | null  // the agent message the anchor lives in (any thread); null for line anchors
   anchor:
     | { kind: 'listItem'; path: number[]; text: string }               // [2] = 3rd top-level item
     | { kind: 'selection'; start: number; end: number; text: string }  // source-markdown offsets
+    | { kind: 'line'; file: string; side: 'old' | 'new'; start: number; end: number;
+        text: string; lines: string[] }                                // diff lines; text = the selection, lines = the full lines
+  finding?: { severity: 'bug' | 'suggestion' | 'nit'; title: string; body: string }  // opened by the agent's first pass
+  resolvedAt?: number        // review threads: resolved by the user
   createdAt: number
 }
 ```
@@ -137,7 +151,7 @@ Projects are folders: those opened with "Open project…" (a `projects` table) p
 
 Notes:
 - `anchorMessageId` may point at a message inside a thread. That would allow nested threads later without a migration. Nesting is **not** in scope now.
-- A Thread row is created when the user sends the first message on an anchor, not when the panel is opened.
+- A Thread row is created when the user sends the first message on an anchor, not when the panel is opened. A finding's thread is the exception: the first pass creates it.
 - For an agent that shares its sessions (see Shared sessions), messages, tool calls and plans are a cache of the agent's session. Threads, the thread each message belongs to, titles renamed in Gloss, `model`, `effort`, `steered` and `createdAt` are Gloss's own.
 
 ## Message flow
@@ -307,6 +321,28 @@ When the agent advertises `loadSession` (Claude Code does), the agent's own copy
 - **Tool calls** show as one row (title, status), collapsed. Clicking expands what the agent did, from the tool call's ACP `content`: a command's full text and its output (the Claude adapter sends output as a console code block when the client has no terminal capability), a file edit (`diff` content) as a unified line diff with unchanged stretches collapsed to 3 lines of context, other content as markdown.
 - **Code blocks** are highlighted with Shiki (JavaScript regex engine, no WebAssembly, themes `github-light` and `github-dark` as `light-dark()` colors, so they follow the theme). Common languages load at startup, others the first time they are seen; until then the block renders plain and re-renders when ready. Highlighting splits the same source-offset spans selection anchors use, so anchors in code keep working. Each block has a Copy button.
 
+## Review sessions
+
+A session for checking an agent's work (`docs/mocks/review-session.html`). The center shows the diff of the branch, threads hang off its lines, and the agent reviews first. To the agent it is still one linear session, separate from the session that wrote the code, so the review starts with clean context.
+
+- **Start:** **Review changes** on a project in the sidebar creates a review session with the default agent and sends the first pass straight away. Disabled outside a git repository. The session list shows it with a review icon, titled "Review: <branch>", with a count of its open threads.
+- **What is reviewed:** everything since the branch left the default branch, committed or not: `git diff <merge base>` (the merge base of `HEAD` and the default branch, recomputed at each refresh) plus untracked files as new files. The default branch is `origin/HEAD`, else `main`, else `master`; it is stored as `review.baseRef`. On the default branch itself the merge base is `HEAD`, so the review shows uncommitted changes. With nothing to review the diff says so. The header shows the base (`vs main @ 3c3c5f9`) and file and line counts. The main process reads the diff; the renderer gets it through the preload API.
+- **Refresh:** the diff is re-read when the session opens, when the window regains focus with it open, after each tool call that completes and at the end of each turn, so the agent's fixes show up as it makes them.
+- **Diff view:** one scroll with every file stacked, each under a sticky header (path, "new", *committed*, *uncommitted* or *committed + uncommitted*, `+` and `−` counts) that collapses the file. Binary files show as a header only; files over 1,000 changed lines start collapsed. Rows are virtualized so large diffs stay usable. Code is highlighted with the conversation's Shiki setup.
+  - **Split or Unified**, side by side by default. In split view lines don't wrap: each side scrolls sideways on its own, with its scrollbar pinned to the bottom of the view while the file is on screen, and Shift+wheel or a horizontal trackpad scroll over a side moves that side. Below 640 px of diff width, split shows as unified.
+  - **File tree:** a collapsible column listing the files (name, folder, counts, open threads) that highlights the file in view and jumps to a file when clicked.
+  - Split or unified, the tree's visibility and comment visibility are UI state in the renderer's localStorage.
+- **Line anchors:** selecting code in the diff shows **Reply to selection**, as in a message. The anchor records the file, the side (old or new), the line range, the selected text and the full text of those lines. In split view a selection stays on the side it started on. In unified view a selection that covers both removed and added lines anchors to the new side's lines. A new thread's panel shows the tag it will be sent with (see Wire format).
+- **Comment cards:** each thread shows as a card under its last line, on its own side in split view: severity, title, two lines of the finding, reply count, last activity, and "working", **Outdated** or **Resolved**. A thread the user started has no severity ("yours") and is titled by its first message. A colored marker in the gutter at the thread's first line stays when the card is hidden. Cards start expanded; **▴** collapses one to its marker, and clicking a marker expands it again. **Comments shown/hidden** in the header (`Ctrl+Shift+H`) hides every card at once. Clicking a card or marker opens its thread in the side panel and highlights its lines.
+- **First pass:** the session's first message, sent by Gloss, asks the agent to review the diff against the base commit (it reads the diff itself) and to answer with a short summary and a fenced `gloss-findings` block: a JSON list of `{ file, side, start, end, severity, title, body }`. Gloss opens one thread per finding, at its lines, with the finding stored on the thread (`finding`), and shows the block in the general conversation as a row ("7 findings") instead of JSON. A finding whose lines aren't in the diff is listed there as text. The message Gloss sent shows as a line in the general conversation ("Gloss started the first pass"), not as a user message.
+- **Fixes:** the review agent changes files itself when asked in a thread. Its edits appear in the diff at the next refresh.
+- **Outdated threads:** at each refresh a thread re-finds its lines by their text on the same side of its file, nearest the old position, and moves with them. When they are gone the thread is **Outdated**: its card stays near where the lines were and shows them struck through. A thread whose file left the diff stays under that file's header, marked "no longer changed". Outdated threads still take replies.
+- **Resolve:** a thread has **Resolve** (then **Reopen**) in its header. Resolved threads collapse to a grey marker, dim, and are hidden by the overview's Open filter.
+- **Side panel:** the overview starts with a pinned **General conversation** card (the latest agent message, the message count) that opens the main thread in the panel with **← All threads** and the main composer. Below it, the threads grouped by file in diff order and sorted by line, each with its marker, lines, title, severity, replies, last activity and state. Filters: **Open** (default), **Resolved** or **All**, with counts, and one chip per severity. The thread view adds the severity, `file:lines` and **Resolve** to the header, and quotes the lines with their numbers (struck through when outdated) above the finding's title and the messages. The Queue tab is unchanged.
+- **Navigation:** `N` and `P` (outside text fields), or **↑** and **↓** in the header beside "2 of 7 open", go to the next or previous open thread in file and line order: the diff scrolls to it, its card expands if comments are shown, and it opens in the side panel.
+- **Export:** a review session exports like any session; each line thread is headed `## Thread: src/main/git.ts:93 “<text>”`.
+- **Agent instructions:** a review session's instructions add that `[re: path:line "…"]` tags refer to the diff under review and that the `(old)` side is the base's version.
+
 ## Search
 
 - **Search conversations** in the sidebar, or `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS), opens a dialog from anywhere, including settings. Escape or clicking outside closes it; focus stays inside while open and returns on close. The dialog is anchored 32 px from the top of the window; results grow and scroll below the input, keeping it stationary as matches arrive. Search leaves the conversation and running turns in place.
@@ -356,7 +392,7 @@ A line under the composer for the open session. Agent state comes from ACP; the 
 
 ## Keyboard shortcuts
 
-`Ctrl+Shift+F` search conversations · `Ctrl+N` new session · `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+PageDown` / `Ctrl+PageUp`) next / previous session in the project · `Ctrl+L` focus the composer · `Ctrl+Shift+T` show or hide the side panel · `Ctrl+J` go to where the agent is working, or last worked (the thread of the latest message sent), with the caret in that composer (the main conversation's when it was there; nothing in a session without messages) · `Ctrl+Shift+Q` show the queue · `Esc` close settings or a menu, or cancel the turn from the working thread's composer · `Ctrl+,` settings. `Cmd` works for `Ctrl` on macOS. The mouse's back and forward buttons, and `Alt+Left` / `Alt+Right`, move through the views visited: a session with its open thread (or none), and the settings screen. Deleted sessions are skipped. On macOS, `Option+arrow` in a text field still moves by word. The settings screen lists these and the shortcuts that apply in one place (composer, queued messages, selections, session list, panel edges); they can't be changed.
+`Ctrl+Shift+F` search conversations · `Ctrl+N` new session · `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+PageDown` / `Ctrl+PageUp`) next / previous session in the project · `Ctrl+L` focus the composer · `Ctrl+Shift+T` show or hide the side panel · `Ctrl+J` go to where the agent is working, or last worked (the thread of the latest message sent), with the caret in that composer (the main conversation's when it was there; nothing in a session without messages) · `Ctrl+Shift+Q` show the queue · `Ctrl+Shift+H` show or hide comment cards and `N` / `P` next / previous open thread (review sessions) · `Esc` close settings or a menu, or cancel the turn from the working thread's composer · `Ctrl+,` settings. `Cmd` works for `Ctrl` on macOS. The mouse's back and forward buttons, and `Alt+Left` / `Alt+Right`, move through the views visited: a session with its open thread (or none), and the settings screen. Deleted sessions are skipped. On macOS, `Option+arrow` in a text field still moves by word. The settings screen lists these and the shortcuts that apply in one place (composer, queued messages, selections, session list, panel edges); they can't be changed.
 
 ## Notifications
 
@@ -369,5 +405,6 @@ See `docs/mocks/`:
 - `selection-anchor.html` — the selection popover and a new thread started from a selection, plus an existing inline anchor (dotted underline + count chip).
 - `sidebar-switcher.html` — the sidebar: project switcher and the project's sessions. Its separate "Not in Gloss yet" section is superseded: the agent's sessions are now in the one session list (see Projects and sessions).
 - `threads-overview.html` — the side panel: the collapsed rail, the threads overview, a thread with **← All threads**, and an agent plan as a checklist. Clickable.
+- `review-session.html` — a review session: the diff (split and unified, file tree, sticky file headers, per-side scrolling), finding cards and gutter markers, outdated and resolved threads, the overview with the pinned general conversation and filters, a thread with Resolve, and a new thread from a code selection. Clickable.
 
 The mocks show layout and interaction, not a final visual design.

@@ -130,21 +130,21 @@ Find anything you discussed: "where did we decide the cache key format?"
 **Done when:** a phrase from any past session or thread is found in under a second and opening the result lands on it.
 
 ## M11 — Review sessions
-A session type for reviewing code: the main view is a diff of the staged changes, and threads hang off lines of it. To the agent it is still one linear session.
+A session type for checking an agent's work: the main view is the branch's diff, threads hang off its lines, and the agent reviews first. To the agent it is still one linear session, separate from the one that wrote the code. Designed in `docs/mocks/review-session.html` and specified in `SPEC.md` (Review sessions).
 
-- **Start a review** from a project ("Review staged changes"). The session list shows review sessions distinctly.
-- **Diff viewer:** file list plus hunks of `git diff --staged` (read by the main process), syntax highlighted with M7's highlighter, usable on large diffs.
-- **Line anchors:** a new anchor kind for a line or line range of the diff (file, side, line range, and the lines' text). Hover a line for Reply; select lines to reply to a range. Threads open in the side panel as today.
-- **Wire format:** thread messages are tagged with the location, e.g. `[re: src/orders.ts:42 "cache.invalidate(id)"]`. At the start, Gloss tells the agent what is under review.
-- **General conversation:** a collapsible main thread beside the diff for the change as a whole.
-- **Refresh:** when the staged diff changes, it is re-read and each thread's lines are re-found by their text (as M4 does for selections). Threads whose lines are gone are marked outdated.
-- **Agent first pass** (phase 2): "Review" asks the agent for its findings in a structured form (file, line range, comment); Gloss opens one thread per finding at its lines.
-- The threads overview (M9) doubles as the list of review comments.
-- Update `SPEC.md` with the review session type and the line anchor.
+- **Start a review** from a project ("Review changes"). The session list shows review sessions distinctly, with their open thread count.
+- **What is reviewed:** the branch since it left the default branch, committed or not (`git diff <merge base>` plus untracked files), read by the main process and refreshed as the agent works.
+- **Diff viewer:** stacked files with sticky, collapsible headers, a collapsible file tree, split (default, lines scroll sideways per side) or unified, syntax highlighted, usable on large diffs.
+- **Line anchors** from a code selection, sent as `[re: path:line "…"]`.
+- **Comment cards** inline under their lines, collapsible to a gutter marker, with a global show/hide toggle.
+- **Agent first pass** on start: findings in a structured block, each opened as a line thread with its severity.
+- **Fixes** by the review agent itself, in the thread; the diff updates.
+- **Outdated** threads when their lines change, **Resolve** by the user.
+- **Side panel:** the general conversation pinned at the top of the threads overview, threads grouped by file with Open/Resolved and severity filters; `N`/`P` move between open threads.
 
-**Done when:** you can stage changes, open a review, discuss individual lines and ranges in threads and the whole change in the general thread, ask the agent for a first pass that lands as line threads, and see threads survive a re-stage (or be marked outdated).
+Build in two PRs: the diff viewer with line threads and the general conversation, then the first pass, outdated threads and resolve.
 
-**Decide during development:** how the agent's own fixes appear. They change files, so they show up as unstaged changes: show unstaged changes alongside the staged diff (distinguished), or keep them out until staged.
+**Done when:** "Review changes" opens a review whose agent first pass lands as line threads, you can discuss lines in threads and the whole change in the general conversation, the agent's fixes appear in the diff, and threads follow their lines or are marked outdated.
 
 ## M12 — UX review
 Converge on a clean, sleek, long-term interface now that every surface exists. Two phases, with a review stop between them.
@@ -275,7 +275,7 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 ## Design passes needed
 - **M7:** sidebar with projects (folders) and their sessions, including the agent's existing sessions not yet opened in Gloss.
 - **M9:** done: the overview lives in a collapsible right-hand side panel, which also shows a thread (`docs/mocks/threads-overview.html`).
-- **M11:** the diff viewer layout, line Reply affordances and range selection, where the general conversation sits, and how agent-opened threads look.
+- **M11:** done: `docs/mocks/review-session.html`.
 - The M7–M11 passes are deliberately light: enough to build them. M12 revisits everything as a whole.
 - **M15:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 - **M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.
@@ -285,5 +285,5 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
-- Review sessions on other bases: unstaged changes, the current branch vs. `main`, a commit range (M11 starts with staged changes; keep the line anchor base-agnostic).
+- Review sessions on other bases: staged changes only, a commit range, someone else's PR (M11 reviews the branch since the default branch, committed or not; keep the line anchor base-agnostic).
 - Polish the README and add visuals (screenshots, GIFs of threads and steering), and make a motion graphics demo reel.
