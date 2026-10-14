@@ -478,6 +478,7 @@ export class SessionManager {
     const conn = rt?.attachedTo
     if (!rt || !conn || rt.turn || rt.attaching || this.disposed) return
     try {
+      await this.attach(id, conn)
       await this.ensureFresh(id, conn, () => !rt.turn)
     } catch (err) {
       if (this.disposed || err instanceof SignInCancelledError || err instanceof SessionGoneError) return

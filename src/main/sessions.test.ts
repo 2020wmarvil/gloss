@@ -367,6 +367,25 @@ describe('SessionManager', () => {
     store.close()
   })
 
+  it('keeps a running turn on its MCP configuration and reloads for the queued follow-up', async () => {
+    state.canClose = true
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    state.script = async ({ say }) => { await gate; await say('done'); return 'end_turn' }
+    const session = await manager.createSession('/project', 'claude')
+    const first = manager.send(session.id, 'first', null)
+    await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+    servers = [{ name: 'next-tools', command: '/tools/mcp', args: [], env: [] }]
+    await manager.refreshSession(session.id)
+    expect(state.closes).toEqual([])
+    expect(await manager.send(session.id, 'next', null)).toEqual({ queued: true })
+    release()
+    await first
+    await vi.waitFor(() => expect(events.filter((e) => e.type === 'turnEnd' && e.sessionId === session.id)).toHaveLength(2))
+    expect(state.mcpRequests).toEqual([{ method: 'new', servers: [] }, { method: 'load', servers }])
+    expect(state.prompts).toEqual(['first', 'next'])
+  })
+
   it('passes project MCP servers to creation and resume, preserving threads', async () => {
     servers = [{ name: 'tools', command: '/tools/mcp', args: ['--local'], env: [{ name: 'MODE', value: 'test' }] }]
     const session = await manager.createSession('/project', 'claude')

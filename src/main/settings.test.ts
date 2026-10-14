@@ -186,8 +186,10 @@ describe('SettingsFile', () => {
     const other = process.platform === 'win32' ? 'c:\\proj\\' : '/proj/'
     writeFileSync(path(), JSON.stringify({ projects: { [key]: { keep: 1 } } }))
     file.load()
-    file.update({ project: { path: other, values: {} } })
-    expect(onDisk().projects).toEqual({ [key]: { keep: 1 } })
+    const mcpServers = [{ name: 'tools', command: '/tools/server', args: [], env: [] }]
+    file.update({ project: { path: other, values: { mcpServers } } })
+    expect(onDisk().projects).toEqual({ [key]: { keep: 1, mcpServers } })
+    expect(file.state().projects[key].mcpServers).toEqual(mcpServers)
   })
 
   it("won't save over a file that isn't valid JSON", () => {
