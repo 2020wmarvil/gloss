@@ -48,7 +48,7 @@ export function SearchDialog({ sessionId, cwd, onClose, onOpen }: Props): React.
   }
 
   return (
-    <div className="dialog-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !opening) onClose() }}>
+    <div className="dialog-backdrop search-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !opening) onClose() }}>
       <div className="dialog search-dialog" role="dialog" aria-modal="true" aria-labelledby="search-title" ref={ref}
         onKeyDown={(e) => {
           e.stopPropagation()

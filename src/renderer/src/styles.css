@@ -2706,6 +2706,8 @@ button.status.link {
   font-weight: normal;
 }
 
+.search-backdrop { align-items: flex-start; padding-top: 32px; }
+.search-dialog > :not(.search-results) { flex-shrink: 0; }
 .search-dialog { width: min(800px, calc(100vw - 48px)); max-height: calc(100vh - 64px); display: flex; flex-direction: column; gap: 12px; }
 .search-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .search-heading h2 { margin: 0; }
