@@ -89,8 +89,8 @@ const replyIcon = (
   </svg>
 )
 
-function anchorComponents(text: string, anchors: MessageAnchors): Components {
-  const byStart = new Map(listItemSpans(text).map((s) => [s.start, s]))
+function anchorComponents(text: string, anchors: MessageAnchors, listItemReplies: boolean): Components {
+  const byStart = new Map((listItemReplies ? listItemSpans(text) : []).map((s) => [s.start, s]))
   return {
     ...baseComponents,
     li: ({ node, children }) => {
@@ -162,11 +162,11 @@ function anchorComponents(text: string, anchors: MessageAnchors): Components {
 }
 
 /** `breaks`: a newline is a line break (the user's messages, typed as chat), not a space. */
-export function Markdown({ text, anchors, breaks }: { text: string; anchors?: MessageAnchors; breaks?: boolean }): React.JSX.Element {
+export function Markdown({ text, anchors, breaks, listItemReplies = true }: { text: string; anchors?: MessageAnchors; breaks?: boolean; listItemReplies?: boolean }): React.JSX.Element {
   // Re-render when highlighting for more languages becomes available.
   useHighlighting()
   return (
-    <div className={anchors ? 'md with-anchors' : 'md'}>
+    <div className={anchors && listItemReplies ? 'md with-anchors' : 'md'}>
       <ReactMarkdown
         remarkPlugins={[
           remarkGfm,
@@ -174,7 +174,7 @@ export function Markdown({ text, anchors, breaks }: { text: string; anchors?: Me
           remarkHtmlAsText,
           [remarkSourceSpans, { marks: anchors?.marks ?? [], colors: codeColors }]
         ]}
-        components={anchors ? anchorComponents(text, anchors) : baseComponents}
+        components={anchors ? anchorComponents(text, anchors, listItemReplies) : baseComponents}
       >
         {text}
       </ReactMarkdown>

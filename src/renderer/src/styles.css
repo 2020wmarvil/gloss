@@ -581,8 +581,17 @@ body.resizing {
 .settings {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  container-type: inline-size;
+}
+
+.settings header,
+.settings-body {
+  width: 100%;
+  max-width: clamp(820px, 76cqi, 1080px);
+  margin-inline: auto;
 }
 
 .settings header {
@@ -614,12 +623,13 @@ body.resizing {
 
 .settings-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px 32px 32px;
 }
 
 .settings-body section {
-  padding: 16px 0;
+  padding: 24px 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -628,12 +638,13 @@ body.resizing {
 }
 
 .settings-body .label {
-  margin-bottom: 10px;
+  margin: 0 0 12px;
 }
 
 .settings-body p {
   margin: 6px 0;
   font-size: 14px;
+  overflow-wrap: anywhere;
 }
 
 .settings-file {
@@ -653,19 +664,32 @@ body.resizing {
 }
 
 .setting {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
   align-items: flex-start;
-  gap: 10px;
-  padding: 6px 0;
+  gap: 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.setting:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 .setting input {
-  margin-top: 4px;
+  justify-self: end;
+  width: 18px;
+  height: 18px;
+  margin: 5px 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .setting select {
-  height: 30px;
-  padding: 0 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
   background: var(--panel);
@@ -674,23 +698,26 @@ body.resizing {
   font-size: 14px;
 }
 
-.setting > span {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.setting-copy {
+  min-width: 0;
 }
 
 .setting-label {
+  display: block;
   font-weight: 500;
+  cursor: pointer;
 }
 
-.setting-desc {
+.settings-body .setting-desc {
+  margin: 4px 0 0;
   font-size: 13px;
   color: var(--muted);
 }
 
-.setting-key {
-  font-size: 11px;
+.setting :is(input, select):focus-visible,
+.settings :is(button):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .shortcut-group h2 {
@@ -706,15 +733,48 @@ body.resizing {
 
 .shortcut {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 12px;
-  padding: 4px 0;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 42%);
+  gap: 24px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
   font-size: 14px;
 }
 
 .shortcut dt,
 .shortcut dd {
   margin: 0;
+  min-width: 0;
+}
+
+.shortcut dt {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.shortcut dd {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.shortcut:last-child {
+  border-bottom: 0;
+}
+
+.shortcut-keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 8px;
+}
+
+.shortcut-combo {
+  white-space: nowrap;
+}
+
+.shortcut-or {
+  margin-right: 8px;
+  font-size: 12px;
 }
 
 .shortcut kbd {
@@ -729,6 +789,55 @@ body.resizing {
   font-size: 12px;
   line-height: 20px;
   text-align: center;
+}
+
+@container (max-width: 560px) {
+  .settings header {
+    padding: 16px 20px;
+  }
+
+  .settings-body {
+    padding: 8px 20px 24px;
+  }
+
+  .setting {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px;
+  }
+
+  .setting:has(select) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .setting select {
+    width: 180px;
+    max-width: 100%;
+  }
+
+  .shortcut {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .shortcut dd {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .shortcut dt {
+    grid-column: 1;
+    grid-row: 2;
+    justify-content: flex-start;
+  }
+
+  .settings-file {
+    flex-wrap: wrap;
+  }
+
+  .settings-file .mono {
+    flex-basis: 100%;
+  }
 }
 
 .settings-problem {

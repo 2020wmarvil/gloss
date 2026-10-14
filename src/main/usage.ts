@@ -1,9 +1,8 @@
-// Plan usage for the usage popup (SPEC → Status line), from Claude Code itself.
-// The ACP adapter only runs Claude Code's usage request inside a `/usage` turn, so
-// Gloss asks a short-lived Claude Code process of its own: no prompt, nothing saved.
+// Plan usage for the popup, read directly from each agent without sending a turn.
 import type { PlanUsage } from '../shared/types'
+import { fetchCodexUsage } from './codex-usage'
 
-/** A result this recent is answered again instead of asking Claude Code. */
+/** A result this recent is answered again instead of asking the agent. */
 const FRESH_MS = 30_000
 const TIMEOUT_MS = 15_000
 
@@ -85,23 +84,30 @@ async function fetchClaudeUsage(cwd: string): Promise<PlanUsage> {
 
 /** Plan usage per agent, answered from the last result while it is fresh. */
 export class UsageSource {
-  private last: { at: number; usage: PlanUsage } | null = null
-  private pending: Promise<PlanUsage> | null = null
+  private last = new Map<string, { at: number; usage: PlanUsage }>()
+  private pending = new Map<string, Promise<PlanUsage>>()
 
-  constructor(private readonly fetch: (cwd: string) => Promise<PlanUsage> = fetchClaudeUsage) {}
+  constructor(
+    private readonly fetch: (cwd: string) => Promise<PlanUsage> = fetchClaudeUsage,
+    private readonly fetchCodex: (cwd: string) => Promise<PlanUsage> = fetchCodexUsage
+  ) {}
 
   /** Null for agents Gloss can't ask. */
   async get(agentId: string, cwd: string): Promise<PlanUsage | null> {
-    if (agentId !== 'claude') return null
-    if (this.last && Date.now() - this.last.at < FRESH_MS) return this.last.usage
-    this.pending ??= this.fetch(cwd)
+    if (agentId !== 'claude' && agentId !== 'codex') return null
+    const last = this.last.get(agentId)
+    if (last && Date.now() - last.at < FRESH_MS) return last.usage
+    const pending = this.pending.get(agentId)
+    if (pending) return pending
+    const request = (agentId === 'codex' ? this.fetchCodex(cwd) : this.fetch(cwd))
       .then((usage) => {
-        this.last = { at: Date.now(), usage }
+        this.last.set(agentId, { at: Date.now(), usage })
         return usage
       })
       .finally(() => {
-        this.pending = null
+        this.pending.delete(agentId)
       })
-    return this.pending
+    this.pending.set(agentId, request)
+    return request
   }
 }

@@ -15,6 +15,7 @@ import { StatusLine } from './StatusLine'
 
 type Props = {
   open: OpenSession
+  listItemReplies: boolean
   agentName: string
   live: SessionLive
   /** Messages sent in every session, newest first, for the composer's Up and Down. */
@@ -93,6 +94,7 @@ export function Conversation(props: Props): React.JSX.Element {
     return (
       <Markdown
         text={message.text}
+        listItemReplies={props.listItemReplies}
         anchors={{
           replyCount: (index) => {
             const t = itemThread(message.id, index)
