@@ -211,6 +211,24 @@ describe('Composer history', () => {
     expect(onSend).toHaveBeenCalledWith('/review ABC', [])
   })
 
+  it('stops cycling on Left or Right, even on one line or where the caret cannot move', () => {
+    const view = mount('h4', { history })
+    press(view, 'ArrowUp')
+    expect(text(view)).toBe('/review XYZ')
+    // The caret is already at the end: Right moves nothing, but still means "edit this one".
+    press(view, 'ArrowRight')
+    expect(press(view, 'ArrowUp')).toBe(false)
+    expect(press(view, 'ArrowDown')).toBe(false)
+    expect(text(view)).toBe('/review XYZ')
+    // Until the composer is cleared.
+    type(view, '')
+    press(view, 'ArrowUp')
+    expect(text(view)).toBe('/review XYZ')
+    press(view, 'ArrowLeft')
+    expect(press(view, 'ArrowUp')).toBe(false)
+    expect(text(view)).toBe('/review XYZ')
+  })
+
   it('stops cycling when the caret is moved, so Up and Down move between lines', () => {
     const view = mount('h3', { history })
     press(view, 'ArrowUp')

@@ -47,6 +47,9 @@ export const FOCUS_MAIN_COMPOSER = 'gloss:focus-main-composer'
 /** Unsent text, attachments and where the caret was, by draftKey, kept while Gloss runs (SPEC → Composer). */
 const drafts = new Map<string, { text: string; attachments: Attachment[]; selection?: [number, number] }>()
 
+/** Keys that move the caret within the text, which stop cycling through the history. */
+const CARET_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'])
+
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_FILE_BYTES = 1024 * 1024
 
@@ -103,6 +106,8 @@ export function Composer({
   const ref = useRef<MarkdownEditorHandle>(null)
   /** The history entry shown (0 = newest) and the draft it replaced; null when not browsing. */
   const browsing = useRef<{ index: number; draft: string } | null>(null)
+  /** Cycling stopped on a recalled message being worked on: Up and Down are the editor's until it is sent or cleared. */
+  const held = useRef(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
   // The caret goes back where it was when the user switched away (before the focus below).
@@ -172,11 +177,12 @@ export function Composer({
    * Up on the first line starts cycling through the history: from then on Up shows the
    * previous entry and Down the next, whatever line the caret is on (the editor puts it
    * at the end of each), and Down past the newest brings the draft back. Editing or
-   * moving the caret stops cycling. Returns whether it took the key.
+   * moving the caret stops cycling (see `leave`). Returns whether it took the key.
    */
   function recall(dir: 1 | -1): boolean {
     const current = browsing.current
     if (!current) {
+      if (held.current) return false
       const [anchor, head] = ref.current?.selection() ?? [0, 0]
       if (dir === -1 || anchor !== head || text.slice(0, head).includes('\n')) return false
     }
@@ -191,6 +197,13 @@ export function Composer({
     return true
   }
 
+  /** Stops cycling on the recalled message shown, which the user is now working on. */
+  function leave(): void {
+    if (!browsing.current) return
+    browsing.current = null
+    held.current = true
+  }
+
   function submit(how: 'send' | 'steer' | 'main' = 'send'): void {
     const trimmed = text.trim()
     if (!trimmed && attachments.length === 0) return
@@ -198,6 +211,7 @@ export function Composer({
     else if (how === 'main' && onSendToMain) onSendToMain(trimmed, attachments)
     else onSend(trimmed, attachments)
     browsing.current = null
+    held.current = false
     setText('')
     setAttachments([])
     setError(null)
@@ -322,11 +336,12 @@ export function Composer({
             onChange={(value) => {
               // Editing a recalled message makes it the draft.
               const shown = browsing.current
-              if (shown && value !== history[shown.index]) browsing.current = null
+              if (shown && value !== history[shown.index]) leave()
+              if (!value) held.current = false
               setText(value)
               setPick(0)
             }}
-            onSelectionChange={() => (browsing.current = null)}
+            onSelectionChange={leave}
             onPasteFiles={(files) => {
               if (canAttach) void addFiles(files)
               else setError("The agent doesn't accept images or files.")
@@ -337,6 +352,8 @@ export function Composer({
               if (matches.length === 0) {
                 const plain = !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
                 if (plain && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) return recall(e.key === 'ArrowUp' ? 1 : -1)
+                // Even where the caret can't go further (Right at the end), these mean "edit this one".
+                if (CARET_KEYS.has(e.key)) leave()
                 if (e.key !== 'Escape' || !running || !onCancel) return false
                 onCancel()
                 return true
