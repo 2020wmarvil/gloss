@@ -24,7 +24,8 @@ import type {
   ToolCall,
   TurnOutcome
 } from '../shared/types'
-import { wireText } from '../shared/wire'
+import { AGENT_INSTRUCTIONS, wireText } from '../shared/wire'
+import { findingsBlocks, findingThread, firstPassPrompt, linesOf, REVIEW_INSTRUCTIONS, type ReviewDiff } from '../shared/review'
 import type { McpServer } from '../shared/mcp'
 import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, type AgentHandlers, type SteerOutcome } from './acp'
 import type { AgentConfig } from './agents'
@@ -32,6 +33,7 @@ import type { Store } from './db'
 import { samePath } from './settings'
 import { isLogUpdate, matchReplay, parseReplay, placeUserMessage, type CachedEntry } from './sync'
 import type { TerminalRunner } from './terminal'
+import { currentBranch, defaultBranch, readReviewDiff } from './review'
 
 export type SessionManagerDeps = {
   store: Store
@@ -44,7 +46,18 @@ export type SessionManagerDeps = {
   runInTerminal: TerminalRunner
   now?(): number
   mcpServers?(cwd: string): McpServer[]
+  /** Git for review sessions; the real one by default. */
+  git?: ReviewGit
 }
+
+/** What review sessions need from git (SPEC → Review sessions). */
+export type ReviewGit = {
+  defaultBranch(cwd: string): Promise<string | null>
+  currentBranch(cwd: string): Promise<string | null>
+  readDiff(cwd: string, baseRef: string): Promise<ReviewDiff>
+}
+
+const GIT: ReviewGit = { defaultBranch, currentBranch, readDiff: readReviewDiff }
 
 type Turn = {
   threadId: string | null
@@ -180,9 +193,14 @@ export class SessionManager {
     return slot.connection
   }
 
-  /** The agent's `_meta` for session/new or session/load (SPEC → Agent instructions). */
-  private sessionMeta(agentId: string, request: 'new' | 'load'): Record<string, unknown> | undefined {
-    return this.deps.getAgentConfig(agentId).sessionMeta?.[request]
+  /** The agent's `_meta` for session/new or session/load (SPEC → Agent instructions). Review sessions add theirs. */
+  private sessionMeta(agentId: string, request: 'new' | 'load', review = false): Record<string, unknown> | undefined {
+    const instructions = review ? `${AGENT_INSTRUCTIONS}\n${REVIEW_INSTRUCTIONS}` : AGENT_INSTRUCTIONS
+    return this.deps.getAgentConfig(agentId).sessionMeta?.(instructions)[request]
+  }
+
+  private get git(): ReviewGit {
+    return this.deps.git ?? GIT
   }
 
   private mcpServers(cwd: string): McpServer[] {
@@ -346,13 +364,14 @@ export class SessionManager {
     return this.deps.store.messageHistory()
   }
 
-  async createSession(cwd: string, agentId: string): Promise<Session> {
+  /** `review`: a review session (SPEC → Review sessions), with its title. */
+  async createSession(cwd: string, agentId: string, review?: { baseRef: string; title: string }): Promise<Session> {
     const servers = this.mcpServers(cwd)
     let conn!: AgentConnection
     let permissions: SessionLive['permissions'] = null
     const res = await this.withAgent(agentId, async (c) => {
       conn = c
-      const created = await c.newSession(cwd, this.sessionMeta(agentId, 'new'), servers)
+      const created = await c.newSession(cwd, this.sessionMeta(agentId, 'new', review !== undefined), servers)
       permissions = await this.enterBypassMode(agentId, c, created.sessionId, created.modes)
       return created
     })
@@ -361,7 +380,9 @@ export class SessionManager {
       agentId,
       acpSessionId: res.sessionId,
       cwd,
-      title: folderName(cwd),
+      title: review?.title ?? folderName(cwd),
+      // The agent would title a review after the first pass's prompt.
+      ...(review ? { titleSet: true as const, review: { baseRef: review.baseRef } } : {}),
       createdAt: this.now()
     }
     this.deps.store.insertSession(session)
@@ -373,6 +394,73 @@ export class SessionManager {
     this.deps.emit({ type: 'session', session: created })
     await this.attached(session.id, conn, res.configOptions, permissions)
     return created
+  }
+
+  /**
+   * Starts a review of the project's branch (SPEC → Review sessions) and sends the
+   * first pass. Resolves once the session exists; the first pass runs on.
+   */
+  async createReview(cwd: string, agentId: string): Promise<Session> {
+    const baseRef = await this.git.defaultBranch(cwd)
+    if (!baseRef) throw new Error('A review needs a git repository with a default branch (origin/HEAD, main or master).')
+    const diff = await this.git.readDiff(cwd, baseRef)
+    const branch = await this.git.currentBranch(cwd)
+    const session = await this.createSession(cwd, agentId, { baseRef, title: `Review: ${branch ?? folderName(cwd)}` })
+    // Turn errors arrive as turnEnd events.
+    this.send(session.id, firstPassPrompt(baseRef, diff.base), null).catch((err: unknown) =>
+      this.notice(session.id, null, `Couldn't start the first pass: ${errorMessage(err)}`)
+    )
+    return session
+  }
+
+  /** The diff a review session shows, read now. */
+  reviewDiff(sessionId: string): Promise<ReviewDiff> {
+    const session = this.session(sessionId)
+    if (!session.review) throw new Error('Only a review session has a diff.')
+    return this.git.readDiff(session.cwd, session.review.baseRef)
+  }
+
+  /**
+   * Opens a line thread for each finding the agent listed in its answers since
+   * `sinceSeq` that has none yet (SPEC → Review sessions → First pass). Findings on
+   * lines the diff doesn't show stay in the message, which lists them.
+   */
+  private async openFindings(sessionId: string, sinceSeq: number): Promise<void> {
+    const { store } = this.deps
+    const session = store.getSession(sessionId)
+    if (!session?.review) return
+    const found = store
+      .listMessages(sessionId)
+      .filter((m) => m.role === 'agent' && m.threadId === null && m.seq > sinceSeq)
+      .flatMap((m) => findingsBlocks(m.text).flatMap((b) => b.findings))
+    if (found.length === 0) return
+    let diff: ReviewDiff
+    try {
+      diff = await this.git.readDiff(session.cwd, session.review.baseRef)
+    } catch (err) {
+      this.notice(sessionId, null, `Couldn't read the diff to open the agent's findings: ${errorMessage(err)}`)
+      return
+    }
+    if (!store.getSession(sessionId)) return
+    const threads = store.listThreads(sessionId)
+    for (const f of found) {
+      if (findingThread(f, threads)) continue
+      const file = diff.files.find((x) => x.path === f.file)
+      const lines = file ? linesOf(file, f.side, f.start, f.end) : null
+      if (!lines) continue
+      const thread: Thread = {
+        id: randomUUID(),
+        sessionId,
+        anchorMessageId: null,
+        anchor: { kind: 'line', file: f.file, side: f.side, start: f.start, end: f.end, text: lines.join('\n'), lines },
+        finding: { severity: f.severity, title: f.title, body: f.body },
+        createdAt: this.now()
+      }
+      store.insertThread(thread)
+      threads.push(thread)
+      this.deps.emit({ type: 'thread', thread })
+    }
+    this.deps.emit({ type: 'session', session: this.session(sessionId) })
   }
 
   /**
@@ -545,7 +633,7 @@ export class SessionManager {
     let permissions: SessionLive['permissions'] = null
     const res = await this.withAgent(session.agentId, async (c) => {
       conn = c
-      const created = await c.newSession(session.cwd, this.sessionMeta(session.agentId, 'new'), servers)
+      const created = await c.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', !!session.review), servers)
       permissions = await this.enterBypassMode(session.agentId, c, created.sessionId, created.modes)
       return created
     })
@@ -674,16 +762,32 @@ export class SessionManager {
 
   // Threads
 
-  createThread(sessionId: string, anchorMessageId: string, anchor: Anchor): Thread {
-    this.session(sessionId)
-    const message = this.deps.store.getMessage(anchorMessageId)
-    if (!message || message.sessionId !== sessionId || message.role !== 'agent') {
-      throw new Error('Threads can only be anchored to an agent message in this session.')
+  /** `anchorMessageId` is null for a line anchor, which only a review session has. */
+  createThread(sessionId: string, anchorMessageId: string | null, anchor: Anchor): Thread {
+    const session = this.session(sessionId)
+    if (anchor.kind === 'line') {
+      if (!session.review || anchorMessageId !== null) throw new Error('Only a review session has threads on diff lines.')
+    } else {
+      const message = anchorMessageId === null ? undefined : this.deps.store.getMessage(anchorMessageId)
+      if (!message || message.sessionId !== sessionId || message.role !== 'agent') {
+        throw new Error('Threads can only be anchored to an agent message in this session.')
+      }
     }
     const valid =
       anchor.kind === 'listItem'
         ? anchor.path.length > 0 && anchor.path.every((i) => Number.isInteger(i) && i >= 0)
-        : Number.isInteger(anchor.start) && Number.isInteger(anchor.end) && anchor.start < anchor.end
+        : anchor.kind === 'selection'
+          ? Number.isInteger(anchor.start) && Number.isInteger(anchor.end) && anchor.start < anchor.end
+          : typeof anchor.file === 'string' &&
+            anchor.file.trim() !== '' &&
+            (anchor.side === 'old' || anchor.side === 'new') &&
+            Number.isInteger(anchor.start) &&
+            Number.isInteger(anchor.end) &&
+            anchor.start >= 1 &&
+            anchor.end >= anchor.start &&
+            Array.isArray(anchor.lines) &&
+            anchor.lines.length === anchor.end - anchor.start + 1 &&
+            anchor.lines.every((l) => typeof l === 'string')
     if (!valid || typeof anchor.text !== 'string' || anchor.text.trim() === '') {
       throw new Error('Invalid thread anchor.')
     }
@@ -701,7 +805,23 @@ export class SessionManager {
     }
     this.deps.store.insertThread(thread)
     this.deps.emit({ type: 'thread', thread })
+    if (anchor.kind === 'line') this.deps.emit({ type: 'session', session: this.session(sessionId) })
     return thread
+  }
+
+  /** Resolves a review thread, or reopens it (SPEC → Review sessions → Resolve). */
+  resolveThread(sessionId: string, threadId: string, resolved: boolean): Thread {
+    const thread = this.deps.store.getThread(threadId)
+    if (!thread || thread.sessionId !== sessionId) throw new Error(`Unknown thread ${threadId}`)
+    if (thread.anchor.kind !== 'line') throw new Error('Only threads on diff lines can be resolved.')
+    const at = resolved ? this.now() : null
+    this.deps.store.setThreadResolved(threadId, at)
+    const updated: Thread = { ...thread }
+    if (at === null) delete updated.resolvedAt
+    else updated.resolvedAt = at
+    this.deps.emit({ type: 'thread', thread: updated })
+    this.deps.emit({ type: 'session', session: this.session(sessionId) })
+    return updated
   }
 
   private notice(sessionId: string, threadId: string | null, text: string): void {
@@ -750,7 +870,7 @@ export class SessionManager {
     let loaded: acp.LoadSessionResponse | undefined
     let replay: acp.SessionUpdate[]
     try {
-      loaded = await conn.loadSession(session.acpSessionId, session.cwd, this.sessionMeta(session.agentId, 'load'), servers)
+      loaded = await conn.loadSession(session.acpSessionId, session.cwd, this.sessionMeta(session.agentId, 'load', !!session.review), servers)
     } catch (err) {
       if (isSessionInUse(err)) throw new Error('This session is open in Codex. Quit Codex to continue here.', { cause: err })
       if (isAuthRequired(err) || rt.importing) throw err
@@ -786,7 +906,7 @@ export class SessionManager {
     const rt = this.runtime(sessionId)
     let session = this.session(sessionId)
     const servers = this.mcpServers(session.cwd)
-    const res = await conn.newSession(session.cwd, this.sessionMeta(session.agentId, 'new'), servers)
+    const res = await conn.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', !!session.review), servers)
     const permissions = await this.enterBypassMode(session.agentId, conn, res.sessionId, res.modes)
     this.byAcpId.delete(session.acpSessionId)
     session = this.deps.store.updateSession(session.id, { acpSessionId: res.sessionId, syncedAt: null })
@@ -1076,10 +1196,10 @@ export class SessionManager {
     fromThread: string | null = null
   ): Promise<TurnResult> {
     this.session(sessionId)
-    this.anchorText(sessionId, threadId)
+    this.anchorOf(sessionId, threadId)
     if (fromThread !== null) {
       if (threadId !== null) throw new Error('Only a main-thread message can be sent from a thread.')
-      this.anchorText(sessionId, fromThread)
+      this.anchorOf(sessionId, fromThread)
     }
     if (isClear(text, attachments)) {
       await this.clearSession(sessionId)
@@ -1182,15 +1302,15 @@ export class SessionManager {
   /** What to send for a new user message (SPEC → Wire format). Call it before the message is stored. */
   private wire(sessionId: string, text: string, threadId: string | null, fromThread: string | null = null): string {
     const afterThread = threadId === null && (this.deps.store.lastUserMessage(sessionId)?.threadId ?? null) !== null
-    return wireText(text, this.anchorText(sessionId, threadId), afterThread, this.anchorText(sessionId, fromThread))
+    return wireText(text, this.anchorOf(sessionId, threadId), afterThread, this.anchorOf(sessionId, fromThread))
   }
 
-  /** The anchor text of a thread in the session (for the wire tag), or null for the main thread. */
-  private anchorText(sessionId: string, threadId: string | null): string | null {
+  /** The anchor of a thread in the session (for the wire tag), or null for the main thread. */
+  private anchorOf(sessionId: string, threadId: string | null): Anchor | null {
     if (threadId === null) return null
     const thread = this.deps.store.getThread(threadId)
     if (!thread || thread.sessionId !== sessionId) throw new Error(`Unknown thread ${threadId}`)
-    return thread.anchor.text
+    return thread.anchor
   }
 
   private async runTurn(
@@ -1259,6 +1379,8 @@ export class SessionManager {
     if (attachedTo) await this.recordSynced(sessionId, attachedTo)
     rt.turn = undefined
     this.recordOutcome(turn, result)
+    // A review's first pass (or a later review) lists findings: open their threads.
+    if (threadId === null && session.review) await this.openFindings(sessionId, message.seq)
     // The queue moves on after a turn that ended normally or was cancelled (a cancel
     // stops only that turn). A failed or cut-short turn pauses it, so the user can
     // look before more is sent.
@@ -1494,14 +1616,22 @@ function sameAnchor(a: Anchor, b: Anchor): boolean {
     return a.path.length === b.path.length && a.path.every((v, i) => v === b.path[i])
   }
   if (a.kind === 'selection' && b.kind === 'selection') return a.start === b.start && a.end === b.end
+  if (a.kind === 'line' && b.kind === 'line') {
+    return a.file === b.file && a.side === b.side && a.start === b.start && a.end === b.end
+  }
   return false
 }
 
 /** Keeps only the anchor's known fields (it comes from the renderer). */
 function normalizeAnchor(a: Anchor): Anchor {
-  return a.kind === 'listItem'
-    ? { kind: 'listItem', path: [...a.path], text: a.text }
-    : { kind: 'selection', start: a.start, end: a.end, text: a.text }
+  switch (a.kind) {
+    case 'listItem':
+      return { kind: 'listItem', path: [...a.path], text: a.text }
+    case 'selection':
+      return { kind: 'selection', start: a.start, end: a.end, text: a.text }
+    case 'line':
+      return { kind: 'line', file: a.file, side: a.side, start: a.start, end: a.end, text: a.text, lines: [...a.lines] }
+  }
 }
 
 function toAuthMethodInfo(m: acp.AuthMethod): AuthMethodInfo {

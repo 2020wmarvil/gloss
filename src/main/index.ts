@@ -154,6 +154,17 @@ function anchorArg(value: unknown): Anchor {
   if (a.kind === 'selection' && typeof a.start === 'number' && typeof a.end === 'number') {
     return { kind: 'selection', start: a.start, end: a.end, text: a.text }
   }
+  if (
+    a.kind === 'line' &&
+    typeof a.file === 'string' &&
+    (a.side === 'old' || a.side === 'new') &&
+    typeof a.start === 'number' &&
+    typeof a.end === 'number' &&
+    Array.isArray(a.lines) &&
+    a.lines.every((l) => typeof l === 'string')
+  ) {
+    return { kind: 'line', file: a.file, side: a.side, start: a.start, end: a.end, text: a.text, lines: a.lines as string[] }
+  }
   throw new Error('Invalid anchor')
 }
 
@@ -235,6 +246,10 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
     manager.createSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
   )
+  ipcMain.handle(IPC.sessionsCreateReview, (_e, cwd: unknown, agentId: unknown) =>
+    manager.createReview(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
+  )
+  ipcMain.handle(IPC.sessionsReviewDiff, (_e, id: unknown) => manager.reviewDiff(str(id, 'id')))
   ipcMain.handle(
     IPC.sessionsImport,
     (_e, cwd: unknown, agentId: unknown, acpSessionId: unknown, title: unknown, listedAt: unknown) =>
@@ -285,8 +300,16 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.gitStatus, (_e, cwd: unknown) => gitStatus(str(cwd, 'cwd')))
   ipcMain.handle(IPC.gitPullRequest, (_e, cwd: unknown) => pullRequest(str(cwd, 'cwd')))
   ipcMain.handle(IPC.threadsCreate, (_e, sessionId: unknown, anchorMessageId: unknown, anchor: unknown) =>
-    manager.createThread(str(sessionId, 'sessionId'), str(anchorMessageId, 'anchorMessageId'), anchorArg(anchor))
+    manager.createThread(
+      str(sessionId, 'sessionId'),
+      anchorMessageId === null ? null : str(anchorMessageId, 'anchorMessageId'),
+      anchorArg(anchor)
+    )
   )
+  ipcMain.handle(IPC.threadsResolve, (_e, sessionId: unknown, threadId: unknown, resolved: unknown) => {
+    if (typeof resolved !== 'boolean') throw new Error('Expected resolved to be a boolean')
+    return manager.resolveThread(str(sessionId, 'sessionId'), str(threadId, 'threadId'), resolved)
+  })
   ipcMain.handle(
     IPC.send,
     (_e, sessionId: unknown, text: unknown, threadId: unknown, attachments: unknown, fromThread: unknown) =>

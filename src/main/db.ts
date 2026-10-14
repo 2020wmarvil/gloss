@@ -3,7 +3,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import type { SearchRequest, SearchResponse, SearchResult } from '../shared/search'
 import { sameFolder } from '../shared/paths'
-import type { Anchor, Attachment, Message, Plan, PlanEntry, Session, Thread, ToolCall, TurnOutcome } from '../shared/types'
+import type { Anchor, Attachment, Finding, Message, Plan, PlanEntry, Session, Thread, ToolCall, TurnOutcome } from '../shared/types'
 
 // Append-only. Each entry upgrades the schema by one version (PRAGMA user_version).
 const MIGRATIONS = [
@@ -116,6 +116,24 @@ const MIGRATIONS = [
   CREATE TRIGGER tool_search_delete AFTER DELETE ON tool_calls BEGIN
     DELETE FROM tool_search WHERE rowid = old.rowid;
   END;
+  `,
+  // Review sessions: line anchors have no message, so the column becomes nullable (a rebuild in SQLite).
+  `
+  ALTER TABLE sessions ADD COLUMN review_base TEXT;
+  CREATE TABLE threads_new (
+    id                TEXT PRIMARY KEY,
+    session_id        TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    anchor_message_id TEXT REFERENCES messages(id) ON DELETE CASCADE,
+    anchor            TEXT NOT NULL,
+    created_at        INTEGER NOT NULL,
+    finding           TEXT,
+    resolved_at       INTEGER
+  );
+  INSERT INTO threads_new (id, session_id, anchor_message_id, anchor, created_at)
+    SELECT id, session_id, anchor_message_id, anchor, created_at FROM threads ORDER BY rowid;
+  DROP TABLE threads;
+  ALTER TABLE threads_new RENAME TO threads;
+  CREATE INDEX threads_by_session ON threads (session_id);
   `
 ]
 
@@ -133,12 +151,16 @@ function toSession(r: Row): Session {
     activeAt: r.active_at != null ? Number(r.active_at) : Number(r.created_at),
     ...(r.model != null ? { model: r.model as string } : {}),
     ...(r.effort != null ? { effort: r.effort as string } : {}),
-    ...(r.synced_at != null ? { syncedAt: r.synced_at as string } : {})
+    ...(r.synced_at != null ? { syncedAt: r.synced_at as string } : {}),
+    ...(r.review_base != null ? { review: { baseRef: r.review_base as string }, openThreads: Number(r.open_threads) } : {})
   }
 }
 
-/** Sessions with the time of their newest message. */
-const SESSIONS = `SELECT s.*, (SELECT MAX(m.created_at) FROM messages m WHERE m.session_id = s.id) AS active_at FROM sessions s`
+/** Sessions with the time of their newest message, and how many line threads are unresolved. */
+const SESSIONS = `SELECT s.*,
+  (SELECT MAX(m.created_at) FROM messages m WHERE m.session_id = s.id) AS active_at,
+  (SELECT COUNT(*) FROM threads t WHERE t.session_id = s.id AND t.resolved_at IS NULL AND t.anchor_message_id IS NULL) AS open_threads
+  FROM sessions s`
 
 function toMessage(r: Row): Message {
   const m: Message = {
@@ -186,8 +208,10 @@ function toThread(r: Row): Thread {
   return {
     id: r.id as string,
     sessionId: r.session_id as string,
-    anchorMessageId: r.anchor_message_id as string,
+    anchorMessageId: (r.anchor_message_id as string | null) ?? null,
     anchor: JSON.parse(r.anchor as string) as Anchor,
+    ...(r.finding != null ? { finding: JSON.parse(r.finding as string) as Finding } : {}),
+    ...(r.resolved_at != null ? { resolvedAt: Number(r.resolved_at) } : {}),
     createdAt: Number(r.created_at)
   }
 }
@@ -254,9 +278,9 @@ export class Store {
   insertSession(s: Session): void {
     this.db
       .prepare(
-        'INSERT INTO sessions (id, agent_id, acp_session_id, cwd, title, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+        'INSERT INTO sessions (id, agent_id, acp_session_id, cwd, title, created_at, title_set, review_base) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       )
-      .run(s.id, s.agentId, s.acpSessionId, s.cwd, s.title, s.createdAt)
+      .run(s.id, s.agentId, s.acpSessionId, s.cwd, s.title, s.createdAt, s.titleSet ? 1 : null, s.review?.baseRef ?? null)
   }
 
   getSessionByAcpId(agentId: string, acpSessionId: string): Session | undefined {
@@ -563,9 +587,22 @@ export class Store {
   insertThread(t: Thread): void {
     this.db
       .prepare(
-        'INSERT INTO threads (id, session_id, anchor_message_id, anchor, created_at) VALUES (?, ?, ?, ?, ?)'
+        'INSERT INTO threads (id, session_id, anchor_message_id, anchor, created_at, finding, resolved_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
       )
-      .run(t.id, t.sessionId, t.anchorMessageId, JSON.stringify(t.anchor), t.createdAt)
+      .run(
+        t.id,
+        t.sessionId,
+        t.anchorMessageId,
+        JSON.stringify(t.anchor),
+        t.createdAt,
+        t.finding ? JSON.stringify(t.finding) : null,
+        t.resolvedAt ?? null
+      )
+  }
+
+  /** Resolves a review thread (`at`), or reopens it (null). */
+  setThreadResolved(id: string, at: number | null): void {
+    this.db.prepare('UPDATE threads SET resolved_at = ? WHERE id = ?').run(at, id)
   }
 
   getThread(id: string): Thread | undefined {

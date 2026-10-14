@@ -37,6 +37,8 @@ type Props = {
   onSelect(id: string): void
   /** Starts a session with the given agent, or the default one. */
   onNew(agentId?: string): void
+  /** Starts a review of the project's branch with the default agent (SPEC → Review sessions). */
+  onReview(): void
   onImport(session: ListedAgentSession): void
   onRename(id: string, title: string): void
   onDelete(id: string): void
@@ -58,6 +60,14 @@ export function ago(time: number, now = Date.now()): string {
   if (d < 30) return `${Math.round(d / 7)}w`
   return `${Math.round(d / 30)}mo`
 }
+
+/** Marks review sessions and the button that starts one. */
+const reviewIcon = (
+  <svg className="review-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <path d="M9 6h11M9 12h11M9 18h11" />
+    <path d="M4 6h.01M4 12h.01M4 18h.01" />
+  </svg>
+)
 
 /** One of an agent's own sessions, with the agent it belongs to. */
 export type ListedAgentSession = AgentSession & { agentId: string }
@@ -146,9 +156,15 @@ export function Sidebar(props: Props): React.JSX.Element {
         }}
       >
         <span className="session-title" onDoubleClick={() => setRenaming(s.id)}>
+          {s.review && reviewIcon}
           {s.title}
           <small className="session-agent">{agentName(s.agentId)}</small>
         </span>
+        {s.review && (s.openThreads ?? 0) > 0 && (
+          <span className="count-pill" title={`${s.openThreads} open ${s.openThreads === 1 ? 'thread' : 'threads'}`}>
+            {s.openThreads} open
+          </span>
+        )}
         {s.id in running ? <span className="running-dot" aria-label="Running" /> : <span className="when">{ago(at)}</span>}
         {menuFor === s.id && (
           <div className="menu row-actions" role="menu" onClick={(e) => e.stopPropagation()}>
@@ -287,6 +303,17 @@ export function Sidebar(props: Props): React.JSX.Element {
       ) : (
         <button className="new-session" onClick={props.onOpenProject}>
           Open project…
+        </button>
+      )}
+      {project && (
+        <button
+          className="review-changes"
+          onClick={props.onReview}
+          disabled={props.creating}
+          title="Review everything on this branch since it left the default branch, committed or not"
+        >
+          {reviewIcon}
+          Review changes
         </button>
       )}
       {props.createError && <p className="sidebar-error">{props.createError}</p>}

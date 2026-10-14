@@ -18,6 +18,10 @@ export type Session = {
   effort?: string
   /** The agent's `updatedAt` for the session when Gloss last synced it (SPEC → Shared sessions). */
   syncedAt?: string
+  /** A review session (SPEC → Review sessions): the branch it is reviewed against, e.g. "origin/main". */
+  review?: { baseRef: string }
+  /** Review sessions: threads on diff lines that aren't resolved. */
+  openThreads?: number
 }
 
 /** An image or file sent with a user message (SPEC → Attachments). */
@@ -107,13 +111,27 @@ export type Anchor =
   | { kind: 'listItem'; path: number[]; text: string }
   /** Offsets into the message's source markdown. */
   | { kind: 'selection'; start: number; end: number; text: string }
+  /**
+   * Lines of a review session's diff: a line range on one side of a file. `text` is
+   * what was selected, `lines` the full text of those lines, to re-find them.
+   */
+  | { kind: 'line'; file: string; side: 'old' | 'new'; start: number; end: number; text: string; lines: string[] }
+
+export type Severity = 'bug' | 'suggestion' | 'nit'
+
+/** What the agent's first pass found at a thread's lines. */
+export type Finding = { severity: Severity; title: string; body: string }
 
 export type Thread = {
   id: string
   sessionId: string
-  /** The agent message the anchor lives in (any thread). */
-  anchorMessageId: string
+  /** The agent message the anchor lives in (any thread); null for a line anchor. */
+  anchorMessageId: string | null
   anchor: Anchor
+  /** Opened by the agent's first pass. */
+  finding?: Finding
+  /** Review threads: when the user resolved it. */
+  resolvedAt?: number
   createdAt: number
 }
 

@@ -1,5 +1,6 @@
 import type { SearchRequest, SearchResponse } from './search'
 import type { McpImportPreview, McpImportSource } from './mcp'
+import type { ReviewDiff } from './review'
 // The IPC contract between the main process and the renderer.
 // Type-only (plus channel names): nothing here may pull runtime code into the sandboxed preload.
 import type { GlobalSettings, ProjectSettings } from './settings'
@@ -127,6 +128,10 @@ export type GlossApi = {
     list(): Promise<Session[]>
     /** Starts an agent session in `cwd`. Rejects if the agent can't start one. */
     create(cwd: string, agentId: string): Promise<Session>
+    /** Starts a review of the project's branch; its first pass runs on (SPEC → Review sessions). */
+    createReview(cwd: string, agentId: string): Promise<Session>
+    /** A review session's diff, read now. */
+    reviewDiff(id: string): Promise<ReviewDiff>
     /**
      * Opens one of the agent's sessions in Gloss: its history becomes the log, placed in threads by its tags.
      * `listedAt` (the agent's `updatedAt` in its listing) stands in for when it was made, so it keeps its place.
@@ -159,8 +164,10 @@ export type GlossApi = {
   /** The text of the user's messages in every session, newest first, each once (SPEC → Composer → History). */
   history(): Promise<string[]>
   threads: {
-    /** Creates the thread for an anchor, or returns the existing one for the same anchor. */
-    create(sessionId: string, anchorMessageId: string, anchor: Anchor): Promise<Thread>
+    /** Creates the thread for an anchor, or returns the existing one for the same anchor. Line anchors have no message. */
+    create(sessionId: string, anchorMessageId: string | null, anchor: Anchor): Promise<Thread>
+    /** Resolves a review thread, or reopens it. */
+    resolve(sessionId: string, threadId: string, resolved: boolean): Promise<Thread>
   }
   /**
    * Resolves when the turn ends, or right away with `queued` if a turn is running (SPEC → Queue).
@@ -216,6 +223,8 @@ export const IPC = {
   projectsDelete: 'gloss:projects:delete',
   sessionsList: 'gloss:sessions:list',
   sessionsCreate: 'gloss:sessions:create',
+  sessionsCreateReview: 'gloss:sessions:createReview',
+  sessionsReviewDiff: 'gloss:sessions:reviewDiff',
   sessionsImport: 'gloss:sessions:import',
   sessionsOpen: 'gloss:sessions:open',
   sessionsRefresh: 'gloss:sessions:refresh',
@@ -229,6 +238,7 @@ export const IPC = {
   gitStatus: 'gloss:git:status',
   gitPullRequest: 'gloss:git:pullRequest',
   threadsCreate: 'gloss:threads:create',
+  threadsResolve: 'gloss:threads:resolve',
   history: 'gloss:history',
   send: 'gloss:send',
   steer: 'gloss:steer',
