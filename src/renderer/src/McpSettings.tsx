@@ -22,7 +22,7 @@ export function McpSettings({ servers, onSave }: { servers: McpServer[]; onSave(
   return <div className="mcp-settings">
     <label className="setting-label" htmlFor="mcp-servers">MCP servers</label>
     <p className="setting-desc">Tools shared by Claude Code and Codex in this project. Changes apply on the next turn or resume.</p>
-    <p className="setting-desc">Use a list of server objects. Stdio: name, command, args and env. Remote: type (http or sse), name, url and headers. Codex does not support SSE.</p>
+    <p className="setting-desc">Use a list of server objects. Stdio: name, command, args and env (omit type). Remote: type (http or sse), name, url and headers. Codex does not support SSE.</p>
     <textarea id="mcp-servers" className="mono" rows={10} spellCheck={false} value={text} disabled={saving} onChange={(e) => setText(e.target.value)} />
     <details><summary>Examples</summary><pre>{JSON.stringify([
       { name: 'local-tools', command: 'C:/tools/mcp-server.exe', args: [], env: [] },
