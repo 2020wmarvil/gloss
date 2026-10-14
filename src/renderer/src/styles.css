@@ -1445,6 +1445,20 @@ body.resizing {
   opacity: 0.5;
 }
 
+/* Send to main: a thread reply that goes to the main conversation (SPEC → Send to main) */
+.to-main {
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  white-space: nowrap;
+}
+
+.to-main:disabled {
+  opacity: 0.5;
+}
+
 /* Queued messages, above the composer box */
 
 .queue {

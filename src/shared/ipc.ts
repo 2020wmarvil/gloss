@@ -153,12 +153,23 @@ export type GlossApi = {
     /** The branch's pull request; null without one, or without `gh` or its login. */
     pullRequest(cwd: string): Promise<PullRequest | null>
   }
+  /** The text of the user's messages in every session, newest first, each once (SPEC → Composer → History). */
+  history(): Promise<string[]>
   threads: {
     /** Creates the thread for an anchor, or returns the existing one for the same anchor. */
     create(sessionId: string, anchorMessageId: string, anchor: Anchor): Promise<Thread>
   }
-  /** Resolves when the turn ends, or right away with `queued` if a turn is running (SPEC → Queue). */
-  send(sessionId: string, text: string, threadId: string | null, attachments: Attachment[]): Promise<TurnResult>
+  /**
+   * Resolves when the turn ends, or right away with `queued` if a turn is running (SPEC → Queue).
+   * `fromThread`: a main-thread message sent from that thread (SPEC → Send to main).
+   */
+  send(
+    sessionId: string,
+    text: string,
+    threadId: string | null,
+    attachments: Attachment[],
+    fromThread?: string | null
+  ): Promise<TurnResult>
   /**
    * Injects a message into the running turn, which must be in `threadId` (SPEC → Steer).
    * Sent as usual when idle; queued first if the turn is just ending.
@@ -212,6 +223,7 @@ export const IPC = {
   gitStatus: 'gloss:git:status',
   gitPullRequest: 'gloss:git:pullRequest',
   threadsCreate: 'gloss:threads:create',
+  history: 'gloss:history',
   send: 'gloss:send',
   steer: 'gloss:steer',
   cancel: 'gloss:cancel',

@@ -88,6 +88,10 @@ There is no dev model setting. When testing against a live agent, pick Haiku you
 - On Windows, `@openai/codex/bin/codex.js` spawns the native `codex.exe` without `windowsHide`. Its parent (Electron as Node) has no console, so each launch opened a visible terminal window. `patches/@openai+codex+*.patch` (applied by `patch-package` on `postinstall`) adds the flag; regenerate it with `npx patch-package @openai/codex` when bumping the adapter.
 - Verified live through Electron and SessionManager: streaming, thread routing, model selection with Haiku enabled, tool execution, and thread preservation after restart/resume. Shared MCP settings and cross-agent context handoff remain future M13 work.
 
+## Verified external APIs (agent instructions)
+- Claude adapter (0.89): `_meta.systemPrompt` on `session/new`/`session/load` (a string replaces the preset; `{ append }` appends to it). Claude Code snapshots the system prompt when a session is created: a resume through the Agent SDK (0.3.293) keeps the creation-time one and ignores a new append (the CLI's `--resume --append-system-prompt` does apply it). `systemPrompt` is part of the adapter's session fingerprint, so a load with different `_meta.systemPrompt` restarts a held session.
+- Codex adapter (2.2.2): only `_meta.jetbrains.air.customInstructions` on `session/new` (→ `developerInstructions`); `session/load` ignores it. Request `_meta` doesn't make it treat the client as AIR (that comes from `initialize`).
+
 ## Verified external APIs (effort)
 - Both adapters report effort as a select config option with `category: "thought_level"`, set with `session/set_config_option` like the model. Claude (0.89): id `effort`, name "Effort", levels from the model's `supportedEffortLevels` plus "Default"; no option at all for a model without effort. Codex (2.2.2): id `reasoning_effort`, name "Reasoning effort".
 - The Claude adapter rebuilds its config options on a model switch (effort levels depend on the model), so re-apply the effort after the model.

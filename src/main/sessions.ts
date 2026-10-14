@@ -177,6 +177,11 @@ export class SessionManager {
     return slot.connection
   }
 
+  /** The agent's `_meta` for session/new or session/load (SPEC → Agent instructions). */
+  private sessionMeta(agentId: string, request: 'new' | 'load'): Record<string, unknown> | undefined {
+    return this.deps.getAgentConfig(agentId).sessionMeta?.[request]
+  }
+
   private handlers(agentId: string): AgentHandlers {
     return {
       onUpdate: (n) => this.onUpdate(n),
@@ -329,12 +334,17 @@ export class SessionManager {
     return this.deps.store.listSessions()
   }
 
+  /** What the user sent, in every session, newest first and each once (SPEC → Composer → History). */
+  messageHistory(): string[] {
+    return this.deps.store.messageHistory()
+  }
+
   async createSession(cwd: string, agentId: string): Promise<Session> {
     let conn!: AgentConnection
     let permissions: SessionLive['permissions'] = null
     const res = await this.withAgent(agentId, async (c) => {
       conn = c
-      const created = await c.newSession(cwd)
+      const created = await c.newSession(cwd, this.sessionMeta(agentId, 'new'))
       permissions = await this.enterBypassMode(agentId, c, created.sessionId, created.modes)
       return created
     })
@@ -524,7 +534,7 @@ export class SessionManager {
     let permissions: SessionLive['permissions'] = null
     const res = await this.withAgent(session.agentId, async (c) => {
       conn = c
-      const created = await c.newSession(session.cwd)
+      const created = await c.newSession(session.cwd, this.sessionMeta(session.agentId, 'new'))
       permissions = await this.enterBypassMode(session.agentId, c, created.sessionId, created.modes)
       return created
     })
@@ -715,7 +725,7 @@ export class SessionManager {
     let loaded: acp.LoadSessionResponse | undefined
     let replay: acp.SessionUpdate[]
     try {
-      loaded = await conn.loadSession(session.acpSessionId, session.cwd)
+      loaded = await conn.loadSession(session.acpSessionId, session.cwd, this.sessionMeta(session.agentId, 'load'))
     } catch (err) {
       if (isSessionInUse(err)) throw new Error('This session is open in Codex. Quit Codex to continue here.', { cause: err })
       if (isAuthRequired(err) || rt.importing) throw err
@@ -749,7 +759,7 @@ export class SessionManager {
   private async replaceAgentSession(sessionId: string, conn: AgentConnection, notice: boolean): Promise<string> {
     const rt = this.runtime(sessionId)
     let session = this.session(sessionId)
-    const res = await conn.newSession(session.cwd)
+    const res = await conn.newSession(session.cwd, this.sessionMeta(session.agentId, 'new'))
     const permissions = await this.enterBypassMode(session.agentId, conn, res.sessionId, res.modes)
     this.byAcpId.delete(session.acpSessionId)
     session = this.deps.store.updateSession(session.id, { acpSessionId: res.sessionId, syncedAt: null })
@@ -1027,16 +1037,22 @@ export class SessionManager {
 
   /**
    * Sends a message, or queues it if a turn is running (SPEC → Queue). Resolves
-   * when the turn ends, or right away with `queued`.
+   * when the turn ends, or right away with `queued`. `fromThread`: a main-thread
+   * message sent from that thread's composer (SPEC → Send to main).
    */
   async send(
     sessionId: string,
     text: string,
     threadId: string | null,
-    attachments: Attachment[] = []
+    attachments: Attachment[] = [],
+    fromThread: string | null = null
   ): Promise<TurnResult> {
     this.session(sessionId)
     this.anchorText(sessionId, threadId)
+    if (fromThread !== null) {
+      if (threadId !== null) throw new Error('Only a main-thread message can be sent from a thread.')
+      this.anchorText(sessionId, fromThread)
+    }
     if (isClear(text, attachments)) {
       await this.clearSession(sessionId)
       return { cleared: true }
@@ -1045,11 +1061,14 @@ export class SessionManager {
     if (rt.turn) {
       this.setQueue(sessionId, {
         ...rt.queue,
-        items: [...rt.queue.items, { id: randomUUID(), threadId, text, attachments }]
+        items: [
+          ...rt.queue.items,
+          { id: randomUUID(), threadId, text, attachments, ...(fromThread !== null ? { fromThread } : {}) }
+        ]
       })
       return { queued: true }
     }
-    return this.runTurn(sessionId, text, threadId, attachments)
+    return this.runTurn(sessionId, text, threadId, attachments, fromThread)
   }
 
   /**
@@ -1133,9 +1152,9 @@ export class SessionManager {
   }
 
   /** What to send for a new user message (SPEC → Wire format). Call it before the message is stored. */
-  private wire(sessionId: string, text: string, threadId: string | null): string {
+  private wire(sessionId: string, text: string, threadId: string | null, fromThread: string | null = null): string {
     const afterThread = threadId === null && (this.deps.store.lastUserMessage(sessionId)?.threadId ?? null) !== null
-    return wireText(text, this.anchorText(sessionId, threadId), afterThread)
+    return wireText(text, this.anchorText(sessionId, threadId), afterThread, this.anchorText(sessionId, fromThread))
   }
 
   /** The anchor text of a thread in the session (for the wire tag), or null for the main thread. */
@@ -1150,12 +1169,13 @@ export class SessionManager {
     sessionId: string,
     text: string,
     threadId: string | null,
-    attachments: Attachment[]
+    attachments: Attachment[],
+    fromThread: string | null = null
   ): Promise<TurnResult> {
     let session = this.session(sessionId)
     const rt = this.runtime(sessionId)
     if (rt.turn) throw new Error('A turn is already running in this session.')
-    const wire = this.wire(sessionId, text, threadId)
+    const wire = this.wire(sessionId, text, threadId, fromThread)
     // Only a session still named after its folder takes its title from the first message.
     const retitle = this.deps.store.countUserMessages(sessionId) === 0 && session.title === folderName(session.cwd)
     const message: Message = {
@@ -1254,7 +1274,7 @@ export class SessionManager {
     const [next, ...rest] = rt.queue.items
     if (!next) return
     this.setQueue(sessionId, { items: rest, paused: false })
-    this.runTurn(sessionId, next.text, next.threadId, next.attachments).catch((err: unknown) =>
+    this.runTurn(sessionId, next.text, next.threadId, next.attachments, next.fromThread ?? null).catch((err: unknown) =>
       this.notice(sessionId, next.threadId, `Couldn't send a queued message: ${errorMessage(err)}`)
     )
   }

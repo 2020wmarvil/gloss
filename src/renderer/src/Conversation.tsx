@@ -17,6 +17,8 @@ type Props = {
   open: OpenSession
   agentName: string
   live: SessionLive
+  /** Messages sent in every session, newest first, for the composer's Up and Down. */
+  history: string[]
   git: GitStatus | null
   pr: PullRequest | null
   /** threadId of the running turn; undefined when idle. */
@@ -137,6 +139,7 @@ export function Conversation(props: Props): React.JSX.Element {
         main
         commands={live.commands}
         accepts={live.accepts}
+        history={props.history}
         queue={props.composerQueue}
         onSend={props.onSend}
         onSteer={live.steering && runningThread === null ? props.onSteer : undefined}

@@ -205,15 +205,16 @@ export class AgentConnection {
     return this.conn.agent.request(acp.methods.agent.session.setConfigOption, { sessionId, configId, value })
   }
 
-  newSession(cwd: string): Promise<acp.NewSessionResponse> {
-    return this.conn.agent.request(acp.methods.agent.session.new, { cwd, mcpServers: [] })
+  newSession(cwd: string, meta?: Record<string, unknown>): Promise<acp.NewSessionResponse> {
+    return this.conn.agent.request(acp.methods.agent.session.new, { cwd, mcpServers: [], ...(meta ? { _meta: meta } : {}) })
   }
 
-  loadSession(sessionId: string, cwd: string): Promise<acp.LoadSessionResponse> {
+  loadSession(sessionId: string, cwd: string, meta?: Record<string, unknown>): Promise<acp.LoadSessionResponse> {
     return this.conn.agent.request(acp.methods.agent.session.load, {
       sessionId,
       cwd,
-      mcpServers: []
+      mcpServers: [],
+      ...(meta ? { _meta: meta } : {})
     })
   }
 

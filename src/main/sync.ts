@@ -4,7 +4,7 @@
 import { fileURLToPath } from 'node:url'
 import type * as acp from '@agentclientprotocol/sdk'
 import type { Attachment, Message, Plan, PlanEntry, Thread, ToolCall } from '../shared/types'
-import { MAIN_TAG, wireTag } from '../shared/wire'
+import { MAIN_TAG, toMainTag, wireTag } from '../shared/wire'
 
 /** One entry of the agent's history, as its replay tells it. */
 export type ReplayEntry =
@@ -276,6 +276,8 @@ export function placeUserMessage(
   const first = nl < 0 ? wire : wire.slice(0, nl)
   const rest = nl < 0 ? '' : wire.slice(nl + 1)
   if (first === MAIN_TAG) return { threadId: null, text: rest }
+  // Sent to the main conversation from a thread ("Send to main").
+  if (threads.some((t) => toMainTag(t.anchor.text) === first)) return { threadId: null, text: rest }
   if (first.startsWith('[re: "')) {
     const named = threads.filter((t) => wireTag(t.anchor.text) === first)
     const rank = (t: Thread): number => active.get(t.id) ?? -1

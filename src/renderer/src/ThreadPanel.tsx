@@ -20,9 +20,13 @@ type Props = {
   runningThread: string | null | undefined
   notices: Notice[]
   live: SessionLive
+  /** Messages sent in every session, newest first, for the composer's Up and Down. */
+  history: string[]
   /** Messages queued from this thread. */
   queue: ComposerQueue
   onSend(text: string, attachments: Attachment[]): void
+  /** Sends the message to the main conversation, tagged as continuing this thread (SPEC → Send to main). */
+  onSendToMain(text: string, attachments: Attachment[]): void
   /** Injects the message into the running turn (when it runs in this thread). */
   onSteer(text: string, attachments: Attachment[]): void
   onCancel(): void
@@ -97,10 +101,13 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         primary
         commands={live.commands}
         accepts={live.accepts}
+        history={props.history}
         queue={props.queue}
         onSend={onSend}
         onSteer={live.steering && runningHere ? props.onSteer : undefined}
         onCancel={runningHere ? onCancel : undefined}
+        // A thread that doesn't exist yet has nothing to continue.
+        onSendToMain={threadId !== null ? props.onSendToMain : undefined}
         footer={<div className="mono wire">sent as: {wireTag(panel.anchor.text)} …</div>}
       />
     </aside>

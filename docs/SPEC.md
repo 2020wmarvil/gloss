@@ -48,6 +48,27 @@ Main-thread messages are sent unchanged, except the first one after a thread: wh
 
 so the agent doesn't read it as continuing that thread. It takes the thread tag's `[re: …]` form and avoids the bare word "main", which in a coding session reads as the git branch. The UI shows the user's text without the tag; the tag is stored in `wireText`.
 
+A message sent to the main conversation from a thread (see Composer → Send to main) is a main-thread message sent as
+
+```
+[re: "<anchor text, truncated to ~80 chars>", continued in the main conversation]
+<user's text>
+```
+
+so the agent knows which point it answers and that the discussion moves back to the main conversation. Being in the main thread, it ends the thread: the next main message is sent unchanged.
+
+### Agent instructions
+
+Every session gives the agent this text, so it reads the tags as Gloss means them (`AGENT_INSTRUCTIONS` in `src/shared/wire.ts`):
+
+> This session runs in Gloss, a GUI that lets the user reply to individual points of your answers in side threads. You see one conversation; the threads exist only in the UI.
+>
+> - Every message sent from a thread starts with `[re: "<quote>"]`, quoting the point it's about. Answer about that point and don't bring in other topics, open questions or follow-ups from elsewhere in the conversation; the user raises those in the main conversation.
+> - `[re: "<quote>", continued in the main conversation]` replies to that point but moves the discussion back to the main conversation, so answer it in the broader context.
+> - Messages in the main conversation are untagged, except the first one after a thread, which starts with `[re: the main conversation, not the thread above]`.
+
+It is not a message: it goes in each agent's own channel for client instructions, so the transcript and the CLI don't show it. Claude Code: `_meta.systemPrompt.append` on `session/new`, appended to its system prompt. Codex: `_meta.jetbrains.air.customInstructions` on `session/new`, which becomes the thread's developer instructions. Both agents keep what a session was created with: a resume doesn't change it, so sessions created before Gloss sent these instructions go on without them. Gloss sends Claude's on `session/load` too, only so the adapter doesn't take the load for a changed session and restart it.
+
 ## Data model
 
 ```ts
@@ -179,7 +200,7 @@ Use the **Agent Client Protocol** (JSON-RPC over stdio) so the app is agent-agno
 Lifecycle:
 1. Spawn the agent's ACP entrypoint as a child process.
 2. `initialize` — advertise no `fs` and no `terminal` client capabilities for v1, so the agent uses its own file and shell tools. Read `agentCapabilities`: `loadSession`, `promptCapabilities` (what attachments it takes) and `sessionCapabilities` (`list`, `delete`).
-3. `session/new` with `cwd` and `mcpServers: []`.
+3. `session/new` with `cwd`, `mcpServers: []` and the agent's instructions (see Wire format → Agent instructions).
 4. Turns via `session/prompt` as above.
 5. On app restart: if the agent advertised `loadSession`, use `session/load` to resume, which also syncs the session (see Shared sessions); otherwise start a new ACP session and show a notice that the agent lost context, and the app's own DB is the display state.
 
@@ -223,9 +244,10 @@ Agents inherit Gloss's environment, so a test run can pick a cheap model with `A
 - **Main process** owns everything agent-related: spawning, the ACP connection, persistence. Exposes a narrow IPC API to the renderer:
   - `projects.list() / projects.open() / projects.agentSessions(path, agentId)`
   - `sessions.list() / sessions.create(cwd, agentId) / sessions.import(cwd, agentId, acpSessionId, title) / sessions.open(id) / sessions.rename(id, title) / sessions.delete(id) / sessions.setModel(id, value) / sessions.copyMarkdown(id, threadId) / sessions.saveMarkdown(id, threadId)`
-  - `send(sessionId, text, threadId | null, attachments)` (queues while a turn runs), `steer(sessionId, text, threadId | null, attachments)`, `cancel(sessionId)`, `queue.edit(sessionId, id, text) / queue.remove(sessionId, id) / queue.resume(sessionId)`
+  - `send(sessionId, text, threadId | null, attachments, fromThread?)` (queues while a turn runs; `fromThread`: Send to main), `steer(sessionId, text, threadId | null, attachments)`, `cancel(sessionId)`, `queue.edit(sessionId, id, text) / queue.remove(sessionId, id) / queue.resume(sessionId)`
   - `git.status(cwd)`
   - `threads.create(sessionId, anchorMessageId, anchor)`
+  - `history()`: the user's sent messages for the composers' Up and Down
   - `sessions.open` returns the session's messages, tool calls, plans and threads
   - `settings.get() / settings.update(patch) / settings.openFile()`
   - an event stream: message/tool-call/plan upserts, turn start/end, session upserts and deletes, live session state, queue changes, notification clicks, settings changes
@@ -256,7 +278,7 @@ When the agent advertises `loadSession` (Claude Code does), the agent's own copy
   - Cached entries before the first one the replay shares are kept: after a compaction, Claude Code's replay starts at its summary, so the replay is no longer the whole history.
   - Plans are kept. The replay's plans are recorded only for turns the cache doesn't have.
 - **Claude Code's own messages** are skipped: the summary that starts the history after a compaction ("This session is being continued from a previous conversation…") and the marker of a cancelled turn (`[Request interrupted by user]`). The text of a cancelled turn's answer is taken from the replay, which has more of it than Gloss saw.
-- **Messages from elsewhere** are placed by their tag: `[re: "<text>"]` goes to the thread whose own tag is that line (the most recently active if several match); `[re: the main conversation, not the thread above]` and untagged messages go to the main thread. A tag that matches no thread stays in the text and the message goes to the main thread. The agent's output goes to the thread of the user message before it. Images come back as image chunks; text files come back as text (`[@name](uri)`, then `<context ref="uri">…</context>`) and show as file attachments again. Such messages take the agent's `updatedAt` from before the load as their `createdAt`.
+- **Messages from elsewhere** are placed by their tag: `[re: "<text>", continued in the main conversation]` for a thread of the session goes to the main thread; `[re: "<text>"]` goes to the thread whose own tag is that line (the most recently active if several match); `[re: the main conversation, not the thread above]` and untagged messages go to the main thread. A tag that matches no thread stays in the text and the message goes to the main thread. The agent's output goes to the thread of the user message before it. Images come back as image chunks; text files come back as text (`[@name](uri)`, then `<context ref="uri">…</context>`) and show as file attachments again. Such messages take the agent's `updatedAt` from before the load as their `createdAt`.
 - **When Gloss syncs:** when a session is resumed, and, for a session already running on the agent, when it is opened, when the window regains focus with it open, and before a prompt or queued message is sent. Gloss compares the agent's `updatedAt` for the session (from `session/list`) with `syncedAt`, and reloads the session if it moved: `session/close`, then `session/load`. The close is required: a `session/load` of a session the adapter already holds replays the new history but keeps the running process, whose model doesn't see it. Never while a turn runs; before a send, the turn's own message waits at the end of the log until it goes out. A load changes `updatedAt` itself, and so does each turn, so `syncedAt` is recorded after both. An agent without `session/list` or `session/close` syncs only when resumed.
 - **Deleted outside Gloss.** If `session/load` fails because the agent no longer has the session (ACP `resource_not_found`), Gloss deletes it too (messages, threads, queue) and the sidebar says so. A session that never had a message is the exception: Claude Code writes no transcript until the first prompt, so it gets a new agent session in its place. Missing from `session/list` alone is not enough (the list is paged). Other load failures show the error and are retried on the next open or send; Gloss doesn't start a new agent session in place of one it couldn't load.
 - **In the CLI,** messages sent from threads show with their tags, and the threads are flattened into one conversation, which is how the agent sees them anyway.
@@ -289,6 +311,7 @@ When the agent advertises `loadSession` (Claude Code does), the agent's own copy
 - **Cancel:** only the composer of the thread the turn runs in has **Cancel**; `Esc` in it does the same unless the slash commands are open. Other composers can only queue. A cancel stops that turn alone: the queue moves on.
 - **Queue:** while a turn runs, the composer stays usable: its button reads **Queue** and a message sent then is queued instead of sent. Queued messages are listed above the composer of the thread they were written in, the next one to run at the bottom (as in the Queue tab), each with Edit (in place) and Remove, and run in that thread. When a turn ends normally (`end_turn`) or is cancelled, the next queued message is sent straight away. A failed or cut-short turn pauses the queue: the composer and status line show "paused" with **Resume**, and a message sent while paused and idle goes out right away; the queue moves on again after the next turn that ends normally. Removing the last queued message clears the pause. The queue is kept by the main process in memory, so it works for sessions that aren't open but is lost when Gloss quits. Works with any agent (no steering).
 - **Steer:** while a turn runs, the composer of the thread it runs in also has **Steer** (`Ctrl+Enter`), which injects the message into the running turn instead of queueing it ("skip the tests"). Offered only when the agent advertises it: the Claude adapter's `_session/steering` extension (`_meta.steering.supported` in `initialize`). Gloss records the message first (marked "steered" in the log) so the agent's answer lands below it, then sends it with `idleBehavior: "promptRequired"`; if the turn ended before it got in, the message is taken back and goes to the front of the queue. Other threads can only queue while a turn runs, so the reply stays in the thread it belongs to.
+- **Send to main:** a thread's composer (once the thread exists) also has **Send to main**, which sends its text and attachments to the main conversation instead, tagged as continuing that thread (see Wire format). It is a main-thread message: it runs, queues (the button then reads **Queue to main**) and shows in the main conversation. The side panel stays on the thread.
 - **Attachments:** paste or drop images and files on the composer, or pick them with **+**. Images become ACP `image` blocks; text files become embedded `resource` blocks (with a `file://` URI when the file has a path). Only what the agent's `promptCapabilities` allow (`image`, `embeddedContext`); the **+** button and drops are off otherwise. Limits: images 10 MB, files 1 MB and text only. Attachments show as thumbnails or names in the composer and in the sent message.
 - **Markdown editor:** the composer's text box is a CodeMirror 6 markdown editor (`@codemirror/lang-markdown`, GFM). The source stays visible and is styled: bold, italics, headings, inline code, links, quotes, with markup characters faded. What the user sees is exactly what the agent receives. Affordances:
   - Enter sends (or queues), except inside a ``` code block (open, or before its closing fence), where it adds a line. `Ctrl+Enter` steers.
@@ -298,6 +321,7 @@ When the agent advertises `loadSession` (Claude Code does), the agent's own copy
   - Undo and redo (`Ctrl+Z`, `Ctrl+Shift+Z` / `Ctrl+Y`) cover all of these.
   - The slash command menu, pasted and dropped attachments, and drafts work as before. The editor grows to 8 lines, then scrolls. Editing a queued message stays a plain text box.
 - **Sent messages** render through the same markdown renderer as the agent's replies (no raw HTML, safe links only, highlighted code), with each newline kept as a line break.
+- **History:** Up with the caret on the composer's first line replaces its text with the previous message the user sent and starts cycling: from then on Up shows the previous message and Down the next, whatever line the caret is on, with the caret at the end of each; at the oldest, Up does nothing. Down past the newest brings back the draft that was there and stops cycling. Editing the text or moving the caret (a click, Left, Right, Home, End, even where the caret can't move) also stops it: the user is now working on that message, so Up and Down move between its lines until it is sent or the composer is cleared. Every composer shares one history: the user's messages from every session and thread, newest first, each text once (at its latest use), from the DB so it survives restarts (`history()`, at most 500). Text only: attachments aren't recalled. A recalled `/command` doesn't open the slash menu. Editing a recalled message makes it the draft.
 - **Drafts:** each composer (a session's main thread, or one thread anchor) keeps its unsent text, attachments and caret position when the user switches to another session or thread and back. Drafts are kept in the renderer's memory, so they are lost when Gloss quits.
 
 ## Status line

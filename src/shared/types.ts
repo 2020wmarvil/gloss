@@ -58,6 +58,8 @@ export type QueuedMessage = {
   id: string
   /** The thread it was written in; it runs there. null = main thread. */
   threadId: string | null
+  /** A main-thread message sent from this thread's composer (SPEC → Send to main). */
+  fromThread?: string
   text: string
   attachments: Attachment[]
 }

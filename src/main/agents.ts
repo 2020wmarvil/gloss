@@ -1,4 +1,5 @@
 // Agent configurations. A small table so more ACP agents can be added later.
+import { AGENT_INSTRUCTIONS } from '../shared/wire'
 
 export type AgentConfig = {
   id: string
@@ -11,6 +12,11 @@ export type AgentConfig = {
    * Gloss switches every session to it (SPEC → Permissions).
    */
   bypassModeId?: string
+  /**
+   * `_meta` for session/new and session/load that gives the agent Gloss's
+   * instructions (SPEC → Agent instructions), in whatever form it takes them.
+   */
+  sessionMeta?: { new?: Record<string, unknown>; load?: Record<string, unknown> }
 }
 
 /**
@@ -19,6 +25,10 @@ export type AgentConfig = {
  * (ELECTRON_RUN_AS_NODE) so users don't need a separate Node install.
  * Claude Code gives only older models its todo tools unless
  * CLAUDE_CODE_ENABLE_TODO_TOOLS is set; with them it reports plans (SPEC → Plans).
+ * The adapter appends `_meta.systemPrompt.append` to Claude Code's system prompt.
+ * Claude Code keeps a session's system prompt from its creation (a resume ignores a
+ * new one), but the adapter counts it in the session's fingerprint: a load without
+ * it would restart a session the adapter already runs.
  */
 function claudeAgent(): AgentConfig {
   return {
@@ -27,20 +37,34 @@ function claudeAgent(): AgentConfig {
     command: process.execPath,
     args: [require.resolve('@agentclientprotocol/claude-agent-acp/dist/index.js')],
     env: { ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
-    bypassModeId: 'bypassPermissions'
+    bypassModeId: 'bypassPermissions',
+    sessionMeta: {
+      new: { systemPrompt: { append: AGENT_INSTRUCTIONS } },
+      load: { systemPrompt: { append: AGENT_INSTRUCTIONS } }
+    }
   }
 }
 
-const AGENTS: Record<string, () => AgentConfig> = {
-  claude: claudeAgent,
-  codex: () => ({
+/**
+ * Codex through its ACP adapter. It takes developer instructions only on session/new,
+ * from JetBrains AIR's `customInstructions` key; Codex keeps them in the thread. (A
+ * request's `_meta` doesn't make it treat Gloss as AIR: that comes from initialize.)
+ */
+function codexAgent(): AgentConfig {
+  return {
     id: 'codex',
     name: 'Codex',
     command: process.execPath,
     args: [require.resolve('@agentclientprotocol/codex-acp/dist/index.js')],
     env: { ELECTRON_RUN_AS_NODE: '1' },
-    bypassModeId: 'agent-full-access'
-  })
+    bypassModeId: 'agent-full-access',
+    sessionMeta: { new: { jetbrains: { air: { customInstructions: AGENT_INSTRUCTIONS } } } }
+  }
+}
+
+const AGENTS: Record<string, () => AgentConfig> = {
+  claude: claudeAgent,
+  codex: codexAgent
 }
 
 export function getAgentConfig(id: string): AgentConfig {

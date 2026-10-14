@@ -19,6 +19,7 @@ function mount(
     running?: boolean
     onCancel?: () => void
     queued?: string[]
+    history?: string[]
   } = {}
 ): EditorView {
   const el = document.createElement('div')
@@ -38,6 +39,7 @@ function mount(
           paused: false, onEdit: async () => {}, onRemove: async () => {}, onResume: async () => {} }}
         onSend={opts.onSend ?? (() => {})}
         onCancel={opts.onCancel}
+        history={opts.history}
       />
     )
   )
@@ -163,6 +165,80 @@ describe('Composer markdown editing', () => {
     type(view, '/compact')
     press(view, 'Enter')
     expect(onSend).toHaveBeenCalledWith('/compact', [])
+  })
+})
+
+describe('Composer history', () => {
+  const history = ['/review XYZ', 'line one\nline two', 'oldest']
+
+  it('recalls older messages with Up and comes back to the draft with Down', () => {
+    const view = mount('h1', { history })
+    type(view, 'my draft')
+    expect(press(view, 'ArrowUp')).toBe(true)
+    expect(text(view)).toBe('/review XYZ')
+    // A recalled command doesn't open the slash menu.
+    expect(document.querySelector('.slash-menu')).toBeNull()
+    press(view, 'ArrowUp')
+    expect(text(view)).toBe('line one\nline two')
+    // The caret goes to the end, and Up keeps cycling from any line.
+    expect(view.state.selection.main.head).toBe('line one\nline two'.length)
+    press(view, 'ArrowUp')
+    expect(text(view)).toBe('oldest')
+    // The oldest: Up stays put.
+    expect(press(view, 'ArrowUp')).toBe(true)
+    expect(text(view)).toBe('oldest')
+    press(view, 'ArrowDown')
+    expect(text(view)).toBe('line one\nline two')
+    press(view, 'ArrowDown')
+    expect(text(view)).toBe('/review XYZ')
+    press(view, 'ArrowDown')
+    expect(text(view)).toBe('my draft')
+    // Back on the draft, the arrows move the caret again.
+    expect(press(view, 'ArrowDown')).toBe(false)
+  })
+
+  it('only starts from the first line, and stops cycling on an edit', () => {
+    const onSend = vi.fn()
+    const view = mount('h2', { history, onSend })
+    type(view, 'a\nb')
+    expect(press(view, 'ArrowUp')).toBe(false)
+    type(view, '')
+    press(view, 'ArrowUp')
+    type(view, '/review ABC')
+    expect(press(view, 'ArrowDown')).toBe(false)
+    expect(text(view)).toBe('/review ABC')
+    press(view, 'Enter')
+    expect(onSend).toHaveBeenCalledWith('/review ABC', [])
+  })
+
+  it('stops cycling on Left or Right, even on one line or where the caret cannot move', () => {
+    const view = mount('h4', { history })
+    press(view, 'ArrowUp')
+    expect(text(view)).toBe('/review XYZ')
+    // The caret is already at the end: Right moves nothing, but still means "edit this one".
+    press(view, 'ArrowRight')
+    expect(press(view, 'ArrowUp')).toBe(false)
+    expect(press(view, 'ArrowDown')).toBe(false)
+    expect(text(view)).toBe('/review XYZ')
+    // Until the composer is cleared.
+    type(view, '')
+    press(view, 'ArrowUp')
+    expect(text(view)).toBe('/review XYZ')
+    press(view, 'ArrowLeft')
+    expect(press(view, 'ArrowUp')).toBe(false)
+    expect(text(view)).toBe('/review XYZ')
+  })
+
+  it('stops cycling when the caret is moved, so Up and Down move between lines', () => {
+    const view = mount('h3', { history })
+    press(view, 'ArrowUp')
+    press(view, 'ArrowUp')
+    expect(text(view)).toBe('line one\nline two')
+    // A click (or Left, Home…) moves the caret: the arrows are the editor's again.
+    act(() => view.dispatch({ selection: EditorSelection.cursor('line one\nli'.length) }))
+    expect(press(view, 'ArrowDown')).toBe(false)
+    expect(press(view, 'ArrowUp')).toBe(false)
+    expect(text(view)).toBe('line one\nline two')
   })
 })
 
