@@ -25,6 +25,8 @@ export type SettingField = {
   description: string
   /** For enum fields: the allowed values and how the screen labels them. */
   options?: readonly { value: string; label: string }[]
+  /** Set elsewhere in the window, so the settings screen doesn't list it. */
+  hidden?: boolean
 }
 
 export const SETTING_FIELDS: readonly SettingField[] = [
@@ -33,11 +35,12 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     scope: 'global',
     type: 'enum',
     label: 'Default agent',
-    description: 'The agent selected for new sessions.',
+    description: 'The agent new sessions use. Starred in the New session menu.',
     options: [
       { value: 'claude', label: 'Claude Code' },
       { value: 'codex', label: 'Codex' }
-    ]
+    ],
+    hidden: true
   },
   {
     key: 'theme',

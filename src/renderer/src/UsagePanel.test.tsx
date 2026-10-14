@@ -16,8 +16,8 @@ const props: ComponentProps<typeof StatusLine> = {
   live: { attached: true, model: null, effort: null, commands: [{ name: 'usage', description: 'Usage' }],
     usage: { used: 40000, size: 200000 }, rateLimits: [{ window: 'five_hour', status: 'rejected' }],
     permissions: null, accepts: { image: false, file: false }, steering: false },
-  git: null, pr: null, runningThread: null, runningLabel: null, steered: false,
-  queue: { items: [], paused: false }, onResumeQueue() {}, onOpenThread() {}, async onSetChoice() {}, onCommand
+  git: null, pr: null, running: false,
+  queue: { items: [], paused: false }, onResumeQueue() {}, async onSetChoice() {}, onCommand
 }
 function mount(fetch: () => Promise<PlanUsage | null>): void {
   window.gloss = { sessions: { planUsage: fetch } } as unknown as GlossApi

@@ -1,12 +1,11 @@
 // The side panel's thread view: anchor quote, the thread's messages, composer.
-import { useEffect } from 'react'
 import type { Attachment, SessionLive } from '@shared/types'
 import { wireTag } from '@shared/wire'
 import type { OpenSession, Panel } from './App'
 import { itemSource, listItemSpans } from './anchors'
 import { Composer, type ComposerQueue } from './Composer'
 import { ExportMenu } from './ExportMenu'
-import { Log, logItems, type Notice } from './Log'
+import { Log, logItems, type Notice, type Reveal } from './Log'
 import { Markdown } from './Markdown'
 
 type Props = {
@@ -14,7 +13,9 @@ type Props = {
   width: number | null
   open: OpenSession
   panel: Panel
-  label: string
+  reveal: Reveal | null
+  /** The overview tab ← goes back to. */
+  backTo: 'threads' | 'queue'
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
   notices: Notice[]
@@ -34,18 +35,10 @@ type Props = {
 }
 
 export function ThreadPanel(props: Props): React.JSX.Element {
-  const { open, panel, label, runningThread, notices, live, onSend, onCancel, onClose } = props
+  const { open, panel, runningThread, notices, live, onSend, onCancel, onClose } = props
   const threadId = panel.threadId
   const running = runningThread !== undefined
   const runningHere = running && panel.threadId !== null && runningThread === panel.threadId
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   // Quote a list item as rendered markdown when it can be found; a selection
   // (which may cut through markup) as its plain text.
@@ -64,10 +57,10 @@ export function ThreadPanel(props: Props): React.JSX.Element {
       style={props.width === null ? undefined : { flexBasis: props.width }}
     >
       <header>
-        <button className="back" onClick={props.onBack} title="All threads">
-          ← All threads
+        <button className="back" onClick={props.onBack}>
+          {props.backTo === 'queue' ? '← Queue' : '← All threads'}
         </button>
-        <h2 className="mono thread-label">{label}</h2>
+        {threadId === null && <h2 className="thread-label">New thread</h2>}
         {runningHere && <span className="status">Agent is working…</span>}
         {threadId !== null && (
           <ExportMenu
@@ -76,7 +69,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
             onSave={() => props.onSaveMarkdown(threadId)}
           />
         )}
-        <button className="close" onClick={onClose} aria-label="Hide panel" title="Hide panel (Esc)">
+        <button className="close" onClick={onClose} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
           »
         </button>
       </header>
@@ -92,6 +85,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
           </p>
         }
         renderAgent={(m) => <Markdown text={m.text} />}
+        reveal={props.reveal}
       />
       <Composer
         key={`${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
@@ -106,7 +100,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         queue={props.queue}
         onSend={onSend}
         onSteer={live.steering && runningHere ? props.onSteer : undefined}
-        onCancel={onCancel}
+        onCancel={runningHere ? onCancel : undefined}
         footer={<div className="mono wire">sent as: {wireTag(panel.anchor.text)} …</div>}
       />
     </aside>

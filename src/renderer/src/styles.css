@@ -37,6 +37,13 @@
   --shadow: rgba(0, 0, 0, 0.12);
   --scrim: rgba(28, 27, 24, 0.35);
   --mono: ui-monospace, Consolas, monospace;
+  /* What state a turn, message or step is in: one color each, everywhere
+     (working, done, queued, paused, failed or cancelled). */
+  --state-working: var(--accent);
+  --state-done: var(--ok);
+  --state-queued: var(--warn);
+  --state-paused: var(--merged);
+  --state-failed: var(--danger);
 }
 
 :root[data-theme='dark'] {
@@ -203,6 +210,73 @@ body.resizing {
   background: var(--panel);
   text-align: left;
   padding: 0 10px;
+}
+
+/* New session, and a caret for its agent menu (star = the default agent). */
+.new-session-split {
+  position: relative;
+  display: flex;
+}
+
+.new-session-split .new-session {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px 0 0 8px;
+}
+
+.new-session-agent {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.new-session-agents {
+  flex: none;
+  width: 30px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background: var(--panel);
+}
+
+.agent-menu {
+  left: 0;
+  right: 0;
+  top: 40px;
+}
+
+.agent-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.agent-item button[role='menuitem'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.menu .agent-star {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  text-align: center;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--faint);
+}
+
+.menu .agent-star.on {
+  color: var(--accent);
 }
 
 .sidebar-error {
@@ -460,7 +534,7 @@ body.resizing {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--state-working);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
@@ -589,8 +663,7 @@ body.resizing {
   margin-top: 4px;
 }
 
-.setting select,
-.agent-picker select {
+.setting select {
   height: 30px;
   padding: 0 8px;
   border: 1px solid var(--line-strong);
@@ -706,6 +779,7 @@ body.resizing {
 /* One centered column that widens with the pane, and text that grows a little on wide ones. */
 .log,
 .composer,
+.activity-strip,
 .status-line {
   width: 100%;
   max-width: clamp(820px, 76cqi, 1080px);
@@ -923,16 +997,16 @@ body.resizing {
 
 .tool.status-in_progress .tool-dot,
 .tool.status-pending .tool-dot {
-  background: var(--accent);
+  background: var(--state-working);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
 .tool.status-completed .tool-dot {
-  background: var(--ok);
+  background: var(--state-done);
 }
 
 .tool.status-failed .tool-dot {
-  background: var(--danger);
+  background: var(--state-failed);
 }
 
 .tool-title {
@@ -1053,6 +1127,83 @@ body.resizing {
 
 .composer {
   padding: 12px 32px 20px;
+}
+
+/* Above the composer while a thread works or messages wait (SPEC → Activity strip) */
+.activity-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 32px 0;
+  font-size: 13px;
+}
+
+.activity-strip + .composer {
+  padding-top: 6px;
+}
+
+.activity-strip button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink-2);
+}
+
+.activity-strip button:hover {
+  background: var(--hover);
+}
+
+/* A state's dot: the strip, the Queue tab's rows */
+.state-dot {
+  flex: none;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.state-dot[data-state='working'] {
+  background: var(--state-working);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.state-dot[data-state='completed'] {
+  background: var(--state-done);
+}
+
+.state-dot[data-state='queued'] {
+  background: var(--state-queued);
+}
+
+.state-dot[data-state='paused'] {
+  background: var(--state-paused);
+}
+
+.state-dot[data-state='cancelled'],
+.state-dot[data-state='failed'] {
+  background: var(--state-failed);
+}
+
+.activity-strip .activity-thread {
+  flex: 1;
+}
+
+.activity-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-strip .activity-queued {
+  flex: none;
+  color: var(--state-queued);
 }
 
 .box {
@@ -1372,7 +1523,7 @@ body.resizing {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: var(--warn);
+  color: var(--state-paused);
 }
 
 /* Sign-in dialog */
@@ -1572,12 +1723,16 @@ a.status-item {
   background: var(--warn-fill);
 }
 
-.status-item.working {
-  color: var(--accent);
-}
-
 .status-item.warn {
   color: var(--warn);
+}
+
+.status-item.queue-count {
+  color: var(--state-queued);
+}
+
+.status-item.paused {
+  color: var(--state-paused);
 }
 
 .status-item.error {
@@ -2021,7 +2176,139 @@ button.status.link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--accent);
+  color: var(--state-working);
+}
+
+.thread-queued {
+  color: var(--state-queued);
+}
+
+.thread-paused {
+  color: var(--state-paused);
+}
+
+/* The overview's tabs: Threads, Queue */
+.side-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.side-tabs button {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.side-tabs button:hover {
+  background: var(--hover);
+}
+
+.side-tabs button[aria-selected='true'] {
+  color: var(--ink);
+  font-weight: 600;
+  background: var(--chip);
+}
+
+.side-tabs .mono {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--muted);
+}
+
+.queue-list ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.queue-list .queue-paused {
+  margin: 4px 4px 8px;
+}
+
+.queued-text.link {
+  cursor: pointer;
+}
+
+/* The Queue tab's timeline: queued (next at the bottom), then sent, newest first */
+.timeline-label {
+  margin: 10px 4px 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+
+.timeline-now {
+  flex: none;
+  height: 1px;
+}
+
+.sent-row button {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  text-align: left;
+  font-size: 14px;
+}
+
+.sent-row button:hover {
+  background: var(--hover);
+}
+
+.sent-row.working button {
+  background: var(--accent-tint);
+}
+
+.sent-when {
+  color: var(--faint);
+}
+
+.sent-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* A message scrolled to from the Queue tab */
+.revealed {
+  animation: revealed 2.4s ease-out;
+}
+
+@keyframes revealed {
+  0%,
+  40% {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+.queued-where {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .side-rail {
@@ -2130,8 +2417,8 @@ button.status.link {
 }
 
 .plan-entry.completed .plan-box {
-  border-color: var(--muted);
-  background: var(--muted);
+  border-color: var(--state-done);
+  background: var(--state-done);
 }
 
 .sr-only {
@@ -2287,20 +2574,6 @@ button.status.link {
 
 .anchor-chips .anchor-chip {
   margin-left: 0;
-}
-
-/* Agent choice applies to new sessions and the external session listing. */
-.agent-picker {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 16px;
-}
-
-.agent-picker select {
-  min-width: 0;
-  max-width: 150px;
 }
 
 .session-agent {

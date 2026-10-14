@@ -21,7 +21,8 @@ import type {
   SessionLive,
   SlashCommand,
   Thread,
-  ToolCall
+  ToolCall,
+  TurnOutcome
 } from '../shared/types'
 import { wireText } from '../shared/wire'
 import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, type AgentHandlers, type SteerOutcome } from './acp'
@@ -54,6 +55,8 @@ type Turn = {
   cancelled: boolean
   /** The user message that starts the turn, until it is sent: the agent's copy doesn't have it yet. */
   unsent?: string
+  /** The user messages sent in it (the first, and any steered in), which record how it ended. */
+  messageIds: string[]
 }
 
 type SessionRuntime = {
@@ -1100,6 +1103,7 @@ export class SessionManager {
     }
     this.deps.store.insertMessage(message)
     this.deps.emit({ type: 'message', message })
+    turn.messageIds.push(message.id)
     // The agent's answer to it starts a new message below it.
     const before = { agentMessage: turn.agentMessage, afterToolCall: turn.afterToolCall }
     turn.agentMessage = undefined
@@ -1123,6 +1127,7 @@ export class SessionManager {
   private unsteer(message: Message, turn: Turn, before: Pick<Turn, 'agentMessage' | 'afterToolCall'>): void {
     this.deps.store.deleteMessage(message.id)
     this.deps.emit({ type: 'messageDeleted', sessionId: message.sessionId, messageId: message.id })
+    turn.messageIds = turn.messageIds.filter((id) => id !== message.id)
     // Nothing was written since: keep appending to the message it interrupted.
     if (!turn.agentMessage && !turn.afterToolCall) Object.assign(turn, before)
   }
@@ -1171,7 +1176,7 @@ export class SessionManager {
       this.deps.emit({ type: 'session', session })
     }
 
-    const turn: Turn = { threadId, cancelled: false, afterToolCall: false, unsent: message.id }
+    const turn: Turn = { threadId, cancelled: false, afterToolCall: false, unsent: message.id, messageIds: [message.id] }
     rt.turn = turn
     this.deps.emit({ type: 'turnStart', sessionId, threadId })
 
@@ -1205,16 +1210,36 @@ export class SessionManager {
     // The turn changed the agent's copy: remember its updatedAt so it isn't taken for a change made elsewhere.
     if (attachedTo) await this.recordSynced(sessionId, attachedTo)
     rt.turn = undefined
-    // The queue moves on after a turn that ended normally. A cancelled, failed or
-    // cut-short turn pauses it, so the user can look before more is sent.
+    this.recordOutcome(turn, result)
+    // The queue moves on after a turn that ended normally or was cancelled (a cancel
+    // stops only that turn). A failed or cut-short turn pauses it, so the user can
+    // look before more is sent.
     let continues = false
     if (rt.queue.items.length > 0 && this.runtimes.get(sessionId) === rt) {
-      continues = !result.error && result.stopReason === 'end_turn'
+      continues = !result.error && (result.stopReason === 'end_turn' || result.stopReason === 'cancelled')
       if (rt.queue.paused !== !continues) this.setQueue(sessionId, { ...rt.queue, paused: !continues })
     }
     this.deps.emit({ type: 'turnEnd', sessionId, threadId, ...result, ...(continues ? { continues: true } : {}) })
     if (continues) this.drain(sessionId)
     return result
+  }
+
+  /** Marks the turn's user messages with how it ended (SPEC → Turn outcomes). */
+  private recordOutcome(turn: Turn, result: TurnResult): void {
+    const outcome: TurnOutcome =
+      result.error
+        ? 'failed'
+        : result.stopReason === 'end_turn'
+          ? 'completed'
+          : result.stopReason === 'cancelled'
+            ? 'cancelled'
+            : 'failed'
+    for (const id of turn.messageIds) {
+      const message = this.deps.store.getMessage(id)
+      if (!message) continue
+      this.deps.store.setMessageOutcome(id, outcome)
+      this.deps.emit({ type: 'message', message: { ...message, outcome } })
+    }
   }
 
   private setQueue(sessionId: string, queue: MessageQueue): void {

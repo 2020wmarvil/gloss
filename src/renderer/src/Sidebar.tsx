@@ -7,8 +7,9 @@ import type { AgentInfo, AgentSession, Project, Session } from '@shared/types'
 
 type Props = {
   agents: AgentInfo[]
-  selectedAgent: string
-  onSelectAgent(id: string): void
+  /** The starred agent: new sessions use it unless another is picked from the menu. */
+  defaultAgent: string
+  onSetDefaultAgent(id: string): void
   /** Width the user dragged it to; null = the CSS default. */
   width: number | null
   projects: Project[]
@@ -17,8 +18,8 @@ type Props = {
   sessions: Session[]
   openId: string | null
   running: Record<string, string | null>
-  /** The agent's sessions in the project that Gloss has no record of; null while loading. */
-  agentSessions: AgentSession[] | null
+  /** The agents' sessions in the project that Gloss has no record of; null while loading. */
+  agentSessions: ListedAgentSession[] | null
   /** Newest first, or most recent activity first (the `sessionOrder` setting). */
   order: SessionOrder
   agentSessionsError: string | null
@@ -33,8 +34,9 @@ type Props = {
   onOpenProject(): void
   onDeleteProject(path: string): void
   onSelect(id: string): void
-  onNew(): void
-  onImport(session: AgentSession): void
+  /** Starts a session with the given agent, or the default one. */
+  onNew(agentId?: string): void
+  onImport(session: ListedAgentSession): void
   onRename(id: string, title: string): void
   onDelete(id: string): void
   onCopyMarkdown(id: string): void
@@ -55,13 +57,17 @@ export function ago(time: number, now = Date.now()): string {
   return `${Math.round(d / 30)}mo`
 }
 
+/** One of an agent's own sessions, with the agent it belongs to. */
+export type ListedAgentSession = AgentSession & { agentId: string }
+
 type Row =
   | { kind: 'gloss'; session: Session; at: number }
-  | { kind: 'agent'; agent: AgentSession; at: number }
+  | { kind: 'agent'; agent: ListedAgentSession; at: number }
 
 export function Sidebar(props: Props): React.JSX.Element {
   const { project, openId, running, agentSessions } = props
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<
@@ -69,9 +75,10 @@ export function Sidebar(props: Props): React.JSX.Element {
   >(null)
   // Clicks elsewhere and Escape close the menus.
   useEffect(() => {
-    if (!switcherOpen && menuFor === null) return
+    if (!switcherOpen && !agentMenuOpen && menuFor === null) return
     const close = (): void => {
       setSwitcherOpen(false)
+      setAgentMenuOpen(false)
       setMenuFor(null)
     }
     const onKey = (e: KeyboardEvent): void => {
@@ -85,8 +92,9 @@ export function Sidebar(props: Props): React.JSX.Element {
       window.removeEventListener('contextmenu', close)
       window.removeEventListener('keydown', onKey)
     }
-  }, [switcherOpen, menuFor])
+  }, [switcherOpen, agentMenuOpen, menuFor])
 
+  const agentName = (id: string): string => props.agents.find((a) => a.id === id)?.name ?? id
   const sessions = project ? props.sessions.filter((s) => sameFolder(s.cwd, project.path)) : []
   const isRunningIn = (p: Project): boolean =>
     props.sessions.some((s) => s.id in running && sameFolder(s.cwd, p.path))
@@ -128,6 +136,7 @@ export function Sidebar(props: Props): React.JSX.Element {
           e.stopPropagation()
           setMenuFor(s.id)
           setSwitcherOpen(false)
+          setAgentMenuOpen(false)
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') props.onSelect(s.id)
@@ -136,7 +145,7 @@ export function Sidebar(props: Props): React.JSX.Element {
       >
         <span className="session-title" onDoubleClick={() => setRenaming(s.id)}>
           {s.title}
-          <small className="session-agent">{props.agents.find((a) => a.id === s.agentId)?.name ?? s.agentId}</small>
+          <small className="session-agent">{agentName(s.agentId)}</small>
         </span>
         {s.id in running ? <span className="running-dot" aria-label="Running" /> : <span className="when">{ago(at)}</span>}
         {menuFor === s.id && (
@@ -174,6 +183,7 @@ export function Sidebar(props: Props): React.JSX.Element {
           onClick={(e) => {
             e.stopPropagation()
             setSwitcherOpen((o) => !o)
+            setAgentMenuOpen(false)
             setMenuFor(null)
           }}
         >
@@ -227,23 +237,51 @@ export function Sidebar(props: Props): React.JSX.Element {
         )}
       </div>
 
-      <label className="agent-picker">
-        <span>Agent</span>
-        <select
-          aria-label="Agent for new sessions"
-          value={props.selectedAgent}
-          disabled={props.creating || props.importing !== null}
-          onChange={(e) => props.onSelectAgent(e.target.value)}
-        >
-          {props.agents.map((a) => (
-            <option key={a.id} value={a.id}>{a.name}</option>
-          ))}
-        </select>
-      </label>
       {project ? (
-        <button className="new-session" onClick={props.onNew} disabled={props.creating} title="New session (Ctrl+N)">
-          {props.creating ? 'Starting agent…' : '+ New session'}
-        </button>
+        <div className="new-session-split">
+          <button className="new-session" onClick={() => props.onNew()} disabled={props.creating} title="New session (Ctrl+N)">
+            {props.creating ? 'Starting agent…' : '+ New session'}
+            {!props.creating && <span className="new-session-agent">{agentName(props.defaultAgent)}</span>}
+          </button>
+          <button
+            className="new-session-agents"
+            aria-label="New session with another agent"
+            aria-haspopup="menu"
+            aria-expanded={agentMenuOpen}
+            disabled={props.creating}
+            onClick={(e) => {
+              e.stopPropagation()
+              setAgentMenuOpen((o) => !o)
+              setSwitcherOpen(false)
+              setMenuFor(null)
+            }}
+          >
+            <span className="caret" aria-hidden>
+              ▾
+            </span>
+          </button>
+          {agentMenuOpen && (
+            <div className="menu agent-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+              {props.agents.map((a) => (
+                <div key={a.id} className="agent-item">
+                  <button role="menuitem" onClick={() => (setAgentMenuOpen(false), props.onNew(a.id))}>
+                    {a.name}
+                  </button>
+                  <button
+                    className={a.id === props.defaultAgent ? 'agent-star on' : 'agent-star'}
+                    role="menuitemradio"
+                    aria-checked={a.id === props.defaultAgent}
+                    aria-label={`Make ${a.name} the default agent`}
+                    title={a.id === props.defaultAgent ? 'Default agent' : 'Make default'}
+                    onClick={() => props.onSetDefaultAgent(a.id)}
+                  >
+                    {a.id === props.defaultAgent ? '★' : '☆'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       ) : (
         <button className="new-session" onClick={props.onOpenProject}>
           Open project…
@@ -259,7 +297,7 @@ export function Sidebar(props: Props): React.JSX.Element {
               {rows.length === 0 && <li className="sidebar-empty">No sessions yet</li>}
               {rows.map((row) =>
                 row.kind === 'agent' ? (
-                  <li key={row.agent.acpSessionId}>
+                  <li key={`${row.agent.agentId}:${row.agent.acpSessionId}`}>
                     <button
                       className="session-row agent"
                       title={`${row.agent.title}\nStarted outside Gloss: open it here`}
@@ -268,7 +306,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                     >
                       <span className="session-title">
                         {row.agent.title}
-                        <small className="session-agent">{props.agents.find((a) => a.id === props.selectedAgent)?.name}</small>
+                        <small className="session-agent">{agentName(row.agent.agentId)}</small>
                       </span>
                       <span className="when">
                         {props.importing === row.agent.acpSessionId ? 'Opening…' : row.at ? ago(row.at) : ''}

@@ -22,7 +22,7 @@ const message = (seq: number, threadId: string | null, createdAt?: number): Mess
 })
 
 describe('threadSummaries', () => {
-  it('counts replies and sorts by last activity, falling back to when the thread was created', () => {
+  it('counts replies and lists the oldest thread first', () => {
     const open: OpenSession = {
       session: {
         id: 's',
@@ -45,8 +45,8 @@ describe('threadSummaries', () => {
     }
     expect(threadSummaries(open).map((s) => [s.thread.id, s.replies, s.lastActivity])).toEqual([
       ['old', 2, 30],
-      ['legacy', 1, 25],
-      ['new', 1, 20]
+      ['new', 1, 20],
+      ['legacy', 1, 25]
     ])
   })
 })

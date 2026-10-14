@@ -46,7 +46,12 @@ export type Message = {
   steered?: true
   /** When it was recorded, ms since the epoch. Missing on messages stored before M9. */
   createdAt?: number
+  /** User messages: how the turn they were sent in ended. Missing while it runs, and for turns Gloss didn't run. */
+  outcome?: TurnOutcome
 }
+
+/** How a turn ended: `failed` covers errors and turns cut short (max tokens, refusal). */
+export type TurnOutcome = 'completed' | 'cancelled' | 'failed'
 
 /** A message sent while a turn was running, waiting for its turn (SPEC → Queue). Kept in memory only. */
 export type QueuedMessage = {

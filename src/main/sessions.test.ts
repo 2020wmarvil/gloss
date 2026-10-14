@@ -442,11 +442,13 @@ describe('SessionManager', () => {
   })
 
   describe('queue', () => {
-    /** Turns wait until released by their prompt (wire) text, or cancelled. */
-    function holdTurns(): Map<string, () => void> {
-      const releases = new Map<string, () => void>()
+    type Releases = Map<string, (stop?: acp.StopReason) => void>
+
+    /** Turns wait until released by their prompt (wire) text, ending with `stop` (end_turn by default), or cancelled. */
+    function holdTurns(): Releases {
+      const releases: Releases = new Map()
       state.script = async ({ text, say, cancelled }) => {
-        const released = new Promise<'end_turn'>((r) => releases.set(text, () => r('end_turn')))
+        const released = new Promise<acp.StopReason>((r) => releases.set(text, (stop = 'end_turn') => r(stop)))
         const stop = await Promise.race([released, cancelled.then(() => 'cancelled' as const)])
         if (stop === 'end_turn') await say(`done: ${text}`)
         return stop
@@ -454,12 +456,12 @@ describe('SessionManager', () => {
       return releases
     }
 
-    async function waitForPrompt(releases: Map<string, () => void>, text: string): Promise<void> {
+    async function waitForPrompt(releases: Releases, text: string): Promise<void> {
       await vi.waitFor(() => expect(releases.has(text)).toBe(true))
     }
 
     /** A session whose turn 'one' is running and whose queue holds `queued`. */
-    async function busy(releases: Map<string, () => void>, ...queued: string[]) {
+    async function busy(releases: Releases, ...queued: string[]) {
       const session = await manager.createSession('/w', 'fake')
       const running = manager.send(session.id, 'one', null)
       await waitForPrompt(releases, 'one')
@@ -519,11 +521,49 @@ describe('SessionManager', () => {
       expect(messages.find((m) => m.text === `done: ${wireTwo}`)?.threadId).toBe(thread.id)
     })
 
-    it('pauses after a cancelled turn and sends the next message on resume', async () => {
+    it('moves on after a cancelled turn: the cancel stops only that turn', async () => {
       const releases = holdTurns()
       const { sessionId, running } = await busy(releases, 'two')
       await manager.cancel(sessionId)
       await expect(running).resolves.toEqual({ stopReason: 'cancelled' })
+      expect(events.filter((e) => e.type === 'turnEnd').at(-1)).toMatchObject({ stopReason: 'cancelled', continues: true })
+      await waitForPrompt(releases, 'two')
+      expect(manager.openSession(sessionId).queue).toEqual({ items: [], paused: false })
+      releases.get('two')!()
+      await vi.waitFor(() => expect(manager.openSession(sessionId).turn).toBeNull())
+    })
+
+    it('records how each turn ended on its message, kept across a reopen', async () => {
+      const releases = holdTurns()
+      const { sessionId, running } = await busy(releases, 'two', 'three')
+      await manager.cancel(sessionId)
+      await running
+      await waitForPrompt(releases, 'two')
+      releases.get('two')!('max_tokens')
+      await vi.waitFor(() => expect(manager.openSession(sessionId).turn).toBeNull())
+      manager.resumeQueue(sessionId)
+      await waitForPrompt(releases, 'three')
+      expect(manager.openSession(sessionId).messages.find((m) => m.text === 'three')).not.toHaveProperty('outcome')
+      releases.get('three')!()
+      await vi.waitFor(() => expect(manager.openSession(sessionId).turn).toBeNull())
+
+      const outcomes = manager
+        .openSession(sessionId)
+        .messages.filter((m) => m.role === 'user')
+        .map((m) => [m.text, m.outcome])
+      expect(outcomes).toEqual([
+        ['one', 'cancelled'],
+        ['two', 'failed'],
+        ['three', 'completed']
+      ])
+      expect(events).toContainEqual({ type: 'message', message: expect.objectContaining({ text: 'three', outcome: 'completed' }) })
+    })
+
+    it('pauses after a cut-short turn and sends the next message on resume', async () => {
+      const releases = holdTurns()
+      const { sessionId, running } = await busy(releases, 'two')
+      releases.get('one')!('max_tokens')
+      await expect(running).resolves.toEqual({ stopReason: 'max_tokens' })
       expect(manager.openSession(sessionId).queue).toMatchObject({ paused: true, items: [{ text: 'two' }] })
       expect(events.filter((e) => e.type === 'turnEnd').at(-1)).not.toHaveProperty('continues')
       expect(state.prompts).toEqual(['one'])
@@ -538,7 +578,7 @@ describe('SessionManager', () => {
     it('sends right away while paused, and moves on once a turn ends normally', async () => {
       const releases = holdTurns()
       const { sessionId, running } = await busy(releases, 'two')
-      await manager.cancel(sessionId)
+      releases.get('one')!('max_tokens')
       await running
 
       const direct = manager.send(sessionId, 'now', null)
@@ -579,7 +619,7 @@ describe('SessionManager', () => {
     it('unpauses when the last paused message is removed', async () => {
       const releases = holdTurns()
       const { sessionId, running } = await busy(releases, 'two')
-      await manager.cancel(sessionId)
+      releases.get('one')!('max_tokens')
       await running
       manager.removeQueued(sessionId, manager.openSession(sessionId).queue.items[0].id)
       expect(manager.openSession(sessionId).queue).toEqual({ items: [], paused: false })
@@ -629,8 +669,9 @@ describe('SessionManager', () => {
         ['user', 'skip the tests', true],
         ['agent', 'ok: skip the tests', false]
       ])
-      // Persisted.
+      // Persisted, with the turn's outcome on both of its messages.
       expect(store.listMessages(session.id)[2].steered).toBe(true)
+      expect(messages.filter((m) => m.role === 'user').map((m) => m.outcome)).toEqual(['completed', 'completed'])
     })
 
     it('steers only the thread the turn runs in, tagged for that thread', async () => {

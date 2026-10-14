@@ -71,9 +71,3 @@ export function itemMarker(markdown: string, span: ListItemSpan): string {
   const marker = /^\s*(\d{1,9})[.)]/.exec(markdown.slice(span.start, span.end))
   return marker ? `${marker[1]}.` : '•'
 }
-
-/** The number shown for an item: its ordered-list number, or its 1-based position. */
-export function itemLabel(markdown: string, span: ListItemSpan): string {
-  const marker = /^\s*(\d{1,9})[.)]/.exec(markdown.slice(span.start, span.end))
-  return marker ? marker[1] : String(span.index + 1)
-}

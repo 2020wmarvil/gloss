@@ -13,14 +13,10 @@ type Props = {
   live: SessionLive
   git: GitStatus | null
   pr: PullRequest | null
-  /** threadId of the running turn; undefined when idle. */
-  runningThread: string | null | undefined
-  runningLabel: string | null
-  /** The running turn was steered: the user's latest message went into it. */
-  steered: boolean
+  /** A turn is running (the activity strip says where). */
+  running: boolean
   queue: MessageQueue
   onResumeQueue(): void
-  onOpenThread(threadId: string): void
   onSetChoice(kind: 'model' | 'effort', value: string): Promise<void>
   /** Sends a slash command as a message in the main thread. */
   onCommand(text: string): void
@@ -159,7 +155,7 @@ function ChoicePicker(props: {
 }
 
 export function StatusLine(props: Props): React.JSX.Element {
-  const { session, live, git, runningThread } = props
+  const { session, live, git } = props
   const [choiceError, setChoiceError] = useState<string | null>(null)
   const [folderError, setFolderError] = useState<string | null>(null)
   const usage = live.usage
@@ -185,23 +181,14 @@ export function StatusLine(props: Props): React.JSX.Element {
 
   return (
     <div className="status-line" role="status">
-      {runningThread !== undefined &&
-        (runningThread === null ? (
-          <span className="status-item working">Working…{props.steered && ' (steered)'}</span>
-        ) : (
-          <button className="status-item working link" onClick={() => props.onOpenThread(runningThread)}>
-            Working in {props.runningLabel ?? 'a thread'}
-            {props.steered && ' (steered)'}
-          </button>
-        ))}
-      {!live.attached && runningThread === undefined && <span className="status-item muted">Agent not running</span>}
+      {!live.attached && !props.running && <span className="status-item muted">Agent not running</span>}
       {props.queue.items.length > 0 &&
         (props.queue.paused ? (
-          <button className="status-item warn" onClick={props.onResumeQueue} title="Send the next queued message">
+          <button className="status-item paused" onClick={props.onResumeQueue} title="Send the next queued message">
             {props.queue.items.length} queued, paused · Resume
           </button>
         ) : (
-          <span className="status-item">{props.queue.items.length} queued</span>
+          <span className="status-item queue-count">{props.queue.items.length} queued</span>
         ))}
 
       {session.agentId === 'claude' ? (
