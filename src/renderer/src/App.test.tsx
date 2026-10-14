@@ -16,7 +16,7 @@ it("starts sessions with the default agent or one from the menu, and lists every
   const list = vi.fn(async (_path: string, agentId: string) => [{ acpSessionId: 'same-id', title: `${agentId} external` }])
   const create = vi.fn(async () => { throw new Error('creation observed') })
   const importSession = vi.fn(async () => { throw new Error('import observed') })
-  const state = { global: { defaultAgent: 'codex', theme: 'light', sessionOrder: 'created', listItemReplies: false }, projects: {}, error: null, path: '/settings.json' }
+  const state = { global: { defaultAgent: 'codex', theme: 'light', sessionOrder: 'created', listItemReplies: false, mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }
   const update = vi.fn(async (patch: { global: object }) => ({ ...state, global: { ...state.global, ...patch.global } }))
   window.gloss = {
     history: async () => [],
@@ -66,7 +66,7 @@ it('goes back and forward through the sessions and settings visited with the mou
   }))
   window.gloss = {
     history: async () => [],
-    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false }, projects: {}, error: null, path: '/settings.json' }) },
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: { list: async () => [session('a'), session('b')], open: opened, refresh: async () => {} },
@@ -116,7 +116,7 @@ it('shows where the agent works and what waits, jumps there, and lists the queue
   const remove = vi.fn(async () => {})
   window.gloss = {
     history: async () => [],
-    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false }, projects: {}, error: null, path: '/settings.json' }) },
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
@@ -213,7 +213,7 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
   }
   window.gloss = {
     history: async () => [],
-    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false }, projects: {}, error: null, path: '/settings.json' }) },
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
@@ -275,7 +275,7 @@ it('opens search anywhere and reveals matches in another session, its thread, or
   ].map((r) => ({ ...r, sessionId: 'b', sessionTitle: 'b', cwd: '/project', threadQuote: r.threadId ? 'cache' : null, snippet: 'cache match' })), more: false }))
   window.gloss = {
     search, history: async () => [],
-    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false }, projects: {}, error: null, path: '/settings.json' }) },
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: { list: async () => [session('a'), session('b')], open: opened, refresh: async () => {} },

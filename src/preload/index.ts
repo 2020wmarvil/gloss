@@ -54,6 +54,7 @@ const api: GlossApi = {
     pathFor: (file) => webUtils.getPathForFile(file)
   },
   settings: {
+    previewMcpImport: (source) => ipcRenderer.invoke(IPC.settingsPreviewMcpImport, source),
     get: () => ipcRenderer.invoke(IPC.settingsGet),
     update: (patch) => ipcRenderer.invoke(IPC.settingsUpdate, patch),
     openFile: () => ipcRenderer.invoke(IPC.settingsOpenFile)

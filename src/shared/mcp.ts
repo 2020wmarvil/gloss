@@ -14,7 +14,7 @@ export function mcpError(value: unknown): string | null {
     const s = item as Record<string, unknown>
     if (typeof s.name !== 'string' || !s.name.trim()) return `${prefix}: name is required`
     // Codex replaces Unicode whitespace with underscores before configuring servers.
-    const name = s.name.replace(/\p{White_Space}/gu, '_')
+    const name = mcpName(s.name)
     if (names.has(name)) return `${prefix}: duplicate name ${s.name} after replacing whitespace with underscores`
     names.add(name)
     const pairs = (v: unknown): boolean => Array.isArray(v) && v.every((p) =>
@@ -34,8 +34,14 @@ export function mcpError(value: unknown): string | null {
   return null
 }
 
-/** Project lookup shared by the settings screen and main process. */
+export function mcpName(name: string): string { return name.replace(/\p{White_Space}/gu, '_') }
+
+/** Project lookup used by the settings screen. */
 export function projectMcp(projects: Record<string, { mcpServers?: McpServer[] }>, cwd: string): McpServer[] {
   const key = Object.keys(projects).find((p) => sameFolder(p, cwd))
   return key ? projects[key].mcpServers ?? [] : []
 }
+
+export type McpImportSource = 'claude' | 'codex' | 'gloss'
+export type McpImportEntry = { id: string; name: string; source: string; server?: McpServer; problem?: string }
+export type McpImportPreview = { entries: McpImportEntry[]; problems: string[] }

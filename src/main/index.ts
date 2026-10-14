@@ -13,7 +13,7 @@ import { SessionManager } from './sessions'
 import { patchArg, SettingsFile } from './settings'
 import { runInTerminal } from './terminal'
 import { UsageSource } from './usage'
-import { projectMcp } from '../shared/mcp'
+import { previewMcpImport } from './mcp-import'
 
 let mainWindow: BrowserWindow | undefined
 let store: Store | undefined
@@ -317,6 +317,10 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   )
 
   ipcMain.handle(IPC.settingsGet, () => settingsFile.state())
+  ipcMain.handle(IPC.settingsPreviewMcpImport, (_e, source: unknown) => {
+    if (source !== 'claude' && source !== 'codex' && source !== 'gloss') throw new Error('Unknown MCP import source')
+    return previewMcpImport(source, { projects: manager.listProjects().map((p) => p.path), legacy: settingsFile.state().projects })
+  })
   ipcMain.handle(IPC.settingsUpdate, (_e, patch: unknown) => settingsFile.update(patchArg(patch)))
   ipcMain.handle(IPC.settingsOpenFile, async () => {
     const error = await shell.openPath(settingsFile.path)
@@ -335,7 +339,7 @@ app.whenReady().then(() => {
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false },
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, mcpServers: [] },
     onChange(next) {
       emit({ type: 'settings', state: next })
     }
@@ -347,7 +351,7 @@ app.whenReady().then(() => {
     store,
     emit,
     getAgentConfig,
-    mcpServers: (cwd) => projectMcp(settingsFile.state().projects, cwd),
+    mcpServers: () => settingsFile.state().global.mcpServers,
     agentEnv: (config) => agentEnv(config),
     connect: (config, env, handlers) => AgentConnection.start(config, env, handlers),
     runInTerminal

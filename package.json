@@ -20,7 +20,8 @@
     "@agentclientprotocol/claude-agent-acp": "0.89.1",
     "@agentclientprotocol/codex-acp": "2.2.2",
     "@agentclientprotocol/sdk": "1.8.0",
-    "@anthropic-ai/claude-agent-sdk": "0.3.293"
+    "@anthropic-ai/claude-agent-sdk": "0.3.293",
+    "smol-toml": "1.9.1"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.11.1",

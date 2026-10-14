@@ -3,7 +3,6 @@ import type { SettingsPatch, SettingsState } from '@shared/ipc'
 import { SETTING_FIELDS, type GlobalSettings, type SettingField } from '@shared/settings'
 import { errorText } from './errors'
 import { modKey, SHORTCUTS } from './shortcuts'
-import { projectMcp } from '@shared/mcp'
 import { McpSettings } from './McpSettings'
 
 type Props = {
@@ -43,7 +42,7 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
     setOpenError(await onOpenFile())
   }
 
-  const projectFields = SETTING_FIELDS.filter((f) => f.scope === 'project')
+  const projectFields = SETTING_FIELDS.filter((f) => f.scope === 'project' && !f.hidden)
 
   return (
     <main className="settings">
@@ -75,21 +74,22 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
               onChange={(value) => void update({ global: { [f.key]: value } })}
             />
           ))}
+          <McpSettings servers={state.global.mcpServers}
+            hasLegacy={Object.values(state.projects).some((p) => (p.mcpServers?.length ?? 0) > 0)}
+            onSave={async (mcpServers) => { await onUpdate({ global: { mcpServers } }) }} />
         </section>
 
-        <section>
+        {projectFields.length > 0 && <section>
           <h2 className="label">Project</h2>
           {projectPath ? (
             <>
               <p className="mono">{projectPath}</p>
-              <McpSettings key={projectPath} servers={projectMcp(state.projects, projectPath)}
-                onSave={async (mcpServers) => { await onUpdate({ project: { path: projectPath, values: { mcpServers } } }) }} />
               {projectFields.length === 0 && <p className="muted">No project settings yet.</p>}
             </>
           ) : (
             <p className="muted">Open a session to see its project&apos;s settings.</p>
           )}
-        </section>
+        </section>}
 
         <section>
           <h2 className="label">Keyboard shortcuts</h2>

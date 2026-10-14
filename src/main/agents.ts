@@ -56,7 +56,9 @@ function codexAgent(): AgentConfig {
     name: 'Codex',
     command: process.execPath,
     args: [require.resolve('@agentclientprotocol/codex-acp/dist/index.js')],
-    env: { ELECTRON_RUN_AS_NODE: '1' },
+    // Let explicit Gloss entries override same-named native entries. Otherwise
+    // codex-acp filters them out and later edits in Gloss never take effect.
+    env: { ELECTRON_RUN_AS_NODE: '1', DISABLE_MCP_CONFIG_FILTERING: 'true' },
     bypassModeId: 'agent-full-access',
     sessionMeta: { new: { jetbrains: { air: { customInstructions: AGENT_INSTRUCTIONS } } } }
   }

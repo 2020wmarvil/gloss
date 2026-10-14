@@ -170,7 +170,7 @@ export class AgentConnection {
   validateMcp(servers: acp.McpServer[]): void {
     for (const server of servers) {
       if ('type' in server && (server.type === 'acp' || this.init.agentCapabilities?.mcpCapabilities?.[server.type] !== true)) {
-        throw new Error(`This agent does not support ${server.type.toUpperCase()} MCP transport (${server.name}). Change the project's MCP settings or choose another agent.`)
+        throw new Error(`This agent does not support ${server.type.toUpperCase()} MCP transport (${server.name}). Change the global MCP settings or choose another agent.`)
       }
     }
   }

@@ -1,4 +1,5 @@
 import type { SearchRequest, SearchResponse } from './search'
+import type { McpImportPreview, McpImportSource } from './mcp'
 // The IPC contract between the main process and the renderer.
 // Type-only (plus channel names): nothing here may pull runtime code into the sandboxed preload.
 import type { GlobalSettings, ProjectSettings } from './settings'
@@ -194,6 +195,7 @@ export type GlossApi = {
     pathFor(file: File): string
   }
   settings: {
+    previewMcpImport(source: McpImportSource): Promise<McpImportPreview>
     get(): Promise<SettingsState>
     /** Writes the changed keys to settings.json, keeping everything else. Rejects if the file isn't valid JSON. */
     update(patch: SettingsPatch): Promise<SettingsState>
@@ -205,6 +207,7 @@ export type GlossApi = {
 }
 
 export const IPC = {
+  settingsPreviewMcpImport: 'gloss:settings:previewMcpImport',
   search: 'gloss:search',
   agentsList: 'gloss:agents:list',
   projectsList: 'gloss:projects:list',
