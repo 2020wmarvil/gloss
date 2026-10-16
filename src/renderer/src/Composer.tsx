@@ -207,7 +207,7 @@ export function Composer({
   function submit(how: 'send' | 'steer' | 'main' = 'send'): void {
     const trimmed = text.trim()
     if (!trimmed && attachments.length === 0) return
-    if (how === 'steer' && steer) steer(trimmed, attachments)
+    if (how !== 'main' && steer) steer(trimmed, attachments)
     else if (how === 'main' && onSendToMain) onSendToMain(trimmed, attachments)
     else onSend(trimmed, attachments)
     browsing.current = null
@@ -381,16 +381,6 @@ export function Composer({
               Cancel
             </button>
           )}
-          {steer && (
-            <button
-              className="steer"
-              onClick={() => submit('steer')}
-              disabled={!text.trim() && attachments.length === 0}
-              title="Send into the running turn now (Ctrl+Enter)"
-            >
-              Steer
-            </button>
-          )}
           {onSendToMain && (
             <button
               className="to-main"
@@ -398,20 +388,20 @@ export function Composer({
               disabled={!text.trim() && attachments.length === 0}
               title={
                 running
-                  ? 'Queue it in the main conversation instead of this thread'
+                  ? 'Send to the main conversation: steer if it is active, otherwise queue'
                   : 'Send it to the main conversation instead of this thread'
               }
             >
-              {running ? 'Queue to main' : 'Send to main'}
+              Send to main
             </button>
           )}
           <button
             className="primary send"
             onClick={() => submit()}
             disabled={!text.trim() && attachments.length === 0}
-            title={running ? 'Sent when the running turn ends' : undefined}
+            title={steer ? 'Send into the running turn now' : running ? 'Sent when the running turn ends' : undefined}
           >
-            {running ? 'Queue' : 'Send'}
+            {running && !steer ? 'Queue' : 'Send'}
           </button>
         </div>
       </div>
