@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { defaultBranch, parseDiff, readReviewDiff } from './review'
+import { defaultBranch, parseDiff, pullRequestBase, readReviewDiff, readReviewFile, reviewCommits } from './review'
 
 describe('parseDiff', () => {
   it('reads files, hunks and line numbers', () => {
@@ -91,7 +91,9 @@ describe('readReviewDiff', () => {
     writeFileSync(join(dir, 'b.ts'), 'B\n')
     writeFileSync(join(dir, 'c.ts'), 'new\nfile\n')
 
-    expect(await defaultBranch(dir)).toBe('main')
+    // Without an origin it falls back to the local branch.
+    expect(await pullRequestBase(dir, 'main')).toBe('main')
+    expect(await pullRequestBase(dir, 'nope')).toBeNull()
     const diff = await readReviewDiff(dir, 'main')
     expect(diff.base).toBe(git('rev-parse', 'main').trim())
     expect(diff.files.map((f) => [f.path, f.state, f.additions, f.deletions])).toEqual([
@@ -102,6 +104,78 @@ describe('readReviewDiff', () => {
     expect(diff.files[2].hunks[0].lines.map((l) => [l.new, l.text])).toEqual([
       [1, 'new'],
       [2, 'file']
+    ])
+  })
+
+  it('reads a file as it is now from the repository root, and nothing outside it', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'gloss-review-'))
+    git('init', '-q', '-b', 'main')
+    mkdirSync(join(dir, 'sub'))
+    writeFileSync(join(dir, 'sub', 'a.ts'), 'one\r\ntwo\r\n')
+    writeFileSync(join(dir, 'bin'), Buffer.from([1, 0, 2]))
+    expect(await readReviewFile(join(dir, 'sub'), 'sub/a.ts')).toEqual(['one', 'two'])
+    expect(await readReviewFile(dir, 'bin')).toBeNull()
+    expect(await readReviewFile(dir, 'missing.ts')).toBeNull()
+    expect(await readReviewFile(join(dir, 'sub'), '../outside.ts')).toBeNull()
+  })
+
+  it('compares two commits, and lists the branch commits', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'gloss-review-'))
+    git('init', '-q', '-b', 'main')
+    writeFileSync(join(dir, 'a.ts'), 'one\n')
+    git('add', '.')
+    git('commit', '-q', '-m', 'base')
+    git('checkout', '-q', '-b', 'feature')
+    writeFileSync(join(dir, 'a.ts'), 'two\n')
+    git('commit', '-q', '-am', 'second')
+    const second = git('rev-parse', 'HEAD').trim()
+    writeFileSync(join(dir, 'a.ts'), 'three\n')
+    git('commit', '-q', '-am', 'third')
+    writeFileSync(join(dir, 'a.ts'), 'four\n')
+    writeFileSync(join(dir, 'new.ts'), 'new\n')
+
+    expect(await defaultBranch(dir)).toBe('main')
+    // Without origin/HEAD or a local main, the remote's main.
+    git('update-ref', 'refs/remotes/origin/main', 'main')
+    git('branch', '-q', '-m', 'main', 'old')
+    expect(await defaultBranch(dir)).toBe('origin/main')
+    git('branch', '-q', '-m', 'old', 'main')
+    const diff = await readReviewDiff(dir, 'main', second)
+    expect(diff).toMatchObject({ headRef: second, head: second, base: git('rev-parse', 'main').trim() })
+    expect(diff.files.map((f) => [f.path, f.state, f.hunks[0].lines.map((l) => l.text)])).toEqual([['a.ts', 'committed', ['one', 'two']]])
+    // A commit as the base is used as is.
+    const fromSecond = await readReviewDiff(dir, second, 'HEAD')
+    expect(fromSecond.base).toBe(second)
+    expect(fromSecond.files[0].hunks[0].lines.map((l) => l.text)).toEqual(['two', 'three'])
+    await expect(readReviewDiff(dir, 'main', 'nope')).rejects.toThrow('No commit nope')
+
+    expect(await readReviewFile(dir, 'a.ts', second)).toEqual(['two'])
+    expect(await readReviewFile(dir, 'a.ts')).toEqual(['four'])
+    expect(await readReviewFile(dir, 'new.ts', 'HEAD')).toBeNull()
+
+    const commits = await reviewCommits(dir, git('rev-parse', 'main').trim())
+    expect(commits.map((c) => c.subject)).toEqual(['third', 'second', 'base'])
+    expect(commits[1].sha).toBe(second)
+  })
+
+  it('shows only uncommitted changes and new files against HEAD', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'gloss-review-'))
+    git('init', '-q', '-b', 'main')
+    writeFileSync(join(dir, 'a.ts'), 'one\n')
+    writeFileSync(join(dir, 'b.ts'), 'b\n')
+    git('add', '.')
+    git('commit', '-q', '-m', 'base')
+    git('checkout', '-q', '-b', 'feature')
+    writeFileSync(join(dir, 'a.ts'), 'uno\n')
+    git('commit', '-q', '-am', 'committed')
+    writeFileSync(join(dir, 'b.ts'), 'B\n')
+    git('add', 'b.ts')
+    writeFileSync(join(dir, 'c.ts'), 'c\n')
+    const diff = await readReviewDiff(dir, 'HEAD')
+    expect(diff.base).toBe(git('rev-parse', 'HEAD').trim())
+    expect(diff.files.map((f) => [f.path, f.state])).toEqual([
+      ['b.ts', 'uncommitted'],
+      ['c.ts', 'uncommitted']
     ])
   })
 

@@ -1,7 +1,7 @@
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as acp from '@agentclientprotocol/sdk'
-import type { GlossEvent } from '../shared/ipc'
+import type { GlossEvent, PullRequest } from '../shared/ipc'
 import { AgentConnection } from './acp'
 import type { AgentConfig } from './agents'
 import { Store } from './db'
@@ -1935,6 +1935,8 @@ describe('SessionManager', () => {
     const DIFF: ReviewDiff = {
       baseRef: 'origin/main',
       base: 'base123',
+      headRef: null,
+      head: 'head456',
       files: [
         {
           path: 'src/a.ts',
@@ -1967,6 +1969,18 @@ describe('SessionManager', () => {
     ].join('\n')
     const lineAnchor = { kind: 'line' as const, file: 'src/a.ts', side: 'new' as const, start: 10, end: 10, text: 'const a = 1', lines: ['const a = 1'] }
 
+    const OPEN_PR: PullRequest = {
+      number: 7,
+      title: 'Add constants',
+      url: 'https://github.com/o/r/pull/7',
+      state: 'open',
+      checks: null,
+      review: null,
+      baseRef: 'main'
+    }
+    /** The branch's pull request, as gh reports it. */
+    let pr: PullRequest | null
+
     function reviewManager(): SessionManager {
       return new SessionManager({
         store,
@@ -1977,9 +1991,16 @@ describe('SessionManager', () => {
         runInTerminal: runInTerminal as never,
         now: () => 1000,
         git: {
-          defaultBranch: async () => 'origin/main',
+          pullRequest: async () => pr,
+          pullRequestBase: async (_cwd, branch) => `origin/${branch}`,
+          defaultBranch: async () => 'origin/trunk',
           currentBranch: async () => 'feature',
-          readDiff: async () => DIFF
+          mergeBase: async (_cwd, ref) => `mb:${ref}`,
+          commits: async (_cwd, since) => [{ sha: 'c1', subject: `since ${since}`, at: 1 }],
+          repoUrl: async () => 'https://github.com/o/r',
+          readDiff: async (_cwd, baseRef, headRef) =>
+            headRef === null ? DIFF : { ...DIFF, baseRef, base: baseRef, headRef, head: 'commit789' },
+          readFile: async () => null
         }
       })
     }
@@ -1992,6 +2013,7 @@ describe('SessionManager', () => {
     }
 
     beforeEach(async () => {
+      pr = OPEN_PR
       await manager.dispose()
       manager = reviewManager()
       state.script = async ({ say, text }) => {
@@ -2000,9 +2022,56 @@ describe('SessionManager', () => {
       }
     })
 
+    it('starts a new review of a given range', async () => {
+      const sha = 'b'.repeat(40)
+      const session = await manager.createReview('/repo', 'fake', { baseRef: sha, headRef: 'HEAD' })
+      await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+      expect(session).toMatchObject({ title: 'Review: feature', review: { baseRef: sha, headRef: 'HEAD' } })
+      expect(state.prompts[0]).toContain(`\`git diff ${sha} commit789\``)
+      expect(state.prompts[0]).not.toContain('pull request')
+    })
+
+    it('reviews against the default branch without an open pull request', async () => {
+      pr = { ...OPEN_PR, state: 'merged' }
+      const session = await manager.createReview('/repo', 'fake')
+      await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+      expect(session).toMatchObject({ title: 'Review: feature', review: { baseRef: 'origin/trunk' } })
+      expect(session.review?.headRef).toBeUndefined()
+      expect(state.prompts[0]).not.toContain('pull request')
+    })
+
+    it('offers merge bases and commits, and tells the agent once when the range changes', async () => {
+      const session = await startReview()
+      // The pull request's base is the default, so it comes first.
+      expect(await manager.reviewRefs(session.id)).toEqual({
+        bases: [
+          { ref: 'origin/main', sha: 'mb:origin/main' },
+          { ref: 'origin/trunk', sha: 'mb:origin/trunk' }
+        ],
+        commits: [{ sha: 'c1', subject: 'since mb:origin/trunk', at: 1 }],
+        repoUrl: 'https://github.com/o/r',
+        defaultBase: 'origin/main'
+      })
+
+      const sha = 'a'.repeat(40)
+      const diff = await manager.setReviewRange(session.id, { baseRef: sha, headRef: 'HEAD' })
+      expect(diff).toMatchObject({ base: sha, headRef: 'HEAD', head: 'commit789' })
+      expect(store.getSession(session.id)?.review).toEqual({ baseRef: sha, headRef: 'HEAD' })
+      expect(events).toContainEqual({ type: 'session', session: expect.objectContaining({ review: { baseRef: sha, headRef: 'HEAD' } }) })
+      await expect(manager.setReviewRange(session.id, { baseRef: '--output=x' })).rejects.toThrow('Not a commit')
+
+      await manager.send(session.id, 'Look again', null)
+      const note = `[The diff under review is now \`git diff ${sha} commit789\`.]`
+      expect(state.prompts[1]).toBe(`${note}\nLook again`)
+      const sent = store.listMessages(session.id).filter((m) => m.role === 'user').pop()
+      expect(sent).toMatchObject({ text: 'Look again', wireText: `${note}\nLook again` })
+      await manager.send(session.id, 'And again', null)
+      expect(state.prompts[2]).toBe('And again')
+    })
+
     it('starts with the first pass, with the review instructions, and opens a thread per finding on the diff', async () => {
       const session = await startReview()
-      expect(session).toMatchObject({ title: 'Review: feature', titleSet: true, review: { baseRef: 'origin/main' } })
+      expect(session).toMatchObject({ title: 'Review: #7 Add constants', titleSet: true, review: { baseRef: 'origin/main' } })
       expect(state.prompts).toHaveLength(1)
       expect(isFirstPass(state.prompts[0])).toBe(true)
       expect(state.prompts[0]).toContain('git diff base123')

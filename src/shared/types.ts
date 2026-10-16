@@ -1,4 +1,5 @@
 // The app's data model (see docs/SPEC.md → Data model).
+import type { ReviewRange } from './review'
 
 export type Session = {
   id: string
@@ -18,8 +19,8 @@ export type Session = {
   effort?: string
   /** The agent's `updatedAt` for the session when Gloss last synced it (SPEC → Shared sessions). */
   syncedAt?: string
-  /** A review session (SPEC → Review sessions): the branch it is reviewed against, e.g. "origin/main". */
-  review?: { baseRef: string }
+  /** A review session (SPEC → Review sessions): what its diff compares. */
+  review?: ReviewRange
   /** Review sessions: threads on diff lines that aren't resolved. */
   openThreads?: number
 }

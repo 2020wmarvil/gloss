@@ -6,7 +6,7 @@ import { sameFolder } from '../shared/paths'
 import type { Anchor, Attachment, Finding, Message, Plan, PlanEntry, Session, Thread, ToolCall, TurnOutcome } from '../shared/types'
 
 // Append-only. Each entry upgrades the schema by one version (PRAGMA user_version).
-const MIGRATIONS = [
+const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   `
   CREATE TABLE sessions (
     id             TEXT PRIMARY KEY,
@@ -134,6 +134,41 @@ const MIGRATIONS = [
   DROP TABLE threads;
   ALTER TABLE threads_new RENAME TO threads;
   CREATE INDEX threads_by_session ON threads (session_id);
+  `,
+  // Version 11 was also used for handoffs on dev. Inspect the schema so databases
+  // from either branch gain review support without discarding their existing data.
+  (db) => {
+    const sessions = db.prepare('PRAGMA table_info(sessions)').all()
+    if (!sessions.some((c) => c.name === 'review_base')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN review_base TEXT')
+    }
+    const threads = db.prepare('PRAGMA table_info(threads)').all()
+    const hasFinding = threads.some((c) => c.name === 'finding')
+    const hasResolvedAt = threads.some((c) => c.name === 'resolved_at')
+    const anchorRequired = threads.some((c) => c.name === 'anchor_message_id' && c.notnull === 1)
+    if (hasFinding && hasResolvedAt && !anchorRequired) return
+    db.exec(`
+      CREATE TABLE threads_new (
+        id                TEXT PRIMARY KEY,
+        session_id        TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        anchor_message_id TEXT REFERENCES messages(id) ON DELETE CASCADE,
+        anchor            TEXT NOT NULL,
+        created_at        INTEGER NOT NULL,
+        finding           TEXT,
+        resolved_at       INTEGER
+      );
+      INSERT INTO threads_new (id, session_id, anchor_message_id, anchor, created_at, finding, resolved_at)
+        SELECT id, session_id, anchor_message_id, anchor, created_at,
+          ${hasFinding ? 'finding' : 'NULL'}, ${hasResolvedAt ? 'resolved_at' : 'NULL'}
+        FROM threads ORDER BY rowid;
+      DROP TABLE threads;
+      ALTER TABLE threads_new RENAME TO threads;
+      CREATE INDEX threads_by_session ON threads (session_id);
+    `)
+  },
+  // The commit a review compares with its base; null for the working tree.
+  `
+  ALTER TABLE sessions ADD COLUMN review_head TEXT;
   `
 ]
 
@@ -152,7 +187,12 @@ function toSession(r: Row): Session {
     ...(r.model != null ? { model: r.model as string } : {}),
     ...(r.effort != null ? { effort: r.effort as string } : {}),
     ...(r.synced_at != null ? { syncedAt: r.synced_at as string } : {}),
-    ...(r.review_base != null ? { review: { baseRef: r.review_base as string }, openThreads: Number(r.open_threads) } : {})
+    ...(r.review_base != null
+      ? {
+          review: { baseRef: r.review_base as string, ...(r.review_head != null ? { headRef: r.review_head as string } : {}) },
+          openThreads: Number(r.open_threads)
+        }
+      : {})
   }
 }
 
@@ -233,7 +273,9 @@ export class Store {
     for (let v = user_version; v < MIGRATIONS.length; v++) {
       this.db.exec('BEGIN')
       try {
-        this.db.exec(MIGRATIONS[v])
+        const migration = MIGRATIONS[v]
+        if (typeof migration === 'string') this.db.exec(migration)
+        else migration(this.db)
         this.db.exec(`PRAGMA user_version = ${v + 1}`)
         this.db.exec('COMMIT')
       } catch (err) {
@@ -278,9 +320,19 @@ export class Store {
   insertSession(s: Session): void {
     this.db
       .prepare(
-        'INSERT INTO sessions (id, agent_id, acp_session_id, cwd, title, created_at, title_set, review_base) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO sessions (id, agent_id, acp_session_id, cwd, title, created_at, title_set, review_base, review_head) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
-      .run(s.id, s.agentId, s.acpSessionId, s.cwd, s.title, s.createdAt, s.titleSet ? 1 : null, s.review?.baseRef ?? null)
+      .run(
+        s.id,
+        s.agentId,
+        s.acpSessionId,
+        s.cwd,
+        s.title,
+        s.createdAt,
+        s.titleSet ? 1 : null,
+        s.review?.baseRef ?? null,
+        s.review?.headRef ?? null
+      )
   }
 
   getSessionByAcpId(agentId: string, acpSessionId: string): Session | undefined {
@@ -298,7 +350,7 @@ export class Store {
   /** `syncedAt: null` forgets it. */
   updateSession(
     id: string,
-    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model' | 'effort'>> & { syncedAt?: string | null }
+    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model' | 'effort' | 'review'>> & { syncedAt?: string | null }
   ): Session {
     if (patch.acpSessionId !== undefined) {
       this.db
@@ -319,6 +371,11 @@ export class Store {
     }
     if (patch.syncedAt !== undefined) {
       this.db.prepare('UPDATE sessions SET synced_at = ? WHERE id = ?').run(patch.syncedAt, id)
+    }
+    if (patch.review !== undefined) {
+      this.db
+        .prepare('UPDATE sessions SET review_base = ?, review_head = ? WHERE id = ?')
+        .run(patch.review.baseRef, patch.review.headRef ?? null, id)
     }
     const s = this.getSession(id)
     if (!s) throw new Error(`No session ${id}`)

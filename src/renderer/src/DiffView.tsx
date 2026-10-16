@@ -1,7 +1,8 @@
 // A review session's diff (SPEC → Review sessions → Diff view): every file stacked under
 // a sticky header, split or unified, with threads as cards under their lines.
-import { memo, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { languageOf, LARGE_FILE_LINES, type DiffFile, type DiffHunk, type DiffLine, type Location, type Side } from '@shared/review'
+import { memo, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { languageOf, LARGE_FILE_LINES, type DiffFile, type DiffLine, type Location, type Side } from '@shared/review'
+import { EXPAND_STEP, expandable, gapsOf, gapViews, NO_EXPANSION, type Expansion, type GapView } from './diffContext'
 import { codeColors, useHighlighting } from './highlight'
 import { Markdown } from './Markdown'
 import { KIND_NAMES, type LineThread, type ThreadKind } from './reviewThreads'
@@ -34,7 +35,15 @@ type Props = {
   toggled: Set<string>
   /** Files collapsed or expanded by hand (large ones start collapsed). */
   toggledFiles: Set<string>
+  /** Files as they are now, by path, once read for showing the lines around their hunks; null if they can't be. */
+  sources: Record<string, string[] | null>
+  /** The lines shown around each file's hunks, by path. */
+  expansions: Record<string, Expansion>
   onToggleFile(path: string): void
+  /** Shows more of a file: lines at one end of a gap (before hunk `gap`, or after the last), a whole gap, or the whole file on or off. */
+  onExpand(path: string, how: { gap: number; edge: 'top' | 'bottom' | 'all' } | 'full'): void
+  /** Opens a file in the file manager, or in the external editor at `line`. */
+  onOpenFile(path: string, how: 'reveal' | 'editor', line: number): void
   onToggleCard(threadId: string): void
   onOpenThread(threadId: string): void
 }
@@ -65,7 +74,11 @@ export function DiffView(props: Props): React.JSX.Element {
           showComments={props.showComments}
           toggled={props.toggled}
           collapsed={props.toggledFiles.has(f.path) !== f.additions + f.deletions > LARGE_FILE_LINES}
+          source={props.sources[f.path]}
+          expansion={props.expansions[f.path] ?? NO_EXPANSION}
           onToggleFile={props.onToggleFile}
+          onExpand={props.onExpand}
+          onOpenFile={props.onOpenFile}
           onToggleCard={props.onToggleCard}
           onOpenThread={props.onOpenThread}
         />
@@ -97,15 +110,21 @@ const STATE_NAMES: Record<DiffFile['state'], string> = {
   both: 'committed + uncommitted'
 }
 
-type FileProps = Omit<Props, 'files' | 'cards' | 'toggledFiles'> & { file: DiffFile; cards: Card[]; collapsed: boolean }
+type FileProps = Omit<Props, 'files' | 'cards' | 'toggledFiles' | 'sources' | 'expansions'> & {
+  file: DiffFile
+  cards: Card[]
+  collapsed: boolean
+  /** The file now, once read; null if it can't be. */
+  source: string[] | null | undefined
+  expansion: Expansion
+}
 
-/** Rows of one hunk: pairs of lines side by side, or one line each. */
+/** Rows of a run of lines: pairs of lines side by side, or one line each. */
 type Row = { old: DiffLine | null; new: DiffLine | null }
 
-function rowsOf(hunk: DiffHunk, layout: Layout): Row[] {
-  if (layout === 'unified') return hunk.lines.map((l) => ({ old: l.kind === 'add' ? null : l, new: l.kind === 'del' ? null : l }))
+function rowsOf(lines: DiffLine[], layout: Layout): Row[] {
+  if (layout === 'unified') return lines.map((l) => ({ old: l.kind === 'add' ? null : l, new: l.kind === 'del' ? null : l }))
   const rows: Row[] = []
-  const lines = hunk.lines
   for (let i = 0; i < lines.length; ) {
     if (lines[i].kind === 'context') {
       rows.push({ old: lines[i], new: lines[i] })
@@ -121,12 +140,17 @@ function rowsOf(hunk: DiffHunk, layout: Layout): Row[] {
   return rows
 }
 
-/** Syntax colors per line and side, highlighting each side of a hunk as one piece of code. */
-function useColors(file: DiffFile): Map<DiffLine, { old?: (string | undefined)[]; new?: (string | undefined)[] }> {
+type LineColors = Map<DiffLine, { old?: (string | undefined)[]; new?: (string | undefined)[] }>
+
+/**
+ * Syntax colors per line and side, highlighting each side of a hunk as one piece of
+ * code, and lines shown around the hunks as part of the whole file.
+ */
+function useColors(file: DiffFile, source: string[] | null | undefined, gaps: GapView[]): LineColors {
   const version = useHighlighting()
-  return useMemo(() => {
+  const hunkColors = useMemo(() => {
     void version
-    const out = new Map<DiffLine, { old?: (string | undefined)[]; new?: (string | undefined)[] }>()
+    const out: LineColors = new Map()
     const lang = languageOf(file.path)
     for (const h of file.hunks) {
       for (const side of ['old', 'new'] as const) {
@@ -142,6 +166,30 @@ function useColors(file: DiffFile): Map<DiffLine, { old?: (string | undefined)[]
     }
     return out
   }, [file, version])
+  const sourceColors = useMemo(() => {
+    void version
+    if (!source) return null
+    const colors = codeColors(source.join('\n'), languageOf(file.path))
+    if (!colors) return null
+    const lines: (string | undefined)[][] = []
+    let at = 0
+    for (const text of source) {
+      lines.push(colors.slice(at, at + text.length))
+      at += text.length + 1
+    }
+    return lines
+  }, [file.path, source, version])
+  return useMemo(() => {
+    if (!sourceColors) return hunkColors
+    const out: LineColors = new Map(hunkColors)
+    for (const g of gaps) {
+      for (const l of [...g.top, ...g.bottom]) {
+        const c = sourceColors[l.new! - 1]
+        out.set(l, { old: c, new: c })
+      }
+    }
+    return out
+  }, [hunkColors, sourceColors, gaps])
 }
 
 /** Display width of a line in characters (tabs as 4). */
@@ -153,8 +201,11 @@ function width(text: string): number {
 const CHUNK = 150
 
 const FileSection = memo(function FileSection(props: FileProps): React.JSX.Element {
-  const { file, layout, cards, active, collapsed } = props
-  const colors = useColors(file)
+  const { file, layout, cards, active, collapsed, source, expansion } = props
+  const canExpand = expandable(file) && source !== null
+  const gaps = useMemo(() => (canExpand ? gapsOf(file.hunks) : null), [canExpand, file.hunks])
+  const views = useMemo(() => (gaps ? gapViews(gaps, source, expansion) : null), [gaps, source, expansion])
+  const colors = useColors(file, source, views ?? NO_GAPS)
   const [sx, setSx] = useState({ old: 0, new: 0 })
   const bars = useRef<Record<string, HTMLDivElement | null>>({})
   const [selecting, setSelecting] = useState<Side | null>(null)
@@ -229,14 +280,41 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
     chunk = []
     lines = 0
   }
-  file.hunks.forEach((h, hi) => {
-    chunk.push(
+  /** A gap's expander: the hunk header after it, with buttons that show the lines it hides. */
+  const expander = (g: GapView | undefined, hi: number): ReactNode => {
+    const header = file.hunks[hi]?.header
+    if (g && g.hidden === 0) return null
+    if (!g && header === undefined) return null
+    const show = (edge: 'top' | 'bottom' | 'all'): void => props.onExpand(file.path, { gap: hi, edge })
+    const first = hi === 0
+    const last = hi === file.hunks.length
+    const button = (edge: 'top' | 'bottom' | 'all', label: string): ReactNode => (
+      <button className={`diff-expand ${edge}`} title={label} aria-label={label} onClick={() => show(edge)}>
+        {EXPAND_ICONS[edge]}
+      </button>
+    )
+    return (
       <div key={`h${hi}`} className="diff-hunk">
-        {h.header}
+        {header !== undefined && <span className="diff-hunk-text">{header}</span>}
+        {g && (
+          // Stacked by where the lines appear: the top of the gap, under the hunk above (or the
+          // top of the file), then its bottom, over the hunk below (or the end of the file).
+          // Beside them, the whole gap.
+          <span className="diff-expanders" role="group" aria-label="Show hidden lines">
+            <span className="diff-expand-pair">
+              {button('top', first ? `Show ${EXPAND_STEP} more lines from the top of the file` : `Show ${EXPAND_STEP} more lines under the change above`)}
+              {button('bottom', last ? `Show ${EXPAND_STEP} more lines from the end of the file` : `Show ${EXPAND_STEP} more lines over the change below`)}
+            </span>
+            {button('all', g.hidden === null ? 'Show the rest of the file' : `Show all ${g.hidden} hidden lines`)}
+          </span>
+        )}
       </div>
     )
-    rowsOf(h, layout).forEach((r, ri) => {
-      const key = `${hi}:${ri}`
+  }
+
+  const pushRows = (prefix: string, lineRun: DiffLine[]): void => {
+    rowsOf(lineRun, layout).forEach((r, ri) => {
+      const key = `${prefix}:${ri}`
       const oldN = r.old?.old ?? null
       const newN = r.new?.new ?? null
       if (split) {
@@ -267,11 +345,24 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
       for (const c of cardsAt('new', newN)) chunk.push(cardRow(c, 'new'))
       if (lines >= CHUNK) flush()
     })
-  })
+  }
+
+  // Each hunk, after the lines shown before it; then the lines shown after the last one.
+  for (let hi = 0; hi <= file.hunks.length; hi++) {
+    const g = views?.[hi]
+    if (g) pushRows(`t${hi}`, g.top)
+    const row = expander(g, hi)
+    if (row) {
+      chunk.push(row)
+      lines++
+    }
+    if (g) pushRows(`b${hi}`, g.bottom)
+    if (hi < file.hunks.length) pushRows(`${hi}`, file.hunks[hi].lines)
+  }
   flush()
 
-  const longest = (side: Side): number =>
-    Math.max(0, ...file.hunks.flatMap((h) => h.lines.filter((l) => l[side] !== null).map((l) => width(l.text))))
+  const shownLines = [...file.hunks.flatMap((h) => h.lines), ...(views ?? []).flatMap((g) => [...g.top, ...g.bottom])]
+  const longest = (side: Side): number => Math.max(0, ...shownLines.filter((l) => l[side] !== null).map((l) => width(l.text)))
   const scrollTo = (side: Side | 'both', left: number): void => {
     if (side === 'both') setSx({ old: left, new: left })
     else setSx((s) => ({ ...s, [side]: left }))
@@ -288,15 +379,29 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
       <div style={{ width: `max(100%, ${(side === 'both' ? Math.max(longest('old'), longest('new')) : longest(side)) + 4}ch)` }} />
     </div>
   )
+  // The scrollbars take room only while a side has lines too long to fit, so files sit flush.
+  const [overflows, setOverflows] = useState(false)
+  const widest = [longest('old'), longest('new')].join()
+  useLayoutEffect(() => {
+    const els = Object.values(bars.current).filter((el): el is HTMLDivElement => el !== null && el.isConnected)
+    const measure = (): void => setOverflows(els.some((el) => el.scrollWidth > el.clientWidth + 1))
+    measure()
+    const observer = new ResizeObserver(measure)
+    for (const el of els) observer.observe(el)
+    return () => observer.disconnect()
+  }, [collapsed, layout, widest])
 
   return (
     <section className="diff-file" data-file={file.path}>
-      <div className="diff-file-head">
+      <div className="diff-file-head" onClick={() => props.onToggleFile(file.path)}>
         <button
           className="diff-chevron"
           aria-expanded={!collapsed}
           aria-label={collapsed ? `Expand ${file.path}` : `Collapse ${file.path}`}
-          onClick={() => props.onToggleFile(file.path)}
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onToggleFile(file.path)
+          }}
         >
           {collapsed ? '▸' : '▾'}
         </button>
@@ -306,6 +411,46 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
         {file.status === 'added' && <span className="diff-chip">new</span>}
         {file.status === 'deleted' && <span className="diff-chip">deleted</span>}
         <span className={`diff-chip state-${file.state}`}>{STATE_NAMES[file.state]}</span>
+        {file.status !== 'deleted' && (
+          <span className="diff-open">
+            <button
+              className="diff-open-button"
+              title={REVEAL_LABEL}
+              aria-label={REVEAL_LABEL}
+              onClick={(e) => {
+                e.stopPropagation()
+                props.onOpenFile(file.path, 'reveal', firstLine(file))
+              }}
+            >
+              {FOLDER_ICON}
+            </button>
+            <button
+              className="diff-open-button"
+              title="Open in external editor"
+              aria-label="Open in external editor"
+              onClick={(e) => {
+                e.stopPropagation()
+                props.onOpenFile(file.path, 'editor', firstLine(file))
+              }}
+            >
+              {EDITOR_ICON}
+            </button>
+            {canExpand && !collapsed && (
+              <button
+                className={`diff-open-button${expansion.full ? ' on' : ''}`}
+                aria-pressed={expansion.full}
+                aria-label="Entire file"
+                title={expansion.full ? 'Entire file: on. Click to show only the changes and the lines around them' : 'Show the entire file'}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  props.onExpand(file.path, 'full')
+                }}
+              >
+                {FILE_ICON}
+              </button>
+            )}
+          </span>
+        )}
         <span className="diff-counts">
           <span className="add">+{file.additions}</span> <span className="del">−{file.deletions}</span>
         </span>
@@ -335,7 +480,7 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
             >
               {body}
             </div>
-            <div className={`diff-hbar ${layout}`}>
+            <div className={`diff-hbar ${layout}${overflows ? '' : ' idle'}`}>
               {split ? (
                 <>
                   <span className="spacer" />
@@ -355,6 +500,55 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
     </section>
   )
 })
+
+const NO_GAPS: GapView[] = []
+
+/** Where the editor opens a file: its first added line, else the first line its hunks show. */
+export function firstLine(file: DiffFile): number {
+  const lines = file.hunks.flatMap((h) => h.lines)
+  return lines.find((l) => l.kind === 'add')?.new ?? lines.find((l) => l.new !== null)?.new ?? 1
+}
+
+/** The file manager's name on this system. */
+export const REVEAL_LABEL = /Mac/.test(navigator.userAgent)
+  ? 'Reveal in Finder'
+  : /Windows/.test(navigator.userAgent)
+    ? 'Show in File Explorer'
+    : 'Show in folder'
+
+const FOLDER_ICON = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  </svg>
+)
+
+/** A page of text. */
+const FILE_ICON = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+    <path d="M14 3v6h6M8 13h8M8 17h8" />
+  </svg>
+)
+
+/** A window with an arrow out of it. */
+const EDITOR_ICON = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+  </svg>
+)
+
+const icon = (d: string, size: number): React.JSX.Element => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d={d} />
+  </svg>
+)
+
+/** The expanders' buttons: up for the top of a gap, down for its bottom, up and down for all of it. */
+const EXPAND_ICONS = {
+  top: icon('M6 15l6-6 6 6', 11),
+  all: icon('M7 15l5 5 5-5M7 9l5-5 5 5', 14),
+  bottom: icon('M6 9l6 6 6-6', 11)
+}
 
 /** Keeps an empty line one line tall (a zero-width space). */
 export const EMPTY_LINE = String.fromCharCode(0x200b)

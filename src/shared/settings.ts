@@ -14,6 +14,8 @@ export type GlobalSettings = {
   sessionOrder: SessionOrder
   /** Show reply buttons on top-level numbered and bulleted list items. */
   listItemReplies: boolean
+  /** The command that opens a file in the user's editor (`{file}`, `{line}`); empty for the system's default app. */
+  externalEditor: string
   /** Tools made available to both agents in every project. */
   mcpServers: import('./mcp').McpServer[]
 }
@@ -24,11 +26,14 @@ export type ProjectSettings = { mcpServers?: import('./mcp').McpServer[] }
 export type SettingField = {
   key: string
   scope: 'global' | 'project'
-  type: 'boolean' | 'enum' | 'mcp'
+  type: 'boolean' | 'enum' | 'string' | 'mcp'
   label: string
   description: string
   /** For enum fields: the allowed values and how the screen labels them. */
   options?: readonly { value: string; label: string }[]
+  /** For string fields: shown when empty, and values the screen suggests. */
+  placeholder?: string
+  suggestions?: readonly string[]
   /** Set elsewhere in the window, so the settings screen doesn't list it. */
   hidden?: boolean
 }
@@ -84,6 +89,16 @@ export const SETTING_FIELDS: readonly SettingField[] = [
       { value: 'created', label: 'Newest first' },
       { value: 'activity', label: 'Recent activity' }
     ]
+  },
+  {
+    key: 'externalEditor',
+    scope: 'global',
+    type: 'string',
+    label: 'External editor',
+    description:
+      "The command that opens a review's files in your editor. {file} and {line} are filled in; without {file} the path goes at the end. Empty opens the file with your system's default app.",
+    placeholder: 'System default app',
+    suggestions: ['code -g {file}:{line}', 'cursor -g {file}:{line}', 'zed {file}:{line}', 'subl {file}:{line}', 'notepad++ -n{line} {file}']
   }
 ]
 

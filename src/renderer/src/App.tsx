@@ -25,12 +25,12 @@ import { truncate } from '@shared/wire'
 import type { ListItemSpan } from './anchors'
 import { GeneralPanel, ReviewThreadList } from './ReviewPanels'
 import { locations as threadLocations } from './reviewThreads'
-import { ReviewView, type DiffState } from './ReviewView'
+import { hideFileList, ReviewView, type DiffState } from './ReviewView'
 import { FOCUS_COMPOSER, FOCUS_MAIN_COMPOSER, type ComposerQueue } from './Composer'
 import { errorText } from './errors'
 import { Conversation, type StripThread } from './Conversation'
 import type { Notice } from './Log'
-import { Sidebar, type ListedAgentSession } from './Sidebar'
+import { Sidebar, SidebarRail, type ListedAgentSession } from './Sidebar'
 import type { SourceSelection } from './SelectionPopover'
 import { SettingsScreen } from './SettingsScreen'
 import { SignInDialog } from './SignInDialog'
@@ -40,6 +40,7 @@ import {
   clampWidth,
   ResizeHandle,
   SIDEBAR_DEFAULT,
+  SIDEBAR_RAIL,
   sidebarLimits,
   threadPanelLimits,
   useStoredWidth,
@@ -103,6 +104,34 @@ function upsert<T extends { id: string }>(list: T[], item: T): T[] {
 }
 
 /** A thread's name: the start of the list item or selection it replies to; a review finding's title, or the lines. */
+/** "Press F11 to exit full screen", shown for a few seconds after entering it. */
+function FullScreenHint(): React.JSX.Element | null {
+  const [shown, setShown] = useState(true)
+  useEffect(() => {
+    const timer = setTimeout(() => setShown(false), 3000)
+    return () => clearTimeout(timer)
+  }, [])
+  if (!shown) return null
+  return (
+    <div className="fullscreen-hint" role="status">
+      Press <kbd>F11</kbd> to exit full screen
+    </div>
+  )
+}
+
+/**
+ * What the collapsed side panel counts: a session's threads, or for a review its open
+ * line threads plus the general conversation, which the panel also holds.
+ */
+function sideRailCount(open: OpenSession, isReview: boolean): { count: number; label?: string } {
+  if (!isReview) return { count: open.threads.length }
+  const threads = open.threads.filter((t) => t.anchor.kind === 'line' && t.resolvedAt === undefined).length
+  return {
+    count: threads + 1,
+    label: `the general conversation and ${threads} open ${threads === 1 ? 'thread' : 'threads'}`
+  }
+}
+
 function threadName(thread: Thread): string {
   if (thread.finding) return truncate(thread.finding.title, 40)
   return thread.anchor.kind === 'line' ? lineLabel(thread.anchor) : truncate(thread.anchor.text, 40)
@@ -157,10 +186,19 @@ export function App(): React.JSX.Element {
   const [pr, setPr] = useState<PullRequest | null>(null)
   const [signIn, setSignIn] = useState<SignInRequest | null>(null)
   const [creating, setCreating] = useState(false)
+  /** Counts entries into full screen; each shows the hint on how to leave again. */
+  const [fullScreenHint, setFullScreenHint] = useState(0)
   const [sidebarError, setSidebarError] = useState<string | null>(null)
   const windowWidth = useWindowWidth()
   const [sidebarStored, setSidebarWidth] = useStoredWidth('gloss.sidebarWidth')
   const [threadStored, setThreadPanelWidth] = useStoredWidth('gloss.threadPanelWidth')
+  /** The sidebar is collapsed to a rail; remembered across restarts. */
+  const [sidebarHidden, setSidebarHidden] = useState(() => localStorage.getItem('gloss.sidebarHidden') === '1')
+  const hideSidebar = (hidden: boolean): void => {
+    setSidebarHidden(hidden)
+    if (hidden) localStorage.setItem('gloss.sidebarHidden', '1')
+    else localStorage.removeItem('gloss.sidebarHidden')
+  }
 
   const openId = useRef<string | null>(null)
   /** Views visited, and the current one; `moving` while back or forward restores one. */
@@ -360,6 +398,9 @@ export function App(): React.JSX.Element {
           setSessions((list) => byActivity(upsert(list, event.session)))
           setOpen((o) => (o && o.session.id === event.session.id ? { ...o, session: event.session } : o))
           break
+        case 'fullScreen':
+          setFullScreenHint((n) => n + 1)
+          break
         case 'sessionDeleted':
           panels.current.delete(event.sessionId)
           setSessions((list) => list.filter((s) => s.id !== event.sessionId))
@@ -526,17 +567,27 @@ export function App(): React.JSX.Element {
     }
   }
 
-  /** Starts a review of the project's branch (SPEC → Review sessions). */
-  async function newReview(): Promise<void> {
-    if (!projectPath || !agent) return
+  /**
+   * Starts a review of the project's branch (SPEC → Review sessions) with the default
+   * agent, or a fresh one of an open review (**New review**): same agent and range.
+   */
+  async function newReview(from?: Session): Promise<void> {
+    const cwd = from?.cwd ?? projectPath
+    const agentId = from?.agentId ?? agent?.id
+    if (!cwd || !agentId) return
     setSidebarError(null)
     setCreating(true)
     try {
-      const session = await window.gloss.sessions.createReview(projectPath, agent.id)
+      const review = from?.review
+      const session = await window.gloss.sessions.createReview(cwd, agentId, review?.baseRef, review?.headRef ?? null)
+      // A new review starts with only the diff: the session list, the side panel and the
+      // file list closed. Each remembers what it is set to from then on.
+      hideFileList()
+      hideSidebar(true)
       await selectSession(session.id)
-      // The first pass runs in the general conversation.
+      setSideOpen(false)
+      // The first pass runs in the general conversation, which the side panel opens on.
       setGeneral(true)
-      setSideOpen(true)
     } catch (err) {
       setSidebarError(errorText(err))
     } finally {
@@ -917,53 +968,60 @@ export function App(): React.JSX.Element {
   // Dragged widths, kept within what the window has room for now.
   const sidebarLimit = sidebarLimits(windowWidth)
   const sidebarWidth = sidebarStored === null ? null : clampWidth(sidebarStored, sidebarLimit)
-  const threadLimit = threadPanelLimits(windowWidth, sidebarWidth ?? SIDEBAR_DEFAULT)
+  const threadLimit = threadPanelLimits(windowWidth, sidebarHidden ? SIDEBAR_RAIL : (sidebarWidth ?? SIDEBAR_DEFAULT))
   const threadWidth = threadStored === null ? null : clampWidth(threadStored, threadLimit)
 
   return (
     <div className="app">
-      <Sidebar
-        agents={agents}
-        defaultAgent={agent?.id ?? ''}
-        onSetDefaultAgent={(id) => void updateSettings({ global: { defaultAgent: id as GlobalSettings['defaultAgent'] } })}
-        width={sidebarWidth}
-        projects={projects}
-        project={project}
-        sessions={sessions}
-        openId={sessionId ?? null}
-        running={running}
-        agentSessions={listedAgentSessions}
-        order={settings?.global.sessionOrder ?? 'created'}
-        agentSessionsError={agentSessionsError}
-        importing={importing}
-        creating={creating}
-        createError={sidebarError}
-        settingsOpen={showSettings}
-        settingsError={settings?.error != null}
-        onSelectProject={(path) => selectProject(path, sessions)}
-        onOpenProject={() => void openProject()}
-        onDeleteProject={(path) => void deleteProject(path)}
-        onSelect={(id) => void selectSession(id)}
-        onNew={(agentId) => void newSession(agentId)}
-        onReview={() => void newReview()}
-        onImport={(a) => void importSession(a)}
-        onRename={(id, title) =>
-          void window.gloss.sessions.rename(id, title).catch((err: unknown) => setSidebarError(errorText(err)))
-        }
-        onDelete={(id) => void deleteSession(id)}
-        onCopyMarkdown={(id) => exportMarkdown(id, null, 'copy')}
-        onSaveMarkdown={(id) => exportMarkdown(id, null, 'save')}
-        onSearch={() => setShowSearch(true)}
-        onSettings={() => setShowSettings((on) => !on)}
-      />
-      <ResizeHandle
-        label="Resize sidebar"
-        pane="before"
-        limits={sidebarLimit}
-        value={sidebarWidth}
-        onResize={setSidebarWidth}
-        onReset={() => setSidebarWidth(null)}
-      />
+      {sidebarHidden ? (
+        <SidebarRail running={Object.keys(running).length > 0} onExpand={() => hideSidebar(false)} />
+      ) : (
+        <>
+          <Sidebar
+            agents={agents}
+            defaultAgent={agent?.id ?? ''}
+            onSetDefaultAgent={(id) => void updateSettings({ global: { defaultAgent: id as GlobalSettings['defaultAgent'] } })}
+            width={sidebarWidth}
+            projects={projects}
+            project={project}
+            sessions={sessions}
+            openId={sessionId ?? null}
+            running={running}
+            agentSessions={listedAgentSessions}
+            order={settings?.global.sessionOrder ?? 'created'}
+            agentSessionsError={agentSessionsError}
+            importing={importing}
+            creating={creating}
+            createError={sidebarError}
+            settingsOpen={showSettings}
+            settingsError={settings?.error != null}
+            onSelectProject={(path) => selectProject(path, sessions)}
+            onOpenProject={() => void openProject()}
+            onDeleteProject={(path) => void deleteProject(path)}
+            onSelect={(id) => void selectSession(id)}
+            onNew={(agentId) => void newSession(agentId)}
+            onReview={() => void newReview()}
+            onImport={(a) => void importSession(a)}
+            onRename={(id, title) =>
+              void window.gloss.sessions.rename(id, title).catch((err: unknown) => setSidebarError(errorText(err)))
+            }
+            onDelete={(id) => void deleteSession(id)}
+            onCopyMarkdown={(id) => exportMarkdown(id, null, 'copy')}
+            onSaveMarkdown={(id) => exportMarkdown(id, null, 'save')}
+            onSearch={() => setShowSearch(true)}
+            onSettings={() => setShowSettings((on) => !on)}
+            onCollapse={() => hideSidebar(true)}
+          />
+          <ResizeHandle
+            label="Resize sidebar"
+            pane="before"
+            limits={sidebarLimit}
+            value={sidebarWidth}
+            onResize={setSidebarWidth}
+            onReset={() => setSidebarWidth(null)}
+          />
+        </>
+      )}
       {showSettings && settings ? (
         <SettingsScreen
           state={settings}
@@ -990,6 +1048,21 @@ export function App(): React.JSX.Element {
           onCommand={(text) => void send(text, [], null)}
           onOpenThread={openThread}
           onReplyLines={openLines}
+          creating={creating}
+          onNewReview={() => void newReview(open.session)}
+          onOpenFile={(path, how, line) => {
+            const id = open.session.id
+            window.gloss.sessions.openReviewFile(id, path, how, line).catch((err: unknown) => addNotice(id, null, errorText(err)))
+          }}
+          onSetRange={(range) => {
+            const id = open.session.id
+            window.gloss.sessions.setReviewRange(id, range.baseRef, range.headRef ?? null).then(
+              (diff) => {
+                if (openId.current === id) setReviewDiff({ sessionId: id, diff, error: null })
+              },
+              (err: unknown) => addNotice(id, null, errorText(err))
+            )
+          }}
         />
       ) : open ? (
         <Conversation
@@ -1044,7 +1117,7 @@ export function App(): React.JSX.Element {
       )}
       {open && !showSettings && !sideOpen && (
         <SideRail
-          count={isReview ? open.threads.filter((t) => t.anchor.kind === 'line' && t.resolvedAt === undefined).length : open.threads.length}
+          {...sideRailCount(open, isReview)}
           running={runningThreadRow !== undefined}
           onExpand={() => setSideOpen(true)}
         />
@@ -1151,6 +1224,7 @@ export function App(): React.JSX.Element {
           )}
         </>
       )}
+      {fullScreenHint > 0 && <FullScreenHint key={fullScreenHint} />}
       {showSearch && <SearchDialog sessionId={sessionId ?? null} cwd={projectPath} onClose={() => setShowSearch(false)} onOpen={openSearchResult} />}
       {signIn && (
         <SignInDialog

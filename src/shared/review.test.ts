@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { findingsBlocks, findingThread, firstPassPrompt, isFirstPass, lineLabel, linesOf, locate, withoutFindings, type DiffFile, type LineAnchor } from './review'
+import {
+  findingsBlocks,
+  findingThread,
+  firstPassPrompt,
+  isFirstPass,
+  isRangeNote,
+  lineLabel,
+  linesOf,
+  locate,
+  rangeNote,
+  withoutFindings,
+  type DiffFile,
+  type LineAnchor
+} from './review'
 import type { Thread } from './types'
 import { threadTag, threadToMainTag, wireText } from './wire'
 
@@ -81,10 +94,21 @@ describe('findings', () => {
   })
 
   it('marks the first pass, which names the base', () => {
-    const prompt = firstPassPrompt('origin/main', 'abc123')
+    const prompt = firstPassPrompt({ baseRef: 'origin/main', base: 'abc123', headRef: null, head: 'def456' })
     expect(isFirstPass(prompt)).toBe(true)
-    expect(prompt).toContain('git diff abc123')
+    expect(prompt).toContain('since it left `origin/main`')
+    expect(prompt).toContain('`git diff abc123` (it includes uncommitted changes)')
     expect(isFirstPass('Review this please')).toBe(false)
+    expect(firstPassPrompt({ baseRef: 'origin/main', base: 'abc', headRef: null, head: 'abc' })).toContain('Review the uncommitted changes')
+    expect(firstPassPrompt({ baseRef: 'origin/main', base: 'abc', headRef: null, head: 'def' }, 7)).toContain('Review pull request #7')
+  })
+
+  it('notes a new range for the agent', () => {
+    const note = rangeNote({ base: 'abc', headRef: 'HEAD', head: 'def' })
+    expect(note).toBe('[The diff under review is now `git diff abc def`.]')
+    expect(isRangeNote(note)).toBe(true)
+    expect(isRangeNote(rangeNote({ base: 'abc', headRef: null, head: 'def' }))).toBe(true)
+    expect(isRangeNote('[re: "x"]')).toBe(false)
   })
 })
 

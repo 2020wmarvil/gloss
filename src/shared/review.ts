@@ -29,12 +29,58 @@ export type DiffFile = {
   hunks: DiffHunk[]
 }
 
+/**
+ * What a review compares (SPEC → Review sessions → What is reviewed). `baseRef` is a
+ * commit id (40 hex digits), used as is, or a branch such as "origin/main", whose merge
+ * base with the reviewed commit is used. `headRef` is a commit id or "HEAD"; without one
+ * the working tree is reviewed, uncommitted changes and new files included.
+ */
+export type ReviewRange = { baseRef: string; headRef?: string }
+
+/** Whether a baseRef names one commit rather than a branch to take the merge base with. */
+export function isCommitId(ref: string): boolean {
+  return /^[0-9a-f]{40}$/.test(ref)
+}
+
 export type ReviewDiff = {
-  /** The branch reviewed against, e.g. "origin/main". */
   baseRef: string
-  /** The merge base of HEAD and baseRef. */
+  /** The commit reviewed against: baseRef itself, or its merge base with the reviewed commit. */
   base: string
+  /** Null for the working tree. */
+  headRef: string | null
+  /** The reviewed commit; for the working tree, HEAD's. */
+  head: string
   files: DiffFile[]
+}
+
+/** A commit the review's dropdowns offer. */
+export type ReviewCommit = { sha: string; subject: string; /** Commit time, ms. */ at: number }
+
+/** What the review's dropdowns offer: branches to take the merge base with, and the branch's recent commits. */
+export type ReviewRefs = {
+  bases: { ref: string; sha: string }[]
+  commits: ReviewCommit[]
+  /** The repository's GitHub page (from `origin`), for links to commits; null off GitHub. */
+  repoUrl: string | null
+  /** The base a new review starts with (the open pull request's base, else the default branch); null if none. */
+  defaultBase: string | null
+}
+
+/** The diff a range shows, as a command (for the agent). */
+export function diffCommand(diff: Pick<ReviewDiff, 'base' | 'headRef' | 'head'>): string {
+  return diff.headRef === null
+    ? `\`git diff ${diff.base}\` (it includes uncommitted changes) plus new files from \`git ls-files --others --exclude-standard\``
+    : `\`git diff ${diff.base} ${diff.head}\``
+}
+
+/** The first line of a message after the review's range changed, so the agent reviews the new diff. */
+export function rangeNote(diff: Pick<ReviewDiff, 'base' | 'headRef' | 'head'>): string {
+  return `[The diff under review is now ${diffCommand(diff)}.]`
+}
+
+/** Whether a line is a range note. */
+export function isRangeNote(line: string): boolean {
+  return line.startsWith('[The diff under review is now ') && line.endsWith('.]')
 }
 
 export const SEVERITIES: Severity[] = ['bug', 'suggestion', 'nit']
@@ -54,10 +100,21 @@ export function isFirstPass(text: string): boolean {
   return text.startsWith(FIRST_PASS_MARK)
 }
 
-/** The message that starts a review: asks the agent for a summary and its findings. */
-export function firstPassPrompt(baseRef: string, base: string): string {
+/**
+ * The message that starts a review: asks the agent for a summary and its findings.
+ * `pr` is the pull request's number, for a review of one.
+ */
+export function firstPassPrompt(diff: Pick<ReviewDiff, 'baseRef' | 'base' | 'headRef' | 'head'>, pr?: number): string {
+  const what =
+    pr !== undefined
+      ? `Review pull request #${pr}: everything on this branch since it left \`${diff.baseRef}\`, committed or not.`
+      : diff.headRef === null && diff.base === diff.head
+        ? 'Review the uncommitted changes in this repository: staged, unstaged and new files.'
+        : isCommitId(diff.baseRef)
+          ? `Review the changes since ${diff.base.slice(0, 7)}.`
+          : `Review the changes on this branch: everything since it left \`${diff.baseRef}\`, committed or not.`
   return `${FIRST_PASS_MARK}
-Review the changes on this branch: everything since it left \`${baseRef}\`, committed or not. Run \`git diff ${base}\` (it includes uncommitted changes) and \`git ls-files --others --exclude-standard\` for new files, and read the surrounding code where you need it. Don't change any files yet.
+${what} Run ${diffCommand(diff)}, and read the surrounding code where you need it. Don't change any files yet.
 
 Reply with a short summary of the change and your overall assessment, then list your findings in one fenced block tagged \`gloss-findings\` that holds a JSON array:
 

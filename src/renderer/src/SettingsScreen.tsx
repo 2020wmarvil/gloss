@@ -144,6 +144,43 @@ function Shortcuts(): React.JSX.Element {
   )
 }
 
+/** A text setting, saved when it loses focus or on Enter, with suggestions. */
+function TextSetting(props: { id: string; field: SettingField; value: string; onChange(value: string): void }): React.JSX.Element {
+  const { id, field } = props
+  const [draft, setDraft] = useState(props.value)
+  useEffect(() => setDraft(props.value), [props.value])
+  const save = (): void => {
+    if (draft !== props.value) props.onChange(draft)
+  }
+  return (
+    <>
+      <input
+        id={id}
+        className="setting-text"
+        type="text"
+        spellCheck={false}
+        aria-describedby={`${id}-description`}
+        placeholder={field.placeholder}
+        list={field.suggestions ? `${id}-suggestions` : undefined}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') save()
+          if (e.key === 'Escape') setDraft(props.value)
+        }}
+      />
+      {field.suggestions && (
+        <datalist id={`${id}-suggestions`}>
+          {field.suggestions.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+      )}
+    </>
+  )
+}
+
 function Field(props: { field: SettingField; value: unknown; onChange(value: unknown): void }): React.JSX.Element {
   const { field, value } = props
   const id = `setting-${field.key}`
@@ -157,7 +194,9 @@ function Field(props: { field: SettingField; value: unknown; onChange(value: unk
           {field.description}
         </p>
       </div>
-      {field.type === 'enum' ? (
+      {field.type === 'string' ? (
+        <TextSetting id={id} field={field} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
+      ) : field.type === 'enum' ? (
         <select
           id={id}
           aria-describedby={`${id}-description`}

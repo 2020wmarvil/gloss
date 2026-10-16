@@ -1,12 +1,12 @@
-// The diff a review session shows (SPEC → Review sessions): everything since the
-// branch left the default branch, committed or not, read with git.
+// The diff a review session shows (SPEC → Review sessions): from a base commit (or the
+// merge base with a branch) to a commit or the working tree, read with git.
 import { execFile } from 'node:child_process'
 import { open } from 'node:fs/promises'
-import { join } from 'node:path'
-import type { DiffFile, DiffHunk, DiffLine, ReviewDiff } from '../shared/review'
+import { isAbsolute, join, relative } from 'node:path'
+import { isCommitId, type DiffFile, type DiffHunk, type DiffLine, type ReviewCommit, type ReviewDiff } from '../shared/review'
 
-/** Untracked files larger than this show as a header only. */
-const MAX_UNTRACKED_BYTES = 1024 * 1024
+/** Untracked files larger than this show as a header only, and lines around a diff can't be shown from them. */
+const MAX_FILE_BYTES = 1024 * 1024
 
 /** Runs git in `cwd`; resolves its stdout, or rejects with git's message. */
 function git(cwd: string, args: string[]): Promise<string> {
@@ -14,7 +14,8 @@ function git(cwd: string, args: string[]): Promise<string> {
     execFile(
       'git',
       ['-c', 'core.quotepath=false', ...args],
-      { cwd, timeout: 20_000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
+      // A fetch must fail rather than wait for a password.
+      { cwd, timeout: 20_000, windowsHide: true, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } },
       (err, stdout, stderr) => {
         if (err) reject(new Error(stderr.trim().split('\n')[0] || err.message))
         else resolve(stdout)
@@ -27,12 +28,36 @@ function gitOrNull(cwd: string, args: string[]): Promise<string | null> {
   return git(cwd, args).catch(() => null)
 }
 
-/** The branch a review is made against: origin/HEAD's branch, else main, else master. Null if none. */
+/**
+ * The default branch: origin/HEAD's branch, else main, master, origin/main or origin/master
+ * (a clone without origin/HEAD may have no local main). Null if none.
+ */
 export async function defaultBranch(cwd: string): Promise<string | null> {
   const remote = await gitOrNull(cwd, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'])
   if (remote?.trim()) return remote.trim()
-  for (const name of ['main', 'master']) {
-    if ((await gitOrNull(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`])) !== null) return name
+  for (const [ref, name] of [
+    ['refs/heads/main', 'main'],
+    ['refs/heads/master', 'master'],
+    ['refs/remotes/origin/main', 'origin/main'],
+    ['refs/remotes/origin/master', 'origin/master']
+  ]) {
+    if ((await gitOrNull(cwd, ['rev-parse', '--verify', '--quiet', ref])) !== null) return name
+  }
+  return null
+}
+
+/**
+ * What a pull request into `branch` is reviewed against: `origin/<branch>`, fetched
+ * first (unless `fetch` is false) so it matches GitHub, else the local branch. Null if
+ * neither exists.
+ */
+export async function pullRequestBase(cwd: string, branch: string, fetch = true): Promise<string | null> {
+  if (fetch) await gitOrNull(cwd, ['fetch', '--quiet', 'origin', branch])
+  for (const [ref, name] of [
+    [`refs/remotes/origin/${branch}`, `origin/${branch}`],
+    [`refs/heads/${branch}`, branch]
+  ]) {
+    if ((await gitOrNull(cwd, ['rev-parse', '--verify', '--quiet', ref])) !== null) return name
   }
   return null
 }
@@ -44,9 +69,27 @@ export async function currentBranch(cwd: string): Promise<string | null> {
   return name.trim() === 'HEAD' ? 'detached HEAD' : name.trim()
 }
 
-/** The diff under review: tracked changes against the merge base, plus untracked files as new ones. */
-export async function readReviewDiff(cwd: string, baseRef: string): Promise<ReviewDiff> {
-  const base = (await git(cwd, ['merge-base', 'HEAD', baseRef])).trim()
+/** The commit a ref names, or null. */
+async function commitOf(cwd: string, ref: string): Promise<string | null> {
+  return (await gitOrNull(cwd, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]))?.trim() || null
+}
+
+/**
+ * The diff under review, from `baseRef` (a commit, or a branch whose merge base is used)
+ * to `headRef` (a commit), or to the working tree without one: tracked changes plus
+ * untracked files as new ones.
+ */
+export async function readReviewDiff(cwd: string, baseRef: string, headRef: string | null = null): Promise<ReviewDiff> {
+  const head = await commitOf(cwd, headRef ?? 'HEAD')
+  if (!head) throw new Error(headRef ? `No commit ${headRef}.` : 'This repository has no commits yet.')
+  const base = isCommitId(baseRef) ? await commitOf(cwd, baseRef) : (await git(cwd, ['merge-base', head, baseRef])).trim()
+  if (!base) throw new Error(`No commit ${baseRef}.`)
+  if (headRef !== null) {
+    const files = parseDiff(await git(cwd, ['diff', '--no-color', '--no-ext-diff', '-M', base, head, '--']))
+    for (const f of files) f.state = 'committed'
+    files.sort((a, b) => a.path.localeCompare(b.path))
+    return { baseRef, base, headRef, head, files }
+  }
   const [diff, committed, uncommitted, untracked, root] = await Promise.all([
     git(cwd, ['diff', '--no-color', '--no-ext-diff', '-M', base, '--']),
     git(cwd, ['diff', '--name-only', '-z', '-M', base, 'HEAD', '--']),
@@ -67,29 +110,93 @@ export async function readReviewDiff(cwd: string, baseRef: string): Promise<Revi
     f.state = c && u ? 'both' : c ? 'committed' : 'uncommitted'
   }
   files.sort((a, b) => a.path.localeCompare(b.path))
-  return { baseRef, base, files }
+  return { baseRef, base, headRef, head, files }
+}
+
+/**
+ * The branch's recent commits for the review's dropdowns, newest first (first parents):
+ * those since `since` (a merge base) and 20 more, at most 50.
+ */
+export async function reviewCommits(cwd: string, since: string | null): Promise<ReviewCommit[]> {
+  let count = 50
+  if (since) {
+    const ahead = Number((await gitOrNull(cwd, ['rev-list', '--count', '--first-parent', `${since}..HEAD`]))?.trim())
+    if (Number.isFinite(ahead)) count = Math.min(50, ahead + 20)
+  }
+  const out = await gitOrNull(cwd, ['log', '--first-parent', `-n${count}`, '--format=%H%x00%s%x00%ct', 'HEAD', '--'])
+  return (out ?? '')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [sha, subject, time] = line.split('\0')
+      return { sha, subject, at: Number(time) * 1000 }
+    })
+}
+
+/** The merge base of HEAD and a branch, or null. */
+export async function mergeBase(cwd: string, ref: string): Promise<string | null> {
+  return (await gitOrNull(cwd, ['merge-base', 'HEAD', ref]))?.trim() || null
+}
+
+/** A text file's lines; null if it can't be read, is binary or is too large. */
+async function readLines(absolute: string): Promise<string[] | null> {
+  try {
+    const handle = await open(absolute, 'r')
+    try {
+      const { size } = await handle.stat()
+      if (size > MAX_FILE_BYTES) return null
+      const buf = await handle.readFile()
+      if (buf.subarray(0, 8000).includes(0)) return null
+      const lines = buf.toString('utf8').split(/\r?\n/)
+      if (lines[lines.length - 1] === '') lines.pop()
+      return lines
+    } finally {
+      await handle.close()
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A file of the diff on its new side, for showing the lines around its hunks: at
+ * `headRef`, or in the working tree without one. `path` is relative to the repository
+ * root. Null if the file is missing, binary, too large or outside the repository.
+ */
+export async function readReviewFile(cwd: string, path: string, headRef: string | null = null): Promise<string[] | null> {
+  if (headRef !== null) {
+    const text = await gitOrNull(cwd, ['show', `${headRef}:${path}`])
+    if (text === null || text.length > MAX_FILE_BYTES || text.slice(0, 8000).includes('\0')) return null
+    const lines = text.split(/\r?\n/)
+    if (lines[lines.length - 1] === '') lines.pop()
+    return lines
+  }
+  const root = (await git(cwd, ['rev-parse', '--show-toplevel'])).trim()
+  const absolute = join(root, path)
+  const inside = relative(root, absolute)
+  if (!inside || inside.startsWith('..') || isAbsolute(inside)) return null
+  return readLines(absolute)
+}
+
+/** A file of the repository in the working tree, by its path from the root. Rejects one outside it or missing. */
+export async function workingFilePath(cwd: string, path: string): Promise<string> {
+  const root = (await git(cwd, ['rev-parse', '--show-toplevel'])).trim()
+  const absolute = join(root, path)
+  const inside = relative(root, absolute)
+  if (!inside || inside.startsWith('..') || isAbsolute(inside)) throw new Error(`${path} is outside the repository.`)
+  try {
+    await (await open(absolute, 'r')).close()
+  } catch {
+    throw new Error(`${path} isn't in the working tree.`)
+  }
+  return absolute
 }
 
 /** A new file git doesn't track yet, as a diff that adds every line. */
 async function untrackedFile(absolute: string, path: string): Promise<DiffFile> {
   const file: DiffFile = { path, status: 'added', binary: false, state: 'uncommitted', additions: 0, deletions: 0, hunks: [] }
-  let text: string
-  try {
-    const handle = await open(absolute, 'r')
-    try {
-      const { size } = await handle.stat()
-      if (size > MAX_UNTRACKED_BYTES) return { ...file, binary: true }
-      const buf = await handle.readFile()
-      if (buf.subarray(0, 8000).includes(0)) return { ...file, binary: true }
-      text = buf.toString('utf8')
-    } finally {
-      await handle.close()
-    }
-  } catch {
-    return { ...file, binary: true }
-  }
-  const lines = text.split(/\r?\n/)
-  if (lines[lines.length - 1] === '') lines.pop()
+  const lines = await readLines(absolute)
+  if (lines === null) return { ...file, binary: true }
   if (lines.length === 0) return file
   file.additions = lines.length
   file.hunks = [

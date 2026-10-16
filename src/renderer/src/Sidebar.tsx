@@ -45,6 +45,8 @@ type Props = {
   onCopyMarkdown(id: string): void
   onSaveMarkdown(id: string): void
   onSearch(): void
+  /** Collapses the sidebar to a rail. */
+  onCollapse(): void
   onSettings(): void
 }
 
@@ -68,6 +70,25 @@ const reviewIcon = (
     <path d="M4 6h.01M4 12h.01M4 18h.01" />
   </svg>
 )
+
+const sessionsIcon = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16" />
+  </svg>
+)
+
+/** The collapsed sidebar: a button that expands it, with a running dot while a session runs. */
+export function SidebarRail(props: { running: boolean; onExpand(): void }): React.JSX.Element {
+  return (
+    <div className="side-rail sidebar-rail">
+      <button className="rail-button" onClick={props.onExpand} title="Show sidebar" aria-label="Show sidebar">
+        {sessionsIcon}
+        {props.running && <span className="running-dot" aria-label="Running" />}
+      </button>
+    </div>
+  )
+}
 
 /** One of an agent's own sessions, with the agent it belongs to. */
 export type ListedAgentSession = AgentSession & { agentId: string }
@@ -191,7 +212,12 @@ export function Sidebar(props: Props): React.JSX.Element {
 
   return (
     <nav className="sidebar" style={props.width === null ? undefined : { flexBasis: props.width }}>
-      <div className="brand">gloss.</div>
+      <div className="brand">
+        gloss.
+        <button className="sidebar-collapse" onClick={props.onCollapse} aria-label="Hide sidebar" title="Hide sidebar">
+          «
+        </button>
+      </div>
 
       <div className="switcher">
         <button
@@ -310,7 +336,7 @@ export function Sidebar(props: Props): React.JSX.Element {
           className="review-changes"
           onClick={props.onReview}
           disabled={props.creating}
-          title="Review everything on this branch since it left the default branch, committed or not"
+          title="Review this branch: its pull request's changes, else everything since it left the default branch, committed or not"
         >
           {reviewIcon}
           Review changes

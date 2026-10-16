@@ -133,7 +133,7 @@ Find anything you discussed: "where did we decide the cache key format?"
 A session type for checking an agent's work: the main view is the branch's diff, threads hang off its lines, and the agent reviews first. To the agent it is still one linear session, separate from the one that wrote the code. Designed in `docs/mocks/review-session.html` and specified in `SPEC.md` (Review sessions).
 
 - **Start a review** from a project ("Review changes"). The session list shows review sessions distinctly, with their open thread count.
-- **What is reviewed:** the branch since it left the default branch, committed or not (`git diff <merge base>` plus untracked files), read by the main process and refreshed as the agent works.
+- **What is reviewed:** from a base (by default the merge base with the pull request's base, else the default branch) to the working tree (committed or not, plus untracked files) or a commit, both picked in dropdowns; read by the main process and refreshed as the agent works.
 - **Diff viewer:** stacked files with sticky, collapsible headers, a collapsible file tree, split (default, lines scroll sideways per side) or unified, syntax highlighted, usable on large diffs.
 - **Line anchors** from a code selection, sent as `[re: path:line "…"]`.
 - **Comment cards** inline under their lines, collapsible to a gutter marker, with a global show/hide toggle.

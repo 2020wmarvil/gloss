@@ -69,7 +69,7 @@ describe('full-text search', () => {
       const db = new DatabaseSync(path)
       for (const name of ['message_search_insert', 'message_search_update', 'message_search_delete', 'tool_search_insert', 'tool_search_update', 'tool_search_delete']) db.exec(`DROP TRIGGER ${name}`)
       // Back to version 9: later migrations run again.
-      db.exec('DROP TABLE message_search; DROP TABLE tool_search; ALTER TABLE sessions DROP COLUMN review_base; PRAGMA user_version = 9')
+      db.exec('DROP TABLE message_search; DROP TABLE tool_search; ALTER TABLE sessions DROP COLUMN review_base; ALTER TABLE sessions DROP COLUMN review_head; PRAGMA user_version = 9')
       db.close()
       store = new Store(path)
       expect(store.search(request('cache')).results).toHaveLength(4)

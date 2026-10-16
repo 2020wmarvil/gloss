@@ -11,6 +11,7 @@ import { toMarkdown } from './export'
 import { gitStatus, pullRequest } from './git'
 import { SessionManager } from './sessions'
 import { patchArg, SettingsFile } from './settings'
+import { editorArgs, launchEditor } from './openFile'
 import { runInTerminal } from './terminal'
 import { UsageSource } from './usage'
 import { previewMcpImport } from './mcp-import'
@@ -55,6 +56,8 @@ function createWindow(): void {
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = undefined
   })
+  // The renderer shows how to leave full screen; macOS shows its own controls.
+  if (process.platform !== 'darwin') win.on('enter-full-screen', () => emit({ type: 'fullScreen' }))
   if (process.platform !== 'darwin') {
     win.webContents.on('before-input-event', (event, input) => {
       if (handleShortcut(win, input)) event.preventDefault()
@@ -94,6 +97,8 @@ function handleShortcut(win: BrowserWindow, input: Electron.Input): boolean {
   if (mod && (key === '=' || key === '+')) contents.setZoomLevel(Math.min(contents.getZoomLevel() + 0.5, 5))
   else if (mod && key === '-') contents.setZoomLevel(Math.max(contents.getZoomLevel() - 0.5, -3))
   else if (mod && key === '0') contents.setZoomLevel(0)
+  // Full screen: a borderless window over the whole monitor. macOS has its own (Ctrl+Cmd+F).
+  else if (!mod && !input.shift && key === 'f11') win.setFullScreen(!win.isFullScreen())
   else if (!app.isPackaged && (key === 'f12' || (mod && input.shift && key === 'i'))) contents.toggleDevTools()
   else if (!app.isPackaged && mod && key === 'r') contents.reload()
   else return false
@@ -246,10 +251,32 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
     manager.createSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
   )
-  ipcMain.handle(IPC.sessionsCreateReview, (_e, cwd: unknown, agentId: unknown) =>
-    manager.createReview(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
+  ipcMain.handle(IPC.sessionsCreateReview, (_e, cwd: unknown, agentId: unknown, baseRef: unknown, headRef: unknown) =>
+    manager.createReview(
+      folderArg(cwd, 'cwd'),
+      str(agentId, 'agentId'),
+      baseRef == null ? undefined : { baseRef: str(baseRef, 'baseRef'), ...(headRef == null ? {} : { headRef: str(headRef, 'headRef') }) }
+    )
+  )
+  ipcMain.handle(IPC.sessionsReviewRefs, (_e, id: unknown) => manager.reviewRefs(str(id, 'id')))
+  ipcMain.handle(IPC.sessionsOpenReviewFile, async (_e, id: unknown, path: unknown, how: unknown, line: unknown) => {
+    const file = await manager.reviewFilePath(str(id, 'id'), str(path, 'path'))
+    if (how === 'reveal') return shell.showItemInFolder(file)
+    const args = editorArgs(settingsFile.state().global.externalEditor, file, typeof line === 'number' && line > 0 ? Math.floor(line) : 1)
+    if (args.length > 0) return launchEditor(args, file)
+    const error = await shell.openPath(file)
+    if (error) throw new Error(error)
+  })
+  ipcMain.handle(IPC.sessionsSetReviewRange, (_e, id: unknown, baseRef: unknown, headRef: unknown) =>
+    manager.setReviewRange(str(id, 'id'), {
+      baseRef: str(baseRef, 'baseRef'),
+      ...(headRef == null ? {} : { headRef: str(headRef, 'headRef') })
+    })
   )
   ipcMain.handle(IPC.sessionsReviewDiff, (_e, id: unknown) => manager.reviewDiff(str(id, 'id')))
+  ipcMain.handle(IPC.sessionsReviewFile, (_e, id: unknown, path: unknown) =>
+    manager.reviewFile(str(id, 'id'), str(path, 'path'))
+  )
   ipcMain.handle(
     IPC.sessionsImport,
     (_e, cwd: unknown, agentId: unknown, acpSessionId: unknown, title: unknown, listedAt: unknown) =>
@@ -362,7 +389,7 @@ app.whenReady().then(() => {
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, mcpServers: [] },
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] },
     onChange(next) {
       emit({ type: 'settings', state: next })
     }

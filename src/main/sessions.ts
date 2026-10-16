@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto'
 import type * as acp from '@agentclientprotocol/sdk'
 import { pathToFileURL } from 'node:url'
-import type { GlossEvent, SessionView, TurnResult } from '../shared/ipc'
+import type { GlossEvent, PullRequest, SessionView, TurnResult } from '../shared/ipc'
 import type {
   AgentSession,
   Anchor,
@@ -25,7 +25,19 @@ import type {
   TurnOutcome
 } from '../shared/types'
 import { AGENT_INSTRUCTIONS, wireText } from '../shared/wire'
-import { findingsBlocks, findingThread, firstPassPrompt, linesOf, REVIEW_INSTRUCTIONS, type ReviewDiff } from '../shared/review'
+import {
+  findingsBlocks,
+  findingThread,
+  firstPassPrompt,
+  isCommitId,
+  linesOf,
+  rangeNote,
+  REVIEW_INSTRUCTIONS,
+  type ReviewCommit,
+  type ReviewDiff,
+  type ReviewRange,
+  type ReviewRefs
+} from '../shared/review'
 import type { McpServer } from '../shared/mcp'
 import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, type AgentHandlers, type SteerOutcome } from './acp'
 import type { AgentConfig } from './agents'
@@ -33,7 +45,8 @@ import type { Store } from './db'
 import { samePath } from './settings'
 import { isLogUpdate, matchReplay, parseReplay, placeUserMessage, type CachedEntry } from './sync'
 import type { TerminalRunner } from './terminal'
-import { currentBranch, defaultBranch, readReviewDiff } from './review'
+import { originRepoUrl, pullRequest } from './git'
+import { currentBranch, defaultBranch, mergeBase, pullRequestBase, readReviewDiff, readReviewFile, reviewCommits, workingFilePath } from './review'
 
 export type SessionManagerDeps = {
   store: Store
@@ -52,12 +65,28 @@ export type SessionManagerDeps = {
 
 /** What review sessions need from git (SPEC → Review sessions). */
 export type ReviewGit = {
+  pullRequest(cwd: string): Promise<PullRequest | null>
+  pullRequestBase(cwd: string, branch: string, fetch?: boolean): Promise<string | null>
   defaultBranch(cwd: string): Promise<string | null>
   currentBranch(cwd: string): Promise<string | null>
-  readDiff(cwd: string, baseRef: string): Promise<ReviewDiff>
+  mergeBase(cwd: string, ref: string): Promise<string | null>
+  commits(cwd: string, since: string | null): Promise<ReviewCommit[]>
+  repoUrl(cwd: string): Promise<string | null>
+  readDiff(cwd: string, baseRef: string, headRef: string | null): Promise<ReviewDiff>
+  readFile(cwd: string, path: string, headRef: string | null): Promise<string[] | null>
 }
 
-const GIT: ReviewGit = { defaultBranch, currentBranch, readDiff: readReviewDiff }
+const GIT: ReviewGit = {
+  pullRequest,
+  pullRequestBase,
+  defaultBranch,
+  currentBranch,
+  mergeBase,
+  commits: reviewCommits,
+  repoUrl: originRepoUrl,
+  readDiff: readReviewDiff,
+  readFile: readReviewFile
+}
 
 type Turn = {
   threadId: string | null
@@ -76,6 +105,8 @@ type Turn = {
 
 type SessionRuntime = {
   mcpFingerprint?: string
+  /** A review's range changed: told to the agent at the start of the next message (SPEC → Review sessions). */
+  rangeNote?: string
   /** The connection the session's ACP session is live on. */
   attachedTo?: AgentConnection
   /** An attach in progress, so concurrent callers share it. */
@@ -365,7 +396,7 @@ export class SessionManager {
   }
 
   /** `review`: a review session (SPEC → Review sessions), with its title. */
-  async createSession(cwd: string, agentId: string, review?: { baseRef: string; title: string }): Promise<Session> {
+  async createSession(cwd: string, agentId: string, review?: ReviewRange & { title: string }): Promise<Session> {
     const servers = this.mcpServers(cwd)
     let conn!: AgentConnection
     let permissions: SessionLive['permissions'] = null
@@ -382,7 +413,7 @@ export class SessionManager {
       cwd,
       title: review?.title ?? folderName(cwd),
       // The agent would title a review after the first pass's prompt.
-      ...(review ? { titleSet: true as const, review: { baseRef: review.baseRef } } : {}),
+      ...(review ? { titleSet: true as const, review: { baseRef: review.baseRef, ...(review.headRef ? { headRef: review.headRef } : {}) } } : {}),
       createdAt: this.now()
     }
     this.deps.store.insertSession(session)
@@ -397,27 +428,94 @@ export class SessionManager {
   }
 
   /**
-   * Starts a review of the project's branch (SPEC → Review sessions) and sends the
-   * first pass. Resolves once the session exists; the first pass runs on.
+   * Starts a review of the project's branch (SPEC → Review sessions) and sends the first
+   * pass. Without a `range` it compares the working tree with the merge base of the
+   * branch's open pull request's base, else of the default branch; **New review** passes
+   * the range of the review it replaces. Resolves once the session exists; the first
+   * pass runs on.
    */
-  async createReview(cwd: string, agentId: string): Promise<Session> {
-    const baseRef = await this.git.defaultBranch(cwd)
+  async createReview(cwd: string, agentId: string, range?: ReviewRange): Promise<Session> {
+    const found = await this.git.pullRequest(cwd)
+    const pr = found && (found.state === 'open' || found.state === 'draft') && found.baseRef ? found : null
+    const prBase = pr && (await this.git.pullRequestBase(cwd, pr.baseRef, range === undefined))
+    const baseRef = range?.baseRef ?? (prBase || (await this.git.defaultBranch(cwd)))
     if (!baseRef) throw new Error('A review needs a git repository with a default branch (origin/HEAD, main or master).')
-    const diff = await this.git.readDiff(cwd, baseRef)
+    const headRef = range?.headRef
+    const diff = await this.git.readDiff(cwd, baseRef, headRef ?? null)
     const branch = await this.git.currentBranch(cwd)
-    const session = await this.createSession(cwd, agentId, { baseRef, title: `Review: ${branch ?? folderName(cwd)}` })
+    // It reviews the pull request only while it compares the working tree with the PR's base.
+    const ofPr = pr && baseRef === prBase && headRef === undefined ? pr : null
+    const title = ofPr ? `Review: #${ofPr.number} ${ofPr.title}` : `Review: ${branch ?? folderName(cwd)}`
+    const session = await this.createSession(cwd, agentId, { baseRef, ...(headRef ? { headRef } : {}), title })
     // Turn errors arrive as turnEnd events.
-    this.send(session.id, firstPassPrompt(baseRef, diff.base), null).catch((err: unknown) =>
+    this.send(session.id, firstPassPrompt(diff, ofPr?.number), null).catch((err: unknown) =>
       this.notice(session.id, null, `Couldn't start the first pass: ${errorMessage(err)}`)
     )
     return session
   }
 
-  /** The diff a review session shows, read now. */
-  reviewDiff(sessionId: string): Promise<ReviewDiff> {
+  /** A review session's range. */
+  private reviewOf(sessionId: string): { session: Session; review: ReviewRange } {
     const session = this.session(sessionId)
     if (!session.review) throw new Error('Only a review session has a diff.')
-    return this.git.readDiff(session.cwd, session.review.baseRef)
+    return { session, review: session.review }
+  }
+
+  /** The diff a review session shows, read now. */
+  reviewDiff(sessionId: string): Promise<ReviewDiff> {
+    const { session, review } = this.reviewOf(sessionId)
+    return this.git.readDiff(session.cwd, review.baseRef, review.headRef ?? null)
+  }
+
+  /** Where a file of a review session's diff is in the working tree, to open it outside Gloss. */
+  reviewFilePath(sessionId: string, path: string): Promise<string> {
+    return workingFilePath(this.reviewOf(sessionId).session.cwd, path)
+  }
+
+  /** A file of a review session's diff on its new side, for showing the lines around its hunks. */
+  reviewFile(sessionId: string, path: string): Promise<string[] | null> {
+    const { session, review } = this.reviewOf(sessionId)
+    return this.git.readFile(session.cwd, path, review.headRef ?? null)
+  }
+
+  /**
+   * What a review's dropdowns offer (SPEC → Review sessions → What is reviewed): the
+   * default branch, the open pull request's base and the session's own base branch to
+   * take the merge base with, and the branch's recent commits.
+   */
+  async reviewRefs(sessionId: string): Promise<ReviewRefs> {
+    const { session, review } = this.reviewOf(sessionId)
+    const { cwd } = session
+    const pr = await this.git.pullRequest(cwd).catch(() => null)
+    const branch = await this.git.defaultBranch(cwd)
+    const prBase = pr && (pr.state === 'open' || pr.state === 'draft') && pr.baseRef ? await this.git.pullRequestBase(cwd, pr.baseRef, false) : null
+    const defaultBase = prBase ?? branch
+    // The default first.
+    const candidates = [defaultBase, branch, prBase, isCommitId(review.baseRef) ? null : review.baseRef]
+    const bases: ReviewRefs['bases'] = []
+    for (const ref of new Set(candidates.filter((r): r is string => r !== null))) {
+      const sha = await this.git.mergeBase(cwd, ref)
+      if (sha) bases.push({ ref, sha })
+    }
+    const since = bases.find((b) => b.ref === branch)?.sha ?? bases[0]?.sha ?? null
+    return { bases, commits: await this.git.commits(cwd, since), repoUrl: await this.git.repoUrl(cwd), defaultBase }
+  }
+
+  /**
+   * Changes what a review compares. The agent is told at the start of the next message.
+   * Rejects a ref that doesn't name a commit. Resolves with the new diff.
+   */
+  async setReviewRange(sessionId: string, range: ReviewRange): Promise<ReviewDiff> {
+    const { session } = this.reviewOf(sessionId)
+    for (const ref of [range.baseRef, range.headRef]) {
+      if (ref !== undefined && (ref === '' || ref.startsWith('-'))) throw new Error(`Not a commit: ${ref}`)
+    }
+    const diff = await this.git.readDiff(session.cwd, range.baseRef, range.headRef ?? null)
+    if (!this.deps.store.getSession(sessionId)) throw new Error(`Unknown session ${sessionId}`)
+    const updated = this.deps.store.updateSession(sessionId, { review: range })
+    this.runtime(sessionId).rangeNote = rangeNote(diff)
+    this.deps.emit({ type: 'session', session: updated })
+    return diff
   }
 
   /**
@@ -436,7 +534,7 @@ export class SessionManager {
     if (found.length === 0) return
     let diff: ReviewDiff
     try {
-      diff = await this.git.readDiff(session.cwd, session.review.baseRef)
+      diff = await this.git.readDiff(session.cwd, session.review.baseRef, session.review.headRef ?? null)
     } catch (err) {
       this.notice(sessionId, null, `Couldn't read the diff to open the agent's findings: ${errorMessage(err)}`)
       return
@@ -1269,6 +1367,7 @@ export class SessionManager {
       createdAt: this.now()
     }
     this.deps.store.insertMessage(message)
+    this.told(sessionId, wire)
     this.deps.emit({ type: 'message', message })
     turn.messageIds.push(message.id)
     // The agent's answer to it starts a new message below it.
@@ -1302,7 +1401,15 @@ export class SessionManager {
   /** What to send for a new user message (SPEC → Wire format). Call it before the message is stored. */
   private wire(sessionId: string, text: string, threadId: string | null, fromThread: string | null = null): string {
     const afterThread = threadId === null && (this.deps.store.lastUserMessage(sessionId)?.threadId ?? null) !== null
-    return wireText(text, this.anchorOf(sessionId, threadId), afterThread, this.anchorOf(sessionId, fromThread))
+    const wire = wireText(text, this.anchorOf(sessionId, threadId), afterThread, this.anchorOf(sessionId, fromThread))
+    const note = this.runtime(sessionId).rangeNote
+    return note ? `${note}\n${wire}` : wire
+  }
+
+  /** A message was recorded: a range note it carried has been told. */
+  private told(sessionId: string, wire: string): void {
+    const rt = this.runtime(sessionId)
+    if (rt.rangeNote && wire.startsWith(`${rt.rangeNote}\n`)) rt.rangeNote = undefined
   }
 
   /** The anchor of a thread in the session (for the wire tag), or null for the main thread. */
@@ -1338,6 +1445,7 @@ export class SessionManager {
       createdAt: this.now()
     }
     this.deps.store.insertMessage(message)
+    this.told(sessionId, wire)
     this.deps.emit({ type: 'message', message })
     if (retitle) {
       session = this.deps.store.updateSession(sessionId, { title: titleFrom(text) })
