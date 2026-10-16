@@ -299,7 +299,8 @@ export function StatusLine(props: Props): React.JSX.Element {
             setObsidianError(null)
             void window.gloss.sessions.openObsidian(session.id).catch((err: unknown) => setObsidianError(errorText(err)))
           }}>
-          Obsidian
+          <img src={new URL('./assets/obsidian-logo.svg', import.meta.url).href}
+            width="18" height="18" alt="" aria-hidden="true" />
         </button>
       )}
       {obsidianError && <span className="status-item error">Couldn&apos;t open Obsidian: {obsidianError}</span>}

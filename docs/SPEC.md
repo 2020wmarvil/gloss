@@ -382,7 +382,7 @@ A session for checking an agent's work (`docs/mocks/review-session.html`). The c
 
 The project section of Settings includes **Obsidian vault**, saved as `projects[folder].obsidianVault`. Enter an existing vault's name or ID. Empty or whitespace hides the shortcut. Changes apply live and each project keeps its own vault.
 
-An **Obsidian** button appears immediately after the project folder button in both conversation and review status lines. It opens or focuses the configured vault using Obsidian's built-in `obsidian://open?vault=...` protocol. The main process resolves the vault from the session's project settings and encodes its name as a single parameter. Launch failures appear in the status line. Obsidian must be installed and the vault already registered there.
+An **Obsidian** logo button (with a vault tooltip and accessible label) appears immediately after the project folder button in both conversation and review status lines. It opens or focuses the configured vault using Obsidian's built-in `obsidian://open?vault=...` protocol. The main process resolves the vault from the session's project settings and encodes its name as a single parameter. Launch failures appear in the status line. Obsidian must be installed and the vault already registered there.
 
 ## Status line
 
