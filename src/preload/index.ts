@@ -36,6 +36,7 @@ const api: GlossApi = {
     copyMarkdown: (id, threadId) => ipcRenderer.invoke(IPC.sessionsCopyMarkdown, id, threadId),
     saveMarkdown: (id, threadId) => ipcRenderer.invoke(IPC.sessionsSaveMarkdown, id, threadId),
     openFolder: (id) => ipcRenderer.invoke(IPC.sessionsOpenFolder, id),
+    openObsidian: (id) => ipcRenderer.invoke(IPC.sessionsOpenObsidian, id),
     planUsage: (id) => ipcRenderer.invoke(IPC.sessionsPlanUsage, id)
   },
   git: {

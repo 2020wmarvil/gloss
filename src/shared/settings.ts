@@ -2,6 +2,13 @@
 // The main process validates the file and generates its JSON Schema from the table;
 // the renderer builds the settings screen from it. Pure data, no Node or DOM imports.
 
+import { sameFolder } from './paths'
+
+export function projectSettings(projects: Record<string, ProjectSettings>, cwd: string): ProjectSettings {
+  const key = Object.keys(projects).find((p) => sameFolder(p, cwd))
+  return key ? projects[key] : {}
+}
+
 export type ThemeSetting = 'system' | 'light' | 'dark'
 
 export type SessionOrder = 'created' | 'activity'
@@ -21,7 +28,11 @@ export type GlobalSettings = {
 }
 
 /** Settings for one project folder, under `projects` keyed by its path. */
-export type ProjectSettings = { mcpServers?: import('./mcp').McpServer[] }
+export type ProjectSettings = {
+  mcpServers?: import('./mcp').McpServer[]
+  /** An existing Obsidian vault's name or ID; empty hides its shortcut. */
+  obsidianVault?: string
+}
 
 export type SettingField = {
   key: string
@@ -39,6 +50,11 @@ export type SettingField = {
 }
 
 export const SETTING_FIELDS: readonly SettingField[] = [
+  {
+    key: 'obsidianVault', scope: 'project', type: 'string', label: 'Obsidian vault',
+    description: 'The name or ID of an existing vault in Obsidian. Shows an Obsidian shortcut beside the project folder in the status line. Leave empty to hide it.',
+    placeholder: 'Vault name or ID'
+  },
   {
     key: 'mcpServers', scope: 'global', type: 'mcp', label: 'MCP servers',
     description: 'Tools shared by agents in all projects. Applied on the next turn or resume.', hidden: true

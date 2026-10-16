@@ -8,6 +8,12 @@ import { parseSettings, patchArg, samePath, SettingsFile } from './settings'
 const defaults = { defaultAgent: 'claude' as const, theme: 'system' as const, sessionOrder: 'created' as const, listItemReplies: false, externalEditor: '', mcpServers: [] }
 
 describe('parseSettings', () => {
+  it('validates Obsidian vaults as project strings', () => {
+    expect(parseSettings(JSON.stringify({ projects: { '/p': { obsidianVault: 'Notes & ideas' } } }), defaults))
+      .toMatchObject({ ok: true, projects: { '/p': { obsidianVault: 'Notes & ideas' } } })
+    expect(() => patchArg({ project: { path: '/p', values: { obsidianVault: 123 } } })).toThrow(/expected a string/)
+    expect(() => patchArg({ global: { obsidianVault: 'Notes' } })).toThrow(/Unknown global setting/)
+  })
   it('validates the global MCP list and retains legacy project lists for explicit import', () => {
     const mcpServers = [{ name: 'global-tools', command: '/tools/server', args: [], env: [] }]
     expect(parseSettings(JSON.stringify({ mcpServers, projects: { '/old': { mcpServers } } }), defaults)).toMatchObject({
@@ -153,6 +159,16 @@ describe('SettingsFile', () => {
     }
     expect(schema.properties).not.toHaveProperty('devModel')
     expect(schema.properties.theme).toMatchObject({ type: 'string', default: 'system', enum: ['system', 'light', 'dark'] })
+  })
+
+  it('saves, reloads, and clears the project vault without changing other projects', () => {
+    file.load()
+    file.update({ project: { path: '/one', values: { obsidianVault: 'Notes' } } })
+    file.update({ project: { path: '/two', values: { obsidianVault: 'Other' } } })
+    file.reload()
+    expect(file.state().projects).toEqual({ '/one': { obsidianVault: 'Notes' }, '/two': { obsidianVault: 'Other' } })
+    file.update({ project: { path: '/one', values: { obsidianVault: '' } } })
+    expect(onDisk()).toMatchObject({ projects: { '/one': { obsidianVault: '' }, '/two': { obsidianVault: 'Other' } } })
   })
 
   it('reads an existing file without changing it', () => {

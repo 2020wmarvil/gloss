@@ -390,6 +390,12 @@ A session for checking an agent's work (`docs/mocks/review-session.html`). The c
 - **History:** Up with the caret on the composer's first line replaces its text with the previous message the user sent and starts cycling: from then on Up shows the previous message and Down the next, whatever line the caret is on, with the caret at the end of each; at the oldest, Up does nothing. Down past the newest brings back the draft that was there and stops cycling. Editing the text or moving the caret (a click, Left, Right, Home, End, even where the caret can't move) also stops it: the user is now working on that message, so Up and Down move between its lines until it is sent or the composer is cleared. Every composer shares one history: the user's messages from every session and thread, newest first, each text once (at its latest use), from the DB so it survives restarts (`history()`, at most 500). Text only: attachments aren't recalled. A recalled `/command` doesn't open the slash menu. Editing a recalled message makes it the draft.
 - **Drafts:** each composer (a session's main thread, or one thread anchor) keeps its unsent text, attachments and caret position when the user switches to another session or thread and back. Drafts are kept in the renderer's memory, so they are lost when Gloss quits.
 
+## Obsidian project shortcut
+
+The project section of Settings includes **Obsidian vault**, saved as `projects[folder].obsidianVault`. Enter an existing vault's name or ID. Empty or whitespace hides the shortcut. Changes apply live and each project keeps its own vault.
+
+An **Obsidian** button appears immediately after the project folder button in both conversation and review status lines. It opens or focuses the configured vault using Obsidian's built-in `obsidian://open?vault=...` protocol. The main process resolves the vault from the session's project settings and encodes its name as a single parameter. Launch failures appear in the status line. Obsidian must be installed and the vault already registered there.
+
 ## Status line
 
 A line under the composer for the open session. Agent state comes from ACP; the usage popup asks Claude Code or Codex directly, and git details come from local commands:

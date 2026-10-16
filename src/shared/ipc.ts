@@ -173,6 +173,8 @@ export type GlossApi = {
     saveMarkdown(id: string, threadId: string | null): Promise<boolean>
     /** Opens the session's folder in the system file manager. Resolves to an error message, or null. */
     openFolder(id: string): Promise<string | null>
+    /** Opens the session project's configured Obsidian vault. */
+    openObsidian(id: string): Promise<void>
     /** Plan usage from the session's agent, for the usage popup. Null if the agent can't be asked. */
     planUsage(id: string): Promise<PlanUsage | null>
   }
@@ -263,6 +265,7 @@ export const IPC = {
   sessionsCopyMarkdown: 'gloss:sessions:copyMarkdown',
   sessionsSaveMarkdown: 'gloss:sessions:saveMarkdown',
   sessionsOpenFolder: 'gloss:sessions:openFolder',
+  sessionsOpenObsidian: 'gloss:sessions:openObsidian',
   sessionsPlanUsage: 'gloss:sessions:planUsage',
   gitStatus: 'gloss:git:status',
   gitPullRequest: 'gloss:git:pullRequest',

@@ -14,6 +14,8 @@ import { patchArg, SettingsFile } from './settings'
 import { editorArgs, launchEditor } from './openFile'
 import { runInTerminal } from './terminal'
 import { UsageSource } from './usage'
+import { projectSettings } from '../shared/settings'
+import { obsidianUri } from '../shared/obsidian'
 import { previewMcpImport } from './mcp-import'
 
 let mainWindow: BrowserWindow | undefined
@@ -322,6 +324,13 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     if (!session) throw new Error(`Unknown session ${String(id)}`)
     const error = await shell.openPath(session.cwd)
     return error === '' ? null : error
+  })
+  ipcMain.handle(IPC.sessionsOpenObsidian, async (_e, id: unknown) => {
+    const session = store!.getSession(str(id, 'id'))
+    if (!session) throw new Error(`Unknown session ${String(id)}`)
+    const vault = projectSettings(settingsFile.state().projects, session.cwd).obsidianVault
+    if (!vault?.trim()) throw new Error('Set an Obsidian vault in project settings first.')
+    await shell.openExternal(obsidianUri(vault))
   })
   ipcMain.handle(IPC.sessionsPlanUsage, (_e, id: unknown) => {
     const session = store!.getSession(str(id, 'id'))

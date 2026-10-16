@@ -36,7 +36,8 @@ it('places the MCP list under Global without needing an open project', async () 
   const global = [...el.querySelectorAll('section')].find((s) => s.querySelector('h2')?.textContent === 'Global')!
   const project = [...el.querySelectorAll('section')].find((s) => s.querySelector('h2')?.textContent === 'Project')!
   expect(global.querySelector('.mcp-settings')).not.toBeNull()
-  expect(project).toBeUndefined()
+  expect(project.textContent).toContain("Open a session to see its project")
+  expect(project.querySelector('.mcp-settings')).toBeNull()
   await click(button(global, 'Add server'))
   const inputs = global.querySelectorAll<HTMLInputElement>('form input')
   await edit(inputs[0], 'new')
@@ -106,4 +107,19 @@ it('cancels import without saving and reports discovery failures', async () => {
   discover.mockRejectedValueOnce(new Error('Cannot read configuration'))
   await click(button(el, 'Import from Codex'))
   expect(el.querySelector('[role="alert"]')!.textContent).toContain('Cannot read configuration')
+})
+
+
+it('edits the vault for the open project with a normalized path lookup', async () => {
+  const { el } = await mount()
+  const state: SettingsState = { path: '/settings.json', error: null,
+    projects: { 'C:/Work/Project/': { obsidianVault: 'Old notes' } },
+    global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] } }
+  const update = vi.fn(async () => {})
+  await act(async () => root!.render(<SettingsScreen state={state} projectPath="c:/work/project" onUpdate={update} onClose={() => {}} onOpenFile={async () => null} />))
+  const input = el.querySelector<HTMLInputElement>('#setting-obsidianVault')!
+  expect(input.value).toBe('Old notes')
+  await edit(input, 'Project notes')
+  await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+  expect(update).toHaveBeenCalledWith({ project: { path: 'c:/work/project', values: { obsidianVault: 'Project notes' } } })
 })

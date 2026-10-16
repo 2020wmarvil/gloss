@@ -22,6 +22,7 @@ type Props = {
   history: string[]
   git: GitStatus | null
   pr: PullRequest | null
+  obsidianVault?: string
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
   notices: Notice[]
@@ -155,6 +156,7 @@ export function Conversation(props: Props): React.JSX.Element {
         onCancel={runningThread === null ? props.onCancel : undefined}
       />
       <StatusLine
+        obsidianVault={props.obsidianVault}
         session={session}
         live={live}
         git={props.git}

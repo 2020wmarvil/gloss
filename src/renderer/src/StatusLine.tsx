@@ -1,6 +1,6 @@
 // The status line at the bottom of the conversation (SPEC → Status line). Everything
 // but git details and the usage popup come from what the agent reports over ACP.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { GitStatus, PullRequest } from '@shared/ipc'
 import { folderName } from '@shared/paths'
 import type { ConfigChoice, MessageQueue, ModelOption, RateLimit, Session, SessionLive, SlashCommand } from '@shared/types'
@@ -13,6 +13,7 @@ type Props = {
   live: SessionLive
   git: GitStatus | null
   pr: PullRequest | null
+  obsidianVault?: string
   /** A turn is running (the activity strip says where). */
   running: boolean
   queue: MessageQueue
@@ -158,6 +159,8 @@ export function StatusLine(props: Props): React.JSX.Element {
   const { session, live, git } = props
   const [choiceError, setChoiceError] = useState<string | null>(null)
   const [folderError, setFolderError] = useState<string | null>(null)
+  const [obsidianError, setObsidianError] = useState<string | null>(null)
+  useEffect(() => setObsidianError(null), [session.id, props.obsidianVault])
   const usage = live.usage
   const pct = usage && usage.size > 0 ? Math.min(100, Math.round((usage.used / usage.size) * 100)) : null
   const { model, effort } = live
@@ -289,6 +292,17 @@ export function StatusLine(props: Props): React.JSX.Element {
       >
         {folderName(session.cwd)}
       </button>
+      {props.obsidianVault?.trim() && (
+        <button className="status-item" title={`Open Obsidian vault: ${props.obsidianVault.trim()}`}
+          aria-label="Open Obsidian vault"
+          onClick={() => {
+            setObsidianError(null)
+            void window.gloss.sessions.openObsidian(session.id).catch((err: unknown) => setObsidianError(errorText(err)))
+          }}>
+          Obsidian
+        </button>
+      )}
+      {obsidianError && <span className="status-item error">Couldn&apos;t open Obsidian: {obsidianError}</span>}
       {folderError && <span className="status-item error">Couldn&apos;t open the folder: {folderError}</span>}
     </div>
   )
