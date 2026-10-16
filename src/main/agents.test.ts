@@ -16,7 +16,7 @@ describe('agentEnv', () => {
     expect(codex.command).toBe(process.execPath)
     expect(codex.args).toEqual([require.resolve('@agentclientprotocol/codex-acp/dist/index.js')])
     expect(codex.bypassModeId).toBe('agent-full-access')
-    expect(agentEnv(codex, {})).toEqual({ ELECTRON_RUN_AS_NODE: '1' })
+    expect(agentEnv(codex, {})).toEqual({ ELECTRON_RUN_AS_NODE: '1', DISABLE_MCP_CONFIG_FILTERING: 'true' })
     expect(listAgents()).toEqual([
       { id: 'claude', name: 'Claude Code' },
       { id: 'codex', name: 'Codex' }
@@ -34,9 +34,9 @@ describe('agentEnv', () => {
 
   it("gives each agent Gloss's instructions in the form it takes them", () => {
     const claude = { systemPrompt: { append: AGENT_INSTRUCTIONS } }
-    expect(getAgentConfig('claude').sessionMeta).toEqual({ new: claude, load: claude })
+    expect(getAgentConfig('claude').sessionMeta?.(AGENT_INSTRUCTIONS)).toEqual({ new: claude, load: claude })
     // Codex keeps them in the thread; its session/load ignores them.
-    expect(getAgentConfig('codex').sessionMeta).toEqual({
+    expect(getAgentConfig('codex').sessionMeta?.(AGENT_INSTRUCTIONS)).toEqual({
       new: { jetbrains: { air: { customInstructions: AGENT_INSTRUCTIONS } } }
     })
   })

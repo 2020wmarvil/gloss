@@ -33,6 +33,12 @@ export function githubRepoUrl(remote: string): string | null {
   return m ? `https://github.com/${m[1]}/${m[2]}` : null
 }
 
+/** The GitHub page of the folder's `origin` remote; null without one or off GitHub. */
+export async function originRepoUrl(cwd: string): Promise<string | null> {
+  const remoteUrl = await run('git', ['remote', 'get-url', 'origin'], cwd)
+  return remoteUrl ? githubRepoUrl(remoteUrl) : null
+}
+
 /** The page of `branch`'s upstream on GitHub; null without an upstream or off GitHub. */
 async function branchUrl(cwd: string, branch: string): Promise<string | null> {
   const upstream = await run('git', ['for-each-ref', '--format=%(upstream:remotename)%00%(upstream:remoteref)', `refs/heads/${branch}`], cwd)
@@ -67,7 +73,7 @@ export function combineChecks(items: CheckRollupItem[]): PullRequest['checks'] {
   return 'passing'
 }
 
-const PR_FIELDS = 'number,title,state,isDraft,url,statusCheckRollup,reviewDecision,headRefOid'
+const PR_FIELDS = 'number,title,state,isDraft,url,statusCheckRollup,reviewDecision,headRefOid,baseRefName'
 
 /**
  * Parses `gh pr view --json <PR_FIELDS>`. `gh` also finds a branch's merged or closed
@@ -85,6 +91,7 @@ export function parsePullRequest(output: string, head: string | null): PullReque
       statusCheckRollup?: CheckRollupItem[] | null
       reviewDecision?: string
       headRefOid?: string
+      baseRefName?: string
     }
     if (typeof pr.number !== 'number' || typeof pr.url !== 'string' || !pr.url.startsWith('https://')) return null
     const state = pr.state === 'MERGED' ? 'merged' : pr.state === 'CLOSED' ? 'closed' : pr.isDraft ? 'draft' : 'open'
@@ -97,7 +104,15 @@ export function parsePullRequest(output: string, head: string | null): PullReque
           : pr.reviewDecision === 'REVIEW_REQUIRED'
             ? 'review required'
             : null
-    return { number: pr.number, title: pr.title ?? '', url: pr.url, state, checks: combineChecks(pr.statusCheckRollup ?? []), review }
+    return {
+      number: pr.number,
+      title: pr.title ?? '',
+      url: pr.url,
+      state,
+      checks: combineChecks(pr.statusCheckRollup ?? []),
+      review,
+      baseRef: pr.baseRefName ?? ''
+    }
   } catch {
     return null
   }

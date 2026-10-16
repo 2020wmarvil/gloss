@@ -3,7 +3,6 @@ import type { SettingsPatch, SettingsState } from '@shared/ipc'
 import { SETTING_FIELDS, type GlobalSettings, type SettingField } from '@shared/settings'
 import { errorText } from './errors'
 import { modKey, SHORTCUTS } from './shortcuts'
-import { projectMcp } from '@shared/mcp'
 import { McpSettings } from './McpSettings'
 
 type Props = {
@@ -43,7 +42,7 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
     setOpenError(await onOpenFile())
   }
 
-  const projectFields = SETTING_FIELDS.filter((f) => f.scope === 'project')
+  const projectFields = SETTING_FIELDS.filter((f) => f.scope === 'project' && !f.hidden)
 
   return (
     <main className="settings">
@@ -75,21 +74,22 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
               onChange={(value) => void update({ global: { [f.key]: value } })}
             />
           ))}
+          <McpSettings servers={state.global.mcpServers}
+            hasLegacy={Object.values(state.projects).some((p) => (p.mcpServers?.length ?? 0) > 0)}
+            onSave={async (mcpServers) => { await onUpdate({ global: { mcpServers } }) }} />
         </section>
 
-        <section>
+        {projectFields.length > 0 && <section>
           <h2 className="label">Project</h2>
           {projectPath ? (
             <>
               <p className="mono">{projectPath}</p>
-              <McpSettings key={projectPath} servers={projectMcp(state.projects, projectPath)}
-                onSave={async (mcpServers) => { await onUpdate({ project: { path: projectPath, values: { mcpServers } } }) }} />
               {projectFields.length === 0 && <p className="muted">No project settings yet.</p>}
             </>
           ) : (
             <p className="muted">Open a session to see its project&apos;s settings.</p>
           )}
-        </section>
+        </section>}
 
         <section>
           <h2 className="label">Keyboard shortcuts</h2>
@@ -144,6 +144,43 @@ function Shortcuts(): React.JSX.Element {
   )
 }
 
+/** A text setting, saved when it loses focus or on Enter, with suggestions. */
+function TextSetting(props: { id: string; field: SettingField; value: string; onChange(value: string): void }): React.JSX.Element {
+  const { id, field } = props
+  const [draft, setDraft] = useState(props.value)
+  useEffect(() => setDraft(props.value), [props.value])
+  const save = (): void => {
+    if (draft !== props.value) props.onChange(draft)
+  }
+  return (
+    <>
+      <input
+        id={id}
+        className="setting-text"
+        type="text"
+        spellCheck={false}
+        aria-describedby={`${id}-description`}
+        placeholder={field.placeholder}
+        list={field.suggestions ? `${id}-suggestions` : undefined}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') save()
+          if (e.key === 'Escape') setDraft(props.value)
+        }}
+      />
+      {field.suggestions && (
+        <datalist id={`${id}-suggestions`}>
+          {field.suggestions.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+      )}
+    </>
+  )
+}
+
 function Field(props: { field: SettingField; value: unknown; onChange(value: unknown): void }): React.JSX.Element {
   const { field, value } = props
   const id = `setting-${field.key}`
@@ -157,7 +194,9 @@ function Field(props: { field: SettingField; value: unknown; onChange(value: unk
           {field.description}
         </p>
       </div>
-      {field.type === 'enum' ? (
+      {field.type === 'string' ? (
+        <TextSetting id={id} field={field} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
+      ) : field.type === 'enum' ? (
         <select
           id={id}
           aria-describedby={`${id}-description`}

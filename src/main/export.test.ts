@@ -87,7 +87,8 @@ describe('parsePullRequest', () => {
       isDraft: false,
       reviewDecision: '',
       statusCheckRollup: [run('SUCCESS'), run('SKIPPED')],
-      headRefOid: 'abc'
+      headRefOid: 'abc',
+      baseRefName: 'main'
     })
     expect(parsePullRequest(out, 'def')).toEqual({
       number: 13,
@@ -95,7 +96,8 @@ describe('parsePullRequest', () => {
       url: 'https://github.com/o/r/pull/13',
       state: 'open',
       checks: 'passing',
-      review: null
+      review: null,
+      baseRef: 'main'
     })
     expect(parsePullRequest(out.replace('"OPEN","isDraft":false', '"OPEN","isDraft":true'), 'def')?.state).toBe('draft')
     expect(parsePullRequest('no pull requests found', 'abc')).toBeNull()

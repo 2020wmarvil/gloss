@@ -1,13 +1,100 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Store } from './db'
+import type { Thread } from '../shared/types'
 
 describe('Store', () => {
   const dirs: string[] = []
   afterEach(() => {
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
+  })
+
+  it.each(['dev', 'review'] as const)('upgrades the %s version 11 schema without losing history', (branch) => {
+    const dir = mkdtempSync(join(tmpdir(), 'gloss-db-'))
+    dirs.push(dir)
+    const path = join(dir, 'gloss.db')
+    let store = new Store(path)
+    store.insertSession({ id: 's', agentId: 'claude', acpSessionId: 'a', cwd: '/w', title: 'History', createdAt: 1 })
+    store.insertMessage({ id: 'm', sessionId: 's', seq: 0, role: 'agent', text: 'original message', threadId: null })
+    const thread: Thread = {
+      id: 't', sessionId: 's', anchorMessageId: 'm',
+      anchor: { kind: 'selection', start: 0, end: 8, text: 'original' }, createdAt: 2
+    }
+    store.insertThread(thread)
+    const reviewThread: Thread = {
+      id: 'r', sessionId: 's', anchorMessageId: null,
+      anchor: { kind: 'line', file: 'app.ts', side: 'new', start: 1, end: 1, text: 'code', lines: ['code'] },
+      finding: { severity: 'bug', title: 'Existing finding', body: 'Keep this finding' },
+      resolvedAt: 3, createdAt: 2
+    }
+    if (branch === 'review') store.insertThread(reviewThread)
+    store.close()
+
+    const db = new DatabaseSync(path)
+    if (branch === 'dev') {
+      db.exec(`
+        ALTER TABLE sessions DROP COLUMN review_base;
+        ALTER TABLE sessions DROP COLUMN handoff;
+        ALTER TABLE sessions ADD COLUMN handoff TEXT;
+        UPDATE sessions SET handoff = '{}';
+        CREATE TABLE legacy_threads (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          anchor_message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+          anchor TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+        INSERT INTO legacy_threads SELECT id, session_id, anchor_message_id, anchor, created_at FROM threads;
+        DROP TABLE threads;
+        ALTER TABLE legacy_threads RENAME TO threads;
+        CREATE INDEX threads_by_session ON threads(session_id);
+      `)
+    }
+    db.exec('ALTER TABLE sessions DROP COLUMN review_head; PRAGMA user_version = 11')
+    db.close()
+
+    store = new Store(path)
+    try {
+      expect(store.listSessions()).toHaveLength(1)
+      expect(store.listMessages('s')[0].text).toBe('original message')
+      expect(store.listThreads('s')).toEqual(branch === 'review' ? [thread, reviewThread] : [thread])
+      if (branch === 'dev') store.insertThread(reviewThread)
+      store.setThreadResolved('r', null)
+      expect(store.getThread('r')).toEqual({ ...reviewThread, resolvedAt: undefined })
+    } finally { store.close() }
+
+    store = new Store(path)
+    try {
+      expect(store.listSessions()).toHaveLength(1)
+      expect(store.listThreads('s')).toHaveLength(2)
+      store.deleteMessage('m')
+      expect(store.getThread('t')).toBeUndefined()
+      expect(store.getThread('r')).toBeDefined()
+    } finally { store.close() }
+    const migrated = new DatabaseSync(path)
+    try {
+      expect(migrated.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 14 })
+      expect(migrated.prepare('PRAGMA foreign_key_check').all()).toEqual([])
+      if (branch === 'dev') expect(migrated.prepare('SELECT handoff FROM sessions').get()).toMatchObject({ handoff: '{}' })
+    } finally { migrated.close() }
+  })
+
+  it('keeps the range of a review session', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gloss-db-'))
+    dirs.push(dir)
+    const store = new Store(join(dir, 'gloss.db'))
+    try {
+      store.insertSession({ id: 'r', agentId: 'claude', acpSessionId: 'a', cwd: '/w', title: 'Review', createdAt: 1, review: { baseRef: 'origin/main' } })
+      expect(store.getSession('r')?.review).toEqual({ baseRef: 'origin/main' })
+      const sha = 'a'.repeat(40)
+      expect(store.updateSession('r', { review: { baseRef: sha, headRef: 'HEAD' } }).review).toEqual({ baseRef: sha, headRef: 'HEAD' })
+      expect(store.updateSession('r', { review: { baseRef: sha } }).review).toEqual({ baseRef: sha })
+    } finally {
+      store.close()
+    }
   })
 
   it('persists across reopen and keeps one sequence for messages and tool calls', () => {

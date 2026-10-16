@@ -1,5 +1,4 @@
 // Agent configurations. A small table so more ACP agents can be added later.
-import { AGENT_INSTRUCTIONS } from '../shared/wire'
 
 export type AgentConfig = {
   id: string
@@ -16,7 +15,7 @@ export type AgentConfig = {
    * `_meta` for session/new and session/load that gives the agent Gloss's
    * instructions (SPEC → Agent instructions), in whatever form it takes them.
    */
-  sessionMeta?: { new?: Record<string, unknown>; load?: Record<string, unknown> }
+  sessionMeta?(instructions: string): { new?: Record<string, unknown>; load?: Record<string, unknown> }
 }
 
 /**
@@ -38,10 +37,10 @@ function claudeAgent(): AgentConfig {
     args: [require.resolve('@agentclientprotocol/claude-agent-acp/dist/index.js')],
     env: { ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
     bypassModeId: 'bypassPermissions',
-    sessionMeta: {
-      new: { systemPrompt: { append: AGENT_INSTRUCTIONS } },
-      load: { systemPrompt: { append: AGENT_INSTRUCTIONS } }
-    }
+    sessionMeta: (instructions) => ({
+      new: { systemPrompt: { append: instructions } },
+      load: { systemPrompt: { append: instructions } }
+    })
   }
 }
 
@@ -56,9 +55,11 @@ function codexAgent(): AgentConfig {
     name: 'Codex',
     command: process.execPath,
     args: [require.resolve('@agentclientprotocol/codex-acp/dist/index.js')],
-    env: { ELECTRON_RUN_AS_NODE: '1' },
+    // Let explicit Gloss entries override same-named native entries. Otherwise
+    // codex-acp filters them out and later edits in Gloss never take effect.
+    env: { ELECTRON_RUN_AS_NODE: '1', DISABLE_MCP_CONFIG_FILTERING: 'true' },
     bypassModeId: 'agent-full-access',
-    sessionMeta: { new: { jetbrains: { air: { customInstructions: AGENT_INSTRUCTIONS } } } }
+    sessionMeta: (instructions) => ({ new: { jetbrains: { air: { customInstructions: instructions } } } })
   }
 }
 

@@ -130,21 +130,21 @@ Find anything you discussed: "where did we decide the cache key format?"
 **Done when:** a phrase from any past session or thread is found in under a second and opening the result lands on it.
 
 ## M11 — Review sessions
-A session type for reviewing code: the main view is a diff of the staged changes, and threads hang off lines of it. To the agent it is still one linear session.
+A session type for checking an agent's work: the main view is the branch's diff, threads hang off its lines, and the agent reviews first. To the agent it is still one linear session, separate from the one that wrote the code. Designed in `docs/mocks/review-session.html` and specified in `SPEC.md` (Review sessions).
 
-- **Start a review** from a project ("Review staged changes"). The session list shows review sessions distinctly.
-- **Diff viewer:** file list plus hunks of `git diff --staged` (read by the main process), syntax highlighted with M7's highlighter, usable on large diffs.
-- **Line anchors:** a new anchor kind for a line or line range of the diff (file, side, line range, and the lines' text). Hover a line for Reply; select lines to reply to a range. Threads open in the side panel as today.
-- **Wire format:** thread messages are tagged with the location, e.g. `[re: src/orders.ts:42 "cache.invalidate(id)"]`. At the start, Gloss tells the agent what is under review.
-- **General conversation:** a collapsible main thread beside the diff for the change as a whole.
-- **Refresh:** when the staged diff changes, it is re-read and each thread's lines are re-found by their text (as M4 does for selections). Threads whose lines are gone are marked outdated.
-- **Agent first pass** (phase 2): "Review" asks the agent for its findings in a structured form (file, line range, comment); Gloss opens one thread per finding at its lines.
-- The threads overview (M9) doubles as the list of review comments.
-- Update `SPEC.md` with the review session type and the line anchor.
+- **Start a review** from a project ("Review changes"). The session list shows review sessions distinctly, with their open thread count.
+- **What is reviewed:** from a base (by default the merge base with the pull request's base, else the default branch) to the working tree (committed or not, plus untracked files) or a commit, both picked in dropdowns; read by the main process and refreshed as the agent works.
+- **Diff viewer:** stacked files with sticky, collapsible headers, a collapsible file tree, split (default, lines scroll sideways per side) or unified, syntax highlighted, usable on large diffs.
+- **Line anchors** from a code selection, sent as `[re: path:line "…"]`.
+- **Comment cards** inline under their lines, collapsible to a gutter marker, with a global show/hide toggle.
+- **Agent first pass** on start: findings in a structured block, each opened as a line thread with its severity.
+- **Fixes** by the review agent itself, in the thread; the diff updates.
+- **Outdated** threads when their lines change, **Resolve** by the user.
+- **Side panel:** the general conversation pinned at the top of the threads overview, threads grouped by file with Open/Resolved and severity filters; `N`/`P` move between open threads.
 
-**Done when:** you can stage changes, open a review, discuss individual lines and ranges in threads and the whole change in the general thread, ask the agent for a first pass that lands as line threads, and see threads survive a re-stage (or be marked outdated).
+Build in two PRs: the diff viewer with line threads and the general conversation, then the first pass, outdated threads and resolve.
 
-**Decide during development:** how the agent's own fixes appear. They change files, so they show up as unstaged changes: show unstaged changes alongside the staged diff (distinguished), or keep them out until staged.
+**Done when:** "Review changes" opens a review whose agent first pass lands as line threads, you can discuss lines in threads and the whole change in the general conversation, the agent's fixes appear in the diff, and threads follow their lines or are marked outdated.
 
 ## M12 — UX review
 Converge on a clean, sleek, long-term interface now that every surface exists. Two phases, with a review stop between them.
@@ -172,16 +172,16 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 Remaining M13 features are implemented for review in two parts:
 
-Shared project MCP configuration is implemented for review: validated settings and schema, a project settings editor, capability checks, and server lists on new/load. Changes apply before the next prompt or idle resume.
+Global shared MCP configuration is implemented for review: validated settings and schema, a global server list with Add/Edit/Remove and one-time imports from Claude and Codex, capability checks, and server lists on new/load. Changes apply before the next prompt or idle resume.
 
 Cross-agent handoff is implemented for review: conversation and thread actions, source-agent summaries with a local blurb fallback when usage is exhausted, exact prompt preview, immutable transcript snapshots, new destination sessions and persistent source links.
 
-- **Gloss-managed MCP servers:** a per-project list of MCP servers passed through ACP's `mcpServers` in `session/new` and `session/load`, so agents share tools. Only transports the selected agent advertises are allowed.
+- **Gloss-managed MCP servers:** a global list of MCP servers passed through ACP's `mcpServers` in `session/new` and `session/load`, so agents share tools. Only transports the selected agent advertises are allowed.
 - **Continue with another agent:** an explicit action such as "Continue this conversation with Codex" or "Continue this thread with Claude Code". Create a new session for the destination agent, seeded with a reviewable source-agent summary (or a local blurb if usage is exhausted) and a reference to a saved conversation or thread transcript. Preserve and link back to the original session. This is a context handoff, not a conversion of the original agent's session history. Design the summary and transcript preview before implementation.
 
 **Codex support is done when:** a new Codex session works end to end, including sign-in, threads, model selection and resume (or a lost-context notice if resume is unavailable).
 
-**M13 is done when:** shared MCP configuration works across agents and a user can review and hand off a conversation or thread to another agent while preserving the original's prior messages and threads.
+**M13 is done when:** global MCP configuration works across agents, with reviewed one-time imports from native settings, and a user can review and hand off a conversation or thread to another agent while preserving the original's prior messages and threads.
 
 ## M14 — Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
@@ -256,6 +256,19 @@ Drive Gloss from a phone while the desktop app runs the agents. The desktop stay
 
 **Done when:** you can pair a phone by scanning a QR code, see the same sessions as the desktop, start and steer a turn in a thread from the phone while watching it stream on both, and a revoked phone can no longer connect.
 
+## M19: Shared skills and plugin marketplaces (future)
+Build on M13's global MCP settings and reviewed one-time imports. Start with shared skills, then add plugin discovery, marketplace search and installation. Update `SPEC.md` and design the library, search results and import/install previews before implementation.
+
+- **Global skill library:** one Gloss-managed library available to Claude Code and Codex across projects. List skills with their description, source and agent compatibility, with Add, Edit and Remove actions. Verify how each installed agent discovers skills and refreshes them before choosing the storage and delivery mechanism.
+- **One-time skill import:** discover native user and known-project skills from either agent. Preview the instructions and supporting files, select what to copy, and resolve name collisions before saving. Preserve relative references and bundled resources. Original files stay unchanged; later edits are managed in Gloss without ongoing synchronization.
+- **Compatibility is explicit:** detect agent-specific tools, paths and conventions. Explain any required adaptation before import; do not claim a skill works with both agents just because its instructions were copied. Show when a new session or agent restart is required to pick up a change.
+- **Plugin discovery:** list native plugins and their components, including skills, MCP servers, hooks and agent-specific features. Preview which components can be shared and which remain available only through their original agent.
+- **Search plugin libraries and marketplaces:** browse and search supported agent catalogs from Gloss, and let the user add a marketplace source where supported. Show the source, publisher, description, version and agent compatibility in results, with a detail view of the plugin's components and requirements. Verify available catalog and installation APIs before choosing the initial sources; identify unsupported sources and unavailable results clearly.
+- **Add plugins from search:** select a result, review its components, dependencies, requested access and installation destination, then install through the supported agent mechanism. Make clear whether the plugin is available to one agent or both, and offer importing compatible components into Gloss's shared library where appropriate. Report progress, authentication requirements, failures and any required restart. Track installed source/version and provide a remove action; preserve pre-existing native installations and shared components when removing a Gloss-added plugin.
+- **Import compatible plugin components:** copy selected portable skills into the global library and supported MCP definitions into M13's global list, with the same duplicate and compatibility checks. Do not silently transfer hooks, installation scripts or unsupported features, or modify the source plugin. Importing a component does not install or execute the whole plugin.
+
+**Done when:** a user can review and import a skill once, use it with both agents where compatible, search a supported marketplace, and install and remove a selected plugin from Gloss. Plugin previews identify what can be shared and what stays agent-specific. Imports leave original agent files unchanged, installations use the reviewed destination, and shared skills and installed-plugin records survive restart.
+
 ## Future work (after the milestones)
 Ideas worth building once the milestones are done. Not scheduled; first item first.
 
@@ -265,14 +278,15 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 ## Design passes needed
 - **M7:** sidebar with projects (folders) and their sessions, including the agent's existing sessions not yet opened in Gloss.
 - **M9:** done: the overview lives in a collapsible right-hand side panel, which also shows a thread (`docs/mocks/threads-overview.html`).
-- **M11:** the diff viewer layout, line Reply affordances and range selection, where the general conversation sits, and how agent-opened threads look.
+- **M11:** done: `docs/mocks/review-session.html`.
 - The M7–M11 passes are deliberately light: enough to build them. M12 revisits everything as a whole.
 - **M15:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 - **M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.
 - **M17:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.
 - **M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.
+- **M19:** the global skill library, skill import preview and conflict resolution, marketplace search and source management, and plugin compatibility, installation and removal.
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
-- Review sessions on other bases: unstaged changes, the current branch vs. `main`, a commit range (M11 starts with staged changes; keep the line anchor base-agnostic).
+- Review sessions on other bases: staged changes only, a commit range, someone else's PR (M11 reviews the branch since the default branch, committed or not; keep the line anchor base-agnostic).
 - Polish the README and add visuals (screenshots, GIFs of threads and steering), and make a motion graphics demo reel.

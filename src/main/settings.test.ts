@@ -5,9 +5,36 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { SettingsState } from '../shared/ipc'
 import { parseSettings, patchArg, samePath, SettingsFile } from './settings'
 
-const defaults = { defaultAgent: 'claude' as const, theme: 'system' as const, sessionOrder: 'created' as const, listItemReplies: false }
+const defaults = { defaultAgent: 'claude' as const, theme: 'system' as const, sessionOrder: 'created' as const, listItemReplies: false, externalEditor: '', mcpServers: [] }
 
 describe('parseSettings', () => {
+  it('validates the global MCP list and retains legacy project lists for explicit import', () => {
+    const mcpServers = [{ name: 'global-tools', command: '/tools/server', args: [], env: [] }]
+    expect(parseSettings(JSON.stringify({ mcpServers, projects: { '/old': { mcpServers } } }), defaults)).toMatchObject({
+      ok: true, global: { mcpServers }, projects: { '/old': { mcpServers } }
+    })
+    expect(patchArg({ global: { mcpServers } })).toEqual({ global: { mcpServers } })
+    expect(() => patchArg({ global: { mcpServers: [{ ...mcpServers[0], args: false }] } })).toThrow(/args/)
+    expect(parseSettings(JSON.stringify({ mcpServers: [mcpServers[0], mcpServers[0]] }), defaults).ok).toBe(false)
+  })
+  it('rejects MCP names that collide in Codex, preserving distinct names as entered', () => {
+    const server = { command: '/tools/mcp', args: [], env: [] }
+    for (const name of ['team tools', 'team\ttools', 'team\u00a0tools', 'team\u2003tools']) {
+      const mcpServers = [{ ...server, name }, { ...server, name: 'team_tools' }]
+      expect(parseSettings(JSON.stringify({ projects: { '/project': { mcpServers } } }), defaults)).toMatchObject({
+        ok: false, error: expect.stringContaining('duplicate name')
+      })
+      expect(() => patchArg({ project: { path: '/project', values: { mcpServers } } })).toThrow(/duplicate name/)
+    }
+    const mcpServers = [{ ...server, name: 'team tools' }, { ...server, name: 'other_tools' }]
+    expect(parseSettings(JSON.stringify({ projects: { '/project': { mcpServers } } }), defaults)).toMatchObject({
+      ok: true, projects: { '/project': { mcpServers } }
+    })
+    expect(patchArg({ project: { path: '/project', values: { mcpServers } } })).toEqual({
+      project: { path: '/project', values: { mcpServers } }
+    })
+  })
+
   it('validates project MCP servers in files and renderer patches', () => {
     const servers = [{ name: 'tools', command: '/tools/mcp', args: [], env: [] }, { type: 'http', name: 'remote', url: 'https://example.com/mcp', headers: [] }]
     expect(parseSettings(JSON.stringify({ projects: { '/project': { mcpServers: servers } } }), defaults)).toMatchObject({ ok: true, projects: { '/project': { mcpServers: servers } } })
@@ -36,7 +63,7 @@ describe('parseSettings', () => {
   it('fills in defaults and ignores unknown and retired keys', () => {
     expect(parseSettings('{"$schema": "x", "future": 1, "devModel": true}', defaults)).toEqual({
       ok: true,
-      global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false },
+      global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] },
       projects: {}
     })
   })
@@ -52,7 +79,7 @@ describe('parseSettings', () => {
   it('reads known values and projects', () => {
     expect(parseSettings('{"theme": "dark", "projects": {"C:\\\\a": {"x": 1}}}', defaults)).toEqual({
       ok: true,
-      global: { defaultAgent: 'claude', theme: 'dark', sessionOrder: 'created', listItemReplies: false },
+      global: { defaultAgent: 'claude', theme: 'dark', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] },
       projects: { 'C:\\a': {} }
     })
   })
@@ -119,8 +146,8 @@ describe('SettingsFile', () => {
 
   it('creates the file and its schema on first load', () => {
     const state = file.load()
-    expect(state).toEqual({ path: path(), global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false }, projects: {}, error: null })
-    expect(onDisk()).toEqual({ $schema: './settings.schema.json', defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false })
+    expect(state).toEqual({ path: path(), global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null })
+    expect(onDisk()).toEqual({ $schema: './settings.schema.json', defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] })
     const schema = JSON.parse(readFileSync(join(dir, 'settings.schema.json'), 'utf8')) as {
       properties: Record<string, { type: string; default?: unknown; enum?: unknown[] }>
     }

@@ -1,5 +1,7 @@
 // A session or one thread as markdown, for pasting into a PR description, chat or a doc.
 import type { Message, Session, Thread, ToolCall } from '../shared/types'
+import type { Anchor } from '../shared/types'
+import { lineLabel } from '../shared/review'
 import { truncate } from '../shared/wire'
 
 type Log = { session: Session; messages: Message[]; toolCalls: ToolCall[]; threads: Thread[] }
@@ -23,6 +25,18 @@ function blocks(log: Log, threadId: string | null): string[] {
   return out
 }
 
+/** What a thread's heading names: its text, after the file and lines for diff lines. */
+function heading(anchor: Anchor): string {
+  const text = `“${truncate(anchor.text, 60)}”`
+  return anchor.kind === 'line' ? `${lineLabel(anchor)} ${text}` : text
+}
+
+/** The agent's finding that opened a review thread, as its first block. */
+function finding(thread: Thread): string[] {
+  const f = thread.finding
+  return f ? [`**Agent** (${f.severity})\n\n**${f.title}**${f.body ? `\n\n${f.body}` : ''}`] : []
+}
+
 function quote(text: string): string {
   return text
     .trim()
@@ -36,13 +50,13 @@ export function toMarkdown(log: Log, threadId: string | null): string {
   if (threadId !== null) {
     const thread = log.threads.find((t) => t.id === threadId)
     if (!thread) throw new Error(`Unknown thread ${threadId}`)
-    return [`# Thread: “${truncate(thread.anchor.text, 60)}”`, `From ${log.session.title}`, quote(thread.anchor.text), ...blocks(log, threadId)].join('\n\n') + '\n'
+    return [`# Thread: ${heading(thread.anchor)}`, `From ${log.session.title}`, quote(thread.anchor.text), ...finding(thread), ...blocks(log, threadId)].join('\n\n') + '\n'
   }
   const parts = [`# ${log.session.title}`, ...blocks(log, null)]
   for (const thread of log.threads) {
-    const replies = blocks(log, thread.id)
+    const replies = [...finding(thread), ...blocks(log, thread.id)]
     if (replies.length === 0) continue
-    parts.push(`## Thread: “${truncate(thread.anchor.text, 60)}”`, quote(thread.anchor.text), ...replies)
+    parts.push(`## Thread: ${heading(thread.anchor)}`, quote(thread.anchor.text), ...replies)
   }
   return parts.join('\n\n') + '\n'
 }

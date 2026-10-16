@@ -24,7 +24,8 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: [['Mod', ',']], action: 'Open or close settings' },
       { keys: [['Alt', '←'], ['Mouse back']], action: 'Back to the previous session, thread or settings' },
       { keys: [['Alt', '→'], ['Mouse forward']], action: 'Forward again' },
-      { keys: [['Esc']], action: 'Close settings or a menu' }
+      { keys: [['Esc']], action: 'Close settings or a menu' },
+      { keys: [['F11']], action: 'Full screen, or back to a window (Ctrl+Cmd+F on macOS)' }
     ]
   },
   {

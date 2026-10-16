@@ -1,5 +1,7 @@
 import type { SearchRequest, SearchResponse } from './search'
 import type { HandoffRequest, PreparedHandoff } from './handoff'
+import type { McpImportPreview, McpImportSource } from './mcp'
+import type { ReviewDiff, ReviewRefs } from './review'
 // The IPC contract between the main process and the renderer.
 // Type-only (plus channel names): nothing here may pull runtime code into the sandboxed preload.
 import type { GlobalSettings, ProjectSettings } from './settings'
@@ -63,6 +65,8 @@ export type PullRequest = {
   /** Combined result of its checks; null if it has none. */
   checks: 'passing' | 'failing' | 'pending' | null
   review: 'approved' | 'changes requested' | 'review required' | null
+  /** The branch it merges into, e.g. "main". */
+  baseRef: string
 }
 
 /**
@@ -105,6 +109,8 @@ export type GlossEvent =
   | { type: 'queue'; sessionId: string; queue: MessageQueue }
   /** Something the user should know that is not part of the conversation, shown in `threadId`. */
   | { type: 'notice'; sessionId: string; threadId: string | null; text: string }
+  /** The window went full screen (F11): show how to leave it. */
+  | { type: 'fullScreen' }
   | { type: 'authRequired'; agentId: string; agentName: string; methods: AuthMethodInfo[] }
   | { type: 'authResolved'; agentId: string }
   | { type: 'settings'; state: SettingsState }
@@ -132,6 +138,21 @@ export type GlossApi = {
     prepareHandoff(sessionId: string, threadId: string | null): Promise<PreparedHandoff>
     cancelHandoffPreparation(sessionId: string): Promise<void>
     discardHandoff(preparedId: string): Promise<void>
+    /**
+     * Starts a review of the project's branch; its first pass runs on (SPEC → Review
+     * sessions). `baseRef` and `headRef` (null: the working tree) replace the default range.
+     */
+    createReview(cwd: string, agentId: string, baseRef?: string, headRef?: string | null): Promise<Session>
+    /** What a review's dropdowns offer. */
+    reviewRefs(id: string): Promise<ReviewRefs>
+    /** Opens a file of a review's diff (path from the repository root) in the file manager, or in the external editor at `line`. */
+    openReviewFile(id: string, path: string, how: 'reveal' | 'editor', line: number): Promise<void>
+    /** Changes what a review compares (`headRef` null: the working tree); resolves with the new diff. */
+    setReviewRange(id: string, baseRef: string, headRef: string | null): Promise<ReviewDiff>
+    /** A review session's diff, read now. */
+    reviewDiff(id: string): Promise<ReviewDiff>
+    /** A file of a review's diff as it is now (path from the repository root); null if it can't be shown. */
+    reviewFile(id: string, path: string): Promise<string[] | null>
     /**
      * Opens one of the agent's sessions in Gloss: its history becomes the log, placed in threads by its tags.
      * `listedAt` (the agent's `updatedAt` in its listing) stands in for when it was made, so it keeps its place.
@@ -164,8 +185,10 @@ export type GlossApi = {
   /** The text of the user's messages in every session, newest first, each once (SPEC → Composer → History). */
   history(): Promise<string[]>
   threads: {
-    /** Creates the thread for an anchor, or returns the existing one for the same anchor. */
-    create(sessionId: string, anchorMessageId: string, anchor: Anchor): Promise<Thread>
+    /** Creates the thread for an anchor, or returns the existing one for the same anchor. Line anchors have no message. */
+    create(sessionId: string, anchorMessageId: string | null, anchor: Anchor): Promise<Thread>
+    /** Resolves a review thread, or reopens it. */
+    resolve(sessionId: string, threadId: string, resolved: boolean): Promise<Thread>
   }
   /**
    * Resolves when the turn ends, or right away with `queued` if a turn is running (SPEC → Queue).
@@ -200,6 +223,7 @@ export type GlossApi = {
     pathFor(file: File): string
   }
   settings: {
+    previewMcpImport(source: McpImportSource): Promise<McpImportPreview>
     get(): Promise<SettingsState>
     /** Writes the changed keys to settings.json, keeping everything else. Rejects if the file isn't valid JSON. */
     update(patch: SettingsPatch): Promise<SettingsState>
@@ -211,6 +235,7 @@ export type GlossApi = {
 }
 
 export const IPC = {
+  settingsPreviewMcpImport: 'gloss:settings:previewMcpImport',
   search: 'gloss:search',
   agentsList: 'gloss:agents:list',
   projectsList: 'gloss:projects:list',
@@ -223,6 +248,12 @@ export const IPC = {
   sessionsPrepareHandoff: 'gloss:sessions:prepareHandoff',
   sessionsCancelHandoffPreparation: 'gloss:sessions:cancelHandoffPreparation',
   sessionsDiscardHandoff: 'gloss:sessions:discardHandoff',
+  sessionsCreateReview: 'gloss:sessions:createReview',
+  sessionsReviewDiff: 'gloss:sessions:reviewDiff',
+  sessionsReviewFile: 'gloss:sessions:reviewFile',
+  sessionsReviewRefs: 'gloss:sessions:reviewRefs',
+  sessionsOpenReviewFile: 'gloss:sessions:openReviewFile',
+  sessionsSetReviewRange: 'gloss:sessions:setReviewRange',
   sessionsImport: 'gloss:sessions:import',
   sessionsOpen: 'gloss:sessions:open',
   sessionsRefresh: 'gloss:sessions:refresh',
@@ -236,6 +267,7 @@ export const IPC = {
   gitStatus: 'gloss:git:status',
   gitPullRequest: 'gloss:git:pullRequest',
   threadsCreate: 'gloss:threads:create',
+  threadsResolve: 'gloss:threads:resolve',
   history: 'gloss:history',
   send: 'gloss:send',
   steer: 'gloss:steer',

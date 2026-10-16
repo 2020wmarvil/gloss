@@ -20,6 +20,12 @@ const api: GlossApi = {
     prepareHandoff: (sessionId, threadId) => ipcRenderer.invoke(IPC.sessionsPrepareHandoff, sessionId, threadId),
     cancelHandoffPreparation: (sessionId) => ipcRenderer.invoke(IPC.sessionsCancelHandoffPreparation, sessionId),
     discardHandoff: (preparedId) => ipcRenderer.invoke(IPC.sessionsDiscardHandoff, preparedId),
+    createReview: (cwd, agentId, baseRef, headRef) => ipcRenderer.invoke(IPC.sessionsCreateReview, cwd, agentId, baseRef, headRef),
+    reviewRefs: (id) => ipcRenderer.invoke(IPC.sessionsReviewRefs, id),
+    openReviewFile: (id, path, how, line) => ipcRenderer.invoke(IPC.sessionsOpenReviewFile, id, path, how, line),
+    setReviewRange: (id, baseRef, headRef) => ipcRenderer.invoke(IPC.sessionsSetReviewRange, id, baseRef, headRef),
+    reviewDiff: (id) => ipcRenderer.invoke(IPC.sessionsReviewDiff, id),
+    reviewFile: (id, path) => ipcRenderer.invoke(IPC.sessionsReviewFile, id, path),
     import: (cwd, agentId, acpSessionId, title, listedAt) =>
       ipcRenderer.invoke(IPC.sessionsImport, cwd, agentId, acpSessionId, title, listedAt),
     open: (id) => ipcRenderer.invoke(IPC.sessionsOpen, id),
@@ -38,7 +44,8 @@ const api: GlossApi = {
   },
   threads: {
     create: (sessionId, anchorMessageId, anchor) =>
-      ipcRenderer.invoke(IPC.threadsCreate, sessionId, anchorMessageId, anchor)
+      ipcRenderer.invoke(IPC.threadsCreate, sessionId, anchorMessageId, anchor),
+    resolve: (sessionId, threadId, resolved) => ipcRenderer.invoke(IPC.threadsResolve, sessionId, threadId, resolved)
   },
   send: (sessionId, text, threadId, attachments, fromThread) =>
     ipcRenderer.invoke(IPC.send, sessionId, text, threadId, attachments, fromThread ?? null),
@@ -58,6 +65,7 @@ const api: GlossApi = {
     pathFor: (file) => webUtils.getPathForFile(file)
   },
   settings: {
+    previewMcpImport: (source) => ipcRenderer.invoke(IPC.settingsPreviewMcpImport, source),
     get: () => ipcRenderer.invoke(IPC.settingsGet),
     update: (patch) => ipcRenderer.invoke(IPC.settingsUpdate, patch),
     openFile: () => ipcRenderer.invoke(IPC.settingsOpenFile)

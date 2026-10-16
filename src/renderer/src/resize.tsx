@@ -6,6 +6,8 @@ export type WidthLimits = { min: number; max: number }
 
 /** The CSS default widths, used until the user resizes a pane. */
 export const SIDEBAR_DEFAULT = 240
+/** The collapsed sidebar's rail. */
+export const SIDEBAR_RAIL = 44
 /** The narrowest the conversation gets when a pane is dragged wide. */
 const CONVERSATION_MIN = 360
 
