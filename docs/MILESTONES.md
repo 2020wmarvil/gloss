@@ -170,18 +170,15 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 **Pulled forward: Codex support (first PR).** New Codex sessions, agent selection, session labels, a default-agent setting, and the existing threading, sign-in, model and resume flows. Uses `@agentclientprotocol/codex-acp` with its bundled Codex CLI. Agent-specific launch and bypass settings stay in `AgentConfig`. Existing Claude conversations remain with Claude.
 
-Remaining M13 features are implemented for review in two parts:
+Remaining work for M13, in separate PRs:
 
 Global shared MCP configuration is implemented for review: validated settings and schema, a global server list with Add/Edit/Remove and one-time imports from Claude and Codex, capability checks, and server lists on new/load. Changes apply before the next prompt or idle resume.
 
-Cross-agent handoff is implemented for review: conversation and thread actions, source-agent summaries with a local blurb fallback when usage is exhausted, exact prompt preview, immutable transcript snapshots, new destination sessions and persistent source links.
-
 - **Gloss-managed MCP servers:** a global list of MCP servers passed through ACP's `mcpServers` in `session/new` and `session/load`, so agents share tools. Only transports the selected agent advertises are allowed.
-- **Continue with another agent:** an explicit action such as "Continue this conversation with Codex" or "Continue this thread with Claude Code". Create a new session for the destination agent, seeded with a reviewable source-agent summary (or a local blurb if usage is exhausted) and a reference to a saved conversation or thread transcript. Preserve and link back to the original session. This is a context handoff, not a conversion of the original agent's session history. Design the summary and transcript preview before implementation.
 
 **Codex support is done when:** a new Codex session works end to end, including sign-in, threads, model selection and resume (or a lost-context notice if resume is unavailable).
 
-**M13 is done when:** global MCP configuration works across agents, with reviewed one-time imports from native settings, and a user can review and hand off a conversation or thread to another agent while preserving the original's prior messages and threads.
+**M13 is done when:** global MCP configuration works across agents, with reviewed one-time imports from native agent settings.
 
 ## M14 — Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.

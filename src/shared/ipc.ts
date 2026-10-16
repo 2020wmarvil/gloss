@@ -1,5 +1,4 @@
 import type { SearchRequest, SearchResponse } from './search'
-import type { HandoffRequest, PreparedHandoff } from './handoff'
 import type { McpImportPreview, McpImportSource } from './mcp'
 import type { ReviewDiff, ReviewRefs } from './review'
 // The IPC contract between the main process and the renderer.
@@ -133,11 +132,6 @@ export type GlossApi = {
     list(): Promise<Session[]>
     /** Starts an agent session in `cwd`. Rejects if the agent can't start one. */
     create(cwd: string, agentId: string): Promise<Session>
-    /** Creates a new session with reviewed context and starts its first turn. */
-    handoff(request: HandoffRequest): Promise<Session>
-    prepareHandoff(sessionId: string, threadId: string | null): Promise<PreparedHandoff>
-    cancelHandoffPreparation(sessionId: string): Promise<void>
-    discardHandoff(preparedId: string): Promise<void>
     /**
      * Starts a review of the project's branch; its first pass runs on (SPEC → Review
      * sessions). `baseRef` and `headRef` (null: the working tree) replace the default range.
@@ -246,10 +240,6 @@ export const IPC = {
   projectsDelete: 'gloss:projects:delete',
   sessionsList: 'gloss:sessions:list',
   sessionsCreate: 'gloss:sessions:create',
-  sessionsHandoff: 'gloss:sessions:handoff',
-  sessionsPrepareHandoff: 'gloss:sessions:prepareHandoff',
-  sessionsCancelHandoffPreparation: 'gloss:sessions:cancelHandoffPreparation',
-  sessionsDiscardHandoff: 'gloss:sessions:discardHandoff',
   sessionsCreateReview: 'gloss:sessions:createReview',
   sessionsReviewDiff: 'gloss:sessions:reviewDiff',
   sessionsReviewFile: 'gloss:sessions:reviewFile',

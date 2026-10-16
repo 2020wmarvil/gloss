@@ -1,6 +1,5 @@
 import type { SearchResult } from '@shared/search'
 import { SearchDialog } from './SearchDialog'
-import { HandoffDialog } from './HandoffDialog'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GitStatus, GlossEvent, PullRequest, SettingsPatch, SettingsState } from '@shared/ipc'
 import { sameFolder } from '@shared/paths'
@@ -142,7 +141,6 @@ function threadName(thread: Thread): string {
 const DIFF_REFRESH_DELAY = 300
 
 export function App(): React.JSX.Element {
-  const [handoff, setHandoff] = useState<{ sessionId: string; threadId: string | null } | null>(null)
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
@@ -1096,14 +1094,6 @@ export function App(): React.JSX.Element {
           onOpenSelection={openSelection}
           onOpenThread={openThread}
           onOpenQueue={showQueue}
-          onHandoff={agents.some((a) => a.id !== open.session.agentId) ? () => setHandoff({ sessionId: open.session.id, threadId: null }) : undefined}
-          onOpenSource={() => {
-            const source = open.session.handoff
-            if (!source) return
-            if (!sessions.some((s) => s.id === source.sessionId)) { setSidebarError('The source session was deleted. Its title and reviewed context are preserved here.'); return }
-            void selectSession(source.sessionId, source.threadId).then(() => { if (source.threadId === null && openId.current === source.sessionId) setPanel(null) })
-              .catch((err: unknown) => setSidebarError(errorText(err)))
-          }}
         />
       ) : (
         <main className="empty-state">
@@ -1194,8 +1184,6 @@ export function App(): React.JSX.Element {
               onClose={collapseSide}
               onCopyMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'copy')}
               onSaveMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'save')}
-              onHandoff={agents.some((a) => a.id !== open.session.agentId) && panel.threadId !== null
-                ? () => setHandoff({ sessionId: open.session.id, threadId: panel.threadId }) : undefined}
             />
           ) : (
             <ThreadsOverview
@@ -1240,13 +1228,6 @@ export function App(): React.JSX.Element {
       )}
       {fullScreenHint > 0 && <FullScreenHint key={fullScreenHint} />}
       {showSearch && <SearchDialog sessionId={sessionId ?? null} cwd={projectPath} onClose={() => setShowSearch(false)} onOpen={openSearchResult} />}
-      {handoff && open?.session.id === handoff.sessionId && <HandoffDialog
-        key={`${handoff.sessionId}:${handoff.threadId}`} open={open} threadId={handoff.threadId} agents={agents}
-        onClose={() => setHandoff(null)}
-        onCreated={(session) => {
-          setHandoff(null)
-          void selectSession(session.id).catch((err: unknown) => setSidebarError(`Handoff created. Couldn't open it: ${errorText(err)}`))
-        }} />}
       {signIn && (
         <SignInDialog
           request={signIn}

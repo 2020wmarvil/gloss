@@ -44,8 +44,6 @@ type Props = {
   onOpenThread(threadId: string): void
   /** Opens the side panel's Queue tab. */
   onOpenQueue(): void
-  onHandoff?(): void
-  onOpenSource?(): void
 }
 
 export function Conversation(props: Props): React.JSX.Element {
@@ -120,12 +118,7 @@ export function Conversation(props: Props): React.JSX.Element {
       <header>
         <h1 title={session.title}>{session.title}</h1>
         <span className="mono">{agentName}</span>
-        {props.onHandoff && <button onClick={props.onHandoff} disabled={running} title="Continue this conversation with another agent">Continue with...</button>}
       </header>
-      {session.handoff && <div className="handoff-source">
-        <span title={session.handoff.quote ?? session.handoff.title}>Continued from {session.handoff.title}{session.handoff.quote ? ` / "${session.handoff.quote}"` : ''} ({session.handoff.agentId})</span>
-        <button onClick={props.onOpenSource}>Open source</button>
-      </div>}
       <Log
         className="log"
         items={logItems(open, notices, null)}

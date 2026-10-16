@@ -45,12 +45,6 @@ Click **Search conversations** in the sidebar or press **Ctrl+Shift+F** (**Cmd+S
 
 Search covers history already loaded into Gloss. Open an agent session from the sidebar to include its history.
 
-### Shared tools and agent handoffs
-
-In **Settings > Project > MCP servers**, configure tools once for both Claude Code and Codex. The editor accepts a JSON list with examples for stdio and HTTP servers. Save it there or edit `settings.json`; changes apply on the next turn or idle resume. Unsupported transports show an error (Codex does not support SSE).
-
-Choose **Continue with...** in an idle conversation or thread to hand work to another agent. The source agent writes a summary for review; if it has exhausted its usage, Gloss uses a local blurb. The destination receives that summary and a path to a saved transcript containing messages, tool output and text attachments (images are listed by name). A thread handoff includes only that thread and its anchor. The destination has **Open source** to return to the original conversation or thread.
-
 ### Dev model toggle
 
 **Dev model (Haiku)**, in Settings, runs Claude Code with `ANTHROPIC_MODEL=haiku` so test prompts are cheap. It is on by default in development and stored in `settings.json` in Electron's user-data folder. Changing it restarts idle agents; a running turn finishes on the old model. It does not override Codex models. Judge the threading UX on the normal model; Haiku gives shorter, less list-heavy answers.

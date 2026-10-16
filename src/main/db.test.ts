@@ -34,12 +34,12 @@ describe('Store', () => {
     store.close()
 
     const db = new DatabaseSync(path)
+    db.exec('ALTER TABLE sessions DROP COLUMN handoff')
     if (branch === 'dev') {
       db.exec(`
         ALTER TABLE sessions DROP COLUMN review_base;
-        ALTER TABLE sessions DROP COLUMN handoff;
         ALTER TABLE sessions ADD COLUMN handoff TEXT;
-        UPDATE sessions SET handoff = '{}';
+        UPDATE sessions SET handoff = 'existing handoff';
         CREATE TABLE legacy_threads (
           id TEXT PRIMARY KEY,
           session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -78,7 +78,7 @@ describe('Store', () => {
     try {
       expect(migrated.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 14 })
       expect(migrated.prepare('PRAGMA foreign_key_check').all()).toEqual([])
-      if (branch === 'dev') expect(migrated.prepare('SELECT handoff FROM sessions').get()).toMatchObject({ handoff: '{}' })
+      if (branch === 'dev') expect(migrated.prepare('SELECT handoff FROM sessions').get()).toMatchObject({ handoff: 'existing handoff' })
     } finally { migrated.close() }
   })
 
@@ -104,8 +104,6 @@ describe('Store', () => {
 
     let store = new Store(path)
     store.insertSession({ id: 's', agentId: 'claude', acpSessionId: 'a', cwd: '/w', title: 'w', createdAt: 1 })
-    const handoff = { sessionId: 'original', threadId: 'thread', title: 'Original', agentId: 'codex', quote: 'anchor' }
-    store.updateSession('s', { handoff })
     expect(store.nextSeq('s')).toBe(0)
     store.insertMessage({ id: 'm0', sessionId: 's', seq: 0, role: 'user', text: 'hi', wireText: 'hi', threadId: null })
     store.upsertToolCall({ id: 't', sessionId: 's', messageSeq: 1, threadId: null, title: 'Read', status: 'pending', content: [{ type: 'content' }] })
@@ -115,7 +113,6 @@ describe('Store', () => {
 
     store = new Store(path) // migrations must be a no-op the second time
     expect(store.listSessions().map((s) => s.id)).toEqual(['s'])
-    expect(store.getSession('s')?.handoff).toEqual(handoff)
     expect(store.listMessages('s')).toEqual([
       { id: 'm0', sessionId: 's', seq: 0, role: 'user', text: 'hi', wireText: 'hi', threadId: null }
     ])

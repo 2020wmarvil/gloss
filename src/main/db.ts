@@ -170,6 +170,7 @@ const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   `
   ALTER TABLE sessions ADD COLUMN review_head TEXT;
   `,
+  // Retain migration 14 for databases that ran the removed handoff feature.
   (db) => {
     if (!db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'handoff')) db.exec('ALTER TABLE sessions ADD COLUMN handoff TEXT')
   }
@@ -190,7 +191,6 @@ function toSession(r: Row): Session {
     ...(r.model != null ? { model: r.model as string } : {}),
     ...(r.effort != null ? { effort: r.effort as string } : {}),
     ...(r.synced_at != null ? { syncedAt: r.synced_at as string } : {}),
-    ...(r.handoff != null ? { handoff: JSON.parse(r.handoff as string) as Session['handoff'] } : {}),
     ...(r.review_base != null
       ? {
           review: { baseRef: r.review_base as string, ...(r.review_head != null ? { headRef: r.review_head as string } : {}) },
@@ -354,7 +354,7 @@ export class Store {
   /** `syncedAt: null` forgets it. */
   updateSession(
     id: string,
-    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model' | 'effort' | 'review' | 'handoff'>> & { syncedAt?: string | null }
+    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model' | 'effort' | 'review'>> & { syncedAt?: string | null }
   ): Session {
     if (patch.acpSessionId !== undefined) {
       this.db
@@ -375,9 +375,6 @@ export class Store {
     }
     if (patch.syncedAt !== undefined) {
       this.db.prepare('UPDATE sessions SET synced_at = ? WHERE id = ?').run(patch.syncedAt, id)
-    }
-    if (patch.handoff !== undefined) {
-      this.db.prepare('UPDATE sessions SET handoff = ? WHERE id = ?').run(JSON.stringify(patch.handoff), id)
     }
     if (patch.review !== undefined) {
       this.db
