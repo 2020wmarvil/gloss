@@ -1,6 +1,6 @@
 import type { SearchResult } from '@shared/search'
 import { SearchDialog } from './SearchDialog'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GitStatus, GlossEvent, PullRequest, SettingsPatch, SettingsState } from '@shared/ipc'
 import { sameFolder } from '@shared/paths'
 import type { GlobalSettings } from '@shared/settings'
@@ -20,13 +20,17 @@ import type {
   Thread,
   ToolCall
 } from '@shared/types'
+import { lineLabel, type LineAnchor } from '@shared/review'
 import { truncate } from '@shared/wire'
 import type { ListItemSpan } from './anchors'
+import { GeneralPanel, ReviewThreadList } from './ReviewPanels'
+import { locations as threadLocations } from './reviewThreads'
+import { hideFileList, ReviewView, type DiffState } from './ReviewView'
 import { FOCUS_COMPOSER, FOCUS_MAIN_COMPOSER, type ComposerQueue } from './Composer'
 import { errorText } from './errors'
 import { Conversation, type StripThread } from './Conversation'
 import type { Notice } from './Log'
-import { Sidebar, type ListedAgentSession } from './Sidebar'
+import { Sidebar, SidebarRail, type ListedAgentSession } from './Sidebar'
 import type { SourceSelection } from './SelectionPopover'
 import { SettingsScreen } from './SettingsScreen'
 import { SignInDialog } from './SignInDialog'
@@ -36,6 +40,7 @@ import {
   clampWidth,
   ResizeHandle,
   SIDEBAR_DEFAULT,
+  SIDEBAR_RAIL,
   sidebarLimits,
   threadPanelLimits,
   useStoredWidth,
@@ -52,8 +57,11 @@ export type OpenSession = {
   threads: Thread[]
 }
 
-/** The thread shown in the side panel. threadId is null until the first message creates the thread. */
-export type Panel = { anchorMessageId: string; anchor: Anchor; threadId: string | null }
+/**
+ * The thread shown in the side panel. threadId is null until the first message creates the thread.
+ * anchorMessageId is null for a line anchor in a review session.
+ */
+export type Panel = { anchorMessageId: string | null; anchor: Anchor; threadId: string | null }
 
 /** A place back and forward return to: the settings screen, or a session and its open thread. */
 type View = { sessionId: string; threadId: string | null } | 'settings'
@@ -95,10 +103,42 @@ function upsert<T extends { id: string }>(list: T[], item: T): T[] {
   return next
 }
 
-/** A thread's name: the start of the list item or selection it replies to. */
-function threadName(anchor: Anchor): string {
-  return truncate(anchor.text, 40)
+/** A thread's name: the start of the list item or selection it replies to; a review finding's title, or the lines. */
+/** "Press F11 to exit full screen", shown for a few seconds after entering it. */
+function FullScreenHint(): React.JSX.Element | null {
+  const [shown, setShown] = useState(true)
+  useEffect(() => {
+    const timer = setTimeout(() => setShown(false), 3000)
+    return () => clearTimeout(timer)
+  }, [])
+  if (!shown) return null
+  return (
+    <div className="fullscreen-hint" role="status">
+      Press <kbd>F11</kbd> to exit full screen
+    </div>
+  )
 }
+
+/**
+ * What the collapsed side panel counts: a session's threads, or for a review its open
+ * line threads plus the general conversation, which the panel also holds.
+ */
+function sideRailCount(open: OpenSession, isReview: boolean): { count: number; label?: string } {
+  if (!isReview) return { count: open.threads.length }
+  const threads = open.threads.filter((t) => t.anchor.kind === 'line' && t.resolvedAt === undefined).length
+  return {
+    count: threads + 1,
+    label: `the general conversation and ${threads} open ${threads === 1 ? 'thread' : 'threads'}`
+  }
+}
+
+function threadName(thread: Thread): string {
+  if (thread.finding) return truncate(thread.finding.title, 40)
+  return thread.anchor.kind === 'line' ? lineLabel(thread.anchor) : truncate(thread.anchor.text, 40)
+}
+
+/** Waits this long after a change before reading a review's diff again. */
+const DIFF_REFRESH_DELAY = 300
 
 export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<SettingsState | null>(null)
@@ -116,7 +156,17 @@ export function App(): React.JSX.Element {
   const [importing, setImporting] = useState<string | null>(null)
   const [open, setOpen] = useState<OpenSession | null>(null)
   /** The thread in the side panel; null shows the threads overview. Kept while the panel is collapsed. */
-  const [panel, setPanel] = useState<Panel | null>(null)
+  const [panel, setPanelState] = useState<Panel | null>(null)
+  /** A review session's side panel shows its general conversation (when no thread is open). */
+  const [general, setGeneral] = useState(false)
+  /** A thread, or the overview: either way not the general conversation. */
+  const setPanel = useCallback((p: Panel | null | ((old: Panel | null) => Panel | null)) => {
+    setGeneral(false)
+    setPanelState(p)
+  }, [])
+  /** The open review session's diff (SPEC → Review sessions). */
+  const [reviewDiff, setReviewDiff] = useState<(DiffState & { sessionId: string }) | null>(null)
+  const diffTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const panelRef = useRef(panel)
   panelRef.current = panel
   /** Session id → its side panel's thread, while another session is open (not kept across restarts). */
@@ -136,16 +186,27 @@ export function App(): React.JSX.Element {
   const [pr, setPr] = useState<PullRequest | null>(null)
   const [signIn, setSignIn] = useState<SignInRequest | null>(null)
   const [creating, setCreating] = useState(false)
+  /** Counts entries into full screen; each shows the hint on how to leave again. */
+  const [fullScreenHint, setFullScreenHint] = useState(0)
   const [sidebarError, setSidebarError] = useState<string | null>(null)
   const windowWidth = useWindowWidth()
   const [sidebarStored, setSidebarWidth] = useStoredWidth('gloss.sidebarWidth')
   const [threadStored, setThreadPanelWidth] = useStoredWidth('gloss.threadPanelWidth')
+  /** The sidebar is collapsed to a rail; remembered across restarts. */
+  const [sidebarHidden, setSidebarHidden] = useState(() => localStorage.getItem('gloss.sidebarHidden') === '1')
+  const hideSidebar = (hidden: boolean): void => {
+    setSidebarHidden(hidden)
+    if (hidden) localStorage.setItem('gloss.sidebarHidden', '1')
+    else localStorage.removeItem('gloss.sidebarHidden')
+  }
 
   const openId = useRef<string | null>(null)
   /** Views visited, and the current one; `moving` while back or forward restores one. */
   const history = useRef<{ views: View[]; at: number; moving: boolean }>({ views: [], at: -1, moving: false })
   /** The open session's folder, for refreshing its git status. */
   const openCwd = useRef<string | null>(null)
+  /** The open session is a review: its diff follows the agent's edits. */
+  const openReview = useRef(false)
   const lastSeq = useRef(-1)
   /** "cwd\0branch" → its pull request, so switching sessions shows it straight away. */
   const prCache = useRef(new Map<string, PullRequest | null>())
@@ -158,7 +219,7 @@ export function App(): React.JSX.Element {
       setPanel(p)
       setSideOpen(true)
     },
-    [setSideOpen]
+    [setPanel]
   )
 
   /** Opens the side panel on its Queue tab. */
@@ -166,7 +227,7 @@ export function App(): React.JSX.Element {
     setPanel(null)
     setSideTab('queue')
     setSideOpen(true)
-  }, [])
+  }, [setPanel])
 
   /** Collapses the side panel; it reopens on the same thread. */
   const collapseSide = useCallback(() => setSideOpen(false), [])
@@ -215,6 +276,26 @@ export function App(): React.JSX.Element {
     [refreshPr]
   )
 
+  /** Reads the review's diff again shortly, once changes settle (the agent edits files in bursts). */
+  const refreshDiff = useCallback((sessionId: string, now = false) => {
+    clearTimeout(diffTimer.current)
+    diffTimer.current = setTimeout(
+      () => {
+        window.gloss.sessions.reviewDiff(sessionId).then(
+          (diff) => {
+            if (openId.current === sessionId) setReviewDiff({ sessionId, diff, error: null })
+          },
+          (err: unknown) => {
+            if (openId.current === sessionId) {
+              setReviewDiff((d) => ({ sessionId, diff: d?.sessionId === sessionId ? d.diff : null, error: errorText(err) }))
+            }
+          }
+        )
+      },
+      now ? 0 : DIFF_REFRESH_DELAY
+    )
+  }, [])
+
   const refreshProjects = useCallback(async () => setProjects(await window.gloss.projects.list()), [])
 
   /** Lists every agent's own sessions in the project. */
@@ -246,6 +327,7 @@ export function App(): React.JSX.Element {
         setPanel(null)
         setGit(null)
         setPr(null)
+        setReviewDiff(null)
       }
       openId.current = id
       const view = await window.gloss.sessions.open(id)
@@ -263,6 +345,7 @@ export function App(): React.JSX.Element {
         threads: view.threads
       })
       openCwd.current = view.session.cwd
+      openReview.current = view.session.review !== undefined
       setProjectPath(view.session.cwd)
       setLives((l) => ({ ...l, [id]: view.live }))
       setQueues((q) => ({ ...q, [id]: view.queue }))
@@ -273,16 +356,21 @@ export function App(): React.JSX.Element {
         return next
       })
       refreshGit(view.session.cwd, id)
+      if (view.session.review) refreshDiff(id, true)
       const thread = threadId ? view.threads.find((t) => t.id === threadId) : undefined
       if (thread) showPanel({ anchorMessageId: thread.anchorMessageId, anchor: thread.anchor, threadId: thread.id })
     },
-    [refreshGit, showPanel, leaveSession]
+    [refreshGit, refreshDiff, showPanel, leaveSession, setPanel]
   )
 
   async function openSearchResult(result: SearchResult): Promise<void> {
     await selectSession(result.sessionId, result.threadId, result)
     if (openId.current !== result.sessionId) return
-    if (result.threadId === null) setPanel(null)
+    if (result.threadId === null) {
+      // A review's main thread is its general conversation, in the side panel.
+      if (openReview.current) openGeneral()
+      else setPanel(null)
+    }
     setReveal({ messageId: result.kind === 'tool' ? `tool:${result.id}` : result.id, key: Date.now() })
   }
 
@@ -309,6 +397,9 @@ export function App(): React.JSX.Element {
         case 'session':
           setSessions((list) => byActivity(upsert(list, event.session)))
           setOpen((o) => (o && o.session.id === event.session.id ? { ...o, session: event.session } : o))
+          break
+        case 'fullScreen':
+          setFullScreenHint((n) => n + 1)
           break
         case 'sessionDeleted':
           panels.current.delete(event.sessionId)
@@ -368,6 +459,8 @@ export function App(): React.JSX.Element {
           if (event.toolCall.sessionId !== openId.current) break
           lastSeq.current = Math.max(lastSeq.current, event.toolCall.messageSeq)
           setOpen((o) => (o ? { ...o, toolCalls: upsert(o.toolCalls, event.toolCall) } : o))
+          // The agent may have changed files: the review's diff shows its edits as it makes them.
+          if (openReview.current && event.toolCall.status === 'completed') refreshDiff(event.toolCall.sessionId)
           break
         case 'plan':
           if (event.plan.sessionId !== openId.current) break
@@ -393,6 +486,7 @@ export function App(): React.JSX.Element {
             addNotice(event.sessionId, event.threadId, `The agent stopped: ${event.stopReason.replace(/_/g, ' ')}.`)
           // The agent may have changed files: refresh the branch's dirty marker.
           if (event.sessionId === openId.current && openCwd.current) refreshGit(openCwd.current, event.sessionId)
+          if (event.sessionId === openId.current && openReview.current) refreshDiff(event.sessionId)
           break
         case 'notice':
           addNotice(event.sessionId, event.threadId, event.text)
@@ -408,7 +502,7 @@ export function App(): React.JSX.Element {
           break
       }
     },
-    [addNotice, refreshGit, selectSession]
+    [addNotice, refreshGit, refreshDiff, selectSession, setPanel]
   )
 
   useEffect(() => window.gloss.onEvent(onEvent), [onEvent])
@@ -450,11 +544,12 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const onFocus = (): void => {
       if (openId.current) void window.gloss.sessions.refresh(openId.current)
+      if (openId.current && openReview.current) refreshDiff(openId.current, true)
       if (projectPath) void loadAgentSessions(projectPath)
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [projectPath, loadAgentSessions])
+  }, [projectPath, loadAgentSessions, refreshDiff])
 
   async function newSession(agentId = agent?.id): Promise<void> {
     if (!projectPath) return openProject()
@@ -465,6 +560,34 @@ export function App(): React.JSX.Element {
       const session = await window.gloss.sessions.create(projectPath, agentId)
       await selectSession(session.id)
       void refreshProjects()
+    } catch (err) {
+      setSidebarError(errorText(err))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  /**
+   * Starts a review of the project's branch (SPEC → Review sessions) with the default
+   * agent, or a fresh one of an open review (**New review**): same agent and range.
+   */
+  async function newReview(from?: Session): Promise<void> {
+    const cwd = from?.cwd ?? projectPath
+    const agentId = from?.agentId ?? agent?.id
+    if (!cwd || !agentId) return
+    setSidebarError(null)
+    setCreating(true)
+    try {
+      const review = from?.review
+      const session = await window.gloss.sessions.createReview(cwd, agentId, review?.baseRef, review?.headRef ?? null)
+      // A new review starts with only the diff: the session list, the side panel and the
+      // file list closed. Each remembers what it is set to from then on.
+      hideFileList()
+      hideSidebar(true)
+      await selectSession(session.id)
+      setSideOpen(false)
+      // The first pass runs in the general conversation, which the side panel opens on.
+      setGeneral(true)
     } catch (err) {
       setSidebarError(errorText(err))
     } finally {
@@ -588,6 +711,30 @@ export function App(): React.JSX.Element {
     if (t) showPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id })
   }
 
+  /** Opens the thread on selected diff lines, or a new one (SPEC → Review sessions → Line anchors). */
+  function openLines(anchor: LineAnchor): void {
+    const existing = open?.threads.find(
+      (t) =>
+        t.anchor.kind === 'line' &&
+        t.anchor.file === anchor.file &&
+        t.anchor.side === anchor.side &&
+        t.anchor.start === anchor.start &&
+        t.anchor.end === anchor.end
+    )
+    showPanel(
+      existing
+        ? { anchorMessageId: null, anchor: existing.anchor, threadId: existing.id }
+        : { anchorMessageId: null, anchor, threadId: null }
+    )
+  }
+
+  /** A review's general conversation in the side panel. */
+  function openGeneral(): void {
+    setPanelState(null)
+    setGeneral(true)
+    setSideOpen(true)
+  }
+
   async function send(
     text: string,
     attachments: Attachment[],
@@ -639,6 +786,7 @@ export function App(): React.JSX.Element {
     if (threadId === undefined) return
     setShowSettings(false)
     if (threadId !== null) openThread(threadId)
+    else if (open.session.review) openGeneral()
     focusComposer(threadId === null)
   }
 
@@ -646,6 +794,7 @@ export function App(): React.JSX.Element {
   function revealMessage(message: Message): void {
     setShowSettings(false)
     if (message.threadId !== null) openThread(message.threadId)
+    else if (open?.session.review) openGeneral()
     setReveal({ messageId: message.id, key: Date.now() })
   }
 
@@ -796,11 +945,16 @@ export function App(): React.JSX.Element {
   const lastThread: StripThread | null = lastThreadRow
     ? {
         id: lastThreadRow.id,
-        name: threadName(lastThreadRow.anchor),
+        name: threadName(lastThreadRow),
         state: lastThreadRow.id === runningThread ? 'working' : (lastThreadMessage?.outcome ?? null)
       }
     : null
   const sessionNotices = sessionId ? (notices[sessionId] ?? []) : []
+  const isReview = open?.session.review !== undefined
+  const diffState: DiffState =
+    reviewDiff && reviewDiff.sessionId === sessionId ? reviewDiff : { diff: null, error: null }
+  const openThreads = open?.threads
+  const lineLocations = useMemo(() => threadLocations(openThreads ?? [], diffState.diff), [openThreads, diffState.diff])
   const live = (sessionId && lives[sessionId]) || NO_LIVE
   const queue = (sessionId && queues[sessionId]) || NO_QUEUE
   /** Part of the session's queue (one thread's messages) with the queue's actions, for a composer. */
@@ -814,52 +968,60 @@ export function App(): React.JSX.Element {
   // Dragged widths, kept within what the window has room for now.
   const sidebarLimit = sidebarLimits(windowWidth)
   const sidebarWidth = sidebarStored === null ? null : clampWidth(sidebarStored, sidebarLimit)
-  const threadLimit = threadPanelLimits(windowWidth, sidebarWidth ?? SIDEBAR_DEFAULT)
+  const threadLimit = threadPanelLimits(windowWidth, sidebarHidden ? SIDEBAR_RAIL : (sidebarWidth ?? SIDEBAR_DEFAULT))
   const threadWidth = threadStored === null ? null : clampWidth(threadStored, threadLimit)
 
   return (
     <div className="app">
-      <Sidebar
-        agents={agents}
-        defaultAgent={agent?.id ?? ''}
-        onSetDefaultAgent={(id) => void updateSettings({ global: { defaultAgent: id as GlobalSettings['defaultAgent'] } })}
-        width={sidebarWidth}
-        projects={projects}
-        project={project}
-        sessions={sessions}
-        openId={sessionId ?? null}
-        running={running}
-        agentSessions={listedAgentSessions}
-        order={settings?.global.sessionOrder ?? 'created'}
-        agentSessionsError={agentSessionsError}
-        importing={importing}
-        creating={creating}
-        createError={sidebarError}
-        settingsOpen={showSettings}
-        settingsError={settings?.error != null}
-        onSelectProject={(path) => selectProject(path, sessions)}
-        onOpenProject={() => void openProject()}
-        onDeleteProject={(path) => void deleteProject(path)}
-        onSelect={(id) => void selectSession(id)}
-        onNew={(agentId) => void newSession(agentId)}
-        onImport={(a) => void importSession(a)}
-        onRename={(id, title) =>
-          void window.gloss.sessions.rename(id, title).catch((err: unknown) => setSidebarError(errorText(err)))
-        }
-        onDelete={(id) => void deleteSession(id)}
-        onCopyMarkdown={(id) => exportMarkdown(id, null, 'copy')}
-        onSaveMarkdown={(id) => exportMarkdown(id, null, 'save')}
-        onSearch={() => setShowSearch(true)}
-        onSettings={() => setShowSettings((on) => !on)}
-      />
-      <ResizeHandle
-        label="Resize sidebar"
-        pane="before"
-        limits={sidebarLimit}
-        value={sidebarWidth}
-        onResize={setSidebarWidth}
-        onReset={() => setSidebarWidth(null)}
-      />
+      {sidebarHidden ? (
+        <SidebarRail running={Object.keys(running).length > 0} onExpand={() => hideSidebar(false)} />
+      ) : (
+        <>
+          <Sidebar
+            agents={agents}
+            defaultAgent={agent?.id ?? ''}
+            onSetDefaultAgent={(id) => void updateSettings({ global: { defaultAgent: id as GlobalSettings['defaultAgent'] } })}
+            width={sidebarWidth}
+            projects={projects}
+            project={project}
+            sessions={sessions}
+            openId={sessionId ?? null}
+            running={running}
+            agentSessions={listedAgentSessions}
+            order={settings?.global.sessionOrder ?? 'created'}
+            agentSessionsError={agentSessionsError}
+            importing={importing}
+            creating={creating}
+            createError={sidebarError}
+            settingsOpen={showSettings}
+            settingsError={settings?.error != null}
+            onSelectProject={(path) => selectProject(path, sessions)}
+            onOpenProject={() => void openProject()}
+            onDeleteProject={(path) => void deleteProject(path)}
+            onSelect={(id) => void selectSession(id)}
+            onNew={(agentId) => void newSession(agentId)}
+            onReview={() => void newReview()}
+            onImport={(a) => void importSession(a)}
+            onRename={(id, title) =>
+              void window.gloss.sessions.rename(id, title).catch((err: unknown) => setSidebarError(errorText(err)))
+            }
+            onDelete={(id) => void deleteSession(id)}
+            onCopyMarkdown={(id) => exportMarkdown(id, null, 'copy')}
+            onSaveMarkdown={(id) => exportMarkdown(id, null, 'save')}
+            onSearch={() => setShowSearch(true)}
+            onSettings={() => setShowSettings((on) => !on)}
+            onCollapse={() => hideSidebar(true)}
+          />
+          <ResizeHandle
+            label="Resize sidebar"
+            pane="before"
+            limits={sidebarLimit}
+            value={sidebarWidth}
+            onResize={setSidebarWidth}
+            onReset={() => setSidebarWidth(null)}
+          />
+        </>
+      )}
       {showSettings && settings ? (
         <SettingsScreen
           state={settings}
@@ -867,6 +1029,40 @@ export function App(): React.JSX.Element {
           onUpdate={updateSettings}
           onOpenFile={() => window.gloss.settings.openFile()}
           onClose={closeSettings}
+        />
+      ) : open && isReview ? (
+        <ReviewView
+          key={open.session.id}
+          open={open}
+          agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
+          diff={diffState}
+          locations={lineLocations}
+          panel={shownPanel}
+          runningThread={runningThread}
+          live={live}
+          git={git}
+          pr={pr}
+          queue={queue}
+          onResumeQueue={() => void window.gloss.queue.resume(open.session.id)}
+          onSetChoice={(kind, value) => window.gloss.sessions.setChoice(open.session.id, kind, value)}
+          onCommand={(text) => void send(text, [], null)}
+          onOpenThread={openThread}
+          onReplyLines={openLines}
+          creating={creating}
+          onNewReview={() => void newReview(open.session)}
+          onOpenFile={(path, how, line) => {
+            const id = open.session.id
+            window.gloss.sessions.openReviewFile(id, path, how, line).catch((err: unknown) => addNotice(id, null, errorText(err)))
+          }}
+          onSetRange={(range) => {
+            const id = open.session.id
+            window.gloss.sessions.setReviewRange(id, range.baseRef, range.headRef ?? null).then(
+              (diff) => {
+                if (openId.current === id) setReviewDiff({ sessionId: id, diff, error: null })
+              },
+              (err: unknown) => addNotice(id, null, errorText(err))
+            )
+          }}
         />
       ) : open ? (
         <Conversation
@@ -921,7 +1117,7 @@ export function App(): React.JSX.Element {
       )}
       {open && !showSettings && !sideOpen && (
         <SideRail
-          count={open.threads.length}
+          {...sideRailCount(open, isReview)}
           running={runningThreadRow !== undefined}
           onExpand={() => setSideOpen(true)}
         />
@@ -936,8 +1132,34 @@ export function App(): React.JSX.Element {
             onResize={setThreadPanelWidth}
             onReset={() => setThreadPanelWidth(null)}
           />
-          {panel ? (
+          {isReview && general && !panel ? (
+            <GeneralPanel
+              width={threadWidth}
+              open={open}
+              notices={sessionNotices}
+              reveal={reveal}
+              live={live}
+              history={sent}
+              runningThread={runningThread}
+              queue={composerQueue(
+                open.session.id,
+                queue.items.filter((q) => q.threadId === null)
+              )}
+              onSend={(text, attachments) => void send(text, attachments, null)}
+              onSteer={(text, attachments) => void send(text, attachments, null, 'steer')}
+              onCancel={() => void window.gloss.cancel(open.session.id)}
+              onBack={() => setPanel(null)}
+              onClose={collapseSide}
+              onOpenThread={openThread}
+            />
+          ) : panel ? (
             <ThreadPanel
+              location={panel.threadId !== null ? lineLocations.get(panel.threadId) : undefined}
+              onResolve={(threadId, resolved) =>
+                void window.gloss.threads
+                  .resolve(open.session.id, threadId, resolved)
+                  .catch((err: unknown) => addNotice(open.session.id, threadId, errorText(err)))
+              }
               width={threadWidth}
               open={open}
               panel={panel}
@@ -969,18 +1191,40 @@ export function App(): React.JSX.Element {
               onTab={setSideTab}
               runningThread={runningThread}
               queue={queue}
-              name={(t) => threadName(t.anchor)}
+              name={threadName}
               onOpenThread={openThread}
               onReveal={revealMessage}
-              onOpenMain={() => focusComposer(true)}
+              onOpenMain={() => {
+                if (isReview) openGeneral()
+                focusComposer(true)
+              }}
               onEditQueued={(id, text) => window.gloss.queue.edit(open.session.id, id, text)}
               onRemoveQueued={(id) => window.gloss.queue.remove(open.session.id, id)}
               onResumeQueue={() => window.gloss.queue.resume(open.session.id)}
               onCollapse={collapseSide}
+              review={
+                isReview
+                  ? {
+                      count: open.threads.filter((t) => t.anchor.kind === 'line').length,
+                      content: (
+                        <ReviewThreadList
+                          open={open}
+                          diff={diffState.diff}
+                          locations={lineLocations}
+                          runningThread={runningThread}
+                          queue={queue}
+                          onOpenThread={openThread}
+                          onOpenGeneral={openGeneral}
+                        />
+                      )
+                    }
+                  : undefined
+              }
             />
           )}
         </>
       )}
+      {fullScreenHint > 0 && <FullScreenHint key={fullScreenHint} />}
       {showSearch && <SearchDialog sessionId={sessionId ?? null} cwd={projectPath} onClose={() => setShowSearch(false)} onOpen={openSearchResult} />}
       {signIn && (
         <SignInDialog

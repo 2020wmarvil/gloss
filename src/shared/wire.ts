@@ -1,4 +1,5 @@
 // The wire format for thread messages (SPEC → Wire format).
+import type { Anchor } from './types'
 
 export const WIRE_ANCHOR_LENGTH = 80
 
@@ -17,22 +18,40 @@ export function toMainTag(anchorText: string): string {
   return `[re: "${truncate(anchorText, WIRE_ANCHOR_LENGTH)}", continued in the main conversation]`
 }
 
+/** What a thread's tags quote: the anchor text, after the file and lines for diff lines. */
+function quoted(anchor: Anchor): string {
+  const text = `"${truncate(anchor.text, WIRE_ANCHOR_LENGTH)}"`
+  if (anchor.kind !== 'line') return text
+  const range = anchor.start === anchor.end ? `${anchor.start}` : `${anchor.start}-${anchor.end}`
+  return `${anchor.file}:${range}${anchor.side === 'old' ? ' (old)' : ''} ${text}`
+}
+
+/** The tag of a thread's messages: `[re: "<text>"]`, or `[re: path:line "<text>"]` for diff lines. */
+export function threadTag(anchor: Anchor): string {
+  return `[re: ${quoted(anchor)}]`
+}
+
+/** The tag of a reply sent to the main conversation from a thread. */
+export function threadToMainTag(anchor: Anchor): string {
+  return `[re: ${quoted(anchor)}, continued in the main conversation]`
+}
+
 /** The tag on the first main-thread message after a thread, so the agent knows the thread is over. */
 export const MAIN_TAG = '[re: the main conversation, not the thread above]'
 
 /**
  * What is sent to the agent: thread messages tagged with their anchor, main-thread
  * messages unchanged unless they follow a thread (`afterThread`) or were sent to the
- * main conversation from one (`fromAnchor`, that thread's anchor text).
+ * main conversation from one (`fromAnchor`, that thread's anchor).
  */
 export function wireText(
   text: string,
-  anchorText: string | null,
+  anchor: Anchor | null,
   afterThread = false,
-  fromAnchor: string | null = null
+  fromAnchor: Anchor | null = null
 ): string {
-  if (anchorText !== null) return `${wireTag(anchorText)}\n${text}`
-  if (fromAnchor !== null) return `${toMainTag(fromAnchor)}\n${text}`
+  if (anchor !== null) return `${threadTag(anchor)}\n${text}`
+  if (fromAnchor !== null) return `${threadToMainTag(fromAnchor)}\n${text}`
   return afterThread ? `${MAIN_TAG}\n${text}` : text
 }
 

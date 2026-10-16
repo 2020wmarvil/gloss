@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock – review session</title>
+<style>
+:root{--bg:#F7F6F2;--panel:#FFFFFF;--ink:#1C1B18;--muted:#5F5C55;--faint:#8A867D;--line:#E3E1DA;--line-soft:#EEECE6;--chip:#ECEAE3;--hover:#EFEDE7;--accent:#2C55C9;--accent-ink:#2A3F7A;--accent-tint:#EEF1FA;--danger:#B3261E;--danger-tint:#FBEAEA;--ok:#2E7D32;--ok-tint:#E7F5E9;--warn:#9A5B00;
+  --add-bg:#E9F5EA;--add-gut:#D5EDD7;--del-bg:#FBECEA;--del-gut:#F5D7D3;--hl:#FFF3C4;
+  --sev-bug:var(--danger);--sev-suggestion:var(--accent);--sev-nit:#8A867D;--sev-you:#6B4FC4;--mono:ui-monospace,Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+code{font-family:var(--mono);font-size:.88em;background:var(--chip);padding:1px 5px;border-radius:4px}
+button{font:inherit;cursor:pointer;color:inherit}
+.mono{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.label{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.app{display:flex;height:100vh}
+
+/* Sidebar */
+nav{flex:0 0 240px;padding:18px 12px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:4px;min-height:0}
+.proj{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-radius:6px;font-weight:600}
+.proj .mono{font-weight:400}
+.navbtn{display:flex;align-items:center;gap:8px;border:0;background:transparent;border-radius:6px;padding:7px 8px;text-align:left;color:#3A3833;font-size:14px}
+.navbtn:hover{background:var(--hover)}
+.navbtn svg{flex:none;color:var(--muted)}
+.sess{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;color:#3A3833;font-size:14px;text-decoration:none}
+.sess.on{background:var(--chip);color:var(--ink);font-weight:500}
+.sess .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sess svg{flex:none;color:var(--muted)}
+.sess.review svg{color:var(--accent)}
+.pill{flex:none;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--accent-tint);color:var(--accent-ink)}
+.mockbox{margin-top:auto;border:1px dashed #C9C5BA;border-radius:8px;padding:10px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px;background:#FBFAF6}
+.mockbox b{color:var(--ink)}
+.mockbox label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.mockbox kbd,.kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:#fff;color:var(--muted)}
+
+/* Main */
+main{flex:1;min-width:0;display:flex;flex-direction:column}
+main>header{display:flex;align-items:center;gap:14px;padding:10px 16px 10px 20px;border-bottom:1px solid var(--line);min-height:61px;flex-wrap:wrap}
+.titles{display:flex;flex-direction:column;min-width:0}
+.titles h1{margin:0;font-size:16px;display:flex;align-items:center;gap:8px}
+.add{color:var(--ok)}.del{color:var(--danger)}
+.tools{margin-left:auto;display:flex;align-items:center;gap:8px}
+.tbtn{height:30px;border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:0 10px;font-size:13px;display:inline-flex;align-items:center;gap:6px;color:#3A3833}
+.tbtn:hover{background:var(--hover)}
+.tbtn.on{background:var(--accent-tint);border-color:#C9D3F1;color:var(--accent-ink)}
+.tbtn:disabled{opacity:.45;cursor:default}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--panel)}
+.seg button{height:28px;border:0;background:transparent;padding:0 10px;font-size:13px;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--chip);color:var(--ink);font-weight:500}
+.seg button.forced{font-style:italic}
+.navc{font-size:12px;color:var(--muted);min-width:72px;text-align:center}
+
+.body{flex:1;min-height:0;display:flex;flex-direction:column}
+.split-h{flex:1;min-height:0;display:flex}
+.tree{flex:0 0 230px;border-right:1px solid var(--line);overflow-y:auto;padding:12px 8px;background:#FBFAF6}
+.tree .label{padding:0 8px 8px;display:flex;justify-content:space-between}
+.titem{display:flex;flex-direction:column;width:100%;border:0;background:transparent;text-align:left;padding:6px 8px;border-radius:6px;font-size:13px}
+.titem:hover{background:var(--hover)}
+.titem.cur{background:var(--chip);box-shadow:inset 3px 0 0 var(--accent)}
+.titem .r1{display:flex;gap:6px;align-items:center}
+.titem .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.titem .dir{font-size:11px;color:var(--faint);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.titem .st{font-family:var(--mono);font-size:11px}
+
+.scroller{flex:1;min-width:0;overflow:auto;position:relative}
+.file{margin:0 0 14px;border-bottom:1px solid var(--line)}
+.fhead{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line);border-top:1px solid var(--line);font-size:13px}
+.fhead .chev{border:0;background:transparent;width:22px;height:22px;border-radius:5px;color:var(--muted);padding:0}
+.fhead .chev:hover{background:var(--hover)}
+.fhead .path{font-family:var(--mono);font-weight:600}
+.fchip{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--muted)}
+.fchip.unc{background:#FFF1D6;color:var(--warn)}
+.fhead .counts{margin-left:auto;font-family:var(--mono);font-size:12px}
+
+table.diff{width:100%;border-collapse:collapse;table-layout:fixed;font-family:var(--mono);font-size:12.5px;line-height:20px;background:var(--panel)}
+.diff col.g{width:46px}.diff col.m{width:14px}
+.diff td{padding:0;vertical-align:top}
+.diff td.g{color:var(--faint);text-align:right;padding-right:6px;user-select:none;position:relative}
+.diff td.m{user-select:none;position:relative}
+.diff td.code{white-space:pre;padding:0 10px 0 4px}
+.diff td.code .w{display:inline-block;vertical-align:top;overflow:hidden;width:calc(100% - 14px)}
+.diff td.code .c{display:inline-block}
+.diff td.code[data-side="old"] .c{transform:translateX(calc(var(--sx-old,0px) * -1))}
+.diff td.code[data-side="new"] .c{transform:translateX(calc(var(--sx-new,0px) * -1))}
+.hbar{position:sticky;bottom:0;z-index:2;display:flex;background:color-mix(in srgb,var(--panel) 85%,transparent)}
+.hbar .sp{flex:none}
+.hbar .sb{flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;height:12px}
+.hbar .sb>div{height:1px}
+.hbar .sb.none{visibility:hidden}
+.diff td.code::before{content:attr(data-sign);display:inline-block;width:14px;color:var(--faint);user-select:none}
+.diff tr.hunk td{background:var(--accent-tint);color:var(--accent-ink);padding:2px 10px;font-size:12px}
+.diff td.code.add{background:var(--add-bg)}.diff td.g.add{background:var(--add-gut)}
+.diff td.code.del{background:var(--del-bg)}.diff td.g.del{background:var(--del-gut)}
+.diff td.empty{background:#F4F3EF}
+.diff td.code.hl{background:var(--hl)!important}
+.diff[data-sel="old"] td.code[data-side="new"],.diff[data-sel="new"] td.code[data-side="old"]{user-select:none}
+.mk{position:absolute;left:2px;top:4px;width:10px;height:10px;border-radius:50%;border:0;padding:0;background:var(--c);cursor:pointer;box-shadow:0 0 0 2px var(--panel)}
+.mk.hollow{background:var(--panel);box-shadow:inset 0 0 0 2px var(--c)}
+.mk:hover{transform:scale(1.25)}
+tr.cardrow td{padding:6px 12px 8px 60px;background:var(--panel);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:13.5px;line-height:1.5}
+.card{border:1px solid var(--line);border-left:3px solid var(--c);border-radius:8px;background:#FCFBF8;padding:8px 10px 8px 12px;cursor:pointer;max-width:760px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.card:hover{border-color:#D6D3CA;border-left-color:var(--c)}
+.card.act{background:#F6F7FC;border-color:#C9D3F1;border-left-color:var(--c)}
+.card.res{opacity:.6}
+.card .top{display:flex;align-items:center;gap:8px}
+.card .ttl{font-weight:600;flex:1;min-width:0}
+.card .txt{color:#3A3833;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .meta{display:flex;gap:10px;font-size:12px;color:var(--muted);margin-top:4px;align-items:center}
+.card .x{border:0;background:transparent;width:24px;height:24px;border-radius:5px;color:var(--muted);padding:0;flex:none}
+.card .x:hover{background:var(--hover);color:var(--ink)}
+.sev{flex:none;font-size:11px;font-weight:600;padding:0 7px;border-radius:999px;color:var(--c);background:color-mix(in srgb,var(--c) 11%,transparent);text-transform:capitalize}
+.tag{font-size:11px;font-weight:600;padding:0 7px;border-radius:999px;background:#FFF1D6;color:var(--warn)}
+.tag.ok{background:var(--ok-tint);color:var(--ok)}
+.orig{margin:6px 0 0;padding:6px 8px;border-radius:6px;background:#F3F1EB;font-family:var(--mono);font-size:12px;white-space:pre;overflow:auto;color:var(--muted);text-decoration:line-through;text-decoration-color:#C9C5BA}
+.working{color:var(--accent);display:inline-flex;gap:6px;align-items:center}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.4s infinite}
+@keyframes pulse{50%{opacity:.35}}
+
+.status{display:flex;gap:16px;align-items:center;padding:6px 20px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);flex-wrap:wrap}
+.meter{display:inline-block;width:40px;height:5px;border-radius:3px;background:var(--chip);vertical-align:middle;overflow:hidden}
+.meter i{display:block;height:100%;width:21%;background:var(--muted)}
+
+/* Conversation (general) */
+.conv{flex:1;min-height:0;display:flex;flex-direction:column}
+.clog{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+.conv.wide .clog,.conv.wide .ccomp{width:100%;max-width:820px;margin:0 auto}
+.msg{display:flex;flex-direction:column;gap:3px;font-size:14px}
+.msg .w{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.msg.u{align-self:flex-end;max-width:85%;align-items:flex-end}
+.msg.u .t{background:var(--chip);border-radius:10px;padding:8px 12px}
+.msg p{margin:0 0 6px}.msg p:last-child{margin:0}
+.msg ul{margin:4px 0;padding-left:20px}
+.sys{font-size:12px;color:var(--muted);text-align:center;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);padding:6px 0}
+.toolrow{font-size:13px;border:1px solid var(--line);border-radius:7px;padding:5px 10px;display:flex;gap:8px;align-items:center;color:#3A3833;background:var(--panel)}
+.toolrow .ok{color:var(--ok);font-size:12px;margin-left:auto}
+.ccomp{padding:10px 20px 14px}
+.box{display:flex;gap:10px;align-items:flex-end;border:1px solid #D6D3CA;border-radius:10px;background:#fff;padding:8px 8px 8px 12px}
+.box textarea{flex:1;border:0;resize:none;font:inherit;font-size:14px;background:transparent;outline:none}
+.send{height:34px;padding:0 14px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-weight:500;font-size:14px}
+
+/* Side panel */
+.rail{flex:0 0 44px;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;align-items:center;padding-top:12px}
+.rail button{width:36px;border:0;border-radius:8px;background:transparent;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0}
+.rail button:hover{background:var(--chip);color:var(--ink)}
+.rail .count{font-size:12px;font-weight:600}
+aside{flex:0 0 420px;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+aside>header{display:flex;align-items:center;gap:8px;padding:12px 12px 12px 18px;border-bottom:1px solid var(--line);min-height:61px}
+aside h2{margin:0;font-size:15px}
+.icon{width:32px;height:32px;border:0;background:transparent;color:var(--muted);border-radius:8px;font-size:17px;display:grid;place-items:center;flex:none}
+.icon:hover{background:var(--chip);color:var(--ink)}
+.end{margin-left:auto}
+.back{border:0;background:transparent;color:var(--accent);font-size:13px;padding:6px 8px;border-radius:6px;margin-left:-8px;flex:none}
+.back:hover{background:var(--accent-tint)}
+.ptabs{display:flex;gap:16px;padding:0 18px;border-bottom:1px solid var(--line);font-size:13px}
+.ptabs span{padding:8px 0;color:var(--muted)}
+.ptabs span.on{color:var(--ink);font-weight:600;box-shadow:inset 0 -2px 0 var(--accent)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line-soft);align-items:center}
+.fchipb{border:1px solid var(--line);background:var(--panel);border-radius:999px;font-size:12px;padding:1px 9px;display:inline-flex;gap:5px;align-items:center;color:var(--muted)}
+.fchipb i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.fchipb.on{border-color:color-mix(in srgb,var(--c) 45%,transparent);color:var(--ink);background:color-mix(in srgb,var(--c) 8%,transparent)}
+.list{flex:1;overflow-y:auto;padding:6px 8px 12px}
+.ghead{font-family:var(--mono);font-size:12px;color:var(--muted);padding:12px 10px 4px;display:flex;justify-content:space-between}
+.row{display:flex;gap:10px;width:100%;text-align:left;border:0;background:transparent;border-radius:8px;padding:8px 10px;align-items:flex-start}
+.row:hover{background:#F6F5F1}
+.row.act{background:#F6F7FC;box-shadow:inset 3px 0 0 var(--accent)}
+.row.res{opacity:.6}
+.row .ln{flex:0 0 72px;white-space:nowrap;font-family:var(--mono);font-size:12px;color:var(--muted);padding-top:2px;display:flex;gap:6px;align-items:center}
+.row .ln i{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
+.row .bd{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.row .q{font-size:14px;color:#3A3833}
+.row .meta{display:flex;gap:10px;font-size:12px;color:var(--muted);align-items:center}
+.general{margin:8px 8px 0;border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;text-align:left;background:#FBFAF6;width:calc(100% - 16px)}
+.general:hover{background:#F6F5F1}
+.general .t1{display:flex;gap:8px;align-items:center;font-weight:600;font-size:14px}
+.general .q{font-size:13px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.quote{margin:12px 18px 0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.quote .qh{display:flex;gap:8px;align-items:center;padding:5px 10px;background:#F3F1EB;font-size:12px}
+.quote pre{margin:0;padding:6px 10px;font-family:var(--mono);font-size:12px;line-height:19px;white-space:pre-wrap;word-break:break-all;background:var(--panel)}
+.quote pre.gone{color:var(--muted);text-decoration:line-through;text-decoration-color:#C9C5BA}
+.quote .ln{color:var(--faint);user-select:none;display:inline-block;width:34px}
+.wire{font-family:var(--mono);font-size:11px;color:var(--faint);padding:6px 20px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.resolve{height:28px;border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:0 10px;font-size:13px;flex:none}
+.resolve:hover{background:var(--ok-tint);border-color:#BFE0C2;color:var(--ok)}
+.empty{color:var(--muted);font-size:14px;margin:16px 12px}
+
+.pop{position:fixed;z-index:20;background:var(--ink);color:#fff;border-radius:8px;padding:4px;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.pop button{border:0;background:transparent;color:#fff;font-size:13px;padding:5px 10px;border-radius:5px}
+.pop button:hover{background:rgba(255,255,255,.14)}
+.pop .bad{font-size:12px;padding:5px 10px;color:#ddd}
+</style>
+</head>
+<body>
+<div class="app">
+  <nav aria-label="Sessions">
+    <div class="mono" style="font-size:13px;color:var(--ink);padding:0 8px 12px">gloss<span style="color:var(--accent)">.</span></div>
+    <div class="proj">gloss <span class="mono">~/Desktop/gloss ▾</span></div>
+    <button class="navbtn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>New session</button>
+    <button class="navbtn" type="button" title="Review everything on this branch since main, committed or not"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>Review changes</button>
+    <div class="label" style="padding:14px 8px 4px">Sessions</div>
+    <a href="#" class="sess review on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg><span class="t">Review: m11-review</span><span class="pill" id="openPill"></span></a>
+    <a href="#" class="sess"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="t">Build review sessions</span></a>
+    <a href="#" class="sess"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="t">Flaky checkout test</span></a>
+
+    <div class="mockbox">
+      <b>Mock: review session</b>
+      <div>
+        Select code to reply.<br>
+        <kbd>N</kbd> <kbd>P</kbd> next / previous open thread<br>
+        <kbd>Ctrl+Shift+H</kbd> hide comments<br>
+        <kbd>Ctrl+Shift+T</kbd> side panel<br>
+        Narrow the window to see split fall back to unified.
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <header id="hdr"></header>
+    <div class="body" id="body"></div>
+    <div class="status">
+      <span><span class="meter"><i></i></span> 21%</span><span>$0.38</span><span>Opus 5.5</span><span>High</span><span>bypass</span><span>m11-review*</span><span>~/Desktop/gloss</span>
+    </div>
+  </main>
+
+  <div id="side" style="display:flex"></div>
+</div>
+<div class="pop" id="pop" hidden></div>
+
+<script>
+// ---------- Data ----------
+function hunk(o, n, header, lines){
+  const rows = [];
+  for (const l of lines){
+    const t = l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : 'ctx', text = l.slice(1);
+    rows.push({ t, o: t === 'add' ? null : o++, n: t === 'del' ? null : n++, text });
+  }
+  return { header, rows };
+}
+const files = [
+  { path:'src/main/sessions.ts', state:'committed + uncommitted', hunks:[
+    hunk(212,212,'@@ -212,7 +212,10 @@ export class SessionManager',[
+      '  async startReview(projectId: string): Promise<Session> {',
+      '    const project = this.db.project(projectId)',
+      "-    const diff = await git(project.folder, ['diff', '--staged'])",
+      "+    const base = await mergeBase(project.folder, 'main')",
+      '+    const diff = await readDiff(project.folder, base)',
+      "     const session = await this.create(projectId, { kind: 'review' })",
+      '+    await this.db.insertReview(session.id, { base, files: diff.files })',
+      '+    this.cache.invalidate(session.id)',
+      "     this.emit('session', session)",
+      '+    void this.firstPass(session, diff)',
+      '     return session',
+      '   }']),
+    hunk(340,345,'@@ -340,3 +345,11 @@',[
+      '   }',
+      ' ',
+      '+  private async firstPass(session: Session, diff: Diff) {',
+      '+    const prompt = reviewPrompt(diff)',
+      '+    const res = await this.prompt(session.id, prompt)',
+      '+    for (const f of parseFindings(res.text)) {',
+      '+      this.threads.create(session.id, res.messageId, lineAnchor(f))',
+      '+    }',
+      '+  }',
+      '+',
+      '   async closeReview(id: string) {'])]},
+  { path:'src/main/git.ts', state:'committed', hunks:[
+    hunk(88,88,'@@ -88,4 +88,14 @@',[
+      ' export async function status(folder: string) {',
+      "   return run(folder, ['status', '--porcelain', '--branch'])",
+      ' }',
+      ' ',
+      '+export async function mergeBase(folder: string, branch: string) {',
+      "+  const out = await run(folder, ['merge-base', branch, 'HEAD'])",
+      '+  return out.trim()',
+      '+}',
+      '+',
+      '+export async function readDiff(folder: string, base: string) {',
+      "+  const tracked = await run(folder, ['diff', '--no-color', base])",
+      "+  const untracked = await run(folder, ['ls-files', '--others', '--exclude-standard'])",
+      "+  return parseDiff(tracked, untracked.split('\\n'))",
+      '+}'])]},
+  { path:'src/renderer/src/DiffView.tsx', state:'uncommitted', isNew:true, hunks:[
+    hunk(0,1,'@@ -0,0 +1,11 @@',[
+      "+import { useMemo } from 'react'",
+      "+import type { DiffFile } from '../../shared/types'",
+      '+',
+      '+export function DiffView({ files, split }: Props) {',
+      '+  const rows = useMemo(() => files.flatMap(toRows), [files])',
+      '+  return (',
+      '+    <div className="diff">',
+      '+      {rows.map((r) => <Row key={r.key} row={r} split={split} />)}',
+      '+    </div>',
+      '+  )',
+      '+}'])]},
+  { path:'src/shared/types.ts', state:'committed', hunks:[
+    hunk(41,41,'@@ -41,6 +41,15 @@',[
+      "-export type SessionKind = 'chat'",
+      "+export type SessionKind = 'chat' | 'review'",
+      ' ',
+      ' export interface SelectionAnchor {',
+      "   kind: 'selection'",
+      '   start: number',
+      ' }',
+      '+',
+      '+export interface LineAnchor {',
+      "+  kind: 'line'",
+      '+  file: string',
+      "+  side: 'old' | 'new'",
+      '+  start: number',
+      '+  end: number',
+      '+  text: string',
+      '+}'])]}
+];
+for (const f of files){
+  f.add = 0; f.del = 0;
+  for (const h of f.hunks) for (const r of h.rows){ if (r.t === 'add') f.add++; if (r.t === 'del') f.del++; }
+}
+
+const now = Date.now(), min = 60e3;
+let nextId = 20;
+const threads = [
+  { id:1, sev:'bug', file:'src/main/sessions.ts', side:'new', start:220, end:220, at:now-6*min,
+    title:'First-pass errors are never surfaced',
+    msgs:[['a','`void this.firstPass(...)` drops the promise. If the prompt fails, the review opens with no findings and no error. Catch it and report the failure in the general conversation.']] },
+  { id:2, sev:'bug', file:'src/main/sessions.ts', side:'new', start:216, end:217, outdated:true, placeAt:218, at:now-3*min,
+    orig:["    this.cache.invalidate(session.id)","    await this.db.insertReview(session.id, { base, files: diff.files })"],
+    title:'Cache invalidated before the review row exists',
+    msgs:[['a','A reader between these two lines repopulates the cache without the review. Invalidate after `insertReview`.'],
+          ['u','Fix it.'],
+          ['a','Moved `this.cache.invalidate` after `insertReview` (now line 218).']] },
+  { id:3, sev:'suggestion', file:'src/main/sessions.ts', side:'new', start:350, end:351, at:now-6*min,
+    title:'Findings that fail to parse disappear',
+    msgs:[['a','`parseFindings` skips malformed entries, so a finding with a bad line range is lost without a trace. Post the ones it can\'t place in the general conversation instead.']] },
+  { id:4, sev:'bug', file:'src/main/git.ts', side:'new', start:93, end:93, at:now-1*min, running:true,
+    title:'Assumes the default branch is `main`',
+    msgs:[['a','Projects on `master`, or with no local `main`, make `merge-base` fail and the review never starts.'],
+          ['u','Use origin/HEAD and fall back to main?'],
+          ['a','Reading `origin/HEAD` first, then `main`, then `master`. Updating `mergeBase` now…']] },
+  { id:5, sev:'nit', file:'src/main/git.ts', side:'new', start:100, end:100, at:now-6*min,
+    title:'Empty last entry from `split`',
+    msgs:[['a','`ls-files` output ends with a newline, so the list ends with `""`. Filter it out.']] },
+  { id:6, sev:'suggestion', file:'src/renderer/src/DiffView.tsx', side:'new', start:5, end:8, at:now-6*min,
+    title:'Render rows lazily for large diffs',
+    msgs:[['a','Every row of every file renders at once; a 5,000-line diff will stall. Virtualize the rows (the log already does this).']] },
+  { id:7, sev:'nit', file:'src/renderer/src/DiffView.tsx', side:'new', start:4, end:4, at:now-5*min, resolved:true,
+    title:'`Props` isn\'t declared',
+    msgs:[['a','`Props` is used but never declared.'],['u','Add it.'],['a','Added `interface Props { files: DiffFile[]; split: boolean }`.']] },
+  { id:8, sev:'you', file:'src/shared/types.ts', side:'new', start:48, end:48, at:now-2*min,
+    title:'Should the anchor record the base commit?',
+    msgs:[['u','Should the anchor record the base commit, so a thread knows which diff it was written against?'],
+          ['a','Not needed: the session stores its base, and a review has one base. If bases become selectable per review later, the session still has one each.']] }
+];
+const general = [
+  ['sys','Review of m11-review against main (merge base 3c3c5f9): 4 files, +' + files.reduce((s,f)=>s+f.add,0) + ' −' + files.reduce((s,f)=>s+f.del,0) + '. Gloss started the first pass.'],
+  ['tool','Read 4 files, ran git log main..HEAD'],
+  ['a','The change wires review sessions through the main process and adds the line anchor type. Structure looks right.\n- 2 bugs: unhandled first-pass errors, and the hard-coded `main` branch.\n- 3 suggestions, 2 nits.\nThe default-branch bug blocks reviews on many repos; I\'d fix that first.'],
+  ['u','Run the session tests after each fix.'],
+  ['a','Will do. Ran them after the cache fix: 48 passed.']
+];
+
+// ---------- State ----------
+const S = { panelOpen:true, view:'overview', threadId:null, layout:'split', narrow:false, comments:true,
+  collapsed:new Set([7]), tree:true, status:'open', sev:new Set(['bug','suggestion','nit','you']), sx:{},
+  collapsedFiles:new Set(), active:null, draft:null, curFile:files[0].path };
+
+// ---------- Helpers ----------
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+const md = (s) => {
+  const lines = s.split('\n'); let out = '', ul = false;
+  for (const l of lines){
+    if (l.startsWith('- ')){ if (!ul){ out += '<ul>'; ul = true; } out += '<li>' + fmt(l.slice(2)) + '</li>'; }
+    else { if (ul){ out += '</ul>'; ul = false; } out += '<p>' + fmt(l) + '</p>'; }
+  }
+  return out + (ul ? '</ul>' : '');
+};
+const ago = (t) => { const m = Math.round((now - t) / min); return m < 1 ? 'now' : m < 60 ? m + 'm ago' : Math.round(m/60) + 'h ago'; };
+const sevColor = (s) => 'var(--sev-' + s + ')';
+const sevName = (s) => s === 'you' ? 'yours' : s;
+const short = (p) => p.split('/').pop();
+const lines = (t) => t.start === t.end ? 'L' + t.start : 'L' + t.start + '–' + t.end;
+const fileIdx = (p) => files.findIndex(f => f.path === p);
+const passes = (t) => S.sev.has(t.sev) && (S.status === 'all' || (S.status === 'open') === !t.resolved);
+const ordered = () => [...threads].sort((a,b) => fileIdx(a.file) - fileIdx(b.file) || a.start - b.start);
+const openOnes = () => ordered().filter(t => !t.resolved);
+const replies = (t) => t.msgs.length - 1;
+const layout = () => S.layout === 'split' && !S.narrow ? 'split' : 'unified';
+const lineText = (path, side, n) => {
+  for (const h of files[fileIdx(path)].hunks) for (const r of h.rows) if ((side === 'new' ? r.n : r.o) === n) return r.text;
+  return '';
+};
+const wire = (t) => '[re: ' + t.file + ':' + t.start + (t.end !== t.start ? '-' + t.end : '') + ' "' + (t.quoteText || lineText(t.file, t.side, t.start)).trim().slice(0, 80) + '"]';
+
+// ---------- Render ----------
+function render(){
+  const sc = document.querySelector('.scroller'), keep = sc ? sc.scrollTop : 0;
+  $('openPill').textContent = openOnes().length + ' open';
+  renderHeader();
+  renderBody();
+  renderSide();
+  setupHScroll();
+  const sc2 = document.querySelector('.scroller');
+  if (sc2){
+    sc2.scrollTop = keep;
+    const narrow = sc2.clientWidth < 640;
+    if (narrow !== S.narrow){ S.narrow = narrow; render(); return; }
+    sc2.onscroll = trackFile;
+  }
+}
+
+function renderHeader(){
+  const h = $('hdr'); const add = files.reduce((s,f)=>s+f.add,0), del = files.reduce((s,f)=>s+f.del,0);
+  const open = openOnes(), i = open.findIndex(t => t.id === S.active);
+  h.innerHTML =
+    '<div class="titles"><h1>Review: m11-review</h1><span class="mono">Claude Code · vs main @ 3c3c5f9 · ' + files.length + ' files <span class="add">+' + add + '</span> <span class="del">−' + del + '</span></span></div>' +
+    '<div class="tools">' +
+      '<button class="tbtn ' + (S.tree?'on':'') + '" id="bTree" title="File tree">Files</button>' +
+      '<div class="seg"><button id="bSplit" class="' + (layout()==='split'?'on':'') + (S.layout==='split'&&S.narrow?' forced':'') + '" title="' + (S.narrow?'Not enough room for side by side':'Side by side') + '">Split</button><button id="bUni" class="' + (layout()==='unified'?'on':'') + '">Unified</button></div>' +
+      '<button class="tbtn ' + (S.comments?'on':'') + '" id="bCom" title="Show or hide comments (Ctrl+Shift+H)">' + (S.comments ? 'Comments shown' : 'Comments hidden') + '</button>' +
+      '<button class="tbtn" id="bPrev" title="Previous open thread (P)">↑</button><span class="navc">' + (i >= 0 ? (i+1) + ' of ' + open.length + ' open' : open.length + ' open') + '</span><button class="tbtn" id="bNext" title="Next open thread (N)">↓</button>' +
+    '</div>';
+  $('bTree').onclick = () => { S.tree = !S.tree; render(); };
+  $('bSplit').onclick = () => { S.layout = 'split'; render(); };
+  $('bUni').onclick = () => { S.layout = 'unified'; render(); };
+  $('bCom').onclick = () => { S.comments = !S.comments; render(); };
+  $('bPrev').onclick = () => step(-1);
+  $('bNext').onclick = () => step(1);
+}
+
+function renderBody(){
+  const b = $('body'); b.innerHTML = '';
+  const row = document.createElement('div'); row.className = 'split-h'; b.append(row);
+  if (S.tree) row.append(treeEl());
+  const sc = document.createElement('div'); sc.className = 'scroller'; row.append(sc);
+  for (const f of files) sc.append(fileEl(f));
+}
+
+function treeEl(){
+  const t = document.createElement('div'); t.className = 'tree';
+  t.innerHTML = '<div class="label"><span>Files</span><span>' + files.length + '</span></div>';
+  for (const f of files){
+    const n = threads.filter(x => x.file === f.path && !x.resolved).length;
+    const b = document.createElement('button'); b.className = 'titem' + (S.curFile === f.path ? ' cur' : ''); b.dataset.file = f.path;
+    b.innerHTML = '<span class="r1"><span class="nm">' + esc(short(f.path)) + '</span>' + (n ? '<span class="pill">' + n + '</span>' : '') + '<span class="st"><span class="add">+' + f.add + '</span> <span class="del">−' + f.del + '</span></span></span><span class="dir">' + esc(f.path.split('/').slice(0,-1).join('/')) + '</span>';
+    b.onclick = () => { S.collapsedFiles.delete(f.path); S.curFile = f.path; render(); document.getElementById('f-' + fileIdx(f.path)).scrollIntoView({ block:'start' }); };
+    t.append(b);
+  }
+  return t;
+}
+
+function setupHScroll(){
+  for (const sec of document.querySelectorAll('section.file')){
+    const tb = sec.querySelector('table.diff'); if (!tb) continue;
+    for (const sb of sec.querySelectorAll('.hbar .sb')){
+      const side = sb.dataset.side;
+      const cells = [...tb.querySelectorAll('td.code' + (side === 'both' ? '' : '[data-side="' + side + '"]'))];
+      if (!cells.length){ sb.classList.add('none'); continue; }
+      const wrapW = cells[0].querySelector('.w').clientWidth;
+      const maxC = Math.max(...cells.map(c => c.querySelector('.c').offsetWidth));
+      const range = Math.max(0, maxC - wrapW + 8);
+      sb.classList.toggle('none', range === 0);
+      sb.firstChild.style.width = (sb.clientWidth + range) + 'px';
+      const key = sec.dataset.file + '|' + side;
+      const apply = () => {
+        S.sx[key] = sb.scrollLeft;
+        if (side === 'both'){ tb.style.setProperty('--sx-old', sb.scrollLeft + 'px'); tb.style.setProperty('--sx-new', sb.scrollLeft + 'px'); }
+        else tb.style.setProperty('--sx-' + side, sb.scrollLeft + 'px');
+      };
+      sb.scrollLeft = S.sx[key] || 0; apply();
+      sb.onscroll = apply;
+    }
+  }
+}
+
+function trackFile(){
+  const sc = document.querySelector('.scroller'); if (!sc) return; let cur = files[0].path;
+  for (const sec of sc.querySelectorAll('.file')) if (sec.offsetTop - sc.offsetTop <= sc.scrollTop + 8) cur = sec.dataset.file;
+  if (cur !== S.curFile){ S.curFile = cur; document.querySelectorAll('.titem').forEach(b => b.classList.toggle('cur', b.dataset.file === cur)); }
+}
+
+function fileEl(f){
+  const sec = document.createElement('section'); sec.className = 'file'; sec.id = 'f-' + fileIdx(f.path); sec.dataset.file = f.path;
+  const shut = S.collapsedFiles.has(f.path);
+  const hd = document.createElement('div'); hd.className = 'fhead';
+  const unc = f.state !== 'committed';
+  hd.innerHTML = '<button class="chev" title="' + (shut?'Expand':'Collapse') + ' file">' + (shut ? '▸' : '▾') + '</button><span class="path">' + esc(f.path) + '</span>' + (f.isNew ? '<span class="fchip">new</span>' : '') + '<span class="fchip' + (unc ? ' unc' : '') + '">' + f.state + '</span><span class="counts"><span class="add">+' + f.add + '</span> <span class="del">−' + f.del + '</span></span>';
+  hd.querySelector('.chev').onclick = () => { shut ? S.collapsedFiles.delete(f.path) : S.collapsedFiles.add(f.path); render(); };
+  sec.append(hd);
+  if (shut) return sec;
+  const split = layout() === 'split';
+  const tb = document.createElement('table'); tb.className = 'diff'; tb.dataset.file = f.path;
+  tb.innerHTML = split ? '<colgroup><col class="m"><col class="g"><col><col class="m"><col class="g"><col></colgroup>' : '<colgroup><col class="m"><col class="g"><col class="g"><col></colgroup>';
+  tb.onmousedown = (e) => { const td = e.target.closest('td.code'); tb.dataset.sel = td ? td.dataset.side : ''; };
+  const act = threads.find(t => t.id === S.active);
+  const inRange = (side, n) => act && act.file === f.path && act.side === side && n != null && !act.outdated && n >= act.start && n <= act.end;
+  const fileThreads = threads.filter(t => t.file === f.path && passes(t));
+  const markerFor = (side, n) => n == null ? null : fileThreads.find(t => t.side === side && (t.outdated ? t.placeAt : t.start) === n);
+  const mk = (side, n) => {
+    const t = markerFor(side, n); if (!t) return '';
+    return '<button class="mk' + (t.outdated || t.resolved ? ' hollow' : '') + '" style="--c:' + (t.resolved ? 'var(--faint)' : sevColor(t.sev)) + '" data-mk="' + t.id + '" title="' + esc(t.title.replace(/`/g,'')) + ' · ' + replies(t) + ' replies"></button>';
+  };
+  const code = (cls, side, n, text, sign) => '<td class="code ' + cls + (inRange(side, n) ? ' hl' : '') + '" data-side="' + side + '" data-line="' + n + '" data-sign="' + sign + '"><span class="w"><span class="c">' + esc(text) + '</span></span></td>';
+  const cardsAt = (side, n) => n == null ? [] : fileThreads.filter(t => t.side === side && (t.outdated ? t.placeAt : t.end) === n);
+  let html = '<tbody>';
+  for (const h of f.hunks){
+    html += '<tr class="hunk"><td colspan="' + (split ? 6 : 4) + '">' + esc(h.header) + '</td></tr>';
+    const pairs = [];
+    if (split){
+      for (let i = 0; i < h.rows.length;){
+        const r = h.rows[i];
+        if (r.t === 'ctx'){ pairs.push([r, r]); i++; continue; }
+        const dels = [], adds = [];
+        while (i < h.rows.length && h.rows[i].t === 'del') dels.push(h.rows[i++]);
+        while (i < h.rows.length && h.rows[i].t === 'add') adds.push(h.rows[i++]);
+        for (let k = 0; k < Math.max(dels.length, adds.length); k++) pairs.push([dels[k] || null, adds[k] || null]);
+      }
+      for (const [l, r] of pairs){
+        const lc = l ? (l.t === 'del' ? 'del' : '') : 'empty', rc = r ? (r.t === 'add' ? 'add' : '') : 'empty';
+        const lo = l ? l.o : null, rn = r ? r.n : null;
+        html += '<tr>' +
+          '<td class="m ' + lc + '">' + mk('old', lo) + '</td><td class="g ' + lc + '">' + (lo ?? '') + '</td>' + (l ? code(lc, 'old', lo, l.text, l.t === 'del' ? '−' : ' ') : '<td class="empty"></td>') +
+          '<td class="m ' + rc + '">' + mk('new', rn) + '</td><td class="g ' + rc + '">' + (rn ?? '') + '</td>' + (r ? code(rc, 'new', rn, r.text, r.t === 'add' ? '+' : ' ') : '<td class="empty"></td>') + '</tr>';
+        for (const t of cardsAt('old', lo)) html += cardRow(t, 'old', true);
+        for (const t of cardsAt('new', rn)) html += cardRow(t, 'new', true);
+      }
+    } else {
+      for (const r of h.rows){
+        const c = r.t === 'add' ? 'add' : r.t === 'del' ? 'del' : '';
+        const side = r.t === 'del' ? 'old' : 'new', n = side === 'old' ? r.o : r.n;
+        html += '<tr><td class="m ' + c + '">' + (r.t === 'del' ? mk('old', r.o) : mk('new', r.n)) + '</td><td class="g ' + c + '">' + (r.o ?? '') + '</td><td class="g ' + c + '">' + (r.n ?? '') + '</td>' + code(c, side, n, r.text, r.t === 'add' ? '+' : r.t === 'del' ? '−' : ' ') + '</tr>';
+        if (r.t !== 'add') for (const t of cardsAt('old', r.o)) html += cardRow(t, 'old', false);
+        if (r.t !== 'del') for (const t of cardsAt('new', r.n)) html += cardRow(t, 'new', false);
+      }
+    }
+  }
+  tb.innerHTML += html + '</tbody>';
+  tb.querySelectorAll('[data-mk]').forEach(b => b.onclick = (e) => { e.stopPropagation(); const t = threads.find(x => x.id === +b.dataset.mk); S.collapsed.delete(t.id); if (!S.comments) S.comments = true; goTo(t); });
+  tb.querySelectorAll('.card').forEach(c => {
+    const t = threads.find(x => x.id === +c.dataset.card);
+    c.onclick = () => goTo(t);
+    c.querySelector('.x').onclick = (e) => { e.stopPropagation(); S.collapsed.add(t.id); render(); };
+  });
+  sec.append(tb);
+  // One horizontal scrollbar per side, pinned to the bottom of the view while the file is on screen.
+  const bar = document.createElement('div'); bar.className = 'hbar';
+  bar.innerHTML = split ? '<span class="sp" style="width:60px"></span><div class="sb" data-side="old"><div></div></div><span class="sp" style="width:60px"></span><div class="sb" data-side="new"><div></div></div>'
+                        : '<span class="sp" style="width:106px"></span><div class="sb" data-side="both"><div></div></div>';
+  tb.onwheel = (e) => {
+    const td = e.target.closest('td.code'); if (!td) return;
+    const dx = e.shiftKey ? e.deltaY : e.deltaX; if (!dx || (!e.shiftKey && Math.abs(e.deltaX) < Math.abs(e.deltaY))) return;
+    const sb = bar.querySelector('.sb[data-side="' + (split ? td.dataset.side : 'both') + '"]'); sb.scrollLeft += dx; e.preventDefault();
+  };
+  sec.append(bar);
+  return sec;
+}
+
+function cardRow(t, side, split){
+  if (!S.comments || S.collapsed.has(t.id)) return '';
+  const first = t.msgs[0][1];
+  const body = t.sev === 'you' ? '' : '<div class="txt">' + fmt(first) + '</div>';
+  const card = '<div class="card' + (S.active === t.id ? ' act' : '') + (t.resolved ? ' res' : '') + '" data-card="' + t.id + '" data-anchor="' + t.id + '" style="--c:' + (t.resolved ? 'var(--faint)' : sevColor(t.sev)) + '">' +
+    '<div class="top"><span class="sev" style="--c:' + sevColor(t.sev) + '">' + sevName(t.sev) + '</span>' +
+      (t.outdated ? '<span class="tag" title="The lines this thread was on have changed">Outdated</span>' : '') +
+      (t.resolved ? '<span class="tag ok">Resolved</span>' : '') +
+      '<span class="ttl">' + fmt(t.title) + '</span><button class="x" title="Collapse to the gutter marker">▴</button></div>' + body +
+    (t.outdated ? '<div class="orig">' + esc(t.orig.join('\n')) + '</div>' : '') +
+    '<div class="meta"><span>' + replies(t) + (replies(t) === 1 ? ' reply' : ' replies') + '</span><span>' + ago(t.at) + '</span>' + (t.running ? '<span class="working"><span class="dot"></span>working</span>' : '') + '</div></div>';
+  if (!split) return '<tr class="cardrow"><td colspan="4">' + card + '</td></tr>';
+  return side === 'old' ? '<tr class="cardrow"><td colspan="3">' + card + '</td><td colspan="3"></td></tr>' : '<tr class="cardrow"><td colspan="3"></td><td colspan="3" style="padding-left:24px">' + card + '</td></tr>';
+}
+
+function msgsHtml(list){
+  return list.map(([w, x]) => {
+    if (w === 'sys') return '<div class="sys">' + fmt(x) + '</div>';
+    if (w === 'tool') return '<div class="toolrow">▸ ' + fmt(x) + '<span class="ok">done</span></div>';
+    return '<div class="msg ' + w + '"><span class="w">' + (w === 'u' ? 'You' : 'Agent') + '</span><div class="t">' + md(x) + '</div></div>';
+  }).join('');
+}
+
+function composer(placeholder, onSend){
+  const f = document.createElement('form'); f.className = 'ccomp'; f.onsubmit = (e) => { e.preventDefault(); send(); };
+  f.innerHTML = '<div class="box"><textarea rows="2" placeholder="' + placeholder + '" aria-label="' + placeholder + '"></textarea><button class="send">Send</button></div>';
+  const ta = f.querySelector('textarea');
+  const send = () => { const v = ta.value.trim(); if (v) onSend(v); };
+  ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); } };
+  return f;
+}
+
+function convEl(wide){
+  const c = document.createElement('div'); c.className = 'conv' + (wide ? ' wide' : '');
+  const log = document.createElement('div'); log.className = 'clog'; log.innerHTML = msgsHtml(general); c.append(log);
+  c.append(composer('Message about the whole change…', (v) => reply(general, v, 'On it.')));
+  setTimeout(() => log.scrollTop = log.scrollHeight);
+  return c;
+}
+
+function renderSide(){
+  const side = $('side'); side.innerHTML = '';
+  const open = openOnes();
+  if (!S.panelOpen){
+    const rail = document.createElement('div'); rail.className = 'rail';
+    const b = document.createElement('button'); b.title = 'Threads (Ctrl+Shift+T)';
+    b.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="count">' + open.length + '</span>' + (threads.some(t => t.running) ? '<span class="dot"></span>' : '');
+    b.onclick = () => { S.panelOpen = true; S.view = 'overview'; render(); };
+    rail.append(b); side.append(rail); return;
+  }
+  const a = document.createElement('aside'); side.append(a);
+  const hide = '<button class="icon end" id="bHide" title="Hide panel (Ctrl+Shift+T)">»</button>';
+  if (S.view === 'overview'){
+    a.innerHTML = '<header><h2>Threads</h2><span class="mono">' + threads.length + '</span>' + hide + '</header>' +
+      '<div class="ptabs"><span class="on">Threads ' + threads.length + '</span><span>Queue 0</span></div>';
+    const fl = document.createElement('div'); fl.className = 'filters';
+    fl.innerHTML = '<div class="seg">' + ['open','resolved','all'].map(s => '<button data-st="' + s + '" class="' + (S.status===s?'on':'') + '">' + s[0].toUpperCase() + s.slice(1) + ' ' + (s==='all'?threads.length:threads.filter(t=>(s==='open')===!t.resolved).length) + '</button>').join('') + '</div>' +
+      ['bug','suggestion','nit','you'].map(s => '<button class="fchipb ' + (S.sev.has(s)?'on':'') + '" data-sv="' + s + '" style="--c:' + sevColor(s) + '"><i></i>' + sevName(s) + '</button>').join('');
+    fl.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { S.status = b.dataset.st; render(); });
+    fl.querySelectorAll('[data-sv]').forEach(b => b.onclick = () => { S.sev.has(b.dataset.sv) ? S.sev.delete(b.dataset.sv) : S.sev.add(b.dataset.sv); render(); });
+    a.append(fl);
+    const list = document.createElement('div'); list.className = 'list'; a.append(list);
+    {
+      const last = [...general].reverse().find(m => m[0] === 'a');
+      const g = document.createElement('button'); g.className = 'general';
+      g.innerHTML = '<span class="t1">General conversation <span class="mono" style="font-weight:400">' + general.filter(m=>m[0]==='u'||m[0]==='a').length + ' messages</span></span><span class="q">' + fmt(last[1]) + '</span>';
+      g.onclick = () => { S.view = 'general'; render(); };
+      list.append(g);
+    }
+    const shown = ordered().filter(passes);
+    if (!shown.length) list.insertAdjacentHTML('beforeend', '<p class="empty">No threads match. Select code in the diff to start one.</p>');
+    let lastFile = null;
+    for (const t of shown){
+      if (t.file !== lastFile){ lastFile = t.file; list.insertAdjacentHTML('beforeend', '<div class="ghead"><span>' + esc(t.file) + '</span></div>'); }
+      const r = document.createElement('button'); r.className = 'row' + (S.active === t.id ? ' act' : '') + (t.resolved ? ' res' : '');
+      r.innerHTML = '<span class="ln" style="--c:' + (t.resolved ? 'var(--faint)' : sevColor(t.sev)) + '"><i></i>' + lines(t) + '</span><span class="bd"><span class="q">' + fmt(t.title) + '</span><span class="meta"><span>' + sevName(t.sev) + '</span><span>' + replies(t) + (replies(t)===1?' reply':' replies') + '</span><span>' + ago(t.at) + '</span>' + (t.outdated ? '<span class="tag">Outdated</span>' : '') + (t.resolved ? '<span class="tag ok">Resolved</span>' : '') + (t.running ? '<span class="working"><span class="dot"></span>working</span>' : '') + '</span></span>';
+      r.onclick = () => goTo(t);
+      list.append(r);
+    }
+  } else if (S.view === 'general'){
+    a.innerHTML = '<header><button class="back" id="bBack">← All threads</button><h2>General conversation</h2>' + hide + '</header>';
+    const c = convEl(false); c.style.minHeight = '0'; a.append(c);
+  } else if (S.view === 'draft'){
+    const d = S.draft;
+    a.innerHTML = '<header><button class="back" id="bBack">← All threads</button><span class="mono">' + esc(short(d.file)) + ':' + d.start + (d.end !== d.start ? '–' + d.end : '') + '</span><span class="mono">new thread</span>' + hide + '</header>' +
+      '<div class="quote"><div class="qh"><span class="mono">' + esc(d.file) + ' · ' + (d.side === 'old' ? 'old' : 'new') + ' ' + lines(d) + '</span></div><pre>' + esc(d.quoteText) + '</pre></div>' +
+      '<div style="flex:1"></div><div class="wire" title="What the agent receives before your message">Sent as ' + esc(wire(d)) + '</div>';
+    const comp = composer('Reply to selection…', (v) => {
+      const t = { id: nextId++, sev:'you', file:d.file, side:d.side, start:d.start, end:d.end, quoteText:d.quoteText, at:Date.now(), title:v.length > 70 ? v.slice(0, 70) + '…' : v, msgs:[['u', v]], running:true };
+      threads.push(t); S.draft = null;
+      setTimeout(() => { t.running = false; t.msgs.push(['a','Good catch. Here is what I found…']); render(); }, 1500);
+      goTo(t);
+    });
+    a.append(comp); setTimeout(() => comp.querySelector('textarea').focus());
+  } else {
+    const t = threads.find(x => x.id === S.threadId);
+    a.innerHTML = '<header><button class="back" id="bBack">← All threads</button><span class="sev" style="--c:' + sevColor(t.sev) + '">' + sevName(t.sev) + '</span><span class="mono">' + esc(short(t.file)) + ':' + t.start + (t.end !== t.start ? '–' + t.end : '') + '</span>' +
+      (t.running ? '<span class="mono" style="color:var(--accent)">working…</span>' : '') +
+      '<button class="resolve end" id="bRes">' + (t.resolved ? 'Reopen' : 'Resolve') + '</button><button class="icon" id="bHide" title="Hide panel (Ctrl+Shift+T)">»</button></header>';
+    const qlines = t.outdated ? t.orig : [];
+    let pre = '';
+    if (t.outdated) pre = '<pre class="gone">' + t.orig.map((l, k) => '<span class="ln">' + (t.start + k) + '</span>' + esc(l)).join('\n') + '</pre>';
+    else { const out = []; for (let n = t.start; n <= t.end; n++) out.push('<span class="ln">' + n + '</span>' + esc(lineText(t.file, t.side, n))); pre = '<pre>' + out.join('\n') + '</pre>'; }
+    a.insertAdjacentHTML('beforeend', '<div class="quote"><div class="qh"><span class="mono">' + esc(t.file) + ' · ' + lines(t) + '</span>' + (t.outdated ? '<span class="tag">Outdated: these lines changed</span>' : '') + (t.resolved ? '<span class="tag ok">Resolved</span>' : '') + '</div>' + pre + '</div>' +
+      (t.sev !== 'you' ? '<div style="padding:10px 18px 0;font-weight:600;font-size:14px">' + fmt(t.title) + '</div>' : ''));
+    const c = document.createElement('div'); c.className = 'conv'; c.style.minHeight = '0';
+    const log = document.createElement('div'); log.className = 'clog'; log.innerHTML = msgsHtml(t.msgs) + (t.running ? '<div class="working" style="font-size:13px"><span class="dot"></span>working</div>' : ''); c.append(log);
+    c.append(composer('Reply in thread…', (v) => reply(t.msgs, v, 'Done. Updated the file; the diff shows the change.', t)));
+    a.append(c);
+    $('bRes').onclick = () => { t.resolved = !t.resolved; t.resolved ? S.collapsed.add(t.id) : S.collapsed.delete(t.id); render(); };
+  }
+  const bh = $('bHide'); if (bh) bh.onclick = () => { S.panelOpen = false; render(); };
+  const bb = $('bBack'); if (bb) bb.onclick = () => { S.view = 'overview'; S.draft = null; render(); };
+}
+
+function reply(list, v, answer, t){
+  list.push(['u', v]); if (t){ t.running = true; t.at = Date.now(); }
+  render();
+  setTimeout(() => { list.push(['a', answer]); if (t) t.running = false; render(); }, 1100);
+}
+
+function goTo(t){
+  S.active = t.id; S.panelOpen = true; S.view = 'thread'; S.threadId = t.id; S.draft = null;
+  S.collapsedFiles.delete(t.file); S.curFile = t.file;
+  if (!passes(t)){ S.status = 'all'; S.sev.add(t.sev); }
+  render();
+  const el = document.querySelector('[data-anchor="' + t.id + '"]') || document.querySelector('[data-mk="' + t.id + '"]');
+  if (el) el.scrollIntoView({ block:'center', behavior:'smooth' });
+}
+
+function step(d){
+  const open = openOnes(); if (!open.length) return;
+  let i = open.findIndex(t => t.id === S.active);
+  i = i < 0 ? (d > 0 ? 0 : open.length - 1) : (i + d + open.length) % open.length;
+  if (S.comments) S.collapsed.delete(open[i].id);
+  goTo(open[i]);
+}
+
+// ---------- Selection → "Reply to selection" ----------
+const pop = $('pop');
+document.addEventListener('mouseup', () => setTimeout(() => {
+  const sel = getSelection();
+  if (!sel.rangeCount || sel.isCollapsed){ pop.hidden = true; return; }
+  const range = sel.getRangeAt(0);
+  const tables = [...document.querySelectorAll('table.diff')].filter(tb => range.intersectsNode(tb));
+  if (!tables.length){ pop.hidden = true; return; }
+  const rect = range.getBoundingClientRect();
+  pop.style.left = Math.max(8, rect.left + rect.width / 2 - 70) + 'px'; pop.style.top = Math.max(8, rect.top - 42) + 'px';
+  if (tables.length > 1){ pop.innerHTML = '<span class="bad">Select within one file</span>'; pop.hidden = false; return; }
+  const tb = tables[0];
+  let cells = [...tb.querySelectorAll('td.code')].filter(td => range.intersectsNode(td));
+  let side = layout() === 'split' ? (tb.dataset.sel || 'new') : (cells.some(c => c.dataset.side === 'new') ? 'new' : 'old');
+  cells = cells.filter(c => c.dataset.side === side);
+  if (!cells.length){ pop.hidden = true; return; }
+  const ns = cells.map(c => +c.dataset.line);
+  const draft = { file: tb.dataset.file, side, start: Math.min(...ns), end: Math.max(...ns), quoteText: sel.toString().replace(/^[+−\s]*\n?/, '').trimEnd() };
+  pop.innerHTML = '<button>Reply to selection</button>';
+  pop.querySelector('button').onmousedown = (e) => e.preventDefault();
+  pop.querySelector('button').onclick = () => { pop.hidden = true; S.draft = draft; S.active = null; S.panelOpen = true; S.view = 'draft'; sel.removeAllRanges(); render(); };
+  pop.hidden = false;
+}));
+
+// ---------- Keys and mock controls ----------
+addEventListener('keydown', (e) => {
+  const typing = /^(TEXTAREA|INPUT)$/.test(document.activeElement.tagName);
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'h'){ e.preventDefault(); S.comments = !S.comments; render(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 't'){ e.preventDefault(); S.panelOpen = !S.panelOpen; render(); return; }
+  if (e.key === 'Escape') pop.hidden = true;
+  if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'n' || e.key === 'N') step(1);
+  if (e.key === 'p' || e.key === 'P') step(-1);
+});
+addEventListener('resize', () => render());
+render();
+</script>
+</body>
+</html>

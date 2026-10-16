@@ -34,9 +34,9 @@ describe('agentEnv', () => {
 
   it("gives each agent Gloss's instructions in the form it takes them", () => {
     const claude = { systemPrompt: { append: AGENT_INSTRUCTIONS } }
-    expect(getAgentConfig('claude').sessionMeta).toEqual({ new: claude, load: claude })
+    expect(getAgentConfig('claude').sessionMeta?.(AGENT_INSTRUCTIONS)).toEqual({ new: claude, load: claude })
     // Codex keeps them in the thread; its session/load ignores them.
-    expect(getAgentConfig('codex').sessionMeta).toEqual({
+    expect(getAgentConfig('codex').sessionMeta?.(AGENT_INSTRUCTIONS)).toEqual({
       new: { jetbrains: { air: { customInstructions: AGENT_INSTRUCTIONS } } }
     })
   })

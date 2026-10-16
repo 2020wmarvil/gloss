@@ -47,6 +47,8 @@ function checkValue(field: SettingField, value: unknown): string | null {
     case 'mcp': return mcpError(value)
     case 'boolean':
       return typeof value === 'boolean' ? null : `expected true or false, got ${JSON.stringify(value)}`
+    case 'string':
+      return typeof value === 'string' ? null : `expected a string, got ${JSON.stringify(value)}`
     case 'enum': {
       const values = field.options?.map((o) => o.value) ?? []
       return values.includes(value as string)

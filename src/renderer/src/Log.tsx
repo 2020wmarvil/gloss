@@ -41,10 +41,12 @@ type Props = {
   empty: ReactNode
   renderAgent(message: Message): ReactNode
   reveal?: Reveal | null
+  /** A user message to show as a status line instead (a review's first pass), or null. */
+  systemLine?(message: Message): string | null
 }
 
 /** A scrolling log that sticks to the bottom while new output arrives. */
-export function Log({ items, className, empty, renderAgent, reveal }: Props): React.JSX.Element {
+export function Log({ items, className, empty, renderAgent, reveal, systemLine }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
   useLayoutEffect(() => {
@@ -76,7 +78,15 @@ export function Log({ items, className, empty, renderAgent, reveal }: Props): Re
         {items.length === 0 && empty}
         {items.map((item) => {
           switch (item.kind) {
-            case 'message':
+            case 'message': {
+              const line = item.message.role === 'user' ? systemLine?.(item.message) : null
+              if (line) {
+                return (
+                  <p key={item.message.id} className="system-line" data-message-id={item.message.id}>
+                    {line}
+                  </p>
+                )
+              }
               return item.message.role === 'user' ? (
                 <div
                   key={item.message.id}
@@ -108,6 +118,7 @@ export function Log({ items, className, empty, renderAgent, reveal }: Props): Re
                   {renderAgent(item.message)}
                 </div>
               )
+            }
             case 'tool':
               return <ToolRow key={item.toolCall.id} toolCall={item.toolCall} revealed={reveal?.messageId === `tool:${item.toolCall.id}`} />
             case 'plan':

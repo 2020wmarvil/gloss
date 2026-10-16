@@ -1,12 +1,14 @@
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as acp from '@agentclientprotocol/sdk'
-import type { GlossEvent } from '../shared/ipc'
+import type { GlossEvent, PullRequest } from '../shared/ipc'
 import { AgentConnection } from './acp'
 import type { AgentConfig } from './agents'
 import { Store } from './db'
 import { SessionManager } from './sessions'
-import { toMainTag, wireTag } from '../shared/wire'
+import { threadTag, toMainTag, wireTag } from '../shared/wire'
+import { isFirstPass, REVIEW_INSTRUCTIONS, type ReviewDiff } from '../shared/review'
+import type { Session } from '../shared/types'
 
 type Script = (ctx: {
   sessionId: string
@@ -321,7 +323,7 @@ const config: AgentConfig = {
   command: 'fake-agent',
   args: ['--acp'],
   bypassModeId: 'bypass',
-  sessionMeta: { new: { instructions: 'new' }, load: { instructions: 'load' } }
+  sessionMeta: () => ({ new: { instructions: 'new' }, load: { instructions: 'load' } })
 }
 
 const MODES: acp.SessionModeState = {
@@ -1926,6 +1928,220 @@ describe('SessionManager', () => {
       state.listed = [{ sessionId: session.acpSessionId, cwd: '/w', title: 'Something else' }]
       await manager.agentSessions('/w', 'fake')
       expect(store.getSession(session.id)?.title).toBe('Mine')
+    })
+  })
+
+  describe('review sessions', () => {
+    const DIFF: ReviewDiff = {
+      baseRef: 'origin/main',
+      base: 'base123',
+      headRef: null,
+      head: 'head456',
+      files: [
+        {
+          path: 'src/a.ts',
+          status: 'modified',
+          binary: false,
+          state: 'committed',
+          additions: 2,
+          deletions: 0,
+          hunks: [
+            {
+              header: '@@ -10,1 +10,3 @@',
+              lines: [
+                { kind: 'context', old: 10, new: 10, text: 'const a = 1' },
+                { kind: 'add', old: null, new: 11, text: 'const b = 2' },
+                { kind: 'add', old: null, new: 12, text: 'const c = 3' }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+    const FINDINGS = [
+      'The change adds two constants.',
+      '```gloss-findings',
+      JSON.stringify([
+        { file: 'src/a.ts', side: 'new', start: 11, end: 12, severity: 'bug', title: 'Unused constants', body: 'Nothing reads b or c.' },
+        { file: 'src/elsewhere.ts', side: 'new', start: 3, end: 3, severity: 'nit', title: 'Not in the diff', body: '' }
+      ]),
+      '```'
+    ].join('\n')
+    const lineAnchor = { kind: 'line' as const, file: 'src/a.ts', side: 'new' as const, start: 10, end: 10, text: 'const a = 1', lines: ['const a = 1'] }
+
+    const OPEN_PR: PullRequest = {
+      number: 7,
+      title: 'Add constants',
+      url: 'https://github.com/o/r/pull/7',
+      state: 'open',
+      checks: null,
+      review: null,
+      baseRef: 'main'
+    }
+    /** The branch's pull request, as gh reports it. */
+    let pr: PullRequest | null
+
+    function reviewManager(): SessionManager {
+      return new SessionManager({
+        store,
+        emit: (e) => events.push(e),
+        getAgentConfig: () => ({ ...config, sessionMeta: (instructions) => ({ new: { instructions }, load: { instructions } }) }),
+        agentEnv: () => ({ FAKE: '1' }),
+        connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
+        runInTerminal: runInTerminal as never,
+        now: () => 1000,
+        git: {
+          pullRequest: async () => pr,
+          pullRequestBase: async (_cwd, branch) => `origin/${branch}`,
+          defaultBranch: async () => 'origin/trunk',
+          currentBranch: async () => 'feature',
+          mergeBase: async (_cwd, ref) => `mb:${ref}`,
+          commits: async (_cwd, since) => [{ sha: 'c1', subject: `since ${since}`, at: 1 }],
+          repoUrl: async () => 'https://github.com/o/r',
+          readDiff: async (_cwd, baseRef, headRef) =>
+            headRef === null ? DIFF : { ...DIFF, baseRef, base: baseRef, headRef, head: 'commit789' },
+          readFile: async () => null
+        }
+      })
+    }
+
+    /** Starts a review and waits for its first pass to end. */
+    async function startReview(): Promise<Session> {
+      const session = await manager.createReview('/repo', 'fake')
+      await vi.waitFor(() => expect(events.some((e) => e.type === 'turnEnd' && e.sessionId === session.id)).toBe(true))
+      return session
+    }
+
+    beforeEach(async () => {
+      pr = OPEN_PR
+      await manager.dispose()
+      manager = reviewManager()
+      state.script = async ({ say, text }) => {
+        await say(isFirstPass(text) ? FINDINGS : `Re: ${text.split('\n').pop()}`)
+        return 'end_turn'
+      }
+    })
+
+    it('starts a new review of a given range', async () => {
+      const sha = 'b'.repeat(40)
+      const session = await manager.createReview('/repo', 'fake', { baseRef: sha, headRef: 'HEAD' })
+      await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+      expect(session).toMatchObject({ title: 'Review: feature', review: { baseRef: sha, headRef: 'HEAD' } })
+      expect(state.prompts[0]).toContain(`\`git diff ${sha} commit789\``)
+      expect(state.prompts[0]).not.toContain('pull request')
+    })
+
+    it('reviews against the default branch without an open pull request', async () => {
+      pr = { ...OPEN_PR, state: 'merged' }
+      const session = await manager.createReview('/repo', 'fake')
+      await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+      expect(session).toMatchObject({ title: 'Review: feature', review: { baseRef: 'origin/trunk' } })
+      expect(session.review?.headRef).toBeUndefined()
+      expect(state.prompts[0]).not.toContain('pull request')
+    })
+
+    it('offers merge bases and commits, and tells the agent once when the range changes', async () => {
+      const session = await startReview()
+      // The pull request's base is the default, so it comes first.
+      expect(await manager.reviewRefs(session.id)).toEqual({
+        bases: [
+          { ref: 'origin/main', sha: 'mb:origin/main' },
+          { ref: 'origin/trunk', sha: 'mb:origin/trunk' }
+        ],
+        commits: [{ sha: 'c1', subject: 'since mb:origin/trunk', at: 1 }],
+        repoUrl: 'https://github.com/o/r',
+        defaultBase: 'origin/main'
+      })
+
+      const sha = 'a'.repeat(40)
+      const diff = await manager.setReviewRange(session.id, { baseRef: sha, headRef: 'HEAD' })
+      expect(diff).toMatchObject({ base: sha, headRef: 'HEAD', head: 'commit789' })
+      expect(store.getSession(session.id)?.review).toEqual({ baseRef: sha, headRef: 'HEAD' })
+      expect(events).toContainEqual({ type: 'session', session: expect.objectContaining({ review: { baseRef: sha, headRef: 'HEAD' } }) })
+      await expect(manager.setReviewRange(session.id, { baseRef: '--output=x' })).rejects.toThrow('Not a commit')
+
+      await manager.send(session.id, 'Look again', null)
+      const note = `[The diff under review is now \`git diff ${sha} commit789\`.]`
+      expect(state.prompts[1]).toBe(`${note}\nLook again`)
+      const sent = store.listMessages(session.id).filter((m) => m.role === 'user').pop()
+      expect(sent).toMatchObject({ text: 'Look again', wireText: `${note}\nLook again` })
+      await manager.send(session.id, 'And again', null)
+      expect(state.prompts[2]).toBe('And again')
+    })
+
+    it('starts with the first pass, with the review instructions, and opens a thread per finding on the diff', async () => {
+      const session = await startReview()
+      expect(session).toMatchObject({ title: 'Review: #7 Add constants', titleSet: true, review: { baseRef: 'origin/main' } })
+      expect(state.prompts).toHaveLength(1)
+      expect(isFirstPass(state.prompts[0])).toBe(true)
+      expect(state.prompts[0]).toContain('git diff base123')
+      expect((state.metas[0].meta as { instructions: string }).instructions).toContain(REVIEW_INSTRUCTIONS)
+
+      const threads = store.listThreads(session.id)
+      expect(threads).toHaveLength(1)
+      expect(threads[0]).toMatchObject({
+        anchorMessageId: null,
+        anchor: { kind: 'line', file: 'src/a.ts', side: 'new', start: 11, end: 12, lines: ['const b = 2', 'const c = 3'] },
+        finding: { severity: 'bug', title: 'Unused constants', body: 'Nothing reads b or c.' }
+      })
+      expect(events).toContainEqual({ type: 'thread', thread: threads[0] })
+      expect(store.getSession(session.id)?.openThreads).toBe(1)
+
+      // The same findings listed again open nothing new.
+      state.script = async ({ say }) => (await say(FINDINGS), 'end_turn')
+      await manager.send(session.id, 'Review again', null)
+      expect(store.listThreads(session.id)).toHaveLength(1)
+    })
+
+    it('tags line threads with the file and lines, and resolves and reopens them', async () => {
+      const session = await startReview()
+      const thread = manager.createThread(session.id, null, lineAnchor)
+      expect(manager.createThread(session.id, null, { ...lineAnchor, text: 'const' })).toEqual(thread)
+      await manager.send(session.id, 'Why a constant?', thread.id)
+      expect(state.prompts.at(-1)).toBe('[re: src/a.ts:10 "const a = 1"]\nWhy a constant?')
+      expect(store.getSession(session.id)?.openThreads).toBe(2)
+
+      const resolved = manager.resolveThread(session.id, thread.id, true)
+      expect(resolved.resolvedAt).toBe(1000)
+      expect(store.getThread(thread.id)?.resolvedAt).toBe(1000)
+      expect(store.getSession(session.id)?.openThreads).toBe(1)
+      expect(manager.resolveThread(session.id, thread.id, false).resolvedAt).toBeUndefined()
+      expect(store.getSession(session.id)?.openThreads).toBe(2)
+    })
+
+    it('keeps line anchors to review sessions, with a valid range', async () => {
+      const chat = await manager.createSession('/repo', 'fake')
+      expect(() => manager.createThread(chat.id, null, lineAnchor)).toThrow(/review session/)
+      const review = await startReview()
+      expect(() => manager.createThread(review.id, null, { ...lineAnchor, end: 12 })).toThrow(/Invalid thread anchor/)
+      expect(() => manager.resolveThread(chat.id, 'nope', true)).toThrow(/Unknown thread/)
+    })
+
+    it('reads the diff for the renderer, only for a review', async () => {
+      const review = await startReview()
+      expect(await manager.reviewDiff(review.id)).toBe(DIFF)
+      const chat = await manager.createSession('/repo', 'fake')
+      expect(() => manager.reviewDiff(chat.id)).toThrow(/Only a review session/)
+    })
+
+    it('places messages from the CLI tagged with a line thread back in that thread', async () => {
+      state.canList = true
+      state.canClose = true
+      const session = await startReview()
+      const thread = manager.createThread(session.id, null, lineAnchor)
+      await manager.send(session.id, 'in the thread', thread.id)
+      save(
+        state,
+        session.acpSessionId,
+        { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: `${threadTag(lineAnchor)}\nfrom the cli` }, messageId: 'cli-u' },
+        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'cli answer' }, messageId: 'cli-a' }
+      )
+      await manager.refreshSession(session.id)
+      const fromCli = store.listMessages(session.id).find((m) => m.text === 'from the cli')
+      expect(fromCli?.threadId).toBe(thread.id)
+      expect(store.listMessages(session.id).find((m) => m.text === 'cli answer')?.threadId).toBe(thread.id)
+      // Line threads have no message to go with: they survive the sync.
+      expect(store.getThread(thread.id)).toBeDefined()
     })
   })
 })

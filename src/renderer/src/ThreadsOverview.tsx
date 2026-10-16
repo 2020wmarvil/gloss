@@ -34,15 +34,19 @@ const threadsIcon = (
   </svg>
 )
 
-/** The collapsed side panel: a threads button with the count and a running dot. */
-export function SideRail(props: { count: number; running: boolean; onExpand(): void }): React.JSX.Element {
+/**
+ * The collapsed side panel: a threads button with the count and a running dot. `label`
+ * says what the count is, when it isn't just threads.
+ */
+export function SideRail(props: { count: number; running: boolean; label?: string; onExpand(): void }): React.JSX.Element {
+  const what = props.label ?? `${props.count} ${props.count === 1 ? 'thread' : 'threads'}`
   return (
     <div className="side-rail">
       <button
         className="rail-button"
         onClick={props.onExpand}
-        title="Threads (Ctrl+Shift+T)"
-        aria-label={`Show threads (${props.count})`}
+        title={`${what} (Ctrl+Shift+T)`}
+        aria-label={`Show ${what}`}
       >
         {threadsIcon}
         <span className="rail-count">{props.count}</span>
@@ -75,6 +79,8 @@ type Props = {
   onRemoveQueued(id: string): Promise<void>
   onResumeQueue(): Promise<void>
   onCollapse(): void
+  /** A review session's Threads tab (SPEC → Review sessions → Side panel), and its count. */
+  review?: { content: React.ReactNode; count: number }
 }
 
 export function ThreadsOverview(props: Props): React.JSX.Element {
@@ -102,7 +108,7 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
       <header>
         <div className="side-tabs" role="tablist">
           <button role="tab" aria-selected={props.tab === 'threads'} onClick={() => props.onTab('threads')}>
-            Threads <span className="mono">{summaries.length}</span>
+            Threads <span className="mono">{props.review?.count ?? summaries.length}</span>
           </button>
           <button
             role="tab"
@@ -117,7 +123,9 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
           »
         </button>
       </header>
-      {props.tab === 'threads' ? (
+      {props.tab === 'threads' && props.review ? (
+        props.review.content
+      ) : props.tab === 'threads' ? (
         <div className="thread-list">
           {summaries.length === 0 && (
             <p className="muted empty">

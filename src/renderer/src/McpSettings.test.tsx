@@ -30,7 +30,7 @@ const edit = async (input: HTMLInputElement | HTMLTextAreaElement, text: string)
 
 it('places the MCP list under Global without needing an open project', async () => {
   const { el } = await mount()
-  const state: SettingsState = { path: '/settings.json', error: null, projects: {}, global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, mcpServers: [] } }
+  const state: SettingsState = { path: '/settings.json', error: null, projects: {}, global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] } }
   const update = vi.fn(async () => {})
   await act(async () => root!.render(<SettingsScreen state={state} projectPath={null} onUpdate={update} onClose={() => {}} onOpenFile={async () => null} />))
   const global = [...el.querySelectorAll('section')].find((s) => s.querySelector('h2')?.textContent === 'Global')!
