@@ -14,7 +14,9 @@ export type ThemeSetting = 'system' | 'light' | 'dark'
 export type SessionOrder = 'created' | 'activity'
 
 export type GlobalSettings = {
-  defaultAgent: 'claude' | 'codex'
+  defaultAgent: 'claude' | 'codex' | 'opencode'
+  /** Empty or omitted discovers an installed native OpenCode executable. */
+  opencodeExecutable?: string
   /** Light, dark, or whatever the system uses. */
   theme: ThemeSetting
   /** How the sidebar sorts a project's sessions. */
@@ -23,7 +25,7 @@ export type GlobalSettings = {
   listItemReplies: boolean
   /** The command that opens a file in the user's editor (`{file}`, `{line}`); empty for the system's default app. */
   externalEditor: string
-  /** Tools made available to both agents in every project. */
+  /** Tools made available to all agents in every project. */
   mcpServers: import('./mcp').McpServer[]
 }
 
@@ -50,6 +52,11 @@ export type SettingField = {
 }
 
 export const SETTING_FIELDS: readonly SettingField[] = [
+  {
+    key: 'opencodeExecutable', scope: 'global', type: 'string', label: 'OpenCode executable',
+    description: 'Path to the native OpenCode executable. Empty discovers an installed copy. Applied after current turns finish.',
+    hidden: true
+  },
   {
     key: 'obsidianVault', scope: 'project', type: 'string', label: 'Obsidian vault',
     description: 'The name or ID of an existing vault in Obsidian. Shows an Obsidian shortcut beside the project folder in the status line. Leave empty to hide it.',
@@ -78,7 +85,8 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     description: 'The agent new sessions use. Starred in the New session menu.',
     options: [
       { value: 'claude', label: 'Claude Code' },
-      { value: 'codex', label: 'Codex' }
+      { value: 'codex', label: 'Codex' },
+      { value: 'opencode', label: 'OpenCode' }
     ],
     hidden: true
   },

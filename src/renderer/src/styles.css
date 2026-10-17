@@ -725,6 +725,22 @@ body.resizing {
   cursor: pointer;
 }
 
+.opencode-settings input.setting-text {
+  display: block;
+  width: 100%;
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+}
+
+.opencode-settings .mono {
+  overflow-wrap: anywhere;
+}
+
 .setting:has(.setting-text) {
   grid-template-columns: minmax(0, 1fr) 260px;
 }
@@ -2852,9 +2868,10 @@ button.status.link {
 .mcp-editor textarea { margin-top: 6px; font-family: var(--font-mono, monospace); }
 .mcp-import-entry { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .mcp-import-entry input[type=checkbox] { margin-right: 8px; }
-.mcp-settings button { padding: 6px 10px; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 6px; cursor: pointer; }
-.mcp-settings button:hover:not(:disabled) { background: var(--accent-tint); }
-.mcp-settings button:disabled { opacity: 0.5; cursor: default; }
+.mcp-settings button, .opencode-settings button { padding: 6px 10px; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line-strong); border-radius: 6px; cursor: pointer; }
+.mcp-settings button:hover:not(:disabled), .opencode-settings button:hover:not(:disabled) { background: var(--accent-tint); }
+.mcp-settings button:disabled, .opencode-settings button:disabled { opacity: 0.5; cursor: default; }
+.opencode-settings a { color: var(--accent); }
 .mcp-settings :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Review sessions (docs/mocks/review-session.html) */

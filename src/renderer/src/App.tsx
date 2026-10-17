@@ -302,7 +302,7 @@ export function App(): React.JSX.Element {
   const loadAgentSessions = useCallback(
     async (path: string) => {
       await Promise.all(
-        agents.map(async (a) => {
+        agents.filter((a) => a.available !== false).map(async (a) => {
           const key = agentSessionsKey(path, a.id)
           setAgentSessionErrors((all) => ({ ...all, [key]: null }))
           try {
@@ -499,6 +499,7 @@ export function App(): React.JSX.Element {
           break
         case 'settings':
           setSettings(event.state)
+          void window.gloss.agents.list().then(setAgents)
           break
       }
     },
@@ -767,6 +768,7 @@ export function App(): React.JSX.Element {
 
   async function updateSettings(patch: SettingsPatch): Promise<void> {
     setSettings(await window.gloss.settings.update(patch))
+    if (patch.global && 'opencodeExecutable' in patch.global) setAgents(await window.gloss.agents.list())
   }
 
   /** Puts the caret in the main conversation's composer, or the side panel's, once it shows. */
@@ -909,9 +911,9 @@ export function App(): React.JSX.Element {
   /** The agents' own sessions in the shown project; null until each agent has listed them. */
   const listedAgentSessions: ListedAgentSession[] | null = !projectPath
     ? []
-    : agents.some((a) => !(agentSessionsKey(projectPath, a.id) in agentSessions))
+    : agents.some((a) => a.available !== false && !(agentSessionsKey(projectPath, a.id) in agentSessions))
       ? null
-      : agents.flatMap((a) => agentSessions[agentSessionsKey(projectPath, a.id)].map((x) => ({ ...x, agentId: a.id })))
+      : agents.filter((a) => a.available !== false).flatMap((a) => (agentSessions[agentSessionsKey(projectPath, a.id)] ?? []).map((x) => ({ ...x, agentId: a.id })))
   const agentSessionsError = projectPath
     ? agents.map((a) => agentSessionErrors[agentSessionsKey(projectPath, a.id)]).filter(Boolean).join(' ') || null
     : null

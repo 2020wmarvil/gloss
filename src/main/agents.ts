@@ -6,6 +6,8 @@ export type AgentConfig = {
   command: string
   args: string[]
   env?: Record<string, string>
+  /** Bound initialization for external executables. */
+  startupTimeoutMs?: number
   /**
    * The agent's session mode that skips permission prompts, if it has one.
    * Gloss switches every session to it (SPEC → Permissions).
@@ -65,7 +67,8 @@ function codexAgent(): AgentConfig {
 
 const AGENTS: Record<string, () => AgentConfig> = {
   claude: claudeAgent,
-  codex: codexAgent
+  codex: codexAgent,
+  opencode: () => ({ id: 'opencode', name: 'OpenCode', command: 'opencode', args: ['acp'], startupTimeoutMs: 15000 })
 }
 
 export function getAgentConfig(id: string): AgentConfig {

@@ -77,6 +77,13 @@ export type TurnResult = { stopReason?: string; error?: string; queued?: true; s
 
 export type AuthResult = { ok: true } | { ok: false; error: string }
 
+export type OpenCodeStatus = {
+  available: boolean
+  executable: string | null
+  version: string | null
+  error: string | null
+}
+
 export type GlossEvent =
   | { type: 'session'; session: Session }
   /** `deletedOutside`: the agent no longer had it, so Gloss deleted it too (SPEC → Shared sessions). */
@@ -118,6 +125,7 @@ export type GlossApi = {
   search(request: SearchRequest): Promise<SearchResponse>
   agents: {
     list(): Promise<AgentInfo[]>
+    testOpenCode(executable: string): Promise<OpenCodeStatus>
   }
   projects: {
     list(): Promise<Project[]>
@@ -234,6 +242,7 @@ export const IPC = {
   settingsPreviewMcpImport: 'gloss:settings:previewMcpImport',
   search: 'gloss:search',
   agentsList: 'gloss:agents:list',
+  agentsTestOpenCode: 'gloss:agents:testOpenCode',
   projectsList: 'gloss:projects:list',
   projectsOpen: 'gloss:projects:open',
   projectsAgentSessions: 'gloss:projects:agentSessions',

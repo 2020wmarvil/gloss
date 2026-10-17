@@ -4,7 +4,8 @@ import { IPC, type GlossApi, type GlossEvent } from '../shared/ipc'
 const api: GlossApi = {
   search: (request) => ipcRenderer.invoke(IPC.search, request),
   agents: {
-    list: () => ipcRenderer.invoke(IPC.agentsList)
+    list: () => ipcRenderer.invoke(IPC.agentsList),
+    testOpenCode: (executable) => ipcRenderer.invoke(IPC.agentsTestOpenCode, executable)
   },
   projects: {
     list: () => ipcRenderer.invoke(IPC.projectsList),

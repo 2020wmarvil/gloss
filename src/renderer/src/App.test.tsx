@@ -21,7 +21,7 @@ it("starts sessions with the default agent or one from the menu, and lists every
   window.gloss = {
     history: async () => [],
     settings: { get: async () => state, update },
-    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'codex', name: 'Codex' }] },
+    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'codex', name: 'Codex' }, { id: 'opencode', name: 'OpenCode', available: false, setupMessage: 'Install OpenCode' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: list },
     sessions: { list: async () => [], create, import: importSession },
     onEvent: () => () => {}
@@ -32,6 +32,7 @@ it("starts sessions with the default agent or one from the menu, and lists every
   await act(async () => root!.render(<App />))
   expect(list).toHaveBeenCalledWith('/project', 'codex')
   expect(list).toHaveBeenCalledWith('/project', 'claude')
+  expect(list).not.toHaveBeenCalledWith('/project', 'opencode')
   expect(el.textContent).toContain('codex external')
   expect(el.textContent).toContain('claude external')
   expect(el.querySelector('.new-session')!.textContent).toContain('Codex')
@@ -41,7 +42,9 @@ it("starts sessions with the default agent or one from the menu, and lists every
   const openMenu = async (): Promise<void> => act(async () => (el.querySelector('.new-session-agents') as HTMLButtonElement).click())
   await openMenu()
   const stars = [...el.querySelectorAll<HTMLButtonElement>('.agent-star')]
-  expect(stars.map((b) => b.getAttribute('aria-checked'))).toEqual(['false', 'true'])
+  expect(stars.map((b) => b.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false'])
+  expect(stars[2].disabled).toBe(true)
+  expect([...el.querySelectorAll<HTMLButtonElement>('.agent-item [role="menuitem"]')][2].disabled).toBe(true)
   await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.agent-item [role="menuitem"]')][0].click())
   expect(create).toHaveBeenLastCalledWith('/project', 'claude')
 

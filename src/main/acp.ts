@@ -92,14 +92,15 @@ export class AgentConnection {
       child.kill()
       throw err
     }
-    return AgentConnection.open(stream, handlers, child)
+    return AgentConnection.open(stream, handlers, child, config.startupTimeoutMs)
   }
 
   /** Connects to an ACP stream or an in-process agent app and initializes. */
   static async open(
     target: acp.Stream | acp.AgentApp,
     handlers: AgentHandlers,
-    child?: ChildProcess
+    child?: ChildProcess,
+    timeoutMs?: number
   ): Promise<AgentConnection> {
     const app = acp
       .client({ name: 'gloss' })
@@ -111,14 +112,22 @@ export class AgentConnection {
     child?.once('exit', (code, signal) =>
       conn.close(new Error(`Agent process exited (code ${code}, signal ${signal})`))
     )
+    let timeout: ReturnType<typeof setTimeout> | undefined
     try {
       // No fs or terminal client capabilities in v1: the agent uses its own tools.
       // auth.terminal: we can run terminal sign-in methods (SPEC → Authentication).
-      const init = await conn.agent.request(acp.methods.agent.initialize, {
+      const request = conn.agent.request(acp.methods.agent.initialize, {
         protocolVersion: acp.PROTOCOL_VERSION,
         clientCapabilities: { auth: { terminal: true } },
         clientInfo: { name: 'gloss', title: 'Gloss', version: '0.1.0' }
       })
+      const init = timeoutMs ? await Promise.race([
+        request,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error('Agent initialization timed out. Check the executable and its configuration.')), timeoutMs)
+        })
+      ]) : await request
+      if (init.protocolVersion !== acp.PROTOCOL_VERSION) throw new Error(`Unsupported ACP protocol version ${init.protocolVersion}`)
       const connection = new AgentConnection(conn, init, child)
       const onClosed = (): void => {
         connection.closed = true
@@ -130,6 +139,8 @@ export class AgentConnection {
       conn.close(err)
       child?.kill()
       throw err
+    } finally {
+      clearTimeout(timeout)
     }
   }
 
