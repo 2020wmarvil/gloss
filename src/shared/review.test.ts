@@ -8,6 +8,7 @@ import {
   lineLabel,
   linesOf,
   locate,
+  newLineOf,
   rangeNote,
   withoutFindings,
   type DiffFile,
@@ -154,6 +155,67 @@ describe('lines of the diff', () => {
   it('needs the lines to be consecutive', () => {
     // "a" and "d" are lines 10 and 13: not a match for two lines in a row.
     expect(locate(anchor(10, ['a', 'd']), [f]).kind).toBe('outdated')
+  })
+
+  // Line 10 of 20 replaced by two lines: "@@ -9,3 +9,4 @@".
+  const changed: DiffFile = {
+    path: 'src/a.ts',
+    status: 'modified',
+    binary: false,
+    state: 'committed',
+    additions: 2,
+    deletions: 1,
+    hunks: [
+      {
+        header: '@@ -9,3 +9,4 @@',
+        lines: [
+          { kind: 'context', old: 9, new: 9, text: 'line 9' },
+          { kind: 'del', old: 10, new: null, text: 'line 10' },
+          { kind: 'add', old: null, new: 10, text: 'X' },
+          { kind: 'add', old: null, new: 11, text: 'Y' },
+          { kind: 'context', old: 11, new: 12, text: 'line 11' }
+        ]
+      }
+    ]
+  }
+  const now = [...Array.from({ length: 9 }, (_, i) => `line ${i + 1}`), 'X', 'Y', ...Array.from({ length: 10 }, (_, i) => `line ${i + 11}`)]
+
+  it('reads unchanged lines outside the hunks from the file, on either side', () => {
+    expect(linesOf(changed, 'new', 3, 4)).toBeNull()
+    expect(linesOf(changed, 'new', 3, 4, now)).toEqual(['line 3', 'line 4'])
+    expect(linesOf(changed, 'new', 8, 10, now)).toEqual(['line 8', 'line 9', 'X'])
+    // Old line 15 is line 16 now.
+    expect(linesOf(changed, 'old', 15, 15, now)).toEqual(['line 15'])
+    expect(linesOf(changed, 'new', 21, 22, now)).toBeNull()
+  })
+
+  it('re-finds lines outside the hunks once the file is read', () => {
+    const outside = anchor(5, ['line 3', 'line 4'])
+    expect(locate(outside, [changed]).kind).toBe('outdated')
+    expect(locate(outside, [changed], { 'src/a.ts': now })).toEqual({ kind: 'found', start: 3, end: 4 })
+    expect(locate(anchor(14, ['line 15'], 'old'), [changed], { 'src/a.ts': now })).toEqual({ kind: 'found', start: 15, end: 15 })
+  })
+
+  it('finds where a line is now, for the editor', () => {
+    expect(newLineOf(changed, 'new', 7)).toBe(7)
+    expect(newLineOf(changed, 'old', 9)).toBe(9)
+    // A removed line opens at the line that took its place.
+    expect(newLineOf(changed, 'old', 10)).toBe(10)
+    expect(newLineOf(changed, 'old', 15)).toBe(16)
+    expect(newLineOf(changed, 'old', 3)).toBe(3)
+    const tail: DiffFile = {
+      ...changed,
+      hunks: [
+        {
+          header: '@@ -5,2 +5 @@',
+          lines: [
+            { kind: 'context', old: 5, new: 5, text: 'a' },
+            { kind: 'del', old: 6, new: null, text: 'b' }
+          ]
+        }
+      ]
+    }
+    expect(newLineOf(tail, 'old', 6)).toBe(6)
   })
 
   it('labels lines, with the old side marked', () => {

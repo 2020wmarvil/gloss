@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { DiffFile, DiffHunk } from '@shared/review'
-import { expand, expandable, gapsOf, gapViews, NO_EXPANSION } from './diffContext'
+import { expandable, gapsOf, type DiffFile, type DiffHunk } from '@shared/review'
+import { expand, gapViews, NO_EXPANSION, revealing } from './diffContext'
 
 const hunk = (header: string): DiffHunk => ({ header, lines: [] })
 const source = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`)
@@ -54,6 +54,29 @@ describe('gapViews', () => {
 
   it('keeps within a file that got shorter', () => {
     expect(gapViews(gaps, source.slice(0, 15), expand(NO_EXPANSION, 'full')).map((g) => g.top.length)).toEqual([4, 7, 0])
+  })
+})
+
+describe('revealing', () => {
+  const gaps = gapsOf([hunk('@@ -5,3 +5,4 @@'), hunk('@@ -20,3 +21,2 @@')])!
+  const found = (start: number, end = start) => ({ kind: 'found' as const, start, end })
+
+  it("shows a thread's lines from the nearer end of their gap, with a few around them", () => {
+    // Gap 1 is lines 9-20: line 18 is nearer the bottom.
+    const e = revealing(NO_EXPANSION, gaps, source.length, [{ side: 'new', location: found(18) }])
+    expect(e.gaps[1]).toEqual({ top: 0, bottom: 6 })
+    expect(gapViews(gaps, source, e)[1].bottom.map((l) => l.new)).toEqual([15, 16, 17, 18, 19, 20])
+    // Old line 12 is line 13 now, nearer the top.
+    expect(revealing(NO_EXPANSION, gaps, source.length, [{ side: 'old', location: found(12) }]).gaps[1]).toEqual({ top: 8, bottom: 0 })
+    // Where an outdated thread's lines were, too.
+    expect(revealing(NO_EXPANSION, gaps, source.length, [{ side: 'new', location: { kind: 'outdated', at: 2 } }]).gaps[0]).toEqual({ top: 5, bottom: 0 })
+  })
+
+  it('leaves lines already shown, and threads in the hunks', () => {
+    const shown = expand(NO_EXPANSION, { gap: 1, edge: 'top' })
+    expect(revealing(shown, gaps, source.length, [{ side: 'new', location: found(14, 15) }])).toBe(shown)
+    expect(revealing(NO_EXPANSION, gaps, source.length, [{ side: 'new', location: found(6) }])).toBe(NO_EXPANSION)
+    expect(revealing(NO_EXPANSION, gaps, source.length, [{ side: 'new', location: { kind: 'outdated', at: null } }])).toBe(NO_EXPANSION)
   })
 })
 

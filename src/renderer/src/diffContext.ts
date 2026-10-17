@@ -1,6 +1,7 @@
 // The unchanged lines of a file between its diff's hunks, which the diff view can show
-// on request (SPEC → Review sessions → Diff view). They come from the file as it is now.
-import type { DiffFile, DiffHunk, DiffLine } from '@shared/review'
+// on request (SPEC → Review sessions → Diff view). They come from the file at the
+// reviewed commit (the working tree's file when that is reviewed).
+import type { DiffLine, Gap, Location, Side } from '@shared/review'
 
 /** Lines one click on an expander shows. */
 export const EXPAND_STEP = 10
@@ -10,54 +11,11 @@ export type Expansion = { full: boolean; gaps: Record<number, { top: number; bot
 
 export const NO_EXPANSION: Expansion = { full: false, gaps: {} }
 
-/**
- * The unchanged lines before hunk `index` (index = hunks.length: after the last hunk),
- * as new-side numbers from `from` to `to` (null: to the end of the file). A line's
- * number in the base is its new number plus `delta`.
- */
-export type Gap = { index: number; from: number; to: number | null; delta: number }
-
 /** A gap as shown: the lines shown from its top and bottom, and how many are still hidden (null: unknown). */
 export type GapView = { gap: Gap; top: DiffLine[]; bottom: DiffLine[]; hidden: number | null }
 
-const HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
-
-type Span = { first: number; after: number }
-
-/** A hunk's first line on one side and the line after it. A side with no lines starts after the line its header names. */
-function span(start: string, length: string | undefined): Span {
-  const n = length === undefined ? 1 : Number(length)
-  const first = n === 0 ? Number(start) + 1 : Number(start)
-  return { first, after: first + n }
-}
-
-/** The gaps around a file's hunks, one before each hunk and one after the last. Null if a header can't be read. */
-export function gapsOf(hunks: DiffHunk[]): Gap[] | null {
-  const spans: { old: Span; new: Span }[] = []
-  for (const h of hunks) {
-    const m = HEADER.exec(h.header)
-    if (!m) return null
-    spans.push({ old: span(m[1], m[2]), new: span(m[3], m[4]) })
-  }
-  if (spans.length === 0) return []
-  const gaps: Gap[] = spans.map((s, i) => ({
-    index: i,
-    from: i === 0 ? 1 : spans[i - 1].new.after,
-    to: s.new.first - 1,
-    delta: s.old.first - s.new.first
-  }))
-  const last = spans[spans.length - 1]
-  gaps.push({ index: spans.length, from: last.new.after, to: null, delta: last.old.after - last.new.after })
-  return gaps
-}
-
-/** Whether lines around a file's hunks can be shown: a text file that exists on both sides. */
-export function expandable(file: DiffFile): boolean {
-  return !file.binary && file.hunks.length > 0 && file.status !== 'added' && file.status !== 'deleted'
-}
-
 /**
- * Each gap with the lines the expansion shows from `source` (the file now). Without
+ * Each gap with the lines the expansion shows from `source` (the file at the reviewed commit). Without
  * the source nothing is shown, and the last gap's size is unknown.
  */
 export function gapViews(gaps: Gap[], source: string[] | null | undefined, expansion: Expansion): GapView[] {
@@ -92,4 +50,40 @@ export function expand(e: Expansion, how: { gap: number; edge: 'top' | 'bottom' 
         ? { ...g, top: g.top + EXPAND_STEP }
         : { ...g, bottom: g.bottom + EXPAND_STEP }
   return { ...e, gaps: { ...e.gaps, [how.gap]: next } }
+}
+
+/** Lines shown around a thread's lines when they are outside the hunks. */
+export const AROUND_THREAD = 3
+
+/**
+ * The expansion with the lines each thread is at shown, when they are in a gap: from
+ * the nearer end of the gap, with a few lines around them. `lines` is the file's length.
+ */
+export function revealing(e: Expansion, gaps: Gap[], lines: number, threads: { side: Side; location: Location }[]): Expansion {
+  if (e.full) return e
+  let out = e
+  for (const { side, location } of threads) {
+    const range =
+      location.kind === 'found'
+        ? location
+        : location.kind === 'outdated' && location.at !== null
+          ? { start: location.at, end: location.at }
+          : null
+    if (!range) continue
+    for (const g of gaps) {
+      const shift = side === 'old' ? g.delta : 0
+      const to = Math.min(g.to ?? lines, lines)
+      const start = Math.max(range.start - shift, g.from)
+      const end = Math.min(range.end - shift, to)
+      if (start > end) continue
+      const shown = out.gaps[g.index] ?? { top: 0, bottom: 0 }
+      const top = end - g.from + 1 + AROUND_THREAD
+      const bottom = to - start + 1 + AROUND_THREAD
+      // Already shown from either end.
+      if (shown.top >= end - g.from + 1 || shown.bottom >= to - start + 1) continue
+      const next = top <= bottom ? { ...shown, top } : { ...shown, bottom }
+      out = { ...out, gaps: { ...out.gaps, [g.index]: next } }
+    }
+  }
+  return out
 }

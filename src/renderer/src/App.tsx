@@ -25,6 +25,7 @@ import { truncate } from '@shared/wire'
 import type { ListItemSpan } from './anchors'
 import { GeneralPanel, ReviewThreadList } from './ReviewPanels'
 import { locations as threadLocations } from './reviewThreads'
+import { useReviewSources } from './reviewSources'
 import { hideFileList, ReviewView, type DiffState } from './ReviewView'
 import { FOCUS_COMPOSER, FOCUS_MAIN_COMPOSER, type ComposerQueue } from './Composer'
 import { errorText } from './errors'
@@ -89,6 +90,7 @@ function agentSessionsKey(path: string, id: string): string {
 }
 
 const NO_QUEUE: MessageQueue = { items: [], paused: false }
+const NO_THREADS: Thread[] = []
 
 /** Most recent activity first, as the main process lists them. */
 function byActivity(list: Session[]): Session[] {
@@ -956,7 +958,11 @@ export function App(): React.JSX.Element {
   const diffState: DiffState =
     reviewDiff && reviewDiff.sessionId === sessionId ? reviewDiff : { diff: null, error: null }
   const openThreads = open?.threads
-  const lineLocations = useMemo(() => threadLocations(openThreads ?? [], diffState.diff), [openThreads, diffState.diff])
+  const reviewSources = useReviewSources(isReview ? (sessionId ?? null) : null, open?.session.review, diffState.diff, openThreads ?? NO_THREADS)
+  const lineLocations = useMemo(
+    () => threadLocations(openThreads ?? [], diffState.diff, reviewSources.sources),
+    [openThreads, diffState.diff, reviewSources.sources]
+  )
   const live = (sessionId && lives[sessionId]) || NO_LIVE
   const queue = (sessionId && queues[sessionId]) || NO_QUEUE
   /** Part of the session's queue (one thread's messages) with the queue's actions, for a composer. */
@@ -1040,6 +1046,8 @@ export function App(): React.JSX.Element {
           agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
           diff={diffState}
           locations={lineLocations}
+          sources={reviewSources.sources}
+          onReadSource={reviewSources.read}
           panel={shownPanel}
           runningThread={runningThread}
           live={live}
