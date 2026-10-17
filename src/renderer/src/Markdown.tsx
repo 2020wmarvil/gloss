@@ -1,9 +1,10 @@
 // Renders untrusted agent markdown. No raw HTML (it is shown as text), only
-// absolute web and mailto links (opened in the system browser by the main
+// web/mail links and absolute local file links (opened through the main
 // process), and no images are loaded. Code blocks are highlighted and have a
 // copy button.
 import { useState } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
+import { fileLink } from '../../shared/fileLink'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import { itemMarker, listItemSpans, type ListItemSpan } from './anchors'
@@ -51,9 +52,24 @@ function remarkHtmlAsText() {
 
 const SAFE_LINK = /^(https?:|mailto:)/i
 
+function FileLink({ href, children }: { href: string; children: React.ReactNode }): React.JSX.Element {
+  const [error, setError] = useState<string | null>(null)
+  return (
+    <>
+      <a href={href} title={`Open in external editor, or show in folder: ${href}`} onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        setError(null)
+        void window.gloss.openFileLink(href).catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      }}>{children}</a>
+      {error && <span role="alert"> Couldn't open file: {error}</span>}
+    </>
+  )
+}
+
 const baseComponents: Components = {
   a: ({ href, children }) =>
-    href && SAFE_LINK.test(href) ? (
+    href && fileLink(href) ? <FileLink href={href}>{children}</FileLink> : href && SAFE_LINK.test(href) ? (
       <a href={href} target="_blank" rel="noreferrer noopener" title={href}>
         {children}
       </a>
@@ -168,6 +184,7 @@ export function Markdown({ text, anchors, breaks, listItemReplies = true }: { te
   return (
     <div className={anchors && listItemReplies ? 'md with-anchors' : 'md'}>
       <ReactMarkdown
+        urlTransform={(url) => fileLink(url) ? url : defaultUrlTransform(url)}
         remarkPlugins={[
           remarkGfm,
           ...(breaks ? [remarkBreaks] : []),

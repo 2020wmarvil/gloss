@@ -122,6 +122,8 @@ export type GlossEvent =
   | { type: 'settings'; state: SettingsState }
 
 export type GlossApi = {
+  /** Opens an absolute local Markdown file link in the editor, or reveals it without an editor. */
+  openFileLink(href: string): Promise<void>
   search(request: SearchRequest): Promise<SearchResponse>
   agents: {
     list(): Promise<AgentInfo[]>
@@ -239,6 +241,7 @@ export type GlossApi = {
 }
 
 export const IPC = {
+  openFileLink: 'gloss:openFileLink',
   settingsPreviewMcpImport: 'gloss:settings:previewMcpImport',
   search: 'gloss:search',
   agentsList: 'gloss:agents:list',
