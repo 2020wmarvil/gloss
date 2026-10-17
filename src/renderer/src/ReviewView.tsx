@@ -511,44 +511,40 @@ function DiffSelectionPopover(props: {
   const [menu, setMenu] = useState<{ anchor: LineAnchor; x: number; y: number } | null>(null)
   const frame = useRef(0)
 
-  const compute = useCallback(() => {
+  /** The lines the selection anchors to; `side` overrides the side it started on. */
+  const selected = useCallback((sideOf?: Side): Selected | null => {
     const s = window.getSelection()
-    if (!s || s.isCollapsed || s.rangeCount === 0) return setCurrent(null)
+    if (!s || s.isCollapsed || s.rangeCount === 0) return null
     const range = s.getRangeAt(0)
     const element = (n: Node): Element | null => (n instanceof Element ? n : n.parentElement)
     const section = element(range.startContainer)?.closest<HTMLElement>('.diff-file[data-file]')
-    if (!section || !scope.current?.contains(section) || element(range.endContainer)?.closest('.diff-file') !== section) {
-      return setCurrent(null)
-    }
+    if (!section || !scope.current?.contains(section) || element(range.endContainer)?.closest('.diff-file') !== section) return null
     const file = diff.files.find((f) => f.path === section.dataset.file)
     const body = section.querySelector<HTMLElement>('.diff-body')
-    if (!file || !body) return setCurrent(null)
+    if (!file || !body) return null
     const cells = [...body.querySelectorAll<HTMLElement>('.code[data-line]')].filter((c) => range.intersectsNode(c))
     // In split view the selection stays on the side it started on; in unified view a
     // selection over removed and added lines is on the new side.
     const side: Side =
-      layout === 'split'
+      sideOf ??
+      (layout === 'split'
         ? ((body.dataset.sel as Side | undefined) ?? (cells[0]?.dataset.side as Side | undefined) ?? 'new')
         : cells.some((c) => c.dataset.side === 'new')
           ? 'new'
-          : 'old'
+          : 'old')
     const numbers = new Set(cells.filter((c) => c.dataset.side === side).map((c) => Number(c.dataset.line)))
     const text = s.toString().split(EMPTY_LINE).join('').trim()
-    if (numbers.size === 0 || !text) return setCurrent(null)
+    if (numbers.size === 0 || !text) return null
     const start = Math.min(...numbers)
     const end = Math.max(...numbers)
     // Lines still hidden between two shown parts aren't selected.
-    if (numbers.size !== end - start + 1) return setCurrent(null)
+    if (numbers.size !== end - start + 1) return null
     const lines = linesOf(file, side, start, end, sources[file.path])
-    if (!lines) return setCurrent(null)
+    if (!lines) return null
     const rect = range.getBoundingClientRect()
-    setCurrent({
-      anchor: { kind: 'line', file: file.path, side, start, end, text, lines },
-      top: rect.top,
-      left: rect.left,
-      bottom: rect.bottom
-    })
+    return { anchor: { kind: 'line', file: file.path, side, start, end, text, lines }, top: rect.top, left: rect.left, bottom: rect.bottom }
   }, [scope, diff, sources, layout])
+  const compute = useCallback(() => setCurrent(selected()), [selected])
 
   useEffect(() => {
     const schedule = (): void => {
@@ -566,21 +562,39 @@ function DiffSelectionPopover(props: {
     }
   }, [compute])
 
-  // Right-clicking the selection opens the menu; right-clicking elsewhere does nothing.
+  // Right-clicking the selection opens the menu on it; right-clicking a line of code
+  // outside it selects that line first.
   useEffect(() => {
     const onMenu = (e: MouseEvent): void => {
       const s = window.getSelection()
-      if (!current || !s || s.rangeCount === 0) return
-      const inside = [...s.getRangeAt(0).getClientRects()].some(
-        (r) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
-      )
-      if (!inside) return
+      if (!s) return
+      const inside =
+        current !== null &&
+        s.rangeCount > 0 &&
+        [...s.getRangeAt(0).getClientRects()].some(
+          (r) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+        )
+      if (inside) {
+        e.preventDefault()
+        setMenu({ anchor: current.anchor, x: e.clientX, y: e.clientY })
+        return
+      }
+      const cell = (e.target as HTMLElement).closest<HTMLElement>('.code[data-line]')
+      if (!cell || !scope.current?.contains(cell)) return
+      const range = document.createRange()
+      range.selectNodeContents(cell.querySelector('.w') ?? cell)
+      s.removeAllRanges()
+      s.addRange(range)
+      // A blank line has nothing to quote.
+      const line = selected(cell.dataset.side as Side)
+      if (!line) return s.removeAllRanges()
       e.preventDefault()
-      setMenu({ anchor: current.anchor, x: e.clientX, y: e.clientY })
+      setCurrent(line)
+      setMenu({ anchor: line.anchor, x: e.clientX, y: e.clientY })
     }
     document.addEventListener('contextmenu', onMenu)
     return () => document.removeEventListener('contextmenu', onMenu)
-  }, [current])
+  }, [current, scope, selected])
 
   // Clicks elsewhere, scrolling and Escape close the menu.
   useEffect(() => {
