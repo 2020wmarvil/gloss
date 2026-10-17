@@ -116,3 +116,25 @@ describe('effort picker', () => {
     expect(onSetChoice).toHaveBeenCalledWith('effort', 'high')
   })
 })
+
+
+describe('Obsidian shortcut', () => {
+  it('appears beside the folder and reports launch failures', async () => {
+    mount(async () => null, { obsidianVault: 'Project notes' })
+    const openObsidian = vi.fn().mockRejectedValue(new Error('Obsidian is not installed'))
+    window.gloss.sessions.openObsidian = openObsidian
+    const button = document.querySelector<HTMLButtonElement>('[aria-label="Open Obsidian vault"]')!
+    expect(button.previousElementSibling?.textContent).toBe('project')
+    await act(async () => button.click())
+    expect(openObsidian).toHaveBeenCalledWith('s1')
+    expect(document.body.textContent).toContain("Couldn't open Obsidian: Obsidian is not installed")
+    act(() => root!.render(<StatusLine {...props} />))
+    expect(document.querySelector('[aria-label="Open Obsidian vault"]')).toBeNull()
+    expect(document.body.textContent).not.toContain("Couldn't open Obsidian")
+  })
+
+  it('hides the shortcut when the setting is blank', () => {
+    mount(async () => null, { obsidianVault: '   ' })
+    expect(document.querySelector('[aria-label="Open Obsidian vault"]')).toBeNull()
+  })
+})

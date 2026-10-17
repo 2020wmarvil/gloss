@@ -169,7 +169,11 @@ const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   // The commit a review compares with its base; null for the working tree.
   `
   ALTER TABLE sessions ADD COLUMN review_head TEXT;
-  `
+  `,
+  // Retain migration 14 for databases that ran the removed handoff feature.
+  (db) => {
+    if (!db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'handoff')) db.exec('ALTER TABLE sessions ADD COLUMN handoff TEXT')
+  }
 ]
 
 type Row = Record<string, unknown>

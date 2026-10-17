@@ -27,6 +27,7 @@ type Props = {
   live: SessionLive
   git: GitStatus | null
   pr: PullRequest | null
+  obsidianVault?: string
   queue: MessageQueue
   onResumeQueue(): void
   onSetChoice(kind: 'model' | 'effort', value: string): Promise<void>
@@ -471,6 +472,7 @@ export function ReviewView(props: Props): React.JSX.Element {
         </div>
       </div>
       <StatusLine
+        obsidianVault={props.obsidianVault}
         session={open.session}
         live={props.live}
         git={props.git}

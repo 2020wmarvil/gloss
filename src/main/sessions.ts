@@ -1282,7 +1282,7 @@ export class SessionManager {
   // Turns
 
   /**
-   * Sends a message, or queues it if a turn is running (SPEC → Queue). Resolves
+   * Sends a message, steers its active turn when supported, or queues for another thread (SPEC → Queue). Resolves
    * when the turn ends, or right away with `queued`. `fromThread`: a main-thread
    * message sent from that thread's composer (SPEC → Send to main).
    */
@@ -1305,6 +1305,9 @@ export class SessionManager {
     }
     const rt = this.runtime(sessionId)
     if (rt.turn) {
+      if (rt.turn.threadId === threadId && rt.live.steering) {
+        return this.steer(sessionId, text, threadId, attachments, fromThread)
+      }
       this.setQueue(sessionId, {
         ...rt.queue,
         items: [
@@ -1327,14 +1330,15 @@ export class SessionManager {
     sessionId: string,
     text: string,
     threadId: string | null,
-    attachments: Attachment[] = []
+    attachments: Attachment[] = [],
+    fromThread: string | null = null
   ): Promise<TurnResult> {
     this.session(sessionId)
-    if (isClear(text, attachments)) return this.send(sessionId, text, threadId, attachments)
-    const wire = this.wire(sessionId, text, threadId)
+    if (isClear(text, attachments)) return this.send(sessionId, text, threadId, attachments, fromThread)
+    const wire = this.wire(sessionId, text, threadId, fromThread)
     const rt = this.runtime(sessionId)
     const turn = rt.turn
-    if (!turn) return this.runTurn(sessionId, text, threadId, attachments)
+    if (!turn) return this.runTurn(sessionId, text, threadId, attachments, fromThread)
     if (turn.threadId !== threadId) {
       throw new Error('Only the thread the agent is working in can be steered. Queue the message instead.')
     }
@@ -1345,7 +1349,7 @@ export class SessionManager {
       // Nothing reached the agent: send it next.
       this.setQueue(sessionId, {
         ...rt.queue,
-        items: [{ id: randomUUID(), threadId, text, attachments }, ...rt.queue.items]
+        items: [{ id: randomUUID(), threadId, text, attachments, ...(fromThread !== null ? { fromThread } : {}) }, ...rt.queue.items]
       })
       this.drain(sessionId)
       return { queued: true }

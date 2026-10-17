@@ -31,7 +31,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
   {
     title: 'Composer',
     shortcuts: [
-      { keys: [['Enter']], action: 'Send, or queue while a turn runs (inside a ``` code block, a new line)' },
+      { keys: [['Enter']], action: 'Send: steer the active thread, or queue for another thread (inside a ``` code block, a new line)' },
       { keys: [['Shift', 'Enter']], action: 'New line; in a list, the next item (on an empty item, end the list)' },
       { keys: [['Backspace']], action: 'Right after a list marker or ">", remove it' },
       { keys: [['Tab'], ['Shift', 'Tab']], action: 'In a list, indent or outdent the item' },
@@ -40,7 +40,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: [['Mod', 'E']], action: 'Inline code' },
       { keys: [['Mod', 'K']], action: 'Link (pasting a URL over selected text also makes a link)' },
       { keys: [['Mod', 'Z'], ['Mod', 'Shift', 'Z']], action: 'Undo, redo' },
-      { keys: [['Mod', 'Enter']], action: 'Steer: send into the running turn now (agents that support it)' },
+      { keys: [['Mod', 'Enter']], action: 'Send, including inside a code block (steers the active thread when supported)' },
       { keys: [['/']], action: 'At the start, list the slash commands' },
       { keys: [['↑'], ['↓']], action: 'Move through the slash commands' },
       { keys: [['Tab'], ['Enter']], action: 'Complete the slash command (Enter on an exact match sends it)' },

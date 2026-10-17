@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { SettingsPatch, SettingsState } from '@shared/ipc'
-import { SETTING_FIELDS, type GlobalSettings, type SettingField } from '@shared/settings'
+import { SETTING_FIELDS, projectSettings, type ProjectSettings, type GlobalSettings, type SettingField } from '@shared/settings'
 import { errorText } from './errors'
 import { modKey, SHORTCUTS } from './shortcuts'
 import { McpSettings } from './McpSettings'
@@ -84,7 +84,11 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
           {projectPath ? (
             <>
               <p className="mono">{projectPath}</p>
-              {projectFields.length === 0 && <p className="muted">No project settings yet.</p>}
+              {projectFields.map((f) => (
+                <Field key={`${projectPath}:${f.key}`} field={f}
+                  value={projectSettings(state.projects, projectPath)[f.key as keyof ProjectSettings]}
+                  onChange={(value) => void update({ project: { path: projectPath, values: { [f.key]: value } } })} />
+              ))}
             </>
           ) : (
             <p className="muted">Open a session to see its project&apos;s settings.</p>

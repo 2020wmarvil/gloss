@@ -3,7 +3,7 @@ import { SearchDialog } from './SearchDialog'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GitStatus, GlossEvent, PullRequest, SettingsPatch, SettingsState } from '@shared/ipc'
 import { sameFolder } from '@shared/paths'
-import type { GlobalSettings } from '@shared/settings'
+import { projectSettings, type GlobalSettings } from '@shared/settings'
 import type {
   AgentInfo,
   AgentSession,
@@ -1032,6 +1032,7 @@ export function App(): React.JSX.Element {
         />
       ) : open && isReview ? (
         <ReviewView
+          obsidianVault={settings ? projectSettings(settings.projects, open.session.cwd).obsidianVault : undefined}
           key={open.session.id}
           open={open}
           agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
@@ -1066,6 +1067,7 @@ export function App(): React.JSX.Element {
         />
       ) : open ? (
         <Conversation
+          obsidianVault={settings ? projectSettings(settings.projects, open.session.cwd).obsidianVault : undefined}
           key={open.session.id}
           open={open}
           listItemReplies={settings?.global.listItemReplies ?? false}

@@ -34,6 +34,7 @@ describe('Store', () => {
     store.close()
 
     const db = new DatabaseSync(path)
+    db.exec('ALTER TABLE sessions DROP COLUMN handoff')
     if (branch === 'dev') {
       db.exec(`
         ALTER TABLE sessions DROP COLUMN review_base;
@@ -75,7 +76,7 @@ describe('Store', () => {
     } finally { store.close() }
     const migrated = new DatabaseSync(path)
     try {
-      expect(migrated.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 13 })
+      expect(migrated.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 14 })
       expect(migrated.prepare('PRAGMA foreign_key_check').all()).toEqual([])
       if (branch === 'dev') expect(migrated.prepare('SELECT handoff FROM sessions').get()).toMatchObject({ handoff: 'existing handoff' })
     } finally { migrated.close() }

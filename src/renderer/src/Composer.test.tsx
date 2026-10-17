@@ -15,6 +15,7 @@ function mount(
   draftKey: string,
   opts: {
     onSend?: (text: string) => void
+    onSteer?: (text: string) => void
     commands?: SlashCommand[]
     running?: boolean
     onCancel?: () => void
@@ -38,6 +39,7 @@ function mount(
           items: (opts.queued ?? []).map((text, i) => ({ id: `q${i}`, threadId: null, text, attachments: [] })),
           paused: false, onEdit: async () => {}, onRemove: async () => {}, onResume: async () => {} }}
         onSend={opts.onSend ?? (() => {})}
+        onSteer={opts.onSteer}
         onCancel={opts.onCancel}
         history={opts.history}
       />
@@ -276,5 +278,31 @@ describe('Composer queue', () => {
   it('lists the next message to run at the bottom, by the composer', () => {
     mount('s4', { running: true, queued: ['first', 'second'] })
     expect([...document.querySelectorAll('.queued-text')].map((t) => t.textContent)).toEqual(['second', 'first'])
+  })
+})
+
+
+describe('automatic steering', () => {
+  it.each(['Enter', 'button', 'Ctrl+Enter'])('steers the active thread using %s', (how) => {
+    const onSend = vi.fn()
+    const onSteer = vi.fn()
+    const view = mount(`auto-${how}`, { running: true, onSend, onSteer })
+    type(view, 'use the helper')
+    expect(document.querySelector('.send')!.textContent).toBe('Send')
+    expect(document.querySelector('button.steer')).toBeNull()
+    if (how === 'button') act(() => document.querySelector<HTMLButtonElement>('.send')!.click())
+    else press(view, 'Enter', { ctrlKey: how === 'Ctrl+Enter' })
+    expect(onSteer).toHaveBeenCalledWith('use the helper', [])
+    expect(onSend).not.toHaveBeenCalled()
+    expect(text(view)).toBe('')
+  })
+
+  it('queues when this composer cannot steer the active turn', () => {
+    const onSend = vi.fn()
+    const view = mount('other-thread', { running: true, onSend })
+    type(view, 'another task')
+    expect(document.querySelector('.send')!.textContent).toBe('Queue')
+    press(view, 'Enter')
+    expect(onSend).toHaveBeenCalledWith('another task', [])
   })
 })

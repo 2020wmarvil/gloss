@@ -730,7 +730,7 @@ describe('SessionManager', () => {
         expect(manager.openSession(session.id).messages.some((m) => m.text === 'working')).toBe(true)
       )
 
-      await expect(manager.steer(session.id, 'skip the tests', null)).resolves.toEqual({ steered: true })
+      await expect(manager.send(session.id, 'skip the tests', null)).resolves.toEqual({ steered: true })
       await expect(running).resolves.toEqual({ stopReason: 'end_turn' })
 
       expect(state.prompts).toEqual(['build it'])
@@ -758,11 +758,16 @@ describe('SessionManager', () => {
       const anchor = manager.openSession(session.id).messages.find((m) => m.role === 'agent')!
       const thread = manager.createThread(session.id, anchor.id, { kind: 'listItem', path: [0], text: 'Item' })
       steerableTurn()
+      const activeScript = state.script
+      state.script = async (turn) => turn.text.endsWith('queued follow-up') ? 'end_turn' : activeScript(turn)
 
       const running = manager.send(session.id, 'fix it', thread.id)
       await vi.waitFor(() => expect(state.prompts).toHaveLength(2))
       await expect(manager.steer(session.id, 'not that way', null)).rejects.toThrow(/thread the agent is working in/)
-      await expect(manager.steer(session.id, 'smaller', thread.id)).resolves.toEqual({ steered: true })
+      await expect(manager.send(session.id, 'queued follow-up', null)).resolves.toEqual({ queued: true })
+      expect(manager.openSession(session.id).queue.items.map((q) => [q.text, q.threadId])).toEqual([['queued follow-up', null]])
+      expect(state.steers).toHaveLength(0)
+      await expect(manager.send(session.id, 'smaller', thread.id)).resolves.toEqual({ steered: true })
       await running
 
       expect(state.steers).toEqual([[{ type: 'text', text: '[re: "Item"]\nsmaller' }]])
