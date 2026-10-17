@@ -32,8 +32,11 @@ export function logItems(open: OpenSession, notices: Notice[], threadId: string 
   ].sort((a, b) => a.seq - b.seq)
 }
 
-/** A message to scroll to and highlight; `key` repeats it for the same message. */
-export type Reveal = { messageId: string; key: number }
+/**
+ * A message to scroll to and highlight; `key` repeats it for the same message.
+ * With `threadId`, the thread's anchor inside it is the target where it's found.
+ */
+export type Reveal = { messageId: string; threadId?: string | null; key: number }
 
 type Props = {
   items: LogItem[]
@@ -56,8 +59,12 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
 
   // After the stick-to-bottom scroll above, so it wins.
   useLayoutEffect(() => {
-    const target = reveal && ref.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(reveal.messageId)}"]`)
-    if (!target) return
+    const message = reveal && ref.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(reveal.messageId)}"]`)
+    if (!message) return
+    const target =
+      (reveal.threadId && message.querySelector<HTMLElement>(`[data-thread="${CSS.escape(reveal.threadId)}"]`)) ||
+      (reveal.threadId !== undefined && message.querySelector<HTMLElement>('.anchor-item.active')) ||
+      message
     stickToBottom.current = false
     target.scrollIntoView?.({ block: 'center' })
     target.classList.remove('revealed')

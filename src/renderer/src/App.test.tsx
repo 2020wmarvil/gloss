@@ -305,3 +305,38 @@ it('opens search anywhere and reveals matches in another session, its thread, or
     if (index === 2) expect(el.querySelector('[aria-label="Thread"]')).toBeNull()
   }
 })
+
+it("finds a thread's anchor in the main conversation from the thread panel", async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
+  const session = { id: 's', title: 's', cwd: '/project', agentId: 'claude', createdAt: 1 }
+  window.gloss = {
+    history: async () => [],
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
+    projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
+    sessions: {
+      list: async () => [session],
+      refresh: async () => {},
+      open: async () => ({
+        session, toolCalls: [], plans: [],
+        messages: [{ id: 'm', sessionId: 's', seq: 1, role: 'agent', text: 'Hello world', threadId: null }],
+        threads: [{ id: 't1', sessionId: 's', anchorMessageId: 'm', anchor: { kind: 'selection', start: 6, end: 11, text: 'world' }, createdAt: 1 }],
+        turn: null,
+        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], permissions: null, accepts: { image: false, file: false }, steering: false },
+        queue: { items: [], paused: false }
+      })
+    },
+    git: { status: async () => null, pullRequest: async () => null },
+    onEvent: () => () => {}
+  } as unknown as typeof window.gloss
+  const el = document.createElement('div')
+  document.body.replaceChildren(el)
+  root = createRoot(el)
+  await act(async () => root!.render(<App />))
+
+  await act(async () => (el.querySelector('.log .anchored[data-thread="t1"]') as HTMLElement).click())
+  const find = el.querySelector<HTMLButtonElement>('.thread-panel .find-in-main')!
+  expect(find.getAttribute('aria-label')).toBe('Find in main session')
+  await act(async () => find.click())
+  expect(el.querySelector('.log .anchored[data-thread="t1"]')!.className).toContain('revealed')
+})

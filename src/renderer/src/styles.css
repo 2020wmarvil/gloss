@@ -2168,12 +2168,27 @@ a.status-item {
   color: var(--ink);
 }
 
+.header-button.icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  padding: 0;
+}
+
 .conversation header .popover-anchor {
   margin-left: auto;
 }
 
 .thread-panel header .popover-anchor {
   margin-left: auto;
+}
+
+.thread-panel header .find-in-main {
+  margin-left: auto;
+}
+
+.thread-panel header .find-in-main + .popover-anchor {
+  margin-left: 0;
 }
 
 .thread-panel header .popover-anchor + .close {
