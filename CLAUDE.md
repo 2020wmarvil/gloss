@@ -108,3 +108,7 @@ There is no dev model setting. When testing against a live agent, pick Haiku you
 - `git symbolic-ref --short refs/remotes/origin/HEAD` prints `origin/main`, and fails without a remote HEAD.
 - Live, Haiku 5.5 (through the Claude adapter) followed the first-pass format: a summary, then a valid `gloss-findings` block with correct line numbers, and fixed a finding in its thread when asked, which marked it outdated.
 - When driving the built app over CDP from Git Bash, pass paths with forward slashes: backslashes in `node -e`/argv strings get eaten by the shell.
+
+## Verified external APIs (editor focus)
+- On Windows a running editor handed a file (`code -g`, through `cmd.exe`) stays behind Gloss: Windows' foreground lock refuses it while the user is using Gloss. Gloss, in front, calls `AllowSetForegroundWindow(ASFW_ANY)` before launching it (`src/main/foreground.ts`), through `koffi@3.3.3` (MIT, N-API, so no `electron-rebuild`). Checked with real input (a `keybd_event` keystroke; CDP input doesn't count): without the call VS Code stayed behind in 4 of 4 runs, with it it came forward in 6 of 7 and in the built app.
+- koffi's binaries come from `@koromix/koffi-<platform>` optional dependencies (`win32_x64/koffi.node`); its `install` script (`cnoke --prebuild`) isn't needed and npm leaves it unapproved. It stays external to the main bundle, loaded with `await import('koffi')` only on Windows.

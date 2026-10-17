@@ -25,11 +25,12 @@ import { truncate } from '@shared/wire'
 import type { ListItemSpan } from './anchors'
 import { GeneralPanel, ReviewThreadList } from './ReviewPanels'
 import { locations as threadLocations } from './reviewThreads'
+import { useReviewSources } from './reviewSources'
 import { hideFileList, ReviewView, type DiffState } from './ReviewView'
 import { FOCUS_COMPOSER, FOCUS_MAIN_COMPOSER, type ComposerQueue } from './Composer'
 import { errorText } from './errors'
 import { Conversation, type StripThread } from './Conversation'
-import type { Notice } from './Log'
+import type { Notice, Reveal } from './Log'
 import { Sidebar, SidebarRail, type ListedAgentSession } from './Sidebar'
 import type { SourceSelection } from './SelectionPopover'
 import { SettingsScreen } from './SettingsScreen'
@@ -89,6 +90,7 @@ function agentSessionsKey(path: string, id: string): string {
 }
 
 const NO_QUEUE: MessageQueue = { items: [], paused: false }
+const NO_THREADS: Thread[] = []
 
 /** Most recent activity first, as the main process lists them. */
 function byActivity(list: Session[]): Session[] {
@@ -172,7 +174,7 @@ export function App(): React.JSX.Element {
   /** Session id → its side panel's thread, while another session is open (not kept across restarts). */
   const panels = useRef(new Map<string, Panel | null>())
   /** A message to scroll to and highlight, in whichever log shows it. */
-  const [reveal, setReveal] = useState<{ messageId: string; key: number } | null>(null)
+  const [reveal, setReveal] = useState<Reveal | null>(null)
   /** The side panel is expanded. It starts collapsed on every launch. */
   const [sideOpen, setSideOpen] = useState(false)
   /** The overview's tab: the threads, or the queue. */
@@ -800,6 +802,11 @@ export function App(): React.JSX.Element {
     setReveal({ messageId: message.id, key: Date.now() })
   }
 
+  /** Scrolls the main conversation to a thread's anchor and highlights it. */
+  function findInMain(p: Panel): void {
+    if (p.anchorMessageId !== null) setReveal({ messageId: p.anchorMessageId, threadId: p.threadId, key: Date.now() })
+  }
+
   // The highlight fades; a log shown later mustn't scroll to it again.
   useEffect(() => {
     if (!reveal) return
@@ -956,7 +963,11 @@ export function App(): React.JSX.Element {
   const diffState: DiffState =
     reviewDiff && reviewDiff.sessionId === sessionId ? reviewDiff : { diff: null, error: null }
   const openThreads = open?.threads
-  const lineLocations = useMemo(() => threadLocations(openThreads ?? [], diffState.diff), [openThreads, diffState.diff])
+  const reviewSources = useReviewSources(isReview ? (sessionId ?? null) : null, open?.session.review, diffState.diff, openThreads ?? NO_THREADS)
+  const lineLocations = useMemo(
+    () => threadLocations(openThreads ?? [], diffState.diff, reviewSources.sources),
+    [openThreads, diffState.diff, reviewSources.sources]
+  )
   const live = (sessionId && lives[sessionId]) || NO_LIVE
   const queue = (sessionId && queues[sessionId]) || NO_QUEUE
   /** Part of the session's queue (one thread's messages) with the queue's actions, for a composer. */
@@ -1040,6 +1051,8 @@ export function App(): React.JSX.Element {
           agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
           diff={diffState}
           locations={lineLocations}
+          sources={reviewSources.sources}
+          onReadSource={reviewSources.read}
           panel={shownPanel}
           runningThread={runningThread}
           live={live}
@@ -1186,6 +1199,12 @@ export function App(): React.JSX.Element {
               onClose={collapseSide}
               onCopyMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'copy')}
               onSaveMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'save')}
+              // A review's conversation is in the General panel, which this panel replaces.
+              onFindInMain={
+                panel.anchorMessageId !== null && !isReview
+                  ? () => findInMain(panel)
+                  : undefined
+              }
             />
           ) : (
             <ThreadsOverview

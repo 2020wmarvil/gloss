@@ -25,11 +25,14 @@ export function titleOf(t: LineThread, messages: Message[]): string {
   return first ? truncate(first.text, 90) : lineLabel(t.anchor)
 }
 
-/** Where each line thread is in the diff now; every thread is `gone` without a diff. */
-export function locations(threads: Thread[], diff: ReviewDiff | null): Map<string, Location> {
+/**
+ * Where each line thread is in the diff now, and in the unchanged lines around it for
+ * the files read (`sources`); every thread is `gone` without a diff.
+ */
+export function locations(threads: Thread[], diff: ReviewDiff | null, sources: Record<string, string[] | null> = {}): Map<string, Location> {
   const out = new Map<string, Location>()
   for (const t of threads) {
-    if (isLineThread(t)) out.set(t.id, diff ? locate(t.anchor, diff.files) : { kind: 'gone' })
+    if (isLineThread(t)) out.set(t.id, diff ? locate(t.anchor, diff.files, sources) : { kind: 'gone' })
   }
   return out
 }

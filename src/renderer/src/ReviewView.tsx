@@ -2,11 +2,12 @@
 // threads on its lines. The general conversation lives in the side panel.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { GitStatus, PullRequest } from '@shared/ipc'
-import { LARGE_FILE_LINES, linesOf, type LineAnchor, type Location, type ReviewDiff, type ReviewRange, type ReviewRefs, type Side } from '@shared/review'
+import { expandable, gapsOf, LARGE_FILE_LINES, linesOf, newLineOf, type LineAnchor, type Location, type ReviewDiff, type ReviewRange, type ReviewRefs, type Side } from '@shared/review'
 import type { MessageQueue, SessionLive } from '@shared/types'
 import type { OpenSession, Panel } from './App'
 import { DiffView, EMPTY_LINE, cardOpen, firstLine, REVEAL_LABEL, type Card, type Layout } from './DiffView'
-import { expand, NO_EXPANSION, type Expansion } from './diffContext'
+import { expand, NO_EXPANSION, revealing, type Expansion } from './diffContext'
+import type { Sources } from './reviewSources'
 import { RangePicker } from './RangePicker'
 import { inDiffOrder, isLineThread, kindOf, titleOf } from './reviewThreads'
 import { StatusLine } from './StatusLine'
@@ -20,6 +21,10 @@ type Props = {
   agentName: string
   diff: DiffState
   locations: Map<string, Location>
+  /** The diff's files at the reviewed commit, by path, once read for the lines around their hunks; null if they can't be. */
+  sources: Sources
+  /** Reads a file of the diff for the lines around its hunks. */
+  onReadSource(path: string): void
   /** The side panel's thread while it is expanded. */
   panel: Panel | null
   /** threadId of the running turn; undefined when idle. */
@@ -100,7 +105,7 @@ export function hideFileList(): void {
 const SPLIT_MIN_WIDTH = 640
 
 export function ReviewView(props: Props): React.JSX.Element {
-  const { open, diff, locations, panel } = props
+  const { open, diff, locations, panel, sources, onReadSource } = props
   const files = diff.diff?.files ?? []
   const [layout, setLayout] = useStored<Layout>('gloss.review.layout', 'split', ['split', 'unified'])
   const [tree, setTree] = useStored(TREE_KEY, 'shown', ['shown', 'hidden'])
@@ -108,9 +113,6 @@ export function ReviewView(props: Props): React.JSX.Element {
   const [toggled, setToggled] = useState(() => new Set<string>())
   const [toggledFiles, setToggledFiles] = useState(() => new Set<string>())
   const [expansions, setExpansions] = useState<Record<string, Expansion>>({})
-  const [sources, setSources] = useState<Record<string, string[] | null>>({})
-  /** Paths whose file is read, or being read, for the lines around their hunks. */
-  const reading = useRef(new Set<string>())
   const [narrow, setNarrow] = useState(false)
   const [current, setCurrent] = useState<string | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
@@ -129,26 +131,10 @@ export function ReviewView(props: Props): React.JSX.Element {
   }, [diff.diff !== null])
 
   const sessionId = open.session.id
-  const readSource = useCallback(
-    (path: string) => {
-      reading.current.add(path)
-      window.gloss.sessions
-        .reviewFile(sessionId, path)
-        .catch(() => null)
-        .then((lines) => setSources((s) => ({ ...s, [path]: lines })))
-    },
-    [sessionId]
-  )
-  // Files shown beyond their hunks follow the diff as it is re-read.
-  useEffect(() => {
-    for (const path of reading.current) readSource(path)
-  }, [diff.diff, readSource])
   // Another range is another diff: nothing shown beyond its hunks yet.
   const review = open.session.review
   const rangeKey = review ? `${review.baseRef}\0${review.headRef ?? ''}` : ''
   useEffect(() => {
-    reading.current.clear()
-    setSources({})
     setExpansions({})
   }, [rangeKey])
 
@@ -182,9 +168,9 @@ export function ReviewView(props: Props): React.JSX.Element {
   const onExpand = useCallback(
     (path: string, how: Parameters<typeof expand>[1]) => {
       setExpansions((e) => ({ ...e, [path]: expand(e[path] ?? NO_EXPANSION, how) }))
-      if (!reading.current.has(path)) readSource(path)
+      if (sources[path] === undefined) onReadSource(path)
     },
-    [readSource]
+    [sources, onReadSource]
   )
 
   /** Whether a file is collapsed: large ones start collapsed, and a click flips it. */
@@ -211,6 +197,14 @@ export function ReviewView(props: Props): React.JSX.Element {
     }
   })
   const openThreads = ordered.filter((t) => t.resolvedAt === undefined)
+  // The lines threads are at stay shown when they are outside the hunks.
+  const shownExpansions: Record<string, Expansion> = { ...expansions }
+  for (const f of files) {
+    const source = sources[f.path]
+    const gaps = source && expandable(f) ? gapsOf(f.hunks) : null
+    const at = cards.filter((c) => c.thread.anchor.file === f.path).map((c) => ({ side: c.thread.anchor.side, location: c.location }))
+    if (gaps && source && at.length > 0) shownExpansions[f.path] = revealing(expansions[f.path] ?? NO_EXPANSION, gaps, source.length, at)
+  }
   const activeThread = panel?.threadId ? open.threads.find((t) => t.id === panel.threadId) : undefined
   const activeAt = activeThread ? locations.get(activeThread.id) : undefined
   const active =
@@ -461,7 +455,7 @@ export function ReviewView(props: Props): React.JSX.Element {
               toggled={toggled}
               toggledFiles={toggledFiles}
               sources={sources}
-              expansions={expansions}
+              expansions={shownExpansions}
               onToggleFile={(path) => setToggledFiles((s) => toggle(s, path))}
               onExpand={onExpand}
               onOpenFile={props.onOpenFile}
@@ -483,60 +477,74 @@ export function ReviewView(props: Props): React.JSX.Element {
         onSetChoice={props.onSetChoice}
         onCommand={props.onCommand}
       />
-      {diff.diff && <DiffSelectionPopover scope={scroller} diff={diff.diff} layout={shownLayout} onReply={props.onReplyLines} />}
+      {diff.diff && (
+        <DiffSelectionPopover
+          scope={scroller}
+          diff={diff.diff}
+          sources={sources}
+          layout={shownLayout}
+          onReply={props.onReplyLines}
+          onOpenFile={props.onOpenFile}
+        />
+      )}
     </main>
   )
 }
 
 type Selected = { anchor: LineAnchor; top: number; left: number; bottom: number }
 
-/** "Reply to selection" for code selected in the diff (SPEC → Review sessions → Line anchors). */
+/**
+ * "Reply to selection" for code selected in the diff (SPEC → Review sessions → Line
+ * anchors), and a menu on right-clicking it that also opens its lines in the editor.
+ */
 function DiffSelectionPopover(props: {
   scope: React.RefObject<HTMLDivElement | null>
   diff: ReviewDiff
+  sources: Sources
   layout: Layout
   onReply(anchor: LineAnchor): void
+  onOpenFile(path: string, how: 'editor', line: number): void
 }): React.JSX.Element | null {
-  const { scope, diff, layout, onReply } = props
+  const { scope, diff, sources, layout, onReply, onOpenFile } = props
   const [current, setCurrent] = useState<Selected | null>(null)
+  /** The context menu on a selection: its lines, and where it opened. */
+  const [menu, setMenu] = useState<{ anchor: LineAnchor; x: number; y: number } | null>(null)
   const frame = useRef(0)
 
-  const compute = useCallback(() => {
+  /** The lines the selection anchors to; `side` overrides the side it started on. */
+  const selected = useCallback((sideOf?: Side): Selected | null => {
     const s = window.getSelection()
-    if (!s || s.isCollapsed || s.rangeCount === 0) return setCurrent(null)
+    if (!s || s.isCollapsed || s.rangeCount === 0) return null
     const range = s.getRangeAt(0)
     const element = (n: Node): Element | null => (n instanceof Element ? n : n.parentElement)
     const section = element(range.startContainer)?.closest<HTMLElement>('.diff-file[data-file]')
-    if (!section || !scope.current?.contains(section) || element(range.endContainer)?.closest('.diff-file') !== section) {
-      return setCurrent(null)
-    }
+    if (!section || !scope.current?.contains(section) || element(range.endContainer)?.closest('.diff-file') !== section) return null
     const file = diff.files.find((f) => f.path === section.dataset.file)
     const body = section.querySelector<HTMLElement>('.diff-body')
-    if (!file || !body) return setCurrent(null)
+    if (!file || !body) return null
     const cells = [...body.querySelectorAll<HTMLElement>('.code[data-line]')].filter((c) => range.intersectsNode(c))
     // In split view the selection stays on the side it started on; in unified view a
     // selection over removed and added lines is on the new side.
     const side: Side =
-      layout === 'split'
+      sideOf ??
+      (layout === 'split'
         ? ((body.dataset.sel as Side | undefined) ?? (cells[0]?.dataset.side as Side | undefined) ?? 'new')
         : cells.some((c) => c.dataset.side === 'new')
           ? 'new'
-          : 'old'
-    const numbers = cells.filter((c) => c.dataset.side === side).map((c) => Number(c.dataset.line))
+          : 'old')
+    const numbers = new Set(cells.filter((c) => c.dataset.side === side).map((c) => Number(c.dataset.line)))
     const text = s.toString().split(EMPTY_LINE).join('').trim()
-    if (numbers.length === 0 || !text) return setCurrent(null)
+    if (numbers.size === 0 || !text) return null
     const start = Math.min(...numbers)
     const end = Math.max(...numbers)
-    const lines = linesOf(file, side, start, end)
-    if (!lines) return setCurrent(null)
+    // Lines still hidden between two shown parts aren't selected.
+    if (numbers.size !== end - start + 1) return null
+    const lines = linesOf(file, side, start, end, sources[file.path])
+    if (!lines) return null
     const rect = range.getBoundingClientRect()
-    setCurrent({
-      anchor: { kind: 'line', file: file.path, side, start, end, text, lines },
-      top: rect.top,
-      left: rect.left,
-      bottom: rect.bottom
-    })
-  }, [scope, diff, layout])
+    return { anchor: { kind: 'line', file: file.path, side, start, end, text, lines }, top: rect.top, left: rect.left, bottom: rect.bottom }
+  }, [scope, diff, sources, layout])
+  const compute = useCallback(() => setCurrent(selected()), [selected])
 
   useEffect(() => {
     const schedule = (): void => {
@@ -554,12 +562,68 @@ function DiffSelectionPopover(props: {
     }
   }, [compute])
 
-  const reply = useCallback(() => {
-    if (!current) return
-    window.getSelection()?.removeAllRanges()
-    setCurrent(null)
-    onReply(current.anchor)
-  }, [current, onReply])
+  // Right-clicking the selection opens the menu on it; right-clicking a line of code
+  // outside it selects that line first.
+  useEffect(() => {
+    const onMenu = (e: MouseEvent): void => {
+      const s = window.getSelection()
+      if (!s) return
+      const inside =
+        current !== null &&
+        s.rangeCount > 0 &&
+        [...s.getRangeAt(0).getClientRects()].some(
+          (r) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
+        )
+      if (inside) {
+        e.preventDefault()
+        setMenu({ anchor: current.anchor, x: e.clientX, y: e.clientY })
+        return
+      }
+      const cell = (e.target as HTMLElement).closest<HTMLElement>('.code[data-line]')
+      if (!cell || !scope.current?.contains(cell)) return
+      const range = document.createRange()
+      range.selectNodeContents(cell.querySelector('.w') ?? cell)
+      s.removeAllRanges()
+      s.addRange(range)
+      // A blank line has nothing to quote.
+      const line = selected(cell.dataset.side as Side)
+      if (!line) return s.removeAllRanges()
+      e.preventDefault()
+      setCurrent(line)
+      setMenu({ anchor: line.anchor, x: e.clientX, y: e.clientY })
+    }
+    document.addEventListener('contextmenu', onMenu)
+    return () => document.removeEventListener('contextmenu', onMenu)
+  }, [current, scope, selected])
+
+  // Clicks elsewhere, scrolling and Escape close the menu.
+  useEffect(() => {
+    if (!menu) return
+    const close = (): void => setMenu(null)
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close()
+    }
+    window.addEventListener('mousedown', close)
+    window.addEventListener('blur', close)
+    window.addEventListener('wheel', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('blur', close)
+      window.removeEventListener('wheel', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [menu])
+
+  const reply = useCallback(
+    (anchor: LineAnchor) => {
+      window.getSelection()?.removeAllRanges()
+      setCurrent(null)
+      setMenu(null)
+      onReply(anchor)
+    },
+    [onReply]
+  )
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -567,19 +631,49 @@ function DiffSelectionPopover(props: {
       if (!current || e.ctrlKey || e.metaKey || e.altKey || target?.isContentEditable || target?.matches?.('input, textarea')) return
       if (e.key === 'r' || e.key === 'R') {
         e.preventDefault()
-        reply()
+        reply(current.anchor)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [current, reply])
 
+  if (menu) {
+    const file = diff.files.find((f) => f.path === menu.anchor.file)
+    return (
+      <div
+        className="menu file-menu"
+        role="menu"
+        style={{ left: menu.x, top: menu.y }}
+        onMouseDown={(e) => {
+          // Keep the selection while choosing.
+          e.preventDefault()
+          e.stopPropagation()
+        }}
+      >
+        <button role="menuitem" onClick={() => reply(menu.anchor)}>
+          Reply to selection
+        </button>
+        {file && file.status !== 'deleted' && (
+          <button
+            role="menuitem"
+            onClick={() => {
+              setMenu(null)
+              onOpenFile(file.path, 'editor', newLineOf(file, menu.anchor.side, menu.anchor.start))
+            }}
+          >
+            Open in external editor
+          </button>
+        )}
+      </div>
+    )
+  }
   if (!current) return null
   const top = current.top - 50 >= 8 ? current.top - 50 : current.bottom + 8
   const left = Math.max(8, Math.min(current.left, window.innerWidth - 278))
   return (
     <div className="selection-popover" role="toolbar" aria-label="Selection" style={{ top, left }} onMouseDown={(e) => e.preventDefault()}>
-      <button className="go" onClick={reply}>
+      <button className="go" onClick={() => reply(current.anchor)}>
         ↩ Reply to selection <kbd>R</kbd>
       </button>
       <button className="copy" onClick={() => document.execCommand('copy')}>

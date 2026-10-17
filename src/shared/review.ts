@@ -196,21 +196,76 @@ export function findingThread(f: RawFinding, threads: Thread[]): Thread | undefi
 
 // Lines of the diff
 
-/** One side of a file as shown in the diff: line numbers and their text. */
-export function sideLines(file: DiffFile, side: Side): { n: number; text: string }[] {
+/**
+ * The unchanged lines before hunk `index` (index = hunks.length: after the last hunk),
+ * as new-side numbers from `from` to `to` (null: to the end of the file). A line's
+ * number in the base is its new number plus `delta`.
+ */
+export type Gap = { index: number; from: number; to: number | null; delta: number }
+
+const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
+
+type Span = { first: number; after: number }
+
+/** A hunk's first line on one side and the line after it. A side with no lines starts after the line its header names. */
+function span(start: string, length: string | undefined): Span {
+  const n = length === undefined ? 1 : Number(length)
+  const first = n === 0 ? Number(start) + 1 : Number(start)
+  return { first, after: first + n }
+}
+
+/** The gaps around a file's hunks, one before each hunk and one after the last. Null if a header can't be read. */
+export function gapsOf(hunks: DiffHunk[]): Gap[] | null {
+  const spans: { old: Span; new: Span }[] = []
+  for (const h of hunks) {
+    const m = HUNK_HEADER.exec(h.header)
+    if (!m) return null
+    spans.push({ old: span(m[1], m[2]), new: span(m[3], m[4]) })
+  }
+  if (spans.length === 0) return []
+  const gaps: Gap[] = spans.map((s, i) => ({
+    index: i,
+    from: i === 0 ? 1 : spans[i - 1].new.after,
+    to: s.new.first - 1,
+    delta: s.old.first - s.new.first
+  }))
+  const last = spans[spans.length - 1]
+  gaps.push({ index: spans.length, from: last.new.after, to: null, delta: last.old.after - last.new.after })
+  return gaps
+}
+
+/** Whether the lines around a file's hunks can be shown: a text file that exists on both sides. */
+export function expandable(file: DiffFile): boolean {
+  return !file.binary && file.hunks.length > 0 && file.status !== 'added' && file.status !== 'deleted'
+}
+
+/**
+ * One side of a file: the line numbers and text its hunks show and, given the file at
+ * the reviewed commit (`source`), the unchanged lines between and around them.
+ */
+export function sideLines(file: DiffFile, side: Side, source?: string[] | null): { n: number; text: string }[] {
   const out: { n: number; text: string }[] = []
-  for (const h of file.hunks) {
+  const gaps = source && expandable(file) ? gapsOf(file.hunks) : null
+  const pushGap = (g: Gap | undefined): void => {
+    if (!g || !source) return
+    // The file may have changed since the diff was read: keep within it.
+    const to = Math.min(g.to ?? source.length, source.length)
+    for (let k = g.from; k <= to; k++) out.push({ n: side === 'new' ? k : k + g.delta, text: source[k - 1] })
+  }
+  file.hunks.forEach((h, i) => {
+    pushGap(gaps?.[i])
     for (const l of h.lines) {
       const n = side === 'new' ? l.new : l.old
       if (n !== null) out.push({ n, text: l.text })
     }
-  }
+  })
+  pushGap(gaps?.[file.hunks.length])
   return out
 }
 
-/** The text of lines start..end on one side, if the diff shows all of them. */
-export function linesOf(file: DiffFile, side: Side, start: number, end: number): string[] | null {
-  const byNumber = new Map(sideLines(file, side).map((l) => [l.n, l.text]))
+/** The text of lines start..end on one side, if the diff (or, given it, the file around it) has all of them. */
+export function linesOf(file: DiffFile, side: Side, start: number, end: number, source?: string[] | null): string[] | null {
+  const byNumber = new Map(sideLines(file, side, source).map((l) => [l.n, l.text]))
   const out: string[] = []
   for (let n = start; n <= end; n++) {
     const text = byNumber.get(n)
@@ -229,11 +284,15 @@ export type Location =
   /** Its file is no longer in the diff. */
   | { kind: 'gone' }
 
-/** Re-finds a thread's lines by their text on the same side, nearest the old position. */
-export function locate(anchor: LineAnchor, files: DiffFile[]): Location {
+/**
+ * Re-finds a thread's lines by their text on the same side, nearest the old position:
+ * in the diff, and in the unchanged lines around it for files in `sources` (the files
+ * at the reviewed commit, by path).
+ */
+export function locate(anchor: LineAnchor, files: DiffFile[], sources: Record<string, string[] | null> = {}): Location {
   const file = files.find((f) => f.path === anchor.file)
   if (!file) return { kind: 'gone' }
-  const lines = sideLines(file, anchor.side)
+  const lines = sideLines(file, anchor.side, sources[file.path])
   const want = anchor.lines
   let best: number | null = null
   if (want.length > 0) {
@@ -251,6 +310,28 @@ export function locate(anchor: LineAnchor, files: DiffFile[]): Location {
     if (near === null || Math.abs(l.n - anchor.start) < Math.abs(near - anchor.start)) near = l.n
   }
   return { kind: 'outdated', at: near }
+}
+
+/**
+ * Where a line on one side is in the file at the reviewed commit, to open it there: a
+ * removed line opens where it was, at the line that now follows it.
+ */
+export function newLineOf(file: DiffFile, side: Side, n: number): number {
+  if (side === 'new') return n
+  for (const h of file.hunks) {
+    const i = h.lines.findIndex((l) => l.old === n)
+    if (i < 0) continue
+    const at = h.lines[i].new ?? h.lines.slice(i).find((l) => l.new !== null)?.new
+    if (at !== undefined && at !== null) return at
+    // Removed at the end of the hunk: the line after the hunk's last line now.
+    const before = h.lines.slice(0, i).findLast((l) => l.new !== null)?.new
+    if (before !== undefined && before !== null) return before + 1
+    const m = HUNK_HEADER.exec(h.header)
+    return m ? span(m[3], m[4]).first : n
+  }
+  // An unchanged line outside the hunks moves by the lines added and removed before it.
+  const gap = gapsOf(file.hunks)?.find((g) => n - g.delta >= g.from && (g.to === null || n - g.delta <= g.to))
+  return Math.max(1, gap ? n - gap.delta : n)
 }
 
 /** `src/a.ts:12` or `src/a.ts:12-14`, with ` (old)` for the base's side. */

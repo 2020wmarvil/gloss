@@ -1,8 +1,8 @@
 // A review session's diff (SPEC → Review sessions → Diff view): every file stacked under
 // a sticky header, split or unified, with threads as cards under their lines.
 import { memo, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { languageOf, LARGE_FILE_LINES, type DiffFile, type DiffLine, type Location, type Side } from '@shared/review'
-import { EXPAND_STEP, expandable, gapsOf, gapViews, NO_EXPANSION, type Expansion, type GapView } from './diffContext'
+import { expandable, gapsOf, languageOf, LARGE_FILE_LINES, type DiffFile, type DiffLine, type Location, type Side } from '@shared/review'
+import { EXPAND_STEP, gapViews, NO_EXPANSION, type Expansion, type GapView } from './diffContext'
 import { codeColors, useHighlighting } from './highlight'
 import { Markdown } from './Markdown'
 import { KIND_NAMES, type LineThread, type ThreadKind } from './reviewThreads'

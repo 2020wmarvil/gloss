@@ -38,11 +38,21 @@ type Props = {
   onClose(): void
   onCopyMarkdown(threadId: string): void
   onSaveMarkdown(threadId: string): void
+  /** Scrolls the main conversation to the thread's anchor; absent when it isn't shown there. */
+  onFindInMain?(): void
   /** A line thread's place in the review's diff now (SPEC → Review sessions). */
   location?: Location
   /** Resolves or reopens a line thread. */
   onResolve?(threadId: string, resolved: boolean): void
 }
+
+const findIcon = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="7" />
+    <circle cx="12" cy="12" r="2" />
+    <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+  </svg>
+)
 
 export function ThreadPanel(props: Props): React.JSX.Element {
   const { open, panel, runningThread, notices, live, onSend, onCancel, onClose } = props
@@ -76,13 +86,18 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         </button>
         {threadId === null && <h2 className="thread-label">New thread</h2>}
         {runningHere && <span className="status">Agent is working…</span>}
-        {threadId !== null && (
-          <ExportMenu
-            label="thread"
-            onCopy={() => props.onCopyMarkdown(threadId)}
-            onSave={() => props.onSaveMarkdown(threadId)}
-          />
+        {props.onFindInMain && (
+          <button className="header-button icon find-in-main" onClick={props.onFindInMain} title="Find in main session" aria-label="Find in main session">
+            {findIcon}
+          </button>
         )}
+        {/* Shown before the thread exists too, so the header's buttons don't move. */}
+        <ExportMenu
+          label="thread"
+          disabled={threadId === null}
+          onCopy={() => threadId !== null && props.onCopyMarkdown(threadId)}
+          onSave={() => threadId !== null && props.onSaveMarkdown(threadId)}
+        />
         <button className="close" onClick={onClose} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
           »
         </button>
@@ -152,9 +167,12 @@ function LineThreadPanel(
             {resolved ? 'Reopen' : 'Resolve'}
           </button>
         )}
-        {threadId !== null && (
-          <ExportMenu label="thread" onCopy={() => props.onCopyMarkdown(threadId)} onSave={() => props.onSaveMarkdown(threadId)} />
-        )}
+        <ExportMenu
+          label="thread"
+          disabled={threadId === null}
+          onCopy={() => threadId !== null && props.onCopyMarkdown(threadId)}
+          onSave={() => threadId !== null && props.onSaveMarkdown(threadId)}
+        />
         <button className="close" onClick={props.onClose} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
           »
         </button>

@@ -1,6 +1,7 @@
 // Opening a review's file outside Gloss (SPEC → Review sessions → Diff view): in the
 // user's editor, from the External editor setting, or in the system's file manager.
 import { spawn } from 'node:child_process'
+import { allowForeground } from './foreground'
 
 /** Splits a command line into arguments: spaces separate them, double quotes group. */
 export function splitArgs(command: string): string[] {
@@ -49,7 +50,9 @@ export function windowsCommandLine(args: string[], file: string): string {
  * Starts the editor and resolves once it is running (or its launcher has exited
  * cleanly). Rejects if it can't start or exits with an error straight away.
  */
-export function launchEditor(args: string[], file: string, platform = process.platform): Promise<void> {
+export async function launchEditor(args: string[], file: string, platform = process.platform): Promise<void> {
+  // An editor that is already running is handed the file: let it come to the front.
+  await allowForeground(platform)
   // Gloss runs its agents as Node with this set; an Electron-based editor must not inherit it.
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE

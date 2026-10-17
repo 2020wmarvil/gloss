@@ -21,14 +21,27 @@ describe('Markdown', () => {
     expect(html).toContain('&lt;iframe')
   })
 
-  it('only links absolute web and mailto URLs', () => {
+  it('links web, mail and local files while rejecting unsafe schemes and relative paths', () => {
     const html = render('[web](https://example.com) [mail](mailto:a@b.c) [js](javascript:alert(1)) [rel](src/a.ts) [file](file:///etc/passwd)')
     expect(html).toContain('href="https://example.com"')
     expect(html).toContain('href="mailto:a@b.c"')
     expect(html).not.toContain('javascript:')
     expect(html).not.toContain('href="src/a.ts"')
-    expect(html).not.toContain('href="file:')
+    expect(html).toContain('href="file:///etc/passwd"')
     expect(html).toContain('target="_blank"')
+  })
+
+  it('preserves Windows file links and line numbers through URL sanitization', () => {
+    const html = render('[plan](C:/work/MILESTONES.md:146) [prefixed](/C:/work/MILESTONES.md:146) [spaces](<C:/my project/a.md:3>)')
+    expect(html).toContain('href="C:/work/MILESTONES.md:146"')
+    expect(html).toContain('href="/C:/work/MILESTONES.md:146"')
+    expect(html).toContain('href="C:/my%20project/a.md:3"')
+    expect(html).not.toContain('target="_blank"')
+  })
+
+  it('keeps network and executable-scheme links inert', () => {
+    const html = render('[share](file://server/share/a.md) [unc](//server/share/a.md) [data](data:text/html,test) [editor](vscode://file/a.ts)')
+    expect(html).not.toContain('<a ')
   })
 
   it('adds reply affordances to top-level list items only', () => {

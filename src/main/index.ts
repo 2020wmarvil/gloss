@@ -1,5 +1,5 @@
-import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { stat, writeFile } from 'node:fs/promises'
+import { isAbsolute, join } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, shell } from 'electron'
 import { IPC, type GlossEvent } from '../shared/ipc'
 import type { Anchor, Attachment } from '../shared/types'
@@ -12,6 +12,7 @@ import { gitStatus, pullRequest } from './git'
 import { SessionManager } from './sessions'
 import { patchArg, SettingsFile } from './settings'
 import { editorArgs, launchEditor } from './openFile'
+import { fileLink } from '../shared/fileLink'
 import { runInTerminal } from './terminal'
 import { UsageSource } from './usage'
 import { projectSettings } from '../shared/settings'
@@ -260,6 +261,15 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   )
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
+  ipcMain.handle(IPC.openFileLink, async (_e, href: unknown) => {
+    const link = fileLink(str(href, 'href'))
+    if (!link || !isAbsolute(link.path)) throw new Error('Expected an absolute local file path.')
+    if (!(await stat(link.path)).isFile()) throw new Error('This link does not point to a file.')
+    const args = editorArgs(settingsFile.state().global.externalEditor, link.path, link.line)
+    if (args.length > 0) return launchEditor(args, link.path)
+    // Never execute a linked file through its default app association.
+    shell.showItemInFolder(link.path)
+  })
   ipcMain.handle(IPC.search, (_e, request: SearchRequest) => store!.search(request))
   ipcMain.handle(IPC.history, () => manager.messageHistory())
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
