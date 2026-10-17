@@ -75,8 +75,8 @@ export function McpSettings({ servers, onSave, hasLegacy }: Props): React.JSX.El
   const importProblem = mcpError([...servers, ...imports])
   return <div className="mcp-settings">
     <h3>MCP servers</h3>
-    <p className="setting-desc">Shared by Claude Code and Codex in all projects. Changes apply on the next turn or resume.</p>
-    <p className="setting-desc">Every listed server is included. Agent-owned servers may also load independently. Codex does not support SSE.</p>
+    <p className="setting-desc">Shared across agents in all projects. Changes apply on the next turn or resume.</p>
+    <p className="setting-desc">Every listed server is included. Agent-owned servers may also load independently. Codex and OpenCode do not support SSE.</p>
     <div className="mcp-actions">
       <button disabled={busy} onClick={() => edit(-1)}>Add server</button>
       <button disabled={busy} onClick={() => void discover('claude')}>Import from Claude</button>

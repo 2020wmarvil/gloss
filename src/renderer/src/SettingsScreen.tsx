@@ -4,6 +4,7 @@ import { SETTING_FIELDS, projectSettings, type ProjectSettings, type GlobalSetti
 import { errorText } from './errors'
 import { modKey, SHORTCUTS } from './shortcuts'
 import { McpSettings } from './McpSettings'
+import { OpenCodeSettings } from './OpenCodeSettings'
 
 type Props = {
   state: SettingsState
@@ -78,6 +79,9 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
             hasLegacy={Object.values(state.projects).some((p) => (p.mcpServers?.length ?? 0) > 0)}
             onSave={async (mcpServers) => { await onUpdate({ global: { mcpServers } }) }} />
         </section>
+
+        <OpenCodeSettings executable={state.global.opencodeExecutable ?? ''}
+          onSave={async (opencodeExecutable) => { await onUpdate({ global: { opencodeExecutable } }) }} />
 
         {projectFields.length > 0 && <section>
           <h2 className="label">Project</h2>

@@ -17,11 +17,14 @@ import { UsageSource } from './usage'
 import { projectSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
 import { previewMcpImport } from './mcp-import'
+import { OpenCodeSupport } from './opencode'
 
 let mainWindow: BrowserWindow | undefined
 let store: Store | undefined
 let sessions: SessionManager | undefined
 let settings: SettingsFile | undefined
+let openCode: OpenCodeSupport
+let openCodeRestartPending = false
 const usage = new UsageSource()
 
 function isExternalUrl(url: string): boolean {
@@ -110,6 +113,9 @@ function handleShortcut(win: BrowserWindow, input: Electron.Input): boolean {
 function emit(event: GlossEvent): void {
   mainWindow?.webContents.send(IPC.event, event)
   if (event.type === 'turnEnd') notifyTurnEnd(event)
+  if (event.type === 'turnEnd' && openCodeRestartPending) {
+    void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
+  }
 }
 
 /** Finished turns since the window was last focused (the badge count). */
@@ -237,7 +243,13 @@ async function pickFolder(): Promise<string | null> {
 }
 
 function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void {
-  ipcMain.handle(IPC.agentsList, () => listAgents())
+  ipcMain.handle(IPC.agentsList, async () => {
+    const status = await openCode.check(settingsFile.state().global.opencodeExecutable)
+    return listAgents().map((agent) => agent.id === 'opencode'
+      ? { ...agent, available: status.available, setupMessage: status.error ?? undefined }
+      : agent)
+  })
+  ipcMain.handle(IPC.agentsTestOpenCode, (_e, executable: unknown) => openCode.check(str(executable, 'executable'), true))
   ipcMain.handle(IPC.projectsList, () => manager.listProjects())
   ipcMain.handle(IPC.projectsOpen, async () => {
     const path = await pickFolder()
@@ -395,12 +407,17 @@ app.whenReady().then(() => {
   // (it lives in the system menu bar, and copy and paste need its Edit menu).
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
   const dataDir = app.getPath('userData')
+  openCode = new OpenCodeSupport(dataDir)
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
     defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] },
-    onChange(next) {
+    onChange(next, previous) {
       emit({ type: 'settings', state: next })
+      if (next.global.opencodeExecutable !== previous.global.opencodeExecutable) {
+        openCodeRestartPending = true
+        void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
+      }
     }
   })
   settings = settingsFile
@@ -409,7 +426,9 @@ app.whenReady().then(() => {
   sessions = new SessionManager({
     store,
     emit,
-    getAgentConfig,
+    getAgentConfig: (id) => id === 'opencode'
+      ? openCode.config(settingsFile.state().global.opencodeExecutable)
+      : getAgentConfig(id),
     mcpServers: () => settingsFile.state().global.mcpServers,
     agentEnv: (config) => agentEnv(config),
     connect: (config, env, handlers) => AgentConnection.start(config, env, handlers),

@@ -19,7 +19,8 @@ describe('agentEnv', () => {
     expect(agentEnv(codex, {})).toEqual({ ELECTRON_RUN_AS_NODE: '1', DISABLE_MCP_CONFIG_FILTERING: 'true' })
     expect(listAgents()).toEqual([
       { id: 'claude', name: 'Claude Code' },
-      { id: 'codex', name: 'Codex' }
+      { id: 'codex', name: 'Codex' },
+      { id: 'opencode', name: 'OpenCode' }
     ])
   })
 

@@ -66,6 +66,12 @@ describe('parseSettings', () => {
     })
     expect(() => patchArg({ global: { defaultAgent: 'unknown' } })).toThrow(/defaultAgent/)
   })
+  it('accepts OpenCode setup and its default selection without changing older settings', () => {
+    expect(parseSettings('{"defaultAgent":"opencode","opencodeExecutable":"C:/Apps/OpenCode.exe"}', defaults)).toMatchObject({
+      ok: true, global: { defaultAgent: 'opencode', opencodeExecutable: 'C:/Apps/OpenCode.exe' }
+    })
+    expect(() => patchArg({ global: { opencodeExecutable: 42 } })).toThrow(/opencodeExecutable/)
+  })
   it('fills in defaults and ignores unknown and retired keys', () => {
     expect(parseSettings('{"$schema": "x", "future": 1, "devModel": true}', defaults)).toEqual({
       ok: true,
