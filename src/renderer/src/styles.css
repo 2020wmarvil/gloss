@@ -2164,8 +2164,12 @@ a.status-item {
   color: var(--muted);
 }
 
-.header-button:hover {
+.header-button:hover:not(:disabled) {
   color: var(--ink);
+}
+
+.header-button:disabled {
+  opacity: 0.5;
 }
 
 .header-button.icon {
@@ -4032,7 +4036,8 @@ button.status.link {
   color: var(--ok);
 }
 
-.line-thread header .resolve ~ .close {
+.line-thread header .resolve ~ .close,
+.line-thread header .resolve ~ .popover-anchor {
   margin-left: 0;
 }
 

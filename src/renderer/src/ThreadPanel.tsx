@@ -91,13 +91,13 @@ export function ThreadPanel(props: Props): React.JSX.Element {
             {findIcon}
           </button>
         )}
-        {threadId !== null && (
-          <ExportMenu
-            label="thread"
-            onCopy={() => props.onCopyMarkdown(threadId)}
-            onSave={() => props.onSaveMarkdown(threadId)}
-          />
-        )}
+        {/* Shown before the thread exists too, so the header's buttons don't move. */}
+        <ExportMenu
+          label="thread"
+          disabled={threadId === null}
+          onCopy={() => threadId !== null && props.onCopyMarkdown(threadId)}
+          onSave={() => threadId !== null && props.onSaveMarkdown(threadId)}
+        />
         <button className="close" onClick={onClose} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
           »
         </button>
@@ -167,9 +167,12 @@ function LineThreadPanel(
             {resolved ? 'Reopen' : 'Resolve'}
           </button>
         )}
-        {threadId !== null && (
-          <ExportMenu label="thread" onCopy={() => props.onCopyMarkdown(threadId)} onSave={() => props.onSaveMarkdown(threadId)} />
-        )}
+        <ExportMenu
+          label="thread"
+          disabled={threadId === null}
+          onCopy={() => threadId !== null && props.onCopyMarkdown(threadId)}
+          onSave={() => threadId !== null && props.onSaveMarkdown(threadId)}
+        />
         <button className="close" onClick={props.onClose} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
           »
         </button>
