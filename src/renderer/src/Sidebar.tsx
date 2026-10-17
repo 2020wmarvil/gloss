@@ -103,7 +103,9 @@ export function Sidebar(props: Props): React.JSX.Element {
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<{ project: Project; sessions: number } | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<
+    { kind: 'session'; session: Session } | { kind: 'project'; project: Project; sessions: number } | null
+  >(null)
   // Clicks elsewhere and Escape close the menus.
   useEffect(() => {
     if (!switcherOpen && !agentMenuOpen && menuFor === null) return
@@ -199,9 +201,9 @@ export function Sidebar(props: Props): React.JSX.Element {
             <button
               role="menuitem"
               className="danger"
-              onClick={() => (setMenuFor(null), props.onDelete(s.id))}
+              onClick={() => (setMenuFor(null), setConfirmDelete({ kind: 'session', session: s }))}
             >
-              Delete
+              Delete…
             </button>
           </div>
         )}
@@ -261,6 +263,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                   onClick={(e) => {
                     e.stopPropagation()
                     setConfirmDelete({
+                      kind: 'project',
                       project: p,
                       sessions: props.sessions.filter((s) => sameFolder(s.cwd, p.path)).length
                     })
@@ -394,17 +397,26 @@ export function Sidebar(props: Props): React.JSX.Element {
       {confirmDelete && (
         <div className="dialog-backdrop">
           <div className="dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title">
-            <h2 id="delete-title">Delete “{confirmDelete.project.name}”?</h2>
-            <p className="muted">
-              This removes the project from Gloss and deletes{' '}
-              {confirmDelete.sessions === 0
-                ? 'nothing else: none of its sessions were opened in Gloss'
-                : confirmDelete.sessions === 1
-                  ? "its session, with its messages, threads and the agent's own copy"
-                  : `its ${confirmDelete.sessions} sessions, with their messages, threads and the agent's own copies`}
-              . The agent&apos;s sessions that were never opened in Gloss are kept, and the folder&apos;s files are not
-              touched. It can&apos;t be undone.
-            </p>
+            <h2 id="delete-title">
+              Delete “{confirmDelete.kind === 'session' ? confirmDelete.session.title : confirmDelete.project.name}”?
+            </h2>
+            {confirmDelete.kind === 'session' ? (
+              <p className="muted">
+                This deletes the session, its messages and threads from Gloss, and the agent&apos;s own copy of it. It
+                can&apos;t be undone.
+              </p>
+            ) : (
+              <p className="muted">
+                This removes the project from Gloss and deletes{' '}
+                {confirmDelete.sessions === 0
+                  ? 'nothing else: none of its sessions were opened in Gloss'
+                  : confirmDelete.sessions === 1
+                    ? "its session, with its messages, threads and the agent's own copy"
+                    : `its ${confirmDelete.sessions} sessions, with their messages, threads and the agent's own copies`}
+                . The agent&apos;s sessions that were never opened in Gloss are kept, and the folder&apos;s files are not
+                touched. It can&apos;t be undone.
+              </p>
+            )}
             <div className="dialog-actions">
               <button onClick={() => setConfirmDelete(null)} autoFocus>
                 Cancel
@@ -412,7 +424,8 @@ export function Sidebar(props: Props): React.JSX.Element {
               <button
                 className="danger"
                 onClick={() => {
-                  props.onDeleteProject(confirmDelete.project.path)
+                  if (confirmDelete.kind === 'session') props.onDelete(confirmDelete.session.id)
+                  else props.onDeleteProject(confirmDelete.project.path)
                   setConfirmDelete(null)
                 }}
               >
