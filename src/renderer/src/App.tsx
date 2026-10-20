@@ -49,6 +49,7 @@ import {
 } from './resize'
 import { modKey } from './shortcuts'
 import { applyTheme } from './theme'
+import { BrandMark } from './Brand'
 
 export type OpenSession = {
   session: Session
@@ -1112,6 +1113,8 @@ export function App(): React.JSX.Element {
         />
       ) : (
         <main className="empty-state">
+          <BrandMark size={72} />
+          <span className="wordmark empty-wordmark">gloss</span>
           {project ? (
             <>
               <p>{creating ? 'Starting the agent…' : `No session open in ${project.name}.`}</p>

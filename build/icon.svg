@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- The Gloss bead. Sizes up to 32 px use icon-small.svg. -->
+  <defs>
+    <linearGradient id="sunset" gradientUnits="userSpaceOnUse" x1="10" y1="10" x2="54" y2="54">
+      <stop offset="0" stop-color="#FF3DA6"/>
+      <stop offset="1" stop-color="#FF9F3D"/>
+    </linearGradient>
+    <radialGradient id="shade" cx=".36" cy=".3" r=".78">
+      <stop offset="0" stop-color="#fff" stop-opacity=".28"/>
+      <stop offset=".45" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".42"/>
+    </radialGradient>
+  </defs>
+  <circle cx="32" cy="32" r="30" fill="url(#sunset)"/>
+  <circle cx="32" cy="32" r="30" fill="url(#shade)"/>
+  <path d="M13.45 27.03A19.2 19.2 0 0 1 28.01 13.22" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity=".9"/>
+  <circle cx="45.15" cy="45.15" r="3.6" fill="#fff" opacity=".35"/>
+</svg>

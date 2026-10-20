@@ -14,13 +14,20 @@
   --hover: #efede7;
   --hover-soft: #fbfaf7;
   --surface-2: #f6f5f1;
-  --accent: #2c55c9;
-  --accent-ink: #2a3f7a;
-  --accent-tint: #eef1fa;
-  --accent-tint-2: #f6f7fc;
-  --accent-tint-3: #e6ecfb;
-  --accent-tint-4: #cfdaf7;
+  /* The brand (docs/BRAND.md): the Sunset gradient on the bead and primary buttons,
+     and a solid accent for everything else, deeper on light so text stays readable. */
+  --brand-gradient: linear-gradient(120deg, #ff3da6, #ff9f3d);
+  --on-brand: #17040e;
+  --accent: #c2147a;
+  --accent-ink: #8a0e57;
+  --accent-tint: #fae5f0;
+  --accent-tint-2: #fdf4f8;
+  --accent-tint-3: #f8ddeb;
+  --accent-tint-4: #f0bcd8;
   --on-accent: #fff;
+  /* Working state, suggestions and hunk headers stay blue, apart from the brand. */
+  --blue: #2c55c9;
+  --blue-tint: #eef1fa;
   --danger: #b3261e;
   --danger-tint: #fbeaea;
   --danger-line: #e8c4c1;
@@ -39,7 +46,7 @@
   --mono: ui-monospace, Consolas, monospace;
   /* What state a turn, message or step is in: one color each, everywhere
      (working, done, queued, paused, failed or cancelled). */
-  --state-working: var(--accent);
+  --state-working: var(--blue);
   --state-done: var(--ok);
   --state-queued: var(--warn);
   --state-paused: var(--merged);
@@ -51,9 +58,9 @@
   --diff-del-gutter: #f5d7d3;
   --diff-empty: #f4f3ef;
   --diff-hl: #fff3c4;
-  --diff-hunk: var(--accent-tint);
+  --diff-hunk: var(--blue-tint);
   --kind-bug: var(--danger);
-  --kind-suggestion: var(--accent);
+  --kind-suggestion: var(--blue);
   --kind-nit: var(--faint);
   --kind-you: #6b4fc4;
   --kind-resolved: var(--faint);
@@ -74,13 +81,15 @@
   --hover: #282622;
   --hover-soft: #23211e;
   --surface-2: #1b1a17;
-  --accent: #6d8fea;
-  --accent-ink: #b5c6f7;
-  --accent-tint: #232b44;
-  --accent-tint-2: #1f2330;
-  --accent-tint-3: #262e47;
-  --accent-tint-4: #33406a;
-  --on-accent: #10131c;
+  --accent: #ff5c9e;
+  --accent-ink: #ffb3d1;
+  --accent-tint: #3a1a2c;
+  --accent-tint-2: #261a20;
+  --accent-tint-3: #3f1d31;
+  --accent-tint-4: #5c2846;
+  --on-accent: #17040e;
+  --blue: #6d8fea;
+  --blue-tint: #232b44;
   --danger: #ef7068;
   --danger-tint: #3a1f1e;
   --danger-line: #6b2f2b;
@@ -138,9 +147,9 @@ button.primary {
   padding: 0 16px;
   border: 0;
   border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 500;
+  background: var(--brand-gradient);
+  color: var(--on-brand);
+  font-weight: 600;
 }
 
 .muted {
@@ -221,9 +230,34 @@ body.resizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-weight: 600;
-  font-size: 18px;
   padding: 0 0 8px 8px;
+}
+
+/* The wordmark's font, bundled so it looks the same everywhere (latin only: it sets one word). */
+@font-face {
+  font-family: 'Inter Gloss';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url('../../../node_modules/@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2-variations');
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: 'Inter Gloss', system-ui, sans-serif;
+  font-weight: 600;
+  /* Inter Display: the top of the optical-size axis, at any size. */
+  font-variation-settings: 'opsz' 32;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.empty-wordmark {
+  font-size: 34px;
+  margin-bottom: 8px;
 }
 
 .sidebar-collapse {
@@ -2663,8 +2697,8 @@ button.status.link {
 }
 
 .plan-entry.in_progress .plan-box {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--state-working);
+  background: var(--state-working);
   box-shadow: inset 0 0 0 3px var(--panel);
   animation: pulse 1.2s ease-in-out infinite;
 }

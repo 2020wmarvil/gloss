@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import type { SessionOrder } from '@shared/settings'
 import type { AgentInfo, AgentSession, Project, Session } from '@shared/types'
+import { Wordmark } from './Brand'
 
 type Props = {
   agents: AgentInfo[]
@@ -211,7 +212,7 @@ export function Sidebar(props: Props): React.JSX.Element {
   return (
     <nav className="sidebar" style={props.width === null ? undefined : { flexBasis: props.width }}>
       <div className="brand">
-        gloss.
+        <Wordmark size={19} />
         <button className="sidebar-collapse" onClick={props.onCollapse} aria-label="Hide sidebar" title="Hide sidebar">
           «
         </button>

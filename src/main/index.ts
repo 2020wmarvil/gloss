@@ -19,6 +19,8 @@ import { projectSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
 import { previewMcpImport } from './mcp-import'
 import { OpenCodeSupport } from './opencode'
+import iconIco from '../../build/icon.ico?asset'
+import iconPng from '../../build/icons/256x256.png?asset'
 
 let mainWindow: BrowserWindow | undefined
 let store: Store | undefined
@@ -40,6 +42,8 @@ function isExternalUrl(url: string): boolean {
 function createWindow(): void {
   const win = new BrowserWindow({
     title: 'Gloss',
+    // Windows takes every size from the .ico; macOS uses the app bundle's icon instead.
+    icon: process.platform === 'win32' ? iconIco : iconPng,
     width: 1280,
     height: 820,
     minWidth: 720,
