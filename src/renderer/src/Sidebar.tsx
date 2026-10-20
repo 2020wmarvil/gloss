@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import type { SessionOrder } from '@shared/settings'
 import type { AgentInfo, AgentSession, Project, Session } from '@shared/types'
-import { Wordmark } from './Brand'
 
 type Props = {
   agents: AgentInfo[]
@@ -46,8 +45,6 @@ type Props = {
   onCopyMarkdown(id: string): void
   onSaveMarkdown(id: string): void
   onSearch(): void
-  /** Collapses the sidebar to a rail. */
-  onCollapse(): void
   onSettings(): void
 }
 
@@ -211,13 +208,6 @@ export function Sidebar(props: Props): React.JSX.Element {
 
   return (
     <nav className="sidebar" style={props.width === null ? undefined : { flexBasis: props.width }}>
-      <div className="brand">
-        <Wordmark size={19} />
-        <button className="sidebar-collapse" onClick={props.onCollapse} aria-label="Hide sidebar" title="Hide sidebar">
-          «
-        </button>
-      </div>
-
       <div className="switcher">
         <button
           className="switch-button"

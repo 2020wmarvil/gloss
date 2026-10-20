@@ -1,6 +1,6 @@
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron'
 import { IPC, type GlossEvent } from '../shared/ipc'
 import type { Anchor, Attachment } from '../shared/types'
 import { AgentConnection } from './acp'
@@ -39,9 +39,30 @@ function isExternalUrl(url: string): boolean {
   }
 }
 
+// The renderer draws the title bar (SPEC → Title bar); the system's window controls sit
+// over its right end (the traffic lights over its left on macOS), in its colors.
+const TITLE_BAR_HEIGHT = 40
+
+/** The window controls' colors: styles.css's --bg and --ink for the theme in use. */
+function titleBarOverlay(): Electron.TitleBarOverlayOptions {
+  const theme = settings?.state().global.theme ?? 'system'
+  const dark = theme === 'dark' || (theme === 'system' && nativeTheme.shouldUseDarkColors)
+  return dark
+    ? { color: '#161513', symbolColor: '#efeee9', height: TITLE_BAR_HEIGHT }
+    : { color: '#f7f6f2', symbolColor: '#1c1b18', height: TITLE_BAR_HEIGHT }
+}
+
+function updateTitleBar(): void {
+  if (process.platform !== 'darwin') mainWindow?.setTitleBarOverlay(titleBarOverlay())
+}
+
 function createWindow(): void {
   const win = new BrowserWindow({
     title: 'Gloss',
+    titleBarStyle: 'hidden',
+    // On macOS `true` only turns on the titlebar-area CSS variables the title bar lays out with.
+    titleBarOverlay: process.platform === 'darwin' ? true : titleBarOverlay(),
+    trafficLightPosition: { x: 14, y: 13 },
     // Windows takes every size from the .ico; macOS uses the app bundle's icon instead.
     icon: process.platform === 'win32' ? iconIco : iconPng,
     width: 1280,
@@ -428,6 +449,7 @@ app.whenReady().then(() => {
     defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
+      if (next.global.theme !== previous.global.theme) updateTitleBar()
       if (next.global.opencodeExecutable !== previous.global.opencodeExecutable) {
         openCodeRestartPending = true
         void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
@@ -449,6 +471,7 @@ app.whenReady().then(() => {
     runInTerminal
   })
   registerIpc(sessions, settingsFile)
+  nativeTheme.on('updated', updateTitleBar)
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

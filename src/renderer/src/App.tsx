@@ -49,7 +49,7 @@ import {
 } from './resize'
 import { modKey } from './shortcuts'
 import { applyTheme } from './theme'
-import { BrandMark } from './Brand'
+import { BrandMark, TitleBar } from './Brand'
 
 export type OpenSession = {
   session: Session
@@ -987,6 +987,10 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="app">
+      <TitleBar
+        sidebarWidth={sidebarHidden ? null : (sidebarWidth ?? SIDEBAR_DEFAULT)}
+        onHideSidebar={() => hideSidebar(true)}
+      />
       {sidebarHidden ? (
         <SidebarRail running={Object.keys(running).length > 0} onExpand={() => hideSidebar(false)} />
       ) : (
@@ -1024,7 +1028,6 @@ export function App(): React.JSX.Element {
             onSaveMarkdown={(id) => exportMarkdown(id, null, 'save')}
             onSearch={() => setShowSearch(true)}
             onSettings={() => setShowSettings((on) => !on)}
-            onCollapse={() => hideSidebar(true)}
           />
           <ResizeHandle
             label="Resize sidebar"

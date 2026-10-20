@@ -173,6 +173,40 @@ button.primary {
 .app {
   display: flex;
   height: 100%;
+  padding-top: var(--title-bar-height);
+}
+
+/* Title bar: drawn by the app, the window's drag area. The system's controls cover the
+   area outside titlebar-area-x/width (the right end, or the traffic lights on macOS). */
+:root {
+  --title-bar-height: 40px;
+}
+
+.title-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  height: var(--title-bar-height);
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.title-bar button {
+  -webkit-app-region: no-drag;
+}
+
+.title-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 100%;
+  padding: 0 14px 0 max(22px, calc(env(titlebar-area-x, 0px) + 8px));
 }
 
 /* Sidebar */
@@ -180,7 +214,7 @@ button.primary {
 .sidebar {
   flex: 0 0 240px;
   min-width: 0;
-  padding: 20px 14px 14px;
+  padding: 4px 14px 14px;
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
@@ -224,13 +258,6 @@ button.primary {
 body.resizing {
   cursor: col-resize;
   user-select: none;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 0 8px 8px;
 }
 
 /* The wordmark's font, bundled so it looks the same everywhere (latin only: it sets one word). */
