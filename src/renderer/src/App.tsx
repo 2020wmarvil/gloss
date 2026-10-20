@@ -987,10 +987,7 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="app">
-      <TitleBar
-        sidebarWidth={sidebarHidden ? null : (sidebarWidth ?? SIDEBAR_DEFAULT)}
-        onHideSidebar={() => hideSidebar(true)}
-      />
+      <TitleBar />
       {sidebarHidden ? (
         <SidebarRail running={Object.keys(running).length > 0} onExpand={() => hideSidebar(false)} />
       ) : (
@@ -1028,6 +1025,7 @@ export function App(): React.JSX.Element {
             onSaveMarkdown={(id) => exportMarkdown(id, null, 'save')}
             onSearch={() => setShowSearch(true)}
             onSettings={() => setShowSettings((on) => !on)}
+            onCollapse={() => hideSidebar(true)}
           />
           <ResizeHandle
             label="Resize sidebar"

@@ -43,13 +43,13 @@ function isExternalUrl(url: string): boolean {
 // over its right end (the traffic lights over its left on macOS), in its colors.
 const TITLE_BAR_HEIGHT = 40
 
-/** The window controls' colors: styles.css's --bg and --ink for the theme in use. */
+/** The window controls' colors: styles.css's --title-bar and --ink for the theme in use. */
 function titleBarOverlay(): Electron.TitleBarOverlayOptions {
   const theme = settings?.state().global.theme ?? 'system'
   const dark = theme === 'dark' || (theme === 'system' && nativeTheme.shouldUseDarkColors)
   return dark
-    ? { color: '#161513', symbolColor: '#efeee9', height: TITLE_BAR_HEIGHT }
-    : { color: '#f7f6f2', symbolColor: '#1c1b18', height: TITLE_BAR_HEIGHT }
+    ? { color: '#0e0d0c', symbolColor: '#efeee9', height: TITLE_BAR_HEIGHT }
+    : { color: '#ebeae4', symbolColor: '#1c1b18', height: TITLE_BAR_HEIGHT }
 }
 
 function updateTitleBar(): void {

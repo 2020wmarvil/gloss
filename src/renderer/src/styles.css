@@ -2,6 +2,8 @@
 :root {
   color-scheme: light;
   --bg: #f7f6f2;
+  /* The title bar, a shade darker than the panes; main gives the window controls the same color. */
+  --title-bar: #ebeae4;
   --panel: #ffffff;
   --ink: #1c1b18;
   --ink-2: #3a3833;
@@ -69,6 +71,7 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #161513;
+  --title-bar: #0e0d0c;
   --panel: #1f1e1b;
   --ink: #efeee9;
   --ink-2: #d4d1c8;
@@ -179,7 +182,9 @@ button.primary {
 /* Title bar: drawn by the app, the window's drag area. The system's controls cover the
    area outside titlebar-area-x/width (the right end, or the traffic lights on macOS). */
 :root {
-  --title-bar-height: 40px;
+  /* One more than the window controls' 40px (main's TITLE_BAR_HEIGHT), so the bottom
+     border runs under them too. */
+  --title-bar-height: 41px;
 }
 
 .title-bar {
@@ -191,22 +196,28 @@ button.primary {
   height: var(--title-bar-height);
   display: flex;
   align-items: center;
-  background: var(--bg);
+  background: var(--title-bar);
+  border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
   user-select: none;
-}
-
-.title-bar button {
-  -webkit-app-region: no-drag;
 }
 
 .title-brand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
   height: 100%;
-  padding: 0 14px 0 max(22px, calc(env(titlebar-area-x, 0px) + 8px));
+  padding-left: max(22px, calc(env(titlebar-area-x, 0px) + 8px));
+}
+
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sidebar-top .switcher {
+  flex: 1;
+  min-width: 0;
 }
 
 /* Sidebar */
@@ -214,7 +225,7 @@ button.primary {
 .sidebar {
   flex: 0 0 240px;
   min-width: 0;
-  padding: 4px 14px 14px;
+  padding: 12px 14px 14px;
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;

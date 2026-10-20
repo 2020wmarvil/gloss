@@ -19,21 +19,14 @@ export function Wordmark({ size }: { size: number }): React.JSX.Element {
 }
 
 /**
- * The window's title bar (SPEC → Title bar): the brand over the sidebar, with « to hide
- * the sidebar at its right edge, and room to drag the window. The system's window
- * controls sit over its end (main sets them up); `sidebarWidth` is null while the
- * sidebar is hidden.
+ * The window's title bar (SPEC → Title bar): the brand, and room to drag the window.
+ * The system's window controls sit over its end (main sets them up).
  */
-export function TitleBar(props: { sidebarWidth: number | null; onHideSidebar(): void }): React.JSX.Element {
+export function TitleBar(): React.JSX.Element {
   return (
     <header className="title-bar">
-      <div className="title-brand" style={props.sidebarWidth === null ? undefined : { width: props.sidebarWidth }}>
+      <div className="title-brand">
         <Wordmark size={17} />
-        {props.sidebarWidth !== null && (
-          <button className="sidebar-collapse" onClick={props.onHideSidebar} aria-label="Hide sidebar" title="Hide sidebar">
-            «
-          </button>
-        )}
       </div>
     </header>
   )
