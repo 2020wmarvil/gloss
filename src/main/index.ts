@@ -43,11 +43,13 @@ function isExternalUrl(url: string): boolean {
 // over its right end (the traffic lights over its left on macOS), in its colors.
 const TITLE_BAR_HEIGHT = 40
 
-/** The window controls' colors: styles.css's --title-bar and --ink for the theme in use. */
+/**
+ * The window controls' colors: styles.css's --title-bar and --ink for the theme in use.
+ * Their hover tint comes from Chromium's native theme, which follows the theme setting
+ * (themeSource), so it contrasts with them.
+ */
 function titleBarOverlay(): Electron.TitleBarOverlayOptions {
-  const theme = settings?.state().global.theme ?? 'system'
-  const dark = theme === 'dark' || (theme === 'system' && nativeTheme.shouldUseDarkColors)
-  return dark
+  return nativeTheme.shouldUseDarkColors
     ? { color: '#0e0d0c', symbolColor: '#efeee9', height: TITLE_BAR_HEIGHT }
     : { color: '#ebeae4', symbolColor: '#1c1b18', height: TITLE_BAR_HEIGHT }
 }
@@ -449,7 +451,8 @@ app.whenReady().then(() => {
     defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
-      if (next.global.theme !== previous.global.theme) updateTitleBar()
+      // Fires nativeTheme's 'updated', which recolors the window controls.
+      if (next.global.theme !== previous.global.theme) nativeTheme.themeSource = next.global.theme
       if (next.global.opencodeExecutable !== previous.global.opencodeExecutable) {
         openCodeRestartPending = true
         void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
@@ -458,6 +461,7 @@ app.whenReady().then(() => {
   })
   settings = settingsFile
   settingsFile.load()
+  nativeTheme.themeSource = settingsFile.state().global.theme
   settingsFile.watch()
   sessions = new SessionManager({
     store,
