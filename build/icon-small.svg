@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- The Gloss bead for 16 to 32 px: a bolder highlight, a lighter shade, no reflected light. -->
+  <defs>
+    <linearGradient id="sunset" gradientUnits="userSpaceOnUse" x1="10" y1="10" x2="54" y2="54">
+      <stop offset="0" stop-color="#FF3DA6"/>
+      <stop offset="1" stop-color="#FF9F3D"/>
+    </linearGradient>
+    <radialGradient id="shade" cx=".36" cy=".3" r=".78">
+      <stop offset="0" stop-color="#fff" stop-opacity=".2"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".32"/>
+    </radialGradient>
+  </defs>
+  <circle cx="32" cy="32" r="31" fill="url(#sunset)"/>
+  <circle cx="32" cy="32" r="31" fill="url(#shade)"/>
+  <path d="M15.09 25.84A18 18 0 0 1 27.34 14.61" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" opacity=".95"/>
+</svg>

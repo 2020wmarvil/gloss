@@ -15,13 +15,15 @@
     "lint": "eslint .",
     "test": "vitest run",
     "probe:opencode": "node scripts/probe-opencode.mjs",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "icons": "electron scripts/make-icons.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.89.1",
     "@agentclientprotocol/codex-acp": "2.2.2",
     "@agentclientprotocol/sdk": "1.8.0",
     "@anthropic-ai/claude-agent-sdk": "0.3.293",
+    "@fontsource-variable/inter": "5.3.0",
     "koffi": "3.3.3",
     "smol-toml": "1.9.1"
   },

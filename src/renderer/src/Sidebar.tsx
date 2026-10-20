@@ -210,72 +210,70 @@ export function Sidebar(props: Props): React.JSX.Element {
 
   return (
     <nav className="sidebar" style={props.width === null ? undefined : { flexBasis: props.width }}>
-      <div className="brand">
-        gloss.
+      <div className="sidebar-top">
+        <div className="switcher">
+          <button
+            className="switch-button"
+            aria-haspopup="menu"
+            aria-expanded={switcherOpen}
+            onClick={(e) => {
+              e.stopPropagation()
+              setSwitcherOpen((o) => !o)
+              setAgentMenuOpen(false)
+              setMenuFor(null)
+            }}
+          >
+            <span className="switch-names">
+              <b>{project?.name ?? 'No project'}</b>
+              {project && <span className="mono">{project.path}</span>}
+            </span>
+            <span className="caret" aria-hidden>
+              ▾
+            </span>
+          </button>
+          {switcherOpen && (
+            <div className="menu project-menu" role="menu">
+              {props.projects.map((p) => (
+                <div key={p.path} className="project-item">
+                  <button
+                    role="menuitem"
+                    className={project && sameFolder(p.path, project.path) ? 'on' : undefined}
+                    onClick={() => props.onSelectProject(p.path)}
+                  >
+                    <b>
+                      {p.name}
+                      {(!project || !sameFolder(p.path, project.path)) && isRunningIn(p) && (
+                        <span className="running-dot" aria-label="Running" />
+                      )}
+                    </b>
+                    <span className="mono">{p.path}</span>
+                  </button>
+                  <button
+                    className="project-delete"
+                    aria-label={`Delete ${p.name}`}
+                    title="Delete project"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setConfirmDelete({
+                        project: p,
+                        sessions: props.sessions.filter((s) => sameFolder(s.cwd, p.path)).length
+                      })
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {props.projects.length > 0 && <hr />}
+              <button role="menuitem" onClick={props.onOpenProject}>
+                Open project…
+              </button>
+            </div>
+          )}
+        </div>
         <button className="sidebar-collapse" onClick={props.onCollapse} aria-label="Hide sidebar" title="Hide sidebar">
           «
         </button>
-      </div>
-
-      <div className="switcher">
-        <button
-          className="switch-button"
-          aria-haspopup="menu"
-          aria-expanded={switcherOpen}
-          onClick={(e) => {
-            e.stopPropagation()
-            setSwitcherOpen((o) => !o)
-            setAgentMenuOpen(false)
-            setMenuFor(null)
-          }}
-        >
-          <span className="switch-names">
-            <b>{project?.name ?? 'No project'}</b>
-            {project && <span className="mono">{project.path}</span>}
-          </span>
-          <span className="caret" aria-hidden>
-            ▾
-          </span>
-        </button>
-        {switcherOpen && (
-          <div className="menu project-menu" role="menu">
-            {props.projects.map((p) => (
-              <div key={p.path} className="project-item">
-                <button
-                  role="menuitem"
-                  className={project && sameFolder(p.path, project.path) ? 'on' : undefined}
-                  onClick={() => props.onSelectProject(p.path)}
-                >
-                  <b>
-                    {p.name}
-                    {(!project || !sameFolder(p.path, project.path)) && isRunningIn(p) && (
-                      <span className="running-dot" aria-label="Running" />
-                    )}
-                  </b>
-                  <span className="mono">{p.path}</span>
-                </button>
-                <button
-                  className="project-delete"
-                  aria-label={`Delete ${p.name}`}
-                  title="Delete project"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setConfirmDelete({
-                      project: p,
-                      sessions: props.sessions.filter((s) => sameFolder(s.cwd, p.path)).length
-                    })
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-            {props.projects.length > 0 && <hr />}
-            <button role="menuitem" onClick={props.onOpenProject}>
-              Open project…
-            </button>
-          </div>
-        )}
       </div>
 
       {project ? (

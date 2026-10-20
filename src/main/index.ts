@@ -1,6 +1,6 @@
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron'
 import { IPC, type GlossEvent } from '../shared/ipc'
 import type { Anchor, Attachment } from '../shared/types'
 import { AgentConnection } from './acp'
@@ -19,6 +19,8 @@ import { projectSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
 import { previewMcpImport } from './mcp-import'
 import { OpenCodeSupport } from './opencode'
+import iconIco from '../../build/icon.ico?asset'
+import iconPng from '../../build/icons/256x256.png?asset'
 
 let mainWindow: BrowserWindow | undefined
 let store: Store | undefined
@@ -37,9 +39,34 @@ function isExternalUrl(url: string): boolean {
   }
 }
 
+// The renderer draws the title bar (SPEC → Title bar); the system's window controls sit
+// over its right end (the traffic lights over its left on macOS), in its colors.
+const TITLE_BAR_HEIGHT = 40
+
+/**
+ * The window controls' colors: styles.css's --title-bar and --ink for the theme in use.
+ * Their hover tint comes from Chromium's native theme, which follows the theme setting
+ * (themeSource), so it contrasts with them.
+ */
+function titleBarOverlay(): Electron.TitleBarOverlayOptions {
+  return nativeTheme.shouldUseDarkColors
+    ? { color: '#0e0d0c', symbolColor: '#efeee9', height: TITLE_BAR_HEIGHT }
+    : { color: '#ebeae4', symbolColor: '#1c1b18', height: TITLE_BAR_HEIGHT }
+}
+
+function updateTitleBar(): void {
+  if (process.platform !== 'darwin') mainWindow?.setTitleBarOverlay(titleBarOverlay())
+}
+
 function createWindow(): void {
   const win = new BrowserWindow({
     title: 'Gloss',
+    titleBarStyle: 'hidden',
+    // On macOS `true` only turns on the titlebar-area CSS variables the title bar lays out with.
+    titleBarOverlay: process.platform === 'darwin' ? true : titleBarOverlay(),
+    trafficLightPosition: { x: 14, y: 13 },
+    // Windows takes every size from the .ico; macOS uses the app bundle's icon instead.
+    icon: process.platform === 'win32' ? iconIco : iconPng,
     width: 1280,
     height: 820,
     minWidth: 720,
@@ -424,6 +451,8 @@ app.whenReady().then(() => {
     defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
+      // Fires nativeTheme's 'updated', which recolors the window controls.
+      if (next.global.theme !== previous.global.theme) nativeTheme.themeSource = next.global.theme
       if (next.global.opencodeExecutable !== previous.global.opencodeExecutable) {
         openCodeRestartPending = true
         void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
@@ -432,6 +461,7 @@ app.whenReady().then(() => {
   })
   settings = settingsFile
   settingsFile.load()
+  nativeTheme.themeSource = settingsFile.state().global.theme
   settingsFile.watch()
   sessions = new SessionManager({
     store,
@@ -445,6 +475,7 @@ app.whenReady().then(() => {
     runInTerminal
   })
   registerIpc(sessions, settingsFile)
+  nativeTheme.on('updated', updateTitleBar)
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

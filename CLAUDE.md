@@ -25,6 +25,7 @@ Electron desktop app: a GUI for coding agents (via the Agent Client Protocol) wi
 - `npm run dev`: run with hot reload
 - `npm run build`: typecheck + build to `out/`
 - `npm run typecheck`, `npm run lint`, `npm test` (Vitest)
+- `npm run icons`: regenerate the app icon files in `build/` from `build/icon.svg` and `build/icon-small.svg`
 
 ## Testing
 - `src/main/sessions.test.ts` drives `SessionManager` against an in-process fake ACP agent (`acp.agent()` + `AgentConnection.open(agentApp, ...)`). Extend it for new agent-facing behavior.
