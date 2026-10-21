@@ -117,7 +117,7 @@ export function Conversation(props: Props): React.JSX.Element {
     <main className="conversation" ref={mainRef}>
       <header>
         <h1 title={session.title}>{session.title}</h1>
-        <span className="mono">{agentName}</span>
+        <span className="agent-name">{agentName}</span>
       </header>
       <Log
         className="log"

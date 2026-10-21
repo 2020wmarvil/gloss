@@ -108,7 +108,7 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
       <header>
         <div className="side-tabs" role="tablist">
           <button role="tab" aria-selected={props.tab === 'threads'} onClick={() => props.onTab('threads')}>
-            Threads <span className="mono">{props.review?.count ?? summaries.length}</span>
+            Threads <span className="count">{props.review?.count ?? summaries.length}</span>
           </button>
           <button
             role="tab"
@@ -116,7 +116,7 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
             onClick={() => props.onTab('queue')}
             title="Queue (Ctrl+Shift+Q)"
           >
-            Queue <span className="mono">{queue.items.length}</span>
+            Queue <span className="count">{queue.items.length}</span>
           </button>
         </div>
         <button className="close" onClick={onCollapse} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">

@@ -156,7 +156,7 @@ function LineThreadPanel(
           {props.backTo === 'queue' ? '← Queue' : '← All threads'}
         </button>
         <span className={`kind-chip kind-${kind}`}>{KIND_NAMES[kind]}</span>
-        <span className="mono thread-lines" title={lineLabel(anchor)}>
+        <span className="thread-lines" title={lineLabel(anchor)}>
           {anchor.end === anchor.start ? `L${first}` : `L${first}–${first + anchor.end - anchor.start}`}
           {anchor.side === 'old' ? ' (old)' : ''}
         </span>

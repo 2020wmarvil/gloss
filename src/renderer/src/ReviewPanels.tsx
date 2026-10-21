@@ -52,7 +52,7 @@ export function ReviewThreadList(props: {
     <div className="thread-list review-threads">
       <button className="general-card" onClick={props.onOpenGeneral}>
         <span className="general-title">
-          General conversation <span className="mono">{main.length} {main.length === 1 ? 'message' : 'messages'}</span>
+          General conversation <span className="count">{main.length} {main.length === 1 ? 'message' : 'messages'}</span>
           {working && (
             <span className="thread-working">
               <span className="running-dot" aria-hidden />
@@ -68,7 +68,7 @@ export function ReviewThreadList(props: {
         <div className="segmented" role="group" aria-label="Show">
           {(['open', 'resolved', 'all'] as const).map((f) => (
             <button key={f} className={filter === f ? 'on' : undefined} aria-pressed={filter === f} onClick={() => setFilter(f)}>
-              {f[0].toUpperCase() + f.slice(1)} <span className="mono">{counts[f]}</span>
+              {f[0].toUpperCase() + f.slice(1)} <span className="count">{counts[f]}</span>
             </button>
           ))}
         </div>
@@ -165,7 +165,7 @@ function GeneralMessage(props: { message: Message; open: OpenSession; onOpenThre
             <ul>
               {unplaced.map((f, i) => (
                 <li key={i}>
-                  <span className="mono">{lineLabel(f)}</span> <b>{f.title}</b>
+                  <span className="line-label">{lineLabel(f)}</span> <b>{f.title}</b>
                   {f.body && f.body !== f.title && <Markdown text={f.body} />}
                 </li>
               ))}

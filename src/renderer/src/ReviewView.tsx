@@ -293,7 +293,7 @@ export function ReviewView(props: Props): React.JSX.Element {
       <header className="review-head">
         <div className="review-titles">
           <h1 title={open.session.title}>{open.session.title}</h1>
-          <span className="mono review-meta">
+          <span className="review-meta">
             {props.agentName}
             {review && <RangePicker range={review} diff={diff.diff} refs={refs} onRefresh={loadRefs} onChange={props.onSetRange} />}
             {diff.diff && (
