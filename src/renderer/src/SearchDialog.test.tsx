@@ -68,15 +68,27 @@ it('discards an older response, clears stale results, and reports errors', async
 
 it('traps focus and closes on Escape without forwarding it to the working composer', async () => {
   const { el, input, close } = await mount(async () => ({ results: [], more: false }))
-  const buttons = el.querySelectorAll('button')
   const last = el.querySelector('.select-button[aria-label="Show"]') as HTMLButtonElement
   last.focus()
   await act(async () => last.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })))
-  expect(document.activeElement).toBe(buttons[0])
+  expect(document.activeElement).toBe(input)
   const bubbled = vi.fn()
   window.addEventListener('keydown', bubbled)
   await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
   expect(close).toHaveBeenCalled()
   expect(bubbled).not.toHaveBeenCalled()
   window.removeEventListener('keydown', bubbled)
+})
+
+it('groups results by session and shows inline code and bold without their markers', async () => {
+  const other: SearchResult = { ...result, id: 'n', sessionId: 'o', sessionTitle: 'Other', snippet: 'call `\u0001cache\u0002.get()` **now**' }
+  const { el, input } = await mount(async () => ({ results: [result, other, { ...result, id: 'p', threadQuote: null }], more: false }))
+  await type(input, 'cache')
+  expect([...el.querySelectorAll('.search-group-head b')].map((b) => b.textContent)).toEqual(['Project discussion', 'Other'])
+  expect(el.querySelector('.search-group-head span')!.textContent).toBe('project · 2 results')
+  const snippet = [...el.querySelectorAll('.search-snippet')].find((s) => s.textContent!.startsWith('call'))!
+  expect(snippet.innerHTML).toBe('call <code><mark>cache</mark>.get()</code> now')
+  // Arrows move through the groups in order; Enter opens the highlighted result.
+  await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })))
+  expect(el.querySelector('.search-result.active .search-where')!.textContent).toBe('Agent · Main conversation')
 })

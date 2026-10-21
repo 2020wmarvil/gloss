@@ -24,14 +24,14 @@ export function OpenCodeSettings(props: { executable: string; onSave(executable:
     }
   }
 
-  return <section className="opencode-settings">
-    <h2 className="label">OpenCode</h2>
-    <p className="setting-desc">Use OpenCode v2 with its existing providers and models, including local models served by Ollama. Test the connection to save this setup.</p>
+  return <section className="opencode-settings" aria-labelledby="settings-opencode">
+    <h2 id="settings-opencode">OpenCode</h2>
+    <p className="lede">Use OpenCode v2 with its existing providers and models, including local models served by Ollama. Test the connection to save this setup.</p>
     <label htmlFor="opencode-executable" className="setting-label">Executable path</label>
     <input id="opencode-executable" className="setting-text" type="text" spellCheck={false}
       placeholder="Find installed OpenCode automatically" value={draft} disabled={busy}
       onChange={(e) => { setDraft(e.target.value); setStatus(null); setError(null) }} />
-    <button disabled={busy} onClick={() => void test()}>{busy ? 'Connecting…' : 'Test connection and save'}</button>
+    <button className="secondary" disabled={busy} onClick={() => void test()}>{busy ? 'Connecting…' : 'Test connection and save'}</button>
     {status?.available && <p role="status">Connected to OpenCode {status.version}.<br /><span className="mono">{status.executable}</span></p>}
     {(error || status?.error) && <p role="alert" className="settings-problem">{error ?? status?.error}</p>}
     <p className="setting-desc">Leave the path empty to discover a native executable on PATH or an OpenCode Desktop installation on Windows. Changes apply after running turns finish. The test does not send a prompt or call a model.</p>

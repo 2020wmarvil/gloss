@@ -5,7 +5,7 @@ import type { GlossEvent, PullRequest } from '../shared/ipc'
 import { AgentConnection } from './acp'
 import type { AgentConfig } from './agents'
 import { Store } from './db'
-import { SessionManager } from './sessions'
+import { folderWhere, SessionManager } from './sessions'
 import { threadTag, toMainTag, wireTag } from '../shared/wire'
 import { isFirstPass, REVIEW_INSTRUCTIONS, type ReviewDiff } from '../shared/review'
 import type { Session } from '../shared/types'
@@ -1386,8 +1386,8 @@ describe('SessionManager', () => {
       manager.addProject('/work/blog')
       await manager.createSession('/work/shop', 'fake')
       expect(manager.listProjects()).toEqual([
-        { path: '/work/shop', name: 'shop' },
-        { path: '/work/blog', name: 'blog' }
+        { path: '/work/shop', name: 'shop', where: '/work' },
+        { path: '/work/blog', name: 'blog', where: '/work' }
       ])
     })
 
@@ -1435,7 +1435,7 @@ describe('SessionManager', () => {
       await expect(manager.deleteProject('/work/shop')).resolves.toBeNull()
       expect(state.deleted.sort()).toEqual([a.acpSessionId, b.acpSessionId].sort())
       expect(manager.listSessions().map((s) => s.id)).toEqual([other.id])
-      expect(manager.listProjects()).toEqual([{ path: '/work/blog', name: 'blog' }])
+      expect(manager.listProjects()).toEqual([{ path: '/work/blog', name: 'blog', where: '/work' }])
     })
 
     it('lists nothing when the agent cannot list sessions', async () => {
@@ -1472,7 +1472,7 @@ describe('SessionManager', () => {
         { kind: 'image', name: 'image', mimeType: 'image/png', data: 'iVBOR' }
       ])
       expect(view.toolCalls.map((t) => [t.messageSeq, t.title, t.status])).toEqual([[2, 'npm run build', 'completed']])
-      expect(manager.listProjects()).toEqual([{ path: '/w', name: 'w' }])
+      expect(manager.listProjects()).toEqual([{ path: '/w', name: 'w', where: '/' }])
 
       // Importing it again returns the same session; a later turn continues it without re-recording the replay.
       expect((await manager.importSession('/w', 'fake', 'cli-1', 'x')).id).toBe(session.id)
@@ -2174,5 +2174,17 @@ describe('SessionManager', () => {
       // Line threads have no message to go with: they survive the sync.
       expect(store.getThread(thread.id)).toBeDefined()
     })
+  })
+})
+
+describe('folderWhere', () => {
+  it('names the parent folder, with the home folder as ~', () => {
+    const home = process.platform === 'win32' ? 'C:\\Users\\you' : '/home/you'
+    const sep = process.platform === 'win32' ? '\\' : '/'
+    expect(folderWhere(`${home}${sep}Desktop${sep}cachekit`, home)).toBe(`~${sep}Desktop`)
+    expect(folderWhere(`${home}${sep}cachekit`, home)).toBe('~')
+    expect(folderWhere('/srv/app/', home)).toBe('/srv')
+    expect(folderWhere('/app', home)).toBe('/')
+    expect(folderWhere('C:\\app', '')).toBe('C:\\')
   })
 })

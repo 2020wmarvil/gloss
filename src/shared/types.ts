@@ -138,8 +138,11 @@ export type Thread = {
 
 export type AgentInfo = { id: string; name: string; available?: boolean; setupMessage?: string }
 
-/** A folder Gloss groups sessions by. */
-export type Project = { path: string; name: string }
+/**
+ * A folder Gloss groups sessions by: its name, and where it is (the parent folder, with
+ * the home folder shortened to ~).
+ */
+export type Project = { path: string; name: string; where: string }
 
 /** One of the agent's own sessions for a folder that Gloss has no record of yet. */
 export type AgentSession = { acpSessionId: string; title: string; updatedAt?: string }

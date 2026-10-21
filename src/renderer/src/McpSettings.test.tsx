@@ -28,16 +28,18 @@ const edit = async (input: HTMLInputElement | HTMLTextAreaElement, text: string)
   input.dispatchEvent(new Event('input', { bubbles: true }))
 })
 
-it('places the MCP list under Global without needing an open project', async () => {
+it('has an MCP servers section that needs no open project', async () => {
   const { el } = await mount()
   const state: SettingsState = { path: '/settings.json', error: null, projects: {}, global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] } }
   const update = vi.fn(async () => {})
   await act(async () => root!.render(<SettingsScreen state={state} projectPath={null} onUpdate={update} onClose={() => {}} onOpenFile={async () => null} />))
-  const global = [...el.querySelectorAll('section')].find((s) => s.querySelector('h2')?.textContent === 'Global')!
-  const project = [...el.querySelectorAll('section')].find((s) => s.querySelector('h2')?.textContent === 'Project')!
+  const section = (name: string): Element => [...el.querySelectorAll('section')].find((s) => s.querySelector('h2')?.textContent === name)!
+  await click(button(el, 'This project'))
+  expect(section('Project').textContent).toContain("Open a session to see its project")
+  expect(section('Project').querySelector('.mcp-settings')).toBeNull()
+  await click(button(el, 'MCP servers'))
+  const global = section('MCP servers')
   expect(global.querySelector('.mcp-settings')).not.toBeNull()
-  expect(project.textContent).toContain("Open a session to see its project")
-  expect(project.querySelector('.mcp-settings')).toBeNull()
   await click(button(global, 'Add server'))
   const inputs = global.querySelectorAll<HTMLInputElement>('form input')
   await edit(inputs[0], 'new')
@@ -117,6 +119,7 @@ it('edits the vault for the open project with a normalized path lookup', async (
     global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] } }
   const update = vi.fn(async () => {})
   await act(async () => root!.render(<SettingsScreen state={state} projectPath="c:/work/project" onUpdate={update} onClose={() => {}} onOpenFile={async () => null} />))
+  await click(button(el, 'project'))
   const input = el.querySelector<HTMLInputElement>('#setting-obsidianVault')!
   expect(input.value).toBe('Old notes')
   await edit(input, 'Project notes')

@@ -110,6 +110,25 @@
   --kind-nit: var(--faint);
   --kind-you: var(--paused);
   --kind-resolved: var(--faint);
+
+  /* Depth (docs/mocks/depth.html, option C): the title bar and sidebar are the window's
+     frame; the panes are one sheet laid on it. Light catches raised things' top edges
+     (--edge), lifts are short (--lift-*), wells are pressed in (--sink), panes carry a
+     faint top sheen, and the primary button is lacquered (--gloss). */
+  --frame: #ebeae4;
+  --edge: rgba(255, 255, 255, 0.9);
+  --lift-1: 0 1px 2px rgba(28, 27, 24, 0.07);
+  --lift-2: 0 1px 2px rgba(28, 27, 24, 0.06), 0 4px 14px -4px rgba(28, 27, 24, 0.12);
+  --lift-pane: 0 0 0 1px rgba(28, 27, 24, 0.07), 0 2px 4px rgba(28, 27, 24, 0.04), 0 12px 32px -8px rgba(28, 27, 24, 0.14);
+  --sink: inset 0 1px 2px rgba(28, 27, 24, 0.07);
+  --sheen: linear-gradient(to bottom, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 220px);
+  --gloss: linear-gradient(to bottom, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0) 51%);
+  --brand-glow: 0 1px 2px rgba(194, 20, 122, 0.25), 0 4px 12px -3px rgba(255, 61, 166, 0.45);
+  --brand-edge: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 0 rgba(120, 10, 60, 0.18);
+  /* A raised neutral: secondary buttons, dropdowns, the project switcher. */
+  --raised-fill: linear-gradient(to bottom, var(--surface), var(--bg));
+  /* Cards and rows that sit on a pane: a hairline, the lit edge and a short lift. */
+  --card: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1);
 }
 
 :root[data-theme='dark'] {
@@ -138,7 +157,7 @@
   --kbd-bg: rgba(0, 0, 0, 0.2);
   --accent: #ff5c9e;
   --accent-tint: #3a1a2c;
-  --accent-mark: #5c2846;
+  --accent-mark: #5a2440;
   --on-accent: #17040e;
   --focus: rgba(255, 92, 158, 0.4);
   --working: #7c9cf0;
@@ -151,19 +170,30 @@
   --paused-tint: #2a2240;
   --failed: #f07a5f;
   --failed-tint: #3a1d16;
-  --failed-line: #6b3226;
+  --failed-line: #5c2a1f;
   --on-failed: #1a0b0a;
   --warn: #f0b04a;
   --warn-fill: #d99530;
   --merged: #b394f0;
   --code-ink: #e9e6de;
   --diff-add: #182a1b;
-  --diff-add-gutter: #1f3622;
+  --diff-add-gutter: #1f3a23;
   --diff-del: #2f1c1a;
-  --diff-del-gutter: #3d2422;
+  --diff-del-gutter: #45231f;
   --diff-empty: #191816;
   --diff-hl: #33301c;
   --diff-hunk: #1a1917;
+
+  --frame: #0c0b0a;
+  --edge: rgba(255, 255, 255, 0.08);
+  --lift-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --lift-2: 0 1px 2px rgba(0, 0, 0, 0.5), 0 4px 14px -4px rgba(0, 0, 0, 0.6);
+  --lift-pane: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 2px 4px rgba(0, 0, 0, 0.3), 0 12px 32px -8px rgba(0, 0, 0, 0.7);
+  --sink: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+  --sheen: linear-gradient(to bottom, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 220px);
+  --gloss: linear-gradient(to bottom, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0) 51%);
+  --brand-glow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 4px 14px -3px rgba(255, 61, 166, 0.35);
+  --raised-fill: linear-gradient(to bottom, var(--raised), var(--surface));
 }
 
 * {
@@ -217,10 +247,24 @@ body {
   display: none;
 }
 
-/* One focus ring for every control: a pink halo. */
+/* One focus ring for every control: a pink halo. An outline, so it shows over the
+   controls' own shadows (lifts, wells, lit edges). */
 :focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--focus);
+  outline: 3px solid var(--focus);
+  outline-offset: 0;
+}
+
+/* Text fields: a pressed-in well whose border turns pink while typing. */
+input:not([type='checkbox'], [type='radio'], [type='range'], [type='file']),
+textarea {
+  box-shadow: var(--sink);
+}
+
+input:not([type='checkbox'], [type='radio'], [type='range'], [type='file']):focus,
+textarea:focus {
+  border-color: var(--accent);
+  outline: 3px solid var(--focus);
+  outline-offset: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -246,38 +290,89 @@ button:disabled {
 /* Button kinds (docs/mocks/design-system.html → Buttons): primary is the one main
    action of a surface; secondary a light neutral fill; ghost for everything quieter.
    Disabled is neutral for every kind. */
-button.primary {
+button.primary,
+button.secondary,
+button.ghost {
+  flex: none;
   height: var(--control);
-  padding: 0 14px;
+  padding: 0 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   border: 0;
   border-radius: var(--r-md);
-  background: var(--brand-gradient);
-  color: var(--on-brand);
   font-size: var(--t-13);
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
-  transition: filter var(--d-fast) var(--ease);
+  transition: filter var(--d-fast) var(--ease), background var(--d-fast) var(--ease);
+}
+
+/* Lacquered: the gradient under a glassy top half, a lit rim and a soft pink glow. */
+button.primary {
+  background: var(--gloss), var(--brand-gradient);
+  color: var(--on-brand);
+  font-weight: 600;
+  box-shadow: var(--brand-edge), var(--brand-glow);
 }
 
 button.primary:hover:not(:disabled) {
   filter: brightness(1.06);
 }
 
-button.primary:disabled {
-  opacity: 1;
-  background: var(--sunken);
-  color: var(--faint);
+/* A raised neutral with a lit top edge. */
+button.secondary {
+  background: var(--raised-fill);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-strong), inset 0 1px 0 var(--edge), var(--lift-1);
 }
 
-.empty-state button.primary {
+button.secondary:hover:not(:disabled) {
+  filter: brightness(0.98);
+}
+
+:root[data-theme='dark'] button.secondary:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--ink-2);
+}
+
+button.ghost:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+button.sm {
+  height: var(--control-sm);
+  padding: 0 9px;
+  font-size: var(--t-12);
+}
+
+button.lg {
   height: var(--control-lg);
   padding: 0 18px;
   font-size: var(--t-14);
 }
+
+/* Disabled is a pressed-in well for every kind, never a faded gradient. */
+button.primary:disabled,
+button.secondary:disabled {
+  opacity: 1;
+  background: var(--sunken);
+  color: var(--faint);
+  box-shadow: var(--sink);
+  filter: none;
+}
+
+button.ghost:disabled {
+  opacity: 1;
+  color: var(--faint);
+}
+
 
 .muted {
   color: var(--muted);
@@ -289,8 +384,9 @@ button.primary:disabled {
   color: var(--muted);
 }
 
-/* A neutral count: thread and reply totals, tab counts. */
+/* A neutral count: thread and reply totals, tab counts. A small pressed-in well. */
 .count {
+  box-shadow: var(--sink);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -328,14 +424,34 @@ button.primary:disabled {
   display: flex;
   height: 100%;
   padding-top: var(--title-bar-height);
+  background: var(--frame);
+}
+
+/* The sheet: everything right of the sidebar, one pane laid on the frame with a lit top
+   edge. Its top-left corner is rounded where it meets the title bar and sidebar. */
+.sheet {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+  border-top-left-radius: var(--r-lg);
+  background: var(--bg);
+  box-shadow: var(--lift-pane), inset 0 1px 0 var(--edge);
+}
+
+/* Each pane catches a faint light at its top. */
+.conversation,
+.empty-state,
+.settings {
+  background-image: var(--sheen);
 }
 
 /* Title bar: drawn by the app, the window's drag area. The system's controls cover the
    area outside titlebar-area-x/width (the right end, or the traffic lights on macOS). */
 :root {
-  /* One more than the window controls' 40px (main's TITLE_BAR_HEIGHT), so the bottom
-     border runs under them too. */
-  --title-bar-height: 41px;
+  /* The window controls' height (main's TITLE_BAR_HEIGHT). */
+  --title-bar-height: 40px;
 }
 
 .title-bar {
@@ -348,7 +464,6 @@ button.primary:disabled {
   display: flex;
   align-items: center;
   background: var(--title-bar);
-  border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
   user-select: none;
 }
@@ -357,7 +472,7 @@ button.primary:disabled {
   display: flex;
   align-items: center;
   height: 100%;
-  padding-left: max(22px, calc(env(titlebar-area-x, 0px) + 8px));
+  padding-left: max(14px, calc(env(titlebar-area-x, 0px) + 8px));
 }
 
 .sidebar-top {
@@ -373,11 +488,11 @@ button.primary:disabled {
 
 /* Sidebar */
 
+/* Part of the frame: no background or border of its own. */
 .sidebar {
   flex: 0 0 240px;
   min-width: 0;
-  padding: 12px 14px 14px;
-  border-right: 1px solid var(--line);
+  padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -444,10 +559,6 @@ body.resizing {
   color: var(--ink);
 }
 
-.empty-wordmark {
-  font-size: 34px;
-  margin-bottom: 8px;
-}
 
 /* Icon buttons: one size, ghost, neutral when pressed (docs/mocks/design-system.html → Icons). */
 .icon-button,
@@ -483,14 +594,8 @@ body.resizing {
   color: var(--ink);
 }
 
-.new-session {
-  height: 36px;
-  border: 0;
-  box-shadow: inset 0 0 0 1px var(--line);
-  border-radius: var(--r-md);
-  background: var(--selected);
-  text-align: left;
-  padding: 0 10px;
+button.new-session {
+  justify-content: flex-start;
 }
 
 /* New session, and a caret for its agent menu (star = the default agent). */
@@ -502,11 +607,7 @@ body.resizing {
 .new-session-split .new-session {
   flex: 1;
   min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
   border-radius: var(--r-md) 0 0 var(--r-md);
-  white-space: nowrap;
 }
 
 .new-session-label {
@@ -515,29 +616,24 @@ body.resizing {
 
 .new-session-agent {
   margin-left: auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--muted);
-  font-size: var(--t-12);
+  font-weight: 400;
 }
 
-.new-session-agents {
-  flex: none;
+button.new-session-agents {
   width: 30px;
-  height: 36px;
+  margin-left: 1px;
   padding: 0;
-  border: 0;
-  box-shadow: inset 0 0 0 1px var(--line);
-  border-left: 0;
-  border-radius: 0 8px 8px 0;
-  background: var(--selected);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
 }
 
 .agent-menu {
   left: 0;
   right: 0;
-  top: 40px;
+  top: 36px;
 }
 
 .agent-item {
@@ -620,7 +716,9 @@ body.resizing {
 }
 
 .sidebar .label {
-  padding: 12px 8px 0;
+  padding: 8px 10px 2px;
+  font-size: var(--t-11);
+  color: var(--faint);
 }
 
 .sidebar-scroll {
@@ -647,23 +745,28 @@ body.resizing {
   grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 10px;
-  padding: 6px 6px 6px 10px;
+  padding: 7px 8px 7px 10px;
   border: 0;
   border-radius: var(--r-md);
   background: transparent;
   text-align: left;
   font-size: var(--t-13);
   font-weight: 500;
-  color: var(--ink-2);
+  color: var(--ink);
 }
 
 .session-row:hover {
   background: var(--hover);
 }
 
+/* The open session is a card lifted off the frame. */
 .session-row.on {
-  background: var(--selected);
-  color: var(--ink);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1), 0 0 0 1px var(--line);
+}
+
+:root[data-theme='dark'] .session-row.on {
+  background: var(--raised);
 }
 
 /* The current session: a pink bar, "you are here". */
@@ -760,11 +863,11 @@ body.resizing {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 46px;
-  padding: 0 10px;
-  border: 1px solid var(--line-strong);
+  padding: 6px 8px 6px 10px;
+  border: 0;
   border-radius: var(--r-md);
-  background: var(--surface);
+  background: var(--raised-fill);
+  box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1);
   text-align: left;
 }
 
@@ -773,15 +876,21 @@ body.resizing {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  line-height: 1.25;
+  line-height: 1.3;
 }
 
 .switch-names b {
-  font-size: var(--t-14);
+  font-size: var(--t-13);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.switch-names .mono,
-.project-menu .mono {
+.switch-where,
+.project-where {
+  font-size: var(--t-12);
+  color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -795,23 +904,22 @@ body.resizing {
 .menu {
   position: absolute;
   z-index: 10;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  box-shadow: 0 6px 24px var(--shadow);
-  padding: 4px;
+  background: var(--raised) var(--sheen);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge);
+  padding: 6px;
   font-weight: 400;
 }
 
 .menu button {
   display: block;
   width: 100%;
-  padding: 6px 10px;
+  padding: 7px 10px;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
   text-align: left;
-  font-size: var(--t-14);
+  font-size: var(--t-13);
 }
 
 .menu button:hover {
@@ -825,13 +933,13 @@ body.resizing {
 .menu hr {
   border: 0;
   border-top: 1px solid var(--line);
-  margin: 4px 0;
+  margin: 6px 4px;
 }
 
 .project-menu {
   left: 0;
   right: 0;
-  top: 50px;
+  top: calc(100% + 4px);
   max-height: 60vh;
   overflow-y: auto;
 }
@@ -920,22 +1028,17 @@ body.resizing {
   }
 }
 
-.settings-button {
+.sidebar-foot {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  height: var(--control);
-  padding: 0 8px;
-  border: 0;
-  border-radius: var(--r-md);
-  background: transparent;
-  text-align: left;
-  font-size: var(--t-13);
-  color: var(--muted);
+  flex-direction: column;
+  gap: 1px;
 }
 
-.settings-button:hover,
-.settings-button.on {
+button.settings-button {
+  justify-content: flex-start;
+}
+
+button.settings-button.on {
   background: var(--hover);
   color: var(--ink);
 }
@@ -953,119 +1056,194 @@ body.resizing {
   font-weight: 700;
 }
 
-/* Settings screen */
+/* Settings screen (docs/mocks/target.html#settings): the sections on the left, one
+   section on the right as cards of rows: the label and help, then one control. */
 
 .settings {
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
-  flex-direction: column;
   container-type: inline-size;
 }
 
-.settings header,
-.settings-body {
-  width: 100%;
-  max-width: clamp(820px, 76cqi, 1080px);
-  margin-inline: auto;
+.settings-nav {
+  flex: 0 0 210px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-right: 1px solid var(--line);
 }
 
-.settings header {
+.settings-nav h1 {
+  margin: 0;
+  padding: 0 10px 12px;
+  font-size: var(--t-17);
+  font-weight: 600;
+}
+
+.settings-nav-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 32px;
-  border-bottom: 1px solid var(--line);
-}
-
-.settings header h1 {
-  margin: 0;
-  font-size: var(--t-16);
-}
-
-.settings-close,
-.settings-file button {
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--line-strong);
+  gap: 10px;
+  min-height: var(--control);
+  padding: 0 10px;
+  border: 0;
   border-radius: var(--r-md);
-  background: var(--surface);
+  background: transparent;
+  color: var(--ink-2);
   font-size: var(--t-13);
+  text-align: left;
+}
+
+.settings-nav-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-nav-item svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+
+.settings-nav-item:hover {
+  background: var(--hover);
+}
+
+/* The open section: a card with the pink "you are here" bar. */
+.settings-nav-item.on {
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1), 0 0 0 1px var(--line);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+:root[data-theme='dark'] .settings-nav-item.on {
+  background: var(--raised);
+}
+
+.settings-nav-item.on::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.settings-nav-group {
+  padding: 14px 10px 4px;
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.settings-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 40px 32px;
+}
+
+.settings-body > * {
+  max-width: 760px;
+}
+
+/* The file's path and Open in editor, then Done at the right. */
+.settings-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.settings-file .mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-file .ghost svg {
+  width: 14px;
+  height: 14px;
 }
 
 .settings-close {
   margin-left: auto;
 }
 
-.settings-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 8px 32px 32px;
+.settings-body h2 {
+  margin: 0 0 4px;
+  font-size: var(--t-20);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
-.settings-body section {
-  padding: 24px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.settings-body section:last-child {
-  border-bottom: 0;
-}
-
-.settings-body .label {
-  margin: 0 0 12px;
+.settings-body .lede {
+  margin: 0 0 14px;
+  font-size: var(--t-13);
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .settings-body p {
-  margin: 6px 0;
-  font-size: var(--t-14);
+  font-size: var(--t-13);
   overflow-wrap: anywhere;
 }
 
-.settings-file {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+/* A card of rows on the pane. */
+.settings-card {
+  margin: 0 0 22px;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--card);
 }
 
-.settings-file .mono {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.settings-file button {
-  flex: none;
+:root[data-theme='dark'] .settings-card {
+  background: var(--raised);
 }
 
 .setting {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px;
-  align-items: flex-start;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  align-items: center;
   gap: 24px;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--line-soft);
+  padding: 14px 18px;
 }
 
-.setting:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
+.setting + .setting {
+  border-top: 1px solid var(--line);
 }
 
-.setting input {
-  justify-self: end;
-  width: 18px;
-  height: 18px;
-  margin: 5px 0 0;
-  accent-color: var(--ink);
-  cursor: pointer;
+.setting:has(.setting-text) {
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+
+.setting:has(.segmented),
+.setting:has(.switch) {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .opencode-settings input.setting-text {
   display: block;
   width: 100%;
+  max-width: 520px;
   margin: 8px 0 12px;
   height: var(--control);
   padding: 0 10px;
@@ -1081,10 +1259,6 @@ body.resizing {
   overflow-wrap: anywhere;
 }
 
-.setting:has(.setting-text) {
-  grid-template-columns: minmax(0, 1fr) 260px;
-}
-
 /* Fields and dropdowns (docs/mocks/design-system.html → Inputs and controls): one style;
    the focus ring is the global pink halo. */
 .select {
@@ -1097,7 +1271,8 @@ body.resizing {
   padding: 0 10px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
-  background: var(--surface);
+  background: var(--raised-fill);
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1);
   color: var(--ink);
   font: inherit;
   font-size: var(--t-13);
@@ -1130,9 +1305,9 @@ body.resizing {
   margin: 0;
   padding: 6px;
   list-style: none;
-  background: var(--raised);
+  background: var(--raised) var(--sheen);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line);
+  box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge);
   font-size: var(--t-13);
 }
 
@@ -1172,6 +1347,7 @@ body.resizing {
   border: 0;
   border-radius: var(--r-pill);
   background: var(--line-strong);
+  box-shadow: var(--sink);
   transition: background var(--d-fast) var(--ease);
 }
 
@@ -1220,9 +1396,9 @@ body.resizing {
   width: 100%;
 }
 
-.setting .switch {
+.setting .switch,
+.setting .segmented {
   justify-self: end;
-  margin-top: 4px;
 }
 
 .setting-copy {
@@ -1231,36 +1407,80 @@ body.resizing {
 
 .setting-label {
   display: block;
+  font-size: var(--t-14);
   font-weight: 500;
   cursor: pointer;
 }
 
 .settings-body .setting-desc {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   font-size: var(--t-13);
   color: var(--muted);
 }
 
+/* Segmented: a pressed-in well, the chosen option raised out of it. */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-md);
+  background: var(--sunken);
+  box-shadow: var(--sink);
+}
 
-.shortcut-group h2 {
-  margin: 14px 0 6px;
+.segmented button {
+  height: 26px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
   font-size: var(--t-13);
   font-weight: 500;
-  color: var(--muted);
+}
+
+.segmented button:hover {
+  color: var(--ink);
+}
+
+.segmented button.on,
+.segmented button[aria-checked='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1);
+}
+
+:root[data-theme='dark'] .segmented button.on,
+:root[data-theme='dark'] .segmented button[aria-checked='true'] {
+  background: var(--raised);
+}
+
+
+.shortcut-group h3 {
+  margin: 0 0 8px 2px;
+  font-size: var(--t-13);
+  font-weight: 600;
+  color: var(--ink-2);
 }
 
 .shortcut-group dl {
-  margin: 0;
+  margin: 0 0 22px;
 }
 
 .shortcut {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 42%);
   gap: 24px;
-  align-items: start;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+  padding: 10px 18px;
   font-size: var(--t-14);
+}
+
+.shortcut + .shortcut {
+  border-top: 1px solid var(--line);
 }
 
 .shortcut dt,
@@ -1279,10 +1499,6 @@ body.resizing {
   grid-row: 1;
 }
 
-.shortcut:last-child {
-  border-bottom: 0;
-}
-
 .shortcut-keys {
   display: flex;
   flex-wrap: wrap;
@@ -1299,43 +1515,20 @@ body.resizing {
   font-size: var(--t-12);
 }
 
-.shortcut kbd {
-  display: inline-block;
-  min-width: 1.6em;
-  padding: 0 6px;
-  border: 1px solid var(--line-strong);
-  border-bottom-width: 2px;
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  font-family: var(--font-ui);
-  font-size: var(--t-12);
-  line-height: 20px;
-  text-align: center;
-}
-
-@container (max-width: 560px) {
-  .settings header {
-    padding: 16px 20px;
+/* Narrow: the section list and rows stack. */
+@container (max-width: 640px) {
+  .settings-nav {
+    flex-basis: 160px;
   }
 
   .settings-body {
-    padding: 8px 20px 24px;
+    padding: 16px 20px 24px;
   }
 
-  .setting {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 16px;
-  }
-
-  .setting:has(select),
+  .setting,
   .setting:has(.setting-text) {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
-  }
-
-  .setting select {
-    width: 180px;
-    max-width: 100%;
   }
 
   .shortcut {
@@ -1343,23 +1536,13 @@ body.resizing {
     gap: 6px;
   }
 
-  .shortcut dd {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
   .shortcut dt {
     grid-column: 1;
     grid-row: 2;
+  }
+
+  .shortcut-keys {
     justify-content: flex-start;
-  }
-
-  .settings-file {
-    flex-wrap: wrap;
-  }
-
-  .settings-file .mono {
-    flex-basis: 100%;
   }
 }
 
@@ -1389,12 +1572,49 @@ body.resizing {
 
 .empty-state {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 28px;
+  padding: 24px;
   color: var(--muted);
+}
+
+/* The bead beside the wordmark (docs/BRAND.md), its diameter a little larger than the
+   type; for a project, beside the project's name. */
+.lockup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+  color: var(--ink);
+}
+
+.lockup > span {
+  font-size: 44px;
+  font-weight: 600;
+  font-variation-settings: 'opsz' 32;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.lockup.project {
+  gap: 10px;
+}
+
+.lockup.project > span {
+  min-width: 0;
+  padding-bottom: 4px;
+  font-size: 36px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lockup .brand-mark {
+  flex: none;
 }
 
 /* Conversation */
@@ -1433,20 +1653,27 @@ body.resizing {
 }
 
 .conversation header {
+  flex: none;
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 16px 32px;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--line);
   min-width: 0;
 }
 
 .conversation header h1 {
   margin: 0;
-  font-size: var(--t-16);
+  font-size: var(--t-17);
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.conversation header .agent-name {
+  font-size: var(--t-13);
 }
 
 .conversation header .mono {
@@ -1472,6 +1699,22 @@ body.resizing {
   overflow-y: auto;
 }
 
+/* A new session: one line just above the composer, where the eye already is. */
+.log:has(> .new-hint) {
+  min-height: 100%;
+  justify-content: flex-end;
+}
+
+.new-hint {
+  margin: 0;
+  text-align: center;
+  font-size: var(--t-20);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 .log {
   padding: 28px 32px;
   display: flex;
@@ -1479,12 +1722,14 @@ body.resizing {
   gap: 16px;
 }
 
+/* The user's messages: pressed into the page. */
 .you {
   align-self: flex-end;
   max-width: 75%;
   background: var(--sunken);
   border-radius: var(--r-lg);
-  padding: 10px 14px;
+  padding: 9px 13px;
+  box-shadow: var(--sink);
   overflow-wrap: anywhere;
 }
 
@@ -1516,21 +1761,21 @@ body.resizing {
   max-width: none;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--failed-line);
+  gap: 12px;
+  padding: 12px 14px;
   border-radius: var(--r-md);
   background: var(--failed-tint);
-  color: var(--failed);
+  box-shadow: inset 0 0 0 1px var(--failed-line);
+  color: var(--ink);
   font-size: var(--t-14);
   text-align: left;
 }
 
 .notice-icon {
   flex: none;
-  width: 16px;
-  height: 16px;
-  margin-top: 0.15em;
+  width: 20px;
+  height: 20px;
+  color: var(--failed);
 }
 
 /* Tool calls */
@@ -1540,6 +1785,7 @@ body.resizing {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--surface);
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1);
   overflow: hidden;
 }
 
@@ -1547,6 +1793,7 @@ body.resizing {
 .tool-group.internal-only {
   border-color: transparent;
   background: transparent;
+  box-shadow: none;
 }
 
 .tool-group.internal-only .tool-summary {
@@ -1784,6 +2031,7 @@ body.resizing {
   background: var(--sunken);
   padding: 1px 5px;
   border-radius: var(--r-xs);
+  box-shadow: var(--sink);
 }
 
 .md pre {
@@ -1791,11 +2039,13 @@ body.resizing {
   background: var(--code-bg);
   color: var(--code-ink);
   border-radius: var(--r-md);
+  box-shadow: var(--sink);
   overflow-x: auto;
 }
 
 .md pre code {
   background: none;
+  box-shadow: none;
   padding: 0;
   font-size: 0.833em;
 }
@@ -1839,32 +2089,50 @@ body.resizing {
 
 /* Above the composer while a thread works or messages wait (SPEC → Activity strip) */
 .activity-strip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   padding: 8px 32px 0;
   font-size: var(--t-13);
 }
 
 .activity-strip + .composer {
-  padding-top: 6px;
+  padding-top: 8px;
 }
 
-.activity-strip button {
-  display: inline-flex;
+/* One raised bar: the thread's state and name, then what's queued. */
+.activity-card {
+  display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
+  height: 32px;
+  padding: 0 3px 0 0;
   border-radius: var(--r-md);
   background: var(--surface);
-  color: var(--ink-2);
+  box-shadow: var(--card);
 }
 
-.activity-strip button:hover {
-  background: var(--hover);
+:root[data-theme='dark'] .activity-card {
+  background: var(--raised);
+}
+
+.activity-strip .activity-thread {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 0 12px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink-2);
+  text-align: left;
+}
+
+button.activity-thread:hover .activity-name {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
 }
 
 /* A state's dot: the strip, the Queue tab's rows */
@@ -1899,35 +2167,32 @@ body.resizing {
   background: var(--state-failed);
 }
 
-.activity-strip .activity-thread {
-  flex: 1;
-}
-
 .activity-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.activity-strip .activity-queued {
-  flex: none;
-  color: var(--state-queued);
+.activity-strip .activity-queued svg {
+  width: 14px;
+  height: 14px;
 }
 
 .box {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
   border-radius: var(--r-lg);
   background: var(--surface);
-  padding: 8px 8px 8px 14px;
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-2);
+  padding: 7px 7px 7px 13px;
 }
 
 .box:focus-within,
 .box.dragging {
   border-color: var(--line-strong);
-  box-shadow: 0 0 0 3px var(--focus);
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-2), 0 0 0 3px var(--focus);
 }
 
 .box.dragging {
@@ -2073,11 +2338,10 @@ body.resizing {
   z-index: 10;
   list-style: none;
   margin: 0;
-  padding: 4px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  box-shadow: 0 6px 24px var(--shadow);
+  padding: 6px;
+  background: var(--raised) var(--sheen);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge);
   max-height: 280px;
   overflow-y: auto;
 }
@@ -2224,11 +2488,21 @@ body.resizing {
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  padding: 5px 6px 5px 12px;
+  padding: 3px 6px 3px 10px;
   border: 1px dashed var(--line-strong);
   border-radius: var(--r-md);
-  background: var(--sunken);
-  font-size: var(--t-14);
+  background: var(--bg);
+  font-size: var(--t-13);
+}
+
+.queued-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+  color: var(--state-queued);
+  font-size: var(--t-12);
+  font-weight: 500;
 }
 
 .queued-text {
@@ -2340,12 +2614,12 @@ body.resizing {
 }
 
 .dialog {
-  width: 440px;
+  width: 460px;
   max-width: 100%;
-  background: var(--surface);
+  background: var(--raised) var(--sheen);
   border-radius: var(--r-lg);
-  padding: 20px 22px;
-  box-shadow: 0 10px 40px var(--shadow);
+  padding: 22px;
+  box-shadow: var(--shadow-3), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge);
 }
 
 .dialog h2 {
@@ -2456,19 +2730,35 @@ body.resizing {
 .status-line {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 2px 12px;
   flex-wrap: wrap;
-  padding: 0 25px 10px;
+  padding: 6px 26px 10px;
   font-size: var(--t-12);
   color: var(--muted);
+}
+
+/* The agent's items: those that don't fit on the line are hidden, right to left
+   (StatusLine's useFirstLineOnly), so the row never grows. */
+.status-agent {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 2px;
+}
+
+.status-line > .status-item.error {
+  flex-basis: 100%;
 }
 
 .status-item {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  flex-shrink: 0;
   height: 24px;
-  padding: 0 7px;
+  padding: 0 6px;
   border-radius: var(--r-sm);
   white-space: nowrap;
 }
@@ -2509,9 +2799,9 @@ a.status-item:hover,
 /* A review has no composer above it: the status line is a band under the diff. */
 .review > .status-line {
   max-width: none;
-  padding: 4px 18px;
+  padding: 4px 14px;
   border-top: 1px solid var(--line);
-  background: var(--bg);
+  background: var(--surface);
 }
 
 /* The usage button holds the context, cost and limit items. */
@@ -2583,29 +2873,32 @@ a.status-item {
 }
 
 .status-place {
-  flex: 1 1 0;
-  min-width: 160px;
+  flex: 0 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 2px;
 }
 
+.status-item.folder,
 .status-item.branch {
   min-width: 0;
+  max-width: 180px;
+  flex-shrink: 1;
 }
 
-.status-branch {
+.status-name {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .meter {
   display: inline-block;
-  width: 48px;
-  height: 6px;
-  border-radius: var(--r-xs);
-  background: var(--sunken);
+  width: 30px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  box-shadow: var(--sink);
   overflow: hidden;
 }
 
@@ -2634,9 +2927,9 @@ a.status-item {
   max-height: 50vh;
   overflow-y: auto;
   padding: 6px;
-  background: var(--raised);
+  background: var(--raised) var(--sheen);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line);
+  box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge);
 }
 
 .popover.down {
@@ -2648,8 +2941,7 @@ a.status-item {
 }
 
 .status-item.usage-trigger {
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .usage-panel {
@@ -2674,6 +2966,7 @@ a.status-item {
   overflow: hidden;
   border-radius: var(--r-xs);
   background: var(--sunken);
+  box-shadow: var(--sink);
 }
 
 .usage-meter > span {
@@ -2823,101 +3116,66 @@ a.status-item {
 
 /* List-item anchors (top-level items of agent messages in the main view) */
 
-/* Rendered as cards with the marker drawn inside each row (.anchor-marker). */
+/* The list stays a list. On hover an item is tinted (bleeding a little past its text)
+   and Reply shows in its left margin, over the marker. */
+.md li.anchor-item {
+  position: relative;
+  border-radius: var(--r-sm);
+}
+
 .md.with-anchors > ol,
 .md.with-anchors > ul {
-  margin: 0 0 10px;
-  padding: 0;
-  list-style: none;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  overflow: hidden;
+  padding-left: 26px;
 }
 
-.md li.anchor-item {
-  margin: 0;
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.md li.anchor-item:last-child {
-  border-bottom: 0;
-}
-
-li.anchor-item:hover {
+li.anchor-item:hover,
+li.anchor-item:focus-within,
+li.anchor-item.active {
   background: var(--hover-soft);
+  box-shadow: -8px 0 0 var(--hover-soft), 8px 0 0 var(--hover-soft);
 }
 
 li.anchor-item.active {
   background: var(--accent-tint);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: -8px 0 0 var(--accent-tint), 8px 0 0 var(--accent-tint);
 }
 
-.anchor-marker {
-  flex: 0 0 24px;
-  font-family: var(--font-ui);
-  font-size: var(--t-13);
-  color: var(--muted);
-  padding-top: 2px;
+li.anchor-item:hover::marker,
+li.anchor-item:focus-within::marker {
+  color: transparent;
 }
 
-.anchor-row {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 12px 12px 12px 16px;
-}
-
-.anchor-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.anchor-body > :last-child {
-  margin-bottom: 0;
-}
-
-.anchor-row .badge,
-.anchor-row .reply {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 10px;
-  font-size: var(--t-13);
-  border-radius: var(--r-pill);
-}
-
-.anchor-row .badge {
+.item-reply {
+  position: absolute;
+  left: -30px;
+  top: 1px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: grid;
+  place-items: center;
   border: 0;
-  background: var(--accent-tint);
-  color: var(--accent);
-  font-weight: 500;
-}
-
-li.anchor-item.active .badge {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
-.anchor-row .reply {
-  border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
   background: var(--surface);
+  box-shadow: var(--card);
   color: var(--ink-2);
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--d-fast) var(--ease);
 }
 
-li.anchor-item:hover .reply,
-li.anchor-item.active .reply,
-.anchor-row .reply:focus-visible {
+.item-reply svg {
+  width: 14px;
+  height: 14px;
+}
+
+li.anchor-item:hover > .item-reply,
+li.anchor-item:focus-within > .item-reply {
   opacity: 1;
 }
 
-.anchor-row .running-dot {
-  background: currentColor;
+/* In a loose list, the count follows the item's last paragraph rather than wrapping. */
+li.anchor-item > p:has(+ .item-count) {
+  display: inline;
 }
 
 /* Header status that opens the running thread */
@@ -2935,17 +3193,26 @@ button.status.link {
   flex: 0 0 clamp(420px, 32vw, 600px);
   min-width: 0;
   border-left: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--surface) var(--sheen);
   display: flex;
   flex-direction: column;
 }
 
 .thread-panel header {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 12px 12px 20px;
+  gap: 4px;
+  min-height: 56px;
+  padding: 0 10px 0 12px;
   border-bottom: 1px solid var(--line);
+}
+
+.thread-panel header .icon-button,
+.thread-panel header .header-button.icon,
+.thread-panel .close {
+  width: var(--control-sm);
+  height: var(--control-sm);
 }
 
 .thread-panel h2 {
@@ -2965,18 +3232,22 @@ button.status.link {
 
 .thread-panel .back {
   flex: none;
-  margin-left: -6px;
-  height: var(--control-sm);
-  padding: 0 8px 0 6px;
+  height: 28px;
+  padding: 0 8px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
-  color: var(--muted);
+  color: var(--ink-2);
   font-size: var(--t-13);
   font-weight: 500;
+}
+
+.thread-panel .back svg {
+  width: 14px;
+  height: 14px;
 }
 
 .thread-panel .back:hover {
@@ -3009,11 +3280,24 @@ button.status.link {
   font-size: var(--t-14);
 }
 
+/* A thread: its quote with the anchor's pink mark, where it hangs, then its state. Find
+   in main shows on hover at the end of the meta line. */
 .thread-row {
+  position: relative;
+  border-radius: var(--r-md);
+}
+
+.thread-row:hover,
+.thread-row:focus-within {
+  background: var(--hover);
+}
+
+.thread-open {
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px 12px;
+  padding: 10px 10px 10px 12px;
   border: 0;
   border-radius: var(--r-md);
   background: transparent;
@@ -3021,17 +3305,50 @@ button.status.link {
   text-align: left;
 }
 
-.thread-row:hover {
-  background: var(--hover);
-}
-
 .thread-quote {
   font-size: var(--t-14);
-  color: var(--ink-2);
+  color: var(--ink);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.thread-quote::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 13px;
+  margin-right: 8px;
+  border-radius: 2px;
+  background: var(--accent);
+  vertical-align: -1px;
+}
+
+.thread-where {
+  font-size: var(--t-12);
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+button.thread-find {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  display: none;
+  background: var(--surface);
+}
+
+.thread-row:hover .thread-find,
+.thread-find:focus-visible {
+  display: inline-flex;
+}
+
+.thread-find svg {
+  width: 14px;
+  height: 14px;
 }
 
 .thread-meta {
@@ -3047,6 +3364,7 @@ button.status.link {
   align-items: center;
   gap: 6px;
   color: var(--state-working);
+  font-weight: 500;
 }
 
 .thread-queued {
@@ -3064,10 +3382,11 @@ button.status.link {
   padding: 2px;
   border-radius: var(--r-md);
   background: var(--sunken);
+  box-shadow: var(--sink);
 }
 
 .side-tabs button {
-  height: 28px;
+  height: 26px;
   padding: 0 10px;
   display: inline-flex;
   align-items: center;
@@ -3087,7 +3406,11 @@ button.status.link {
 .side-tabs button[aria-selected='true'] {
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 1px 2px var(--shadow);
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1);
+}
+
+:root[data-theme='dark'] .side-tabs button[aria-selected='true'] {
+  background: var(--raised);
 }
 
 .queue-list ol {
@@ -3109,11 +3432,43 @@ button.status.link {
 
 /* The Queue tab's timeline: queued (next at the bottom), then sent, newest first */
 .timeline-label {
-  margin: 10px 4px 4px;
+  margin: 10px 10px 4px;
   font-size: var(--t-11);
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--faint);
+}
+
+/* Between what waits and what was sent. */
+.timeline-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 10px;
+  font-size: var(--t-12);
+  color: var(--faint);
+}
+
+.timeline-divider::before,
+.timeline-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/* The Queue tab's waiting messages are rows, not the composer's dashed cards. */
+.queue-list .queued {
+  border: 0;
+  background: transparent;
+  padding: 6px 6px 6px 10px;
+  border-radius: var(--r-md);
+  font-size: var(--t-13);
+}
+
+.queue-list .queued:hover {
+  background: var(--hover);
 }
 
 .timeline-now {
@@ -3127,13 +3482,13 @@ button.status.link {
   align-items: stretch;
   gap: 2px;
   width: 100%;
-  padding: 8px 12px;
+  padding: 8px 10px;
   border: 0;
   border-radius: var(--r-md);
   background: transparent;
-  color: var(--ink-2);
+  color: var(--ink);
   text-align: left;
-  font-size: var(--t-14);
+  font-size: var(--t-13);
 }
 
 .sent-row button:hover {
@@ -3176,48 +3531,63 @@ button.status.link {
   display: block;
   margin-bottom: 2px;
   font-size: var(--t-12);
-  color: var(--muted);
+  color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .side-rail {
-  flex: 0 0 44px;
+  flex: 0 0 48px;
   border-left: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--bg);
   display: flex;
   flex-direction: column;
   align-items: center;
   padding-top: 12px;
 }
 
+/* The collapsed sidebar stays part of the frame. */
 .side-rail.sidebar-rail {
   border-left: 0;
-  border-right: 1px solid var(--line);
+  background: transparent;
+  padding-top: 10px;
+}
+
+.side-rail {
+  gap: 6px;
 }
 
 .rail-button {
-  width: 36px;
-  padding: 8px 0;
+  position: relative;
+  width: var(--control);
+  height: var(--control);
+  padding: 0;
   border: 0;
   border-radius: var(--r-md);
   background: transparent;
   color: var(--muted);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  display: grid;
+  place-items: center;
 }
 
 .rail-button:hover {
-  background: var(--sunken);
+  background: var(--hover);
   color: var(--ink);
 }
 
+/* The thread count, on the button's corner. */
 .rail-count {
-  font-size: var(--t-12);
-  font-weight: 600;
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.side-rail > .running-dot {
+  width: 6px;
+  height: 6px;
 }
 
 /* Agent plans (a checklist in the log) */
@@ -3226,7 +3596,8 @@ button.status.link {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--surface);
-  padding: 10px 12px;
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1);
+  padding: 10px 14px;
   font-size: var(--t-14);
 }
 
@@ -3238,11 +3609,9 @@ button.status.link {
 }
 
 .plan-title {
-  font-size: var(--t-11);
+  font-size: var(--t-13);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ink);
 }
 
 .plan-progress {
@@ -3257,44 +3626,56 @@ button.status.link {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .plan-entry {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: baseline;
+  padding: 3px 0;
 }
 
+/* A checkbox: empty, a working-blue ring with a dot, or filled done-green with a check. */
 .plan-box {
   flex: none;
   width: 14px;
   height: 14px;
   position: relative;
   top: 2px;
-  border: 1.5px solid var(--line-strong);
+  display: grid;
+  place-items: center;
   border-radius: var(--r-xs);
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+  color: #fff;
 }
 
-.plan-entry.in_progress {
-  font-weight: 500;
+.plan-box svg {
+  width: 12px;
+  height: 12px;
 }
 
 .plan-entry.in_progress .plan-box {
-  border-color: var(--state-working);
+  box-shadow: inset 0 0 0 1.5px var(--state-working);
+}
+
+.plan-entry.in_progress .plan-box::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
   background: var(--state-working);
-  box-shadow: inset 0 0 0 3px var(--surface);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
 .plan-entry.completed {
   color: var(--muted);
   text-decoration: line-through;
+  text-decoration-color: var(--line-strong);
 }
 
 .plan-entry.completed .plan-box {
-  border-color: var(--state-done);
   background: var(--state-done);
+  box-shadow: none;
 }
 
 /* Pinned to its containing block's corner: left at its place in a long log, it would
@@ -3310,28 +3691,30 @@ button.status.link {
   white-space: nowrap;
 }
 
+/* What the thread replies to, marked like the anchor in the text. */
 .anchor-quote {
-  margin: 16px 20px 0;
-  padding: 10px 12px;
-  border-radius: var(--r-md);
-  background: var(--sunken);
-  font-size: var(--t-14);
-  color: var(--ink-2);
+  flex: none;
+  margin: 14px 18px 4px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--accent-tint);
+  font-size: var(--t-13);
+  color: var(--ink);
   max-height: 30vh;
   overflow-y: auto;
 }
 
 .thread-log {
-  padding: 16px 20px;
+  padding: 10px 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   font-size: var(--t-14);
 }
 
 .thread-log .you {
-  max-width: 85%;
-  padding: 8px 12px;
+  max-width: 88%;
 }
 
 .thread-log .empty {
@@ -3340,15 +3723,13 @@ button.status.link {
 }
 
 .thread-composer {
-  padding: 12px 20px 16px;
-  border-top: 1px solid var(--line);
+  padding: 8px 14px 14px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
 .thread-composer .box {
-  padding: 6px 6px 6px 12px;
   font-size: var(--t-14);
 }
 
@@ -3360,13 +3741,16 @@ button.status.link {
 
 /* Selection anchors */
 
+/* A selection with a thread: tinted and underlined in the accent. */
 .anchored {
-  border-bottom: 2px dotted var(--accent);
+  background: var(--accent-tint);
+  border-bottom: 2px solid var(--accent);
+  border-radius: 2px;
   cursor: pointer;
 }
 
 .anchored.active {
-  background: var(--accent-tint);
+  background: var(--accent-mark);
 }
 
 .anchored.pending {
@@ -3375,19 +3759,22 @@ button.status.link {
   cursor: default;
 }
 
+/* The reply count after an anchor. */
 .anchor-chip {
-  margin-left: 4px;
+  margin-left: 3px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 7px;
+  gap: 3px;
+  height: 18px;
+  padding: 0 5px;
   border: 0;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-xs);
   background: var(--accent-tint);
   color: var(--accent);
-  font: 500 12px/1 var(--font-ui);
+  font: 600 var(--t-11) / 1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
   vertical-align: 1px;
+  white-space: nowrap;
   user-select: none;
 }
 
@@ -3399,45 +3786,21 @@ button.status.link {
   background: currentColor;
 }
 
+/* A raised surface by the selection, lit like a menu; Reply is its one primary action. */
 .selection-popover {
   position: fixed;
   z-index: 10;
   display: flex;
-  gap: 2px;
+  gap: 4px;
   padding: 4px;
-  background: var(--ink);
-  border-radius: var(--r-md);
-  box-shadow: 0 6px 18px var(--shadow);
+  background: var(--raised) var(--sheen);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge);
 }
 
-.selection-popover button {
-  height: 34px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--r-sm);
-  font-size: var(--t-13);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.selection-popover .go {
-  background: var(--brand-gradient);
-  color: var(--on-accent);
-  font-weight: 500;
-}
-
-.selection-popover .copy {
-  background: transparent;
-  color: var(--bg);
-}
-
-.selection-popover kbd {
-  font-family: var(--font-ui);
-  font-size: var(--t-11);
-  background: var(--kbd-bg);
-  border-radius: var(--r-xs);
-  padding: 0 5px;
+.selection-popover svg {
+  width: 14px;
+  height: 14px;
 }
 
 .selection-quote {
@@ -3464,48 +3827,235 @@ button.status.link {
   font-weight: 400;
 }
 
-.search-backdrop { align-items: flex-start; padding-top: 32px; }
-.search-dialog > :not(.search-results) { flex-shrink: 0; }
-.search-dialog { width: min(800px, calc(100vw - 48px)); max-height: calc(100vh - 64px); display: flex; flex-direction: column; gap: 12px; }
-.search-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.search-heading h2 { margin: 0; }
-.search-dialog > input { width: 100%; box-sizing: border-box; height: var(--control-lg); font-size: var(--t-14); }
-.search-filters { display: flex; flex-wrap: wrap; gap: 16px; }
+/* Search (docs/mocks/target.html#search): the field, the filters on one line, results
+   grouped by session, and the keys at the bottom. */
+.search-backdrop {
+  align-items: flex-start;
+  padding-top: 32px;
+}
 
-.search-dialog > p { margin: 0; font-size: var(--t-12); }
-.search-results { overflow-y: auto; min-height: 0; }
-.search-result { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px; text-align: left; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
-.search-result > .muted { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 100%; font-size: var(--t-12); }
-.search-snippet { white-space: pre-wrap; overflow-wrap: anywhere; }
-.search-snippet mark { background: var(--accent-mark); color: var(--ink); border-radius: var(--r-xs); }
+.dialog.search-dialog {
+  width: min(760px, calc(100vw - 48px));
+  max-height: min(680px, calc(100vh - 64px));
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
 
-.search-dialog > input {
+.search-head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* A field with its icon and Esc inside. */
+.search-field {
   height: var(--control);
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 0 10px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   background: var(--surface);
-  color: var(--ink);
-  font: inherit;
+  box-shadow: var(--sink);
+  color: var(--muted);
   font-size: var(--t-13);
 }
-.search-filter { display: inline-flex; align-items: center; gap: 8px; font-size: var(--t-13); color: var(--muted); }
-.search-result { background: var(--surface); color: var(--ink); }
-.search-result:hover:not(:disabled), .search-result:focus-visible { background: var(--hover); }
+
+.search-field:focus-within {
+  border-color: var(--accent);
+  outline: 3px solid var(--focus);
+}
+
+.search-field svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+.search-field input:focus {
+  outline: none;
+}
+
+.search-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-filters .select-button {
+  height: 28px;
+  min-width: 0;
+}
+
+.search-count {
+  margin-left: auto;
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.search-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.search-empty {
+  margin: 10px;
+  font-size: var(--t-13);
+  color: var(--muted);
+}
+
+.search-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 10px 4px;
+  min-width: 0;
+}
+
+.search-group-head b {
+  font-size: var(--t-13);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-group-head span {
+  flex: none;
+  font-size: var(--t-12);
+  color: var(--faint);
+}
+
+.search-result {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.search-result.active {
+  background: var(--hover);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.search-kind {
+  margin-top: 2px;
+  color: var(--faint);
+}
+
+.search-kind svg {
+  width: 16px;
+  height: 16px;
+}
+
+.search-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-where {
+  font-size: var(--t-12);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-snippet {
+  font-size: var(--t-14);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.search-snippet code {
+  font-family: var(--font-mono);
+  font-size: 0.87em;
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  background: var(--sunken);
+  box-shadow: var(--sink);
+}
+
+.search-snippet mark {
+  background: var(--accent-tint);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+  box-shadow: inset 0 -2px 0 var(--accent-mark);
+}
+
+.search-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.search-foot-hint {
+  margin-left: auto;
+}
+
+/* Keys, raised a little off the surface. */
+kbd {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  background: var(--raised-fill);
+  box-shadow: inset 0 0 0 1px var(--line-strong), 0 1px 0 var(--line-strong);
+  font: 500 var(--t-11) / 1 var(--font-ui);
+  color: var(--muted);
+}
+
+.select-label {
+  color: var(--faint);
+}
 
 .mcp-settings textarea { width: 100%; box-sizing: border-box; padding: 10px; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-sm); resize: vertical; }
 .mcp-settings pre { overflow-x: auto; font-size: var(--t-12); }
 .mcp-settings details { margin: 8px 0; }
 
-.mcp-settings { margin-top: 24px; }
-.mcp-settings h3 { margin: 0 0 8px; font-size: var(--t-14); font-weight: 600; }
 .mcp-settings .mcp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-.mcp-server-list { list-style: none; margin: 16px 0; padding: 0; }
-.mcp-server-list li { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.mcp-server-list { margin: 16px 0; }
+.mcp-server-list li { display: flex; align-items: center; gap: 8px; padding: 12px 18px; }
+.mcp-server-list li + li { border-top: 1px solid var(--line); }
 .mcp-server-list li > div { flex: 1; min-width: 0; }
 .mcp-server-list strong { margin-right: 10px; }
 .mcp-server-list p, .mcp-import-entry p { margin: 6px 0; overflow-wrap: anywhere; font-size: var(--t-12); }
-.mcp-editor, .mcp-import-preview { padding: 16px; margin: 12px 0; border: 1px solid var(--line-strong); border-radius: var(--r-md); }
+.mcp-editor, .mcp-import-preview { padding: 16px 18px; margin: 12px 0; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--card); }
 .mcp-settings h4 { margin: 0 0 12px; }
 .mcp-editor label, .mcp-import-entry label { display: block; margin: 10px 0; font-size: var(--t-12); }
 .mcp-editor input, .mcp-import-entry input:not([type=checkbox]) { display: block; box-sizing: border-box; width: 100%; height: var(--control); padding: 0 10px; margin-top: 6px; font: inherit; font-size: var(--t-13); background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r-md); }
@@ -3514,36 +4064,22 @@ button.status.link {
 .mcp-editor textarea { margin-top: 6px; font-family: var(--font-mono, monospace); }
 .mcp-import-entry { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .mcp-import-entry input[type=checkbox] { margin-right: 8px; accent-color: var(--ink); }
-.mcp-settings button, .opencode-settings button { height: var(--control); padding: 0 12px; font: inherit; font-size: var(--t-13); font-weight: 500; color: var(--ink); background: var(--selected); border: 0; box-shadow: inset 0 0 0 1px var(--line); border-radius: var(--r-md); cursor: pointer; }
-.mcp-settings button:hover:not(:disabled), .opencode-settings button:hover:not(:disabled) { background: var(--hover); }
-.mcp-settings button:disabled, .opencode-settings button:disabled { opacity: 0.5; cursor: default; }
 .opencode-settings a { color: var(--ink); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 
 /* Review sessions (docs/mocks/target.html#review) */
 
-.review-changes {
-  height: 32px;
-  margin-top: 6px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  border: 0;
-  box-shadow: inset 0 0 0 1px var(--line);
-  border-radius: var(--r-md);
-  background: var(--selected);
-  text-align: left;
-  font-size: var(--t-14);
-}
-
-.review-changes:hover:not(:disabled) {
-  background: var(--hover);
+button.review-changes {
+  justify-content: flex-start;
 }
 
 .review-icon {
   flex: none;
   color: var(--faint);
   vertical-align: -2px;
+}
+
+.review-changes .review-icon {
+  color: inherit;
 }
 
 
@@ -3560,30 +4096,30 @@ button.status.link {
 }
 
 .conversation.review header.review-head {
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  padding: 10px 16px 10px 20px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px 16px 10px 20px;
 }
 
+/* The title, the agent, then the tools at the right. */
 .review-titles {
   min-width: 0;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
-/* The line under the title: the agent, Base → Review, and the counts. Not clipped,
-   so the dropdowns can open below it. */
+/* Base → Review, and the counts. Not clipped, so the dropdowns can open below it. */
 .conversation header .review-meta {
   overflow: visible;
-  font-size: var(--t-13);
+  font-size: var(--t-12);
   color: var(--muted);
   white-space: normal;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 10px;
-  margin-top: 2px;
 }
 
 .range {
@@ -3604,14 +4140,15 @@ button.status.link {
 
 .range-button {
   max-width: 320px;
-  height: 24px;
+  height: 26px;
   padding: 0 6px 0 8px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-sm);
-  background: var(--surface);
+  background: var(--raised-fill);
+  box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1);
   color: var(--ink-2);
   font-family: var(--font-ui);
   font-size: var(--t-12);
@@ -3619,15 +4156,12 @@ button.status.link {
 
 .range-button:hover,
 .range-button[aria-expanded='true'] {
-  background: var(--hover);
+  filter: brightness(0.98);
 }
 
 .range-name {
   flex: none;
-  color: var(--muted);
-  font-size: var(--t-11);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--faint);
 }
 
 .range-current {
@@ -3747,13 +4281,13 @@ button.status.link {
   font-size: var(--t-13);
 }
 
-.review-titles .add,
+.review-counts .add,
 .diff-counts .add,
 .file-tree-counts .add {
   color: var(--done);
 }
 
-.review-titles .del,
+.review-counts .del,
 .diff-counts .del,
 .file-tree-counts .del {
   color: var(--failed);
@@ -3764,7 +4298,15 @@ button.status.link {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+}
+
+.review-titles h1 {
+  min-width: 0;
+}
+
+.review-titles .agent-name {
+  font-size: var(--t-13);
 }
 
 /* Labels stay on one line; the toolbar wraps instead. */
@@ -3794,37 +4336,10 @@ button.status.link {
   color: var(--ink);
 }
 
-.segmented {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: var(--r-md);
-  background: var(--sunken);
-}
-
-.segmented button {
-  height: 28px;
-  padding: 0 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--muted);
-  font-size: var(--t-13);
-  font-weight: 500;
-}
-
-.segmented button.on {
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: 0 1px 2px var(--shadow);
-}
-
-/* Icon buttons in the review header; their tooltips name them. */
-.tool-button.icon {
-  width: var(--control);
+/* Icon buttons in the review header, small; their tooltips name them. */
+.review-tools .tool-button.icon {
+  width: var(--control-sm);
+  height: var(--control-sm);
 }
 
 .tool-button:disabled {
@@ -3832,9 +4347,15 @@ button.status.link {
 }
 
 .segmented.icons button {
-  width: 28px;
+  width: 30px;
+  height: 22px;
   padding: 0;
   justify-content: center;
+}
+
+.segmented.icons svg {
+  width: 14px;
+  height: 14px;
 }
 
 .review-position {
@@ -3844,22 +4365,20 @@ button.status.link {
 
 .tool-divider {
   width: 1px;
-  height: 20px;
+  height: 18px;
+  margin: 0 4px;
   background: var(--line);
 }
 
-/* Previous and next open thread, stacked. */
+/* Previous and next open thread. */
 .review-step {
   display: inline-flex;
   gap: 2px;
-  padding: 2px;
-  border-radius: var(--r-md);
-  background: var(--sunken);
 }
 
 .review-step button {
-  width: 28px;
-  height: 28px;
+  width: var(--control-sm);
+  height: var(--control-sm);
   padding: 0;
   display: grid;
   place-items: center;
@@ -3985,6 +4504,7 @@ button.status.link {
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   background: var(--surface);
+  box-shadow: inset 0 1px 0 var(--edge);
   font-size: var(--t-13);
 }
 
@@ -4040,8 +4560,12 @@ button.status.link {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono);
-  font-weight: 600;
+  font-weight: 500;
+}
+
+.diff-file-dir {
+  color: var(--faint);
+  font-weight: 400;
 }
 
 .diff-chip {
@@ -4384,27 +4908,24 @@ button.status.link {
   font-size: var(--t-13);
 }
 
+/* Flat in the diff: a colored edge and a hairline, no floating shadow. */
 .thread-card {
   max-width: 760px;
-  padding: 8px 10px 8px 12px;
-  border: 1px solid var(--line);
+  padding: 10px 12px;
   border-left: 3px solid var(--kind);
-  border-radius: var(--r-md);
-  background: var(--hover-soft);
-  box-shadow: 0 1px 2px var(--shadow);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-family: var(--font-ui);
   cursor: pointer;
 }
 
 .thread-card:hover {
-  border-color: var(--line-strong);
-  border-left-color: var(--kind);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 
 .thread-card.active {
-  border-color: var(--line-strong);
-  box-shadow: 0 0 0 3px var(--focus);
-  border-left-color: var(--kind);
-  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-strong), 0 0 0 3px var(--focus);
 }
 
 .thread-card.resolved {
@@ -4483,15 +5004,16 @@ button.status.link {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--hover-soft);
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--bg);
+  box-shadow: var(--card);
   text-align: left;
 }
 
 .general-card:hover {
-  background: var(--hover);
+  background: var(--surface);
 }
 
 .general-title {
@@ -4515,14 +5037,16 @@ button.status.link {
   overflow: hidden;
 }
 
+/* Open / Resolved / All, then the kinds filter at the right: one row. */
 .review-filters {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 4px 4px 8px;
-  border-bottom: 1px solid var(--line-soft);
-  margin-bottom: 4px;
+}
+
+.review-filters .popover-anchor {
+  margin-left: auto;
 }
 
 .kind-filter {
@@ -4542,11 +5066,12 @@ button.status.link {
 }
 
 .kind-menu-button {
+  position: relative;
+  width: var(--control-sm);
   height: var(--control-sm);
-  padding: 0 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -4573,9 +5098,27 @@ button.status.link {
 
 .review-file-label {
   padding: 10px 10px 2px;
+  font-size: var(--t-12);
+  font-weight: 600;
+  color: var(--ink-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.kind-menu-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.review-thread-range {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
 }
 
 .review-thread-row {
@@ -4599,11 +5142,10 @@ button.status.link {
 }
 
 .review-thread-lines {
-  flex: 0 0 76px;
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding-top: 2px;
+  height: 1.5em;
   font-family: var(--font-ui);
   font-size: var(--t-12);
   color: var(--muted);

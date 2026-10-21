@@ -7,10 +7,10 @@ import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markd
 import { fileLink } from '../../shared/fileLink'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
-import { itemMarker, listItemSpans, type ListItemSpan } from './anchors'
+import { listItemSpans, type ListItemSpan } from './anchors'
 import { codeColors, useHighlighting } from './highlight'
 import { remarkSourceSpans, type Mark } from './sourceSpans'
-import { MessageSquare } from 'lucide-react'
+import { MessageSquare, Reply } from 'lucide-react'
 
 type Node = { type: string; children?: Node[] }
 type HastNode = { type: string; value?: string; children?: HastNode[] }
@@ -100,7 +100,7 @@ export type MessageAnchors = {
   onOpenThread(threadId: string): void
 }
 
-const replyIcon = <MessageSquare size={13} />
+const replyIcon = <MessageSquare size={12} />
 
 function anchorComponents(text: string, anchors: MessageAnchors, listItemReplies: boolean): Components {
   const byStart = new Map((listItemReplies ? listItemSpans(text) : []).map((s) => [s.start, s]))
@@ -114,22 +114,30 @@ function anchorComponents(text: string, anchors: MessageAnchors, listItemReplies
       const active = anchors.activeIndex === span.index
       const running = anchors.runningIndex === span.index
       const n = span.index + 1
+      // The list stays a list: Reply sits in the item's margin (shown on hover), and once
+      // there are replies their count follows the item's last line, like a selection's.
       return (
         <li className={`anchor-item${active ? ' active' : ''}`}>
-          <div className="anchor-row">
-            <span className="anchor-marker" aria-hidden>
-              {itemMarker(text, span)}
-            </span>
-            <div className="anchor-body">{children}</div>
+          <button
+            className="item-reply"
+            aria-label={count > 0 ? `Open thread on item ${n}` : `Reply to item ${n}`}
+            title={count > 0 ? 'Open the thread' : 'Reply in a thread'}
+            onClick={() => anchors.onOpenItem(span)}
+          >
+            <Reply />
+          </button>
+          {children}
+          {(count > 0 || running) && (
             <button
-              className={count > 0 ? 'badge' : 'reply'}
-              aria-label={count > 0 ? `Open thread on item ${n}` : `Reply to item ${n}`}
+              type="button"
+              className="anchor-chip item-count"
+              aria-label={`${count} ${count === 1 ? 'reply' : 'replies'}`}
               onClick={() => anchors.onOpenItem(span)}
             >
               {running ? <span className="running-dot" aria-label="Running" /> : replyIcon}
-              <span>{count > 0 ? `${count} ${count === 1 ? 'reply' : 'replies'}` : 'Reply'}</span>
+              {count}
             </button>
-          </div>
+          )}
         </li>
       )
     },

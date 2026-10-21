@@ -1,11 +1,22 @@
+// The settings screen (docs/mocks/target.html#settings): a list of sections on the left,
+// one section at a time on the right, each a card of rows with one control each.
 import { useEffect, useState } from 'react'
 import type { SettingsPatch, SettingsState } from '@shared/ipc'
+import { folderName } from '@shared/paths'
 import { SETTING_FIELDS, projectSettings, type ProjectSettings, type GlobalSettings, type SettingField } from '@shared/settings'
 import { errorText } from './errors'
 import { modKey, SHORTCUTS } from './shortcuts'
 import { McpSettings } from './McpSettings'
 import { OpenCodeSettings } from './OpenCodeSettings'
-import { Select, Switch } from './Select'
+import { Segmented, Select, Switch } from './Select'
+import { ExternalLink, Folder, Keyboard, Palette, Server, SlidersVertical, Terminal } from 'lucide-react'
+
+export type SettingsSection = 'general' | 'appearance' | 'mcp' | 'opencode' | 'project' | 'shortcuts'
+
+/** Fields shown in Appearance; the other visible global fields are General. */
+const APPEARANCE = new Set(['theme'])
+/** Enum fields shown as a segmented control rather than a dropdown. */
+const SEGMENTED = new Set(['theme'])
 
 type Props = {
   state: SettingsState
@@ -44,17 +55,55 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
     setOpenError(await onOpenFile())
   }
 
+  const [section, setSection] = useState<SettingsSection>('general')
   const projectFields = SETTING_FIELDS.filter((f) => f.scope === 'project' && !f.hidden)
+  const globalFields = (appearance: boolean): React.JSX.Element[] =>
+    SETTING_FIELDS.filter((f) => f.scope === 'global' && !f.hidden && APPEARANCE.has(f.key) === appearance).map((f) => (
+      <Field
+        key={f.key}
+        field={f}
+        value={state.global[f.key as keyof GlobalSettings]}
+        onChange={(value) => void update({ global: { [f.key]: value } })}
+      />
+    ))
+  const nav = (id: SettingsSection, icon: React.JSX.Element, label: string): React.JSX.Element => (
+    <button className={section === id ? 'settings-nav-item on' : 'settings-nav-item'} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}>
+      {icon}
+      <span>{label}</span>
+    </button>
+  )
 
   return (
     <main className="settings">
-      <header>
+      <nav className="settings-nav" aria-label="Settings sections">
         <h1>Settings</h1>
-        <button className="settings-close" onClick={onClose} title="Close (Esc)">
-          Done
-        </button>
-      </header>
+        {nav('general', <SlidersVertical />, 'General')}
+        {nav('appearance', <Palette />, 'Appearance')}
+        {nav('mcp', <Server />, 'MCP servers')}
+        {nav('opencode', <Terminal />, 'OpenCode')}
+        {projectFields.length > 0 && (
+          <>
+            <div className="settings-nav-group">Project</div>
+            {nav('project', <Folder />, projectPath ? folderName(projectPath) : 'This project')}
+          </>
+        )}
+        <div className="settings-nav-group">Reference</div>
+        {nav('shortcuts', <Keyboard />, 'Keyboard shortcuts')}
+      </nav>
       <div className="settings-body">
+        <div className="settings-file">
+          <span className="mono" title={state.path}>
+            {state.path}
+          </span>
+          <button className="ghost sm" onClick={() => void openFile()}>
+            <ExternalLink />
+            Open in editor
+          </button>
+          <button className="secondary settings-close" onClick={onClose} title="Close (Esc)">
+            Done
+          </button>
+        </div>
+        {openError && <p className="settings-problem">Couldn&apos;t open the file: {openError}</p>}
         {state.error && (
           <div className="settings-problem" role="alert">
             <p>
@@ -66,55 +115,56 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
         )}
         {saveError && <p className="settings-problem">{saveError}</p>}
 
-        <section>
-          <h2 className="label">Global</h2>
-          {SETTING_FIELDS.filter((f) => f.scope === 'global' && !f.hidden).map((f) => (
-            <Field
-              key={f.key}
-              field={f}
-              value={state.global[f.key as keyof GlobalSettings]}
-              onChange={(value) => void update({ global: { [f.key]: value } })}
-            />
-          ))}
-          <McpSettings servers={state.global.mcpServers}
-            hasLegacy={Object.values(state.projects).some((p) => (p.mcpServers?.length ?? 0) > 0)}
-            onSave={async (mcpServers) => { await onUpdate({ global: { mcpServers } }) }} />
-        </section>
-
-        <OpenCodeSettings executable={state.global.opencodeExecutable ?? ''}
-          onSave={async (opencodeExecutable) => { await onUpdate({ global: { opencodeExecutable } }) }} />
-
-        {projectFields.length > 0 && <section>
-          <h2 className="label">Project</h2>
-          {projectPath ? (
-            <>
-              <p className="mono">{projectPath}</p>
-              {projectFields.map((f) => (
-                <Field key={`${projectPath}:${f.key}`} field={f}
-                  value={projectSettings(state.projects, projectPath)[f.key as keyof ProjectSettings]}
-                  onChange={(value) => void update({ project: { path: projectPath, values: { [f.key]: value } } })} />
-              ))}
-            </>
-          ) : (
-            <p className="muted">Open a session to see its project&apos;s settings.</p>
-          )}
-        </section>}
-
-        <section>
-          <h2 className="label">Keyboard shortcuts</h2>
-          <Shortcuts />
-        </section>
-
-        <section>
-          <h2 className="label">Settings file</h2>
-          <div className="settings-file">
-            <span className="mono" title={state.path}>
-              {state.path}
-            </span>
-            <button onClick={() => void openFile()}>Open in editor</button>
-          </div>
-          {openError && <p className="settings-problem">Couldn&apos;t open the file: {openError}</p>}
-        </section>
+        {section === 'general' && (
+          <section aria-labelledby="settings-general">
+            <h2 id="settings-general">General</h2>
+            <p className="lede">Saved to settings.json as you change them. Edits made in the file show up here.</p>
+            <div className="settings-card">{globalFields(false)}</div>
+          </section>
+        )}
+        {section === 'appearance' && (
+          <section aria-labelledby="settings-appearance">
+            <h2 id="settings-appearance">Appearance</h2>
+            <div className="settings-card">{globalFields(true)}</div>
+          </section>
+        )}
+        {section === 'mcp' && (
+          <section aria-labelledby="settings-mcp">
+            <h2 id="settings-mcp">MCP servers</h2>
+            <McpSettings servers={state.global.mcpServers}
+              hasLegacy={Object.values(state.projects).some((p) => (p.mcpServers?.length ?? 0) > 0)}
+              onSave={async (mcpServers) => { await onUpdate({ global: { mcpServers } }) }} />
+          </section>
+        )}
+        {section === 'opencode' && (
+          <OpenCodeSettings executable={state.global.opencodeExecutable ?? ''}
+            onSave={async (opencodeExecutable) => { await onUpdate({ global: { opencodeExecutable } }) }} />
+        )}
+        {section === 'project' && (
+          <section aria-labelledby="settings-project">
+            <h2 id="settings-project">{projectPath ? folderName(projectPath) : 'Project'}</h2>
+            {projectPath ? (
+              <>
+                <p className="lede mono" title={projectPath}>{projectPath}</p>
+                <div className="settings-card">
+                  {projectFields.map((f) => (
+                    <Field key={`${projectPath}:${f.key}`} field={f}
+                      value={projectSettings(state.projects, projectPath)[f.key as keyof ProjectSettings]}
+                      onChange={(value) => void update({ project: { path: projectPath, values: { [f.key]: value } } })} />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="lede">Open a session to see its project&apos;s settings.</p>
+            )}
+          </section>
+        )}
+        {section === 'shortcuts' && (
+          <section aria-labelledby="settings-shortcuts">
+            <h2 id="settings-shortcuts">Keyboard shortcuts</h2>
+            <Shortcuts />
+          </section>
+        )}
       </div>
     </main>
   )
@@ -126,8 +176,8 @@ function Shortcuts(): React.JSX.Element {
     <>
       {SHORTCUTS.map((group) => (
         <div key={group.title} className="shortcut-group">
-          <h2>{group.title}</h2>
-          <dl>
+          <h3>{group.title}</h3>
+          <dl className="settings-card">
             {group.shortcuts.map((s) => (
               <div key={s.action} className="shortcut">
                 <dt className="shortcut-keys">
@@ -205,6 +255,15 @@ function Field(props: { field: SettingField; value: unknown; onChange(value: unk
       </div>
       {field.type === 'string' ? (
         <TextSetting id={id} field={field} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
+      ) : field.type === 'enum' && SEGMENTED.has(field.key) ? (
+        <Segmented
+          id={id}
+          ariaLabel={field.label}
+          ariaDescribedBy={`${id}-description`}
+          value={String(value)}
+          options={(field.options ?? []).map((o) => ({ value: String(o.value), label: o.label }))}
+          onChange={props.onChange}
+        />
       ) : field.type === 'enum' ? (
         <Select
           id={id}

@@ -2,6 +2,7 @@
 // The agent sees one linear ACP session per Gloss session. When the agent can load
 // its sessions, its copy is the source of truth for the log (SPEC → Shared sessions).
 import { randomUUID } from 'node:crypto'
+import { homedir } from 'node:os'
 import type * as acp from '@agentclientprotocol/sdk'
 import { pathToFileURL } from 'node:url'
 import type { GlossEvent, PullRequest, SessionView, TurnResult } from '../shared/ipc'
@@ -790,7 +791,7 @@ export class SessionManager {
     ].sort((a, b) => b.at - a.at)
     const projects: Project[] = []
     for (const { path } of dated) {
-      if (!projects.some((p) => samePath(p.path, path))) projects.push({ path, name: folderName(path) })
+      if (!projects.some((p) => samePath(p.path, path))) projects.push(projectAt(path))
     }
     return projects
   }
@@ -798,7 +799,7 @@ export class SessionManager {
   addProject(path: string): Project {
     const known = this.listProjects().find((p) => samePath(p.path, path))
     this.deps.store.addProject(known?.path ?? path, this.now())
-    return known ?? { path, name: folderName(path) }
+    return known ?? projectAt(path)
   }
 
   /**
@@ -1911,6 +1912,23 @@ function toolStatus(cached: ToolCall, replayed: Pick<ToolCall, 'status'>): strin
 
 function folderName(cwd: string): string {
   return cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd
+}
+
+function projectAt(path: string): Project {
+  return { path, name: folderName(path), where: folderWhere(path, homedir()) }
+}
+
+/** The folder's parent, with `home` shortened to ~: "~\Desktop", "/srv", "C:\". */
+export function folderWhere(path: string, home: string): string {
+  const trimmed = path.replace(/[\\/]+$/, '')
+  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  if (cut < 0) return ''
+  // A root keeps its separator: "/" and "C:\".
+  const parent = trimmed.slice(0, cut === 0 || /^[a-zA-Z]:$/.test(trimmed.slice(0, cut)) ? cut + 1 : cut)
+  if (!home) return parent
+  if (samePath(parent, home)) return '~'
+  const inHome = parent.length > home.length && /[\\/]/.test(parent[home.length]) && samePath(parent.slice(0, home.length), home)
+  return inHome ? `~${parent.slice(home.length)}` : parent
 }
 
 function titleFrom(text: string): string {

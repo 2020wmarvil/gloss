@@ -13,7 +13,7 @@ import { inDiffOrder, isLineThread, kindOf, titleOf } from './reviewThreads'
 import { StatusLine } from './StatusLine'
 import { threadSummaries } from './ThreadsOverview'
 import { modKey } from './shortcuts'
-import { ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronUp, Columns2, MessageSquare, MessageSquareOff, PanelLeft, Reply, RotateCcw, Rows2 } from 'lucide-react'
+import { ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronUp, Columns2, Copy, MessageSquare, MessageSquareOff, PanelLeft, Reply, RotateCcw, Rows2 } from 'lucide-react'
 
 export type DiffState = { diff: ReviewDiff | null; error: string | null }
 
@@ -278,90 +278,91 @@ export function ReviewView(props: Props): React.JSX.Element {
 
   return (
     <main className="conversation review" ref={mainRef}>
+      {/* One row for the title and tools, one for the range and counts. */}
       <header className="review-head">
         <div className="review-titles">
           <h1 title={open.session.title}>{open.session.title}</h1>
-          <span className="review-meta">
-            {props.agentName}
-            {review && <RangePicker range={review} diff={diff.diff} refs={refs} onRefresh={loadRefs} onChange={props.onSetRange} />}
-            {diff.diff && (
-              <span>
-                {files.length} {files.length === 1 ? 'file' : 'files'} <span className="add">+{additions}</span>{' '}
-                <span className="del">−{deletions}</span>
-              </span>
-            )}
-          </span>
-        </div>
-        <div className="review-tools">
-          <button
-            className={`tool-button icon${tree === 'shown' ? ' on' : ''}`}
-            aria-pressed={tree === 'shown'}
-            title={tree === 'shown' ? 'Hide the file list' : 'Show the file list'}
-            aria-label="File list"
-            onClick={() => setTree(tree === 'shown' ? 'hidden' : 'shown')}
-          >
-            {ICONS.files}
-          </button>
-          <button
-            className="tool-button icon"
-            disabled={files.length === 0}
-            title={allCollapsed ? 'Expand all files' : 'Collapse all files'}
-            aria-label={allCollapsed ? 'Expand all files' : 'Collapse all files'}
-            onClick={toggleAll}
-          >
-            {allCollapsed ? ICONS.expandAll : ICONS.collapseAll}
-          </button>
-          <div className="segmented icons" role="group" aria-label="Diff layout">
+          <span className="agent-name">{props.agentName}</span>
+          <div className="review-tools">
             <button
-              className={shownLayout === 'split' ? 'on' : undefined}
-              aria-pressed={layout === 'split'}
-              aria-label="Split"
-              title={layout === 'split' && narrow ? 'Split: not enough room for side by side' : 'Split: side by side'}
-              onClick={() => setLayout('split')}
+              className={`tool-button icon${tree === 'shown' ? ' on' : ''}`}
+              aria-pressed={tree === 'shown'}
+              title={tree === 'shown' ? 'Hide the file list' : 'Show the file list'}
+              aria-label="File list"
+              onClick={() => setTree(tree === 'shown' ? 'hidden' : 'shown')}
             >
-              {ICONS.split}
+              {ICONS.files}
             </button>
             <button
-              className={shownLayout === 'unified' ? 'on' : undefined}
-              aria-pressed={layout === 'unified'}
-              aria-label="Unified"
-              title="Unified: one column"
-              onClick={() => setLayout('unified')}
+              className="tool-button icon"
+              disabled={files.length === 0}
+              title={allCollapsed ? 'Expand all files' : 'Collapse all files'}
+              aria-label={allCollapsed ? 'Expand all files' : 'Collapse all files'}
+              onClick={toggleAll}
             >
-              {ICONS.unified}
+              {allCollapsed ? ICONS.expandAll : ICONS.collapseAll}
+            </button>
+            <div className="segmented icons" role="group" aria-label="Diff layout">
+              <button
+                className={shownLayout === 'split' ? 'on' : undefined}
+                aria-pressed={layout === 'split'}
+                aria-label="Split"
+                title={layout === 'split' && narrow ? 'Split: not enough room for side by side' : 'Split: side by side'}
+                onClick={() => setLayout('split')}
+              >
+                {ICONS.split}
+              </button>
+              <button
+                className={shownLayout === 'unified' ? 'on' : undefined}
+                aria-pressed={layout === 'unified'}
+                aria-label="Unified"
+                title="Unified: one column"
+                onClick={() => setLayout('unified')}
+              >
+                {ICONS.unified}
+              </button>
+            </div>
+            <button
+              className={`tool-button icon${comments === 'shown' ? ' on' : ''}`}
+              aria-pressed={comments === 'shown'}
+              aria-label="Comments"
+              title={`${comments === 'shown' ? 'Hide' : 'Show'} comments (${modKey()}+Shift+H)`}
+              onClick={() => setComments(comments === 'shown' ? 'hidden' : 'shown')}
+            >
+              {comments === 'shown' ? ICONS.comments : ICONS.commentsHidden}
+            </button>
+            <span className="review-position">
+              {position >= 0 ? `${position + 1} of ${openThreads.length} open` : `${openThreads.length} open`}
+            </span>
+            <span className="review-step" role="group" aria-label="Open threads">
+              <button title="Previous open thread (P)" aria-label="Previous open thread" onClick={() => step(-1)}>
+                {ICONS.up}
+              </button>
+              <button title="Next open thread (N)" aria-label="Next open thread" onClick={() => step(1)}>
+                {ICONS.down}
+              </button>
+            </span>
+            {/* Starts another session rather than changing this view, so it stands apart. */}
+            <span className="tool-divider" aria-hidden />
+            <button
+              className="tool-button icon"
+              disabled={props.creating}
+              title="New review: a fresh review of this range, with a new agent session and a new first pass. This one stays in the sidebar."
+              aria-label="New review"
+              onClick={props.onNewReview}
+            >
+              {ICONS.newReview}
             </button>
           </div>
-          <button
-            className={`tool-button icon${comments === 'shown' ? ' on' : ''}`}
-            aria-pressed={comments === 'shown'}
-            aria-label="Comments"
-            title={`${comments === 'shown' ? 'Hide' : 'Show'} comments (${modKey()}+Shift+H)`}
-            onClick={() => setComments(comments === 'shown' ? 'hidden' : 'shown')}
-          >
-            {comments === 'shown' ? ICONS.comments : ICONS.commentsHidden}
-          </button>
-          <span className="review-position">
-            {position >= 0 ? `${position + 1} of ${openThreads.length} open` : `${openThreads.length} open`}
-          </span>
-          <span className="review-step" role="group" aria-label="Open threads">
-            <button title="Previous open thread (P)" aria-label="Previous open thread" onClick={() => step(-1)}>
-              {ICONS.up}
-            </button>
-            <button title="Next open thread (N)" aria-label="Next open thread" onClick={() => step(1)}>
-              {ICONS.down}
-            </button>
-          </span>
-          {/* Starts another session rather than changing this view, so it stands apart. */}
-          <span className="tool-divider" aria-hidden />
-          <button
-            className="tool-button icon"
-            disabled={props.creating}
-            title="New review: a fresh review of this range, with a new agent session and a new first pass. This one stays in the sidebar."
-            aria-label="New review"
-            onClick={props.onNewReview}
-          >
-            {ICONS.newReview}
-          </button>
+        </div>
+        <div className="review-meta">
+          {review && <RangePicker range={review} diff={diff.diff} refs={refs} onRefresh={loadRefs} onChange={props.onSetRange} />}
+          {diff.diff && (
+            <span className="review-counts">
+              {files.length} {files.length === 1 ? 'file' : 'files'} <span className="add">+{additions}</span>{' '}
+              <span className="del">−{deletions}</span>
+            </span>
+          )}
         </div>
       </header>
       <div className="review-body">
@@ -657,15 +658,16 @@ function DiffSelectionPopover(props: {
     )
   }
   if (!current) return null
-  const top = current.top - 50 >= 8 ? current.top - 50 : current.bottom + 8
-  const left = Math.max(8, Math.min(current.left, window.innerWidth - 278))
+  const top = current.top - 42 >= 8 ? current.top - 42 : current.bottom + 8
+  const left = Math.max(8, Math.min(current.left, window.innerWidth - 238))
   return (
     <div className="selection-popover" role="toolbar" aria-label="Selection" style={{ top, left }} onMouseDown={(e) => e.preventDefault()}>
-      <button className="go" onClick={() => reply(current.anchor)}>
+      <button className="primary sm go" onClick={() => reply(current.anchor)} title="Reply to selection (R)" aria-keyshortcuts="R">
         <Reply />
-        Reply to selection <kbd>R</kbd>
+        Reply to selection
       </button>
-      <button className="copy" onClick={() => document.execCommand('copy')}>
+      <button className="ghost sm copy" onClick={() => document.execCommand('copy')} title="Copy (Ctrl+C)">
+        <Copy />
         Copy
       </button>
     </div>

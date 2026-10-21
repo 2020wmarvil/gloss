@@ -277,7 +277,7 @@ describe('Composer cancel', () => {
 describe('Composer queue', () => {
   it('lists the next message to run at the bottom, by the composer', () => {
     mount('s4', { running: true, queued: ['first', 'second'] })
-    expect([...document.querySelectorAll('.queued-text')].map((t) => t.textContent)).toEqual(['second', 'first'])
+    expect([...document.querySelectorAll('.queued-text')].map((t) => t.lastChild!.textContent)).toEqual(['second', 'first'])
   })
 })
 

@@ -64,9 +64,10 @@ describe('Markdown', () => {
     expect(html.match(/class="anchor-item/g)).toHaveLength(3)
     expect(html).toContain('aria-label="Reply to item 1"')
     expect(html).toContain('aria-label="Open thread on item 2"')
-    expect(html).toContain('3 replies')
+    expect(html).toContain('aria-label="3 replies"')
     expect(html).toContain('class="anchor-item active"')
-    expect(html).toContain('<span class="anchor-marker" aria-hidden="true">•</span>')
+    // Still a list, with the list's own markers.
+    expect(html).toContain('<ol>')
     // The nested item is a plain list item (its text wrapped in source spans).
     expect(html).toMatch(/<li><span><span data-src="\d+" data-src-end="\d+">nested<\/span><\/span><\/li>/)
   })
@@ -92,7 +93,6 @@ describe('Markdown', () => {
     expect(html).toContain('<ul>')
     expect(html).not.toContain('with-anchors')
     expect(html).not.toContain('anchor-item')
-    expect(html).not.toContain('anchor-marker')
     expect(html).not.toContain('Reply to item')
     expect(html).not.toContain('Open thread on item')
     expect(html).toContain('data-src=')

@@ -50,7 +50,7 @@ const TITLE_BAR_HEIGHT = 40
  */
 function titleBarOverlay(): Electron.TitleBarOverlayOptions {
   return nativeTheme.shouldUseDarkColors
-    ? { color: '#0e0d0c', symbolColor: '#efeee9', height: TITLE_BAR_HEIGHT }
+    ? { color: '#0c0b0a', symbolColor: '#efeee9', height: TITLE_BAR_HEIGHT }
     : { color: '#ebeae4', symbolColor: '#1c1b18', height: TITLE_BAR_HEIGHT }
 }
 

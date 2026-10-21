@@ -1,6 +1,6 @@
 // The status line at the bottom of the conversation (SPEC → Status line). Everything
 // but git details and the usage popup come from what the agent reports over ACP.
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { GitStatus, PullRequest } from '@shared/ipc'
 import { folderName } from '@shared/paths'
 import type { ConfigChoice, MessageQueue, ModelOption, RateLimit, Session, SessionLive, SlashCommand } from '@shared/types'
@@ -179,8 +179,38 @@ function ChoicePicker(props: {
   )
 }
 
+/**
+ * Hides the children of a wrapping row that don't fit on its first line, so items drop out
+ * from the right as the pane narrows. Hidden rather than clipped: a clipping box would cut
+ * off the items' popovers too.
+ */
+function useFirstLineOnly(): React.RefObject<HTMLSpanElement | null> {
+  const ref = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const row = ref.current
+    if (!row || typeof ResizeObserver === 'undefined') return
+    const fit = (): void => {
+      const items = [...row.children] as HTMLElement[]
+      for (const el of items) el.style.visibility = ''
+      const top = items[0]?.offsetTop ?? 0
+      for (const el of items) if (el.offsetTop > top) el.style.visibility = 'hidden'
+    }
+    fit()
+    const resized = new ResizeObserver(fit)
+    resized.observe(row)
+    const changed = new MutationObserver(fit)
+    changed.observe(row, { childList: true, subtree: true, characterData: true })
+    return () => {
+      resized.disconnect()
+      changed.disconnect()
+    }
+  }, [])
+  return ref
+}
+
 export function StatusLine(props: Props): React.JSX.Element {
   const { session, live, git } = props
+  const agentItems = useFirstLineOnly()
   const [choiceError, setChoiceError] = useState<string | null>(null)
   const [folderError, setFolderError] = useState<string | null>(null)
   const [obsidianError, setObsidianError] = useState<string | null>(null)
@@ -209,100 +239,113 @@ export function StatusLine(props: Props): React.JSX.Element {
 
   return (
     <div className="status-line" role="status">
-      {!live.attached && !props.running && <span className="status-item muted">Agent not running</span>}
-      {props.queue.items.length > 0 &&
-        (props.queue.paused ? (
-          <button className="status-item paused" onClick={props.onResumeQueue} title="Send the next queued message">
-            {props.queue.items.length} queued, paused · Resume
-          </button>
-        ) : (
-          !props.queueShownAbove && <span className="status-item queue-count">{props.queue.items.length} queued</span>
-        ))}
+      {/* What the agent reports, in order of importance. */}
+      <span className="status-agent" ref={agentItems}>
+        {!live.attached && !props.running && <span className="status-item muted">Agent not running</span>}
+        {props.queue.items.length > 0 &&
+          (props.queue.paused ? (
+            <button className="status-item paused" onClick={props.onResumeQueue} title="Send the next queued message">
+              {props.queue.items.length} queued, paused · Resume
+            </button>
+          ) : (
+            !props.queueShownAbove && <span className="status-item queue-count">{props.queue.items.length} queued</span>
+          ))}
 
-      {session.agentId === 'claude' || session.agentId === 'codex' ? (
-        <Popover key={session.id} label={pct !== null || usage?.cost || live.rateLimits.length ? usageLabel : <><Gauge className="status-icon" aria-hidden />Usage</>}
-          title="Usage details" className="status-item status-button usage-trigger">
-          {() => <UsagePanel sessionId={session.id} context={usage} />}
-        </Popover>
-      ) : usageLabel}
+        {session.agentId === 'claude' || session.agentId === 'codex' ? (
+          <Popover key={session.id} label={pct !== null || usage?.cost || live.rateLimits.length ? usageLabel : <><Gauge className="status-icon" aria-hidden />Usage</>}
+            title="Usage details" className="status-item status-button usage-trigger">
+            {() => <UsagePanel sessionId={session.id} context={usage} />}
+          </Popover>
+        ) : usageLabel}
 
-      {model && (
-        <ChoicePicker
-          label={currentModel ? modelLabel(currentModel) : model.current}
-          icon={<Cpu className="status-icon" aria-hidden />}
-          title="Model"
-          choice={model}
-          onPick={pick('model')}
-        />
-      )}
-      {effort && (
-        <ChoicePicker
-          label={optionName(currentEffort?.name ?? effort.current)}
-          icon={<SlidersHorizontal className="status-icon" aria-hidden />}
-          title="Effort"
-          // Gloss replaces Claude's "default" with a real level, so it isn't offered (unless that failed).
-          choice={{ ...effort, options: effort.options.filter((o) => o.value !== 'default' || o.value === effort.current) }}
-          onPick={pick('effort')}
-        />
-      )}
-      {choiceError && <span className="status-item error">{choiceError}</span>}
+        {model && (
+          <ChoicePicker
+            label={currentModel ? modelLabel(currentModel) : model.current}
+            icon={<Cpu className="status-icon" aria-hidden />}
+            title="Model"
+            choice={model}
+            onPick={pick('model')}
+          />
+        )}
+        {effort && (
+          <ChoicePicker
+            label={optionName(currentEffort?.name ?? effort.current)}
+            icon={<SlidersHorizontal className="status-icon" aria-hidden />}
+            title="Effort"
+            // Gloss replaces Claude's "default" with a real level, so it isn't offered (unless that failed).
+            choice={{ ...effort, options: effort.options.filter((o) => o.value !== 'default' || o.value === effort.current) }}
+            onPick={pick('effort')}
+          />
+        )}
 
-      {/* Tools run without asking either way; amber when Gloss does the approving. */}
-      {live.permissions === 'bypass' && (
-        <span className="status-item" title="Auto-approve: the agent runs tools without asking (its bypass mode)." aria-label="Auto-approve">
-          <ShieldCheck className="status-icon" aria-hidden />
-        </span>
-      )}
-      {live.permissions === 'auto' && (
-        <span
-          className="status-item warn"
-          title="Auto-approve: the agent didn't switch to its bypass mode, so Gloss approves each permission request it makes."
-        >
-          <ShieldAlert className="status-icon" aria-hidden />
-          Auto-approve
-        </span>
-      )}
+        {/* Tools run without asking either way; amber when Gloss does the approving. */}
+        {live.permissions === 'bypass' && (
+          <span className="status-item" title="Auto-approve: the agent runs tools without asking (its bypass mode)." aria-label="Auto-approve">
+            <ShieldCheck className="status-icon" aria-hidden />
+          </span>
+        )}
+        {live.permissions === 'auto' && (
+          <span
+            className="status-item warn"
+            title="Auto-approve: the agent didn't switch to its bypass mode, so Gloss approves each permission request it makes."
+          >
+            <ShieldAlert className="status-icon" aria-hidden />
+            Auto-approve
+          </span>
+        )}
 
-      {(live.commands.length > 0 || hasMcpCommand) && (
-        <Popover
-          label={<><Puzzle className="status-icon" aria-label="Extensions" /><ChevronDown className="status-chevron" aria-hidden /></>}
-          title="Extensions: what the agent loaded"
-          className="status-item status-button"
-        >
-          {(close) => (
-            <div className="extensions">
-              <p className="muted">The agent loads its own plugins, skills and MCP servers. Gloss shows what it reports.</p>
-              {hasMcpCommand && (
-                <button
-                  className="extensions-mcp"
-                  onClick={() => {
-                    close()
-                    props.onCommand('/mcp')
-                  }}
-                >
-                  Show MCP server status
-                </button>
-              )}
-              {groupCommands(live.commands).map((g) => (
-                <section key={g.title}>
-                  <div className="label">{g.title}</div>
-                  <ul>
-                    {g.commands.map((c) => (
-                      <li key={c.name}>
-                        <span className="mono">/{c.name}</span> <span className="muted">{c.description}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
-            </div>
-          )}
-        </Popover>
-      )}
+        {(live.commands.length > 0 || hasMcpCommand) && (
+          <Popover
+            label={<><Puzzle className="status-icon" aria-label="Extensions" /><ChevronDown className="status-chevron" aria-hidden /></>}
+            title="Extensions: what the agent loaded"
+            className="status-item status-button"
+          >
+            {(close) => (
+              <div className="extensions">
+                <p className="muted">The agent loads its own plugins, skills and MCP servers. Gloss shows what it reports.</p>
+                {hasMcpCommand && (
+                  <button
+                    className="extensions-mcp"
+                    onClick={() => {
+                      close()
+                      props.onCommand('/mcp')
+                    }}
+                  >
+                    Show MCP server status
+                  </button>
+                )}
+                {groupCommands(live.commands).map((g) => (
+                  <section key={g.title}>
+                    <div className="label">{g.title}</div>
+                    <ul>
+                      {g.commands.map((c) => (
+                        <li key={c.name}>
+                          <span className="mono">/{c.name}</span> <span className="muted">{c.description}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            )}
+          </Popover>
+        )}
 
-      {/* Where the session works, at the right end. The branch name shortens before the group wraps. */}
+      </span>
+
+      {/* Where the session works, at the right end: folder, branch, pull request. Names shorten first. */}
       <span className="status-place">
-        {props.pr && <PullRequestItem pr={props.pr} />}
+        <button
+          className="status-item folder"
+          title={`${session.cwd}\nClick to open the folder.`}
+          onClick={() => {
+            setFolderError(null)
+            void window.gloss.sessions.openFolder(session.id).then(setFolderError, (err: unknown) => setFolderError(errorText(err)))
+          }}
+        >
+          <Folder className="status-icon" aria-hidden />
+          <span className="status-name">{folderName(session.cwd)}</span>
+        </button>
         {git &&
           (git.url ? (
             <a
@@ -313,27 +356,17 @@ export function StatusLine(props: Props): React.JSX.Element {
               title={`${git.dirty ? 'Uncommitted changes' : 'Clean working tree'}. Click to open the branch on GitHub.`}
             >
               <GitBranch className="status-icon" aria-hidden />
-              <span className="status-branch">{git.branch}</span>
+              <span className="status-name">{git.branch}</span>
               {git.dirty && <span className="dirty">*</span>}
             </a>
           ) : (
             <span className="status-item branch" title={git.dirty ? 'Uncommitted changes' : 'Clean working tree'}>
               <GitBranch className="status-icon" aria-hidden />
-              <span className="status-branch">{git.branch}</span>
+              <span className="status-name">{git.branch}</span>
               {git.dirty && <span className="dirty">*</span>}
             </span>
           ))}
-        <button
-          className="status-item"
-          title={`${session.cwd}\nClick to open the folder.`}
-          onClick={() => {
-            setFolderError(null)
-            void window.gloss.sessions.openFolder(session.id).then(setFolderError, (err: unknown) => setFolderError(errorText(err)))
-          }}
-        >
-          <Folder className="status-icon" aria-hidden />
-          {folderName(session.cwd)}
-        </button>
+        {props.pr && <PullRequestItem pr={props.pr} />}
         {props.obsidianVault?.trim() && (
           <button className="status-item" title={`Open Obsidian vault: ${props.obsidianVault.trim()}`}
             aria-label="Open Obsidian vault"
@@ -342,10 +375,11 @@ export function StatusLine(props: Props): React.JSX.Element {
               void window.gloss.sessions.openObsidian(session.id).catch((err: unknown) => setObsidianError(errorText(err)))
             }}>
             <img src={new URL('./assets/obsidian-logo.svg', import.meta.url).href}
-              width="18" height="18" alt="" aria-hidden="true" />
+              width="14" height="14" alt="" aria-hidden="true" />
           </button>
         )}
       </span>
+      {choiceError && <span className="status-item error">{choiceError}</span>}
       {obsidianError && <span className="status-item error">Couldn&apos;t open Obsidian: {obsidianError}</span>}
       {folderError && <span className="status-item error">Couldn&apos;t open the folder: {folderError}</span>}
     </div>

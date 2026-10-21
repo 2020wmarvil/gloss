@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { Message } from '@shared/types'
 import { rangeToSource } from './selection'
 import { renderedText } from './source'
-import { Reply } from 'lucide-react'
+import { Copy, Reply } from 'lucide-react'
 
 export type SourceSelection = { start: number; end: number; text: string }
 
@@ -16,8 +16,8 @@ type Props = {
   onReply(message: Message, selection: SourceSelection): void
 }
 
-const POPOVER_WIDTH = 270
-const POPOVER_HEIGHT = 42
+const POPOVER_WIDTH = 230
+const POPOVER_HEIGHT = 34
 
 function isEditable(target: EventTarget | null): boolean {
   return (
@@ -97,11 +97,12 @@ export function SelectionPopover({ scope, messages, onReply }: Props): React.JSX
       // Keep the selection when a button is pressed.
       onMouseDown={(e) => e.preventDefault()}
     >
-      <button className="go" onClick={reply}>
+      <button className="primary sm go" onClick={reply} title="Reply to selection (R)" aria-keyshortcuts="R">
         <Reply />
-        Reply to selection <kbd>R</kbd>
+        Reply to selection
       </button>
-      <button className="copy" onClick={() => document.execCommand('copy')}>
+      <button className="ghost sm copy" onClick={() => document.execCommand('copy')} title="Copy (Ctrl+C)">
+        <Copy />
         Copy
       </button>
     </div>
