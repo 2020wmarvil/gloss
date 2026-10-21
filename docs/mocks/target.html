@@ -362,9 +362,16 @@ mark { background: var(--accent-tint); color: inherit; border-radius: 3px; paddi
 .fhead .dir { color: var(--faint); font-weight: 400; }
 .fhead .grow { flex: 1; }
 .fhead .pill { font-size: var(--t-11); color: var(--muted); padding: 2px 6px; border-radius: var(--r-xs); background: var(--sunken); }
-.hunk { display: flex; align-items: center; height: 26px; padding: 0 6px 0 14px; background: var(--diff-hunk); color: var(--muted); border-bottom: 1px solid var(--line-soft); }
+.hunk { display: flex; align-items: center; height: 26px; padding: 0 0 0 14px; background: var(--diff-hunk); color: var(--muted); border-bottom: 1px solid var(--line-soft); }
 .hunk .grow { flex: 1; }
-.hunk .x { width: 22px; height: 22px; display: grid; place-items: center; border-radius: var(--r-xs); color: var(--faint); }
+/* The app's expander (DiffView): two stacked half-height buttons for 10 more lines up or
+   down, and one beside them for the whole gap. */
+.xp { flex: none; display: inline-flex; height: 26px; border: 1px solid var(--line-strong); background: var(--surface); box-shadow: inset 0 1px 0 var(--edge); }
+.xp .pair { display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+.xp .pair span { flex: 1; width: 28px; display: grid; place-items: center; color: var(--muted); }
+.xp .pair span:first-child { border-bottom: 1px solid var(--line); }
+.xp .pair .i { width: 13px; height: 13px; }
+.xp .all { width: 32px; display: grid; place-items: center; color: var(--muted); }
 .dl { display: grid; grid-template-columns: 44px 16px 1fr 44px 16px 1fr; }
 .dl > span { white-space: pre; overflow: hidden; padding-right: 8px; }
 .dl .n { text-align: right; padding-right: 8px; color: var(--faint); }
@@ -680,7 +687,7 @@ const SCREENS = [
   },
   {
     id: 'review', name: 'Review session',
-    notes: '<b>A review after its first pass.</b> One header row for the title and tools, one for the range and counts. Hunk headers carry one quiet expand button instead of boxed stacked chevrons. Finding cards sit flat in the diff (a colored edge, no floating shadow). The status line is a band under the diff. In the side panel, the filters fit one row (Open / Resolved / All and a Kinds menu) and file groups show the name with its folder dimmed, so "src" doesn\'t repeat. <i>Fixes 25, 26.</i>',
+    notes: '<b>A review after its first pass.</b> One header row for the title and tools, one for the range and counts. Hunk headers keep the app\'s expander (10 more lines up, 10 more down, or the whole gap). Finding cards sit flat in the diff (a colored edge, no floating shadow). The status line is a band under the diff. In the side panel, the filters fit one row (Open / Resolved / All and a filter button for kinds) and file groups show the name with its folder dimmed, so "src" doesn\'t repeat. <i>Fixes 25, 26.</i>',
     render: () => `<div class="rail-l"><button class="icon-btn" title="Show sidebar">${ic('panel-left')}</button></div>
       <div class="sheet"><div class="main">
         <div class="rhead">
@@ -690,19 +697,19 @@ const SCREENS = [
         </div>
         <div class="diff">
           <div class="fhead">${ic('chevron-down', 's14')}<span><span class="dir">src/</span>cache.js</span><span class="pill">committed</span><button class="icon-btn sm" title="Show in File Explorer">${ic('folder', 's14')}</button><button class="icon-btn sm" title="Open in external editor">${ic('external-link', 's14')}</button><span class="grow"></span><span class="add">+6</span><span class="del">−1</span></div>
-          <div class="hunk"><span class="grow">@@ -6,8 +6,13 @@ export class Cache {</span><span class="x" title="Show 10 more lines">${ic('chevrons-up-down', 's14')}</span></div>
+          <div class="hunk"><span class="grow">@@ -6,8 +6,13 @@ export class Cache {</span>${EXPANDERS()}</div>
           ${dl([['6', '    this.entries = new Map()', '6', '    this.entries = new Map()'], ['7', '  }', '7', '  }'], [null, '', '9', '  // Namespaces may contain \':\', so escape it.', 'add'], ['9', '  key(namespace, id) {', '10', '  key(namespace, id) {', 'mark'], ['10', "    return namespace + ':' + id", '11', "    return namespace.replaceAll(':', '::') + ':' + id", 'chg'], [null, '', '12', '  }', 'add']])}
           <div class="fcard-row"><div class="fcard"><div class="t"><span class="tag bug">Bug</span><span class="grow">Colon escaping still allows key collisions</span><button class="icon-btn sm" style="width:22px;height:22px">${ic('chevron-up', 's14')}</button></div><div class="b">Only the namespace is escaped. set('a:', 'b') and set('a', '::b') both build the key 'a:::b'.</div><div class="m">2 replies · 1m ago</div></div></div>
           ${dl([['11', '  }', '13', '  }'], [null, '', '14', '  delete(namespace, id) {', 'add'], [null, '', '15', '    return this.entries.delete(this.key(namespace, id))', 'add'], [null, '', '16', '  }', 'add'], ['12', '', '17', '']])}
           <div class="fhead">${ic('chevron-down', 's14')}<span><span class="dir">src/</span>cache.test.js</span><span class="pill">uncommitted</span><button class="icon-btn sm">${ic('folder', 's14')}</button><button class="icon-btn sm">${ic('external-link', 's14')}</button><span class="grow"></span><span class="add">+7</span><span class="del">−0</span></div>
-          <div class="hunk"><span class="grow">@@ -7,3 +7,10 @@ test('stores and reads a value', () => {</span><span class="x">${ic('chevrons-up-down', 's14')}</span></div>
+          <div class="hunk"><span class="grow">@@ -7,3 +7,10 @@ test('stores and reads a value', () => {</span>${EXPANDERS()}</div>
           ${dl([['7', "  c.set('user', 1, 'ada')", '7', "  c.set('user', 1, 'ada')"], [null, '', '11', "test('namespaces with colons do not collide', () => {", 'sugg']])}
         </div>
         <div class="band">${statusLine({ branch: 'feature/namespaced-keys' })}</div>
       </div>
       <aside class="panel"><div class="ph"><div class="segmented"><button class="on">Threads <span class="count">5</span></button><button>Queue <span class="count">0</span></button></div><span class="grow"></span><button class="icon-btn sm">${ic('panel-right')}</button></div>
         <div class="gcard"><div class="t">${ic('message-square', 's14')}General conversation<span class="count" style="margin-left:auto">3</span></div><p>The branch escapes colons in namespaces and adds Cache.delete with a regression test. Four findings, opened as threads.</p></div>
-        <div class="filters"><span class="segmented"><button class="on">Open <span class="count">4</span></button><button>Resolved <span class="count">0</span></button><button>All</button></span><span class="grow"></span><button class="btn ghost sm">${ic('list-filter', 's14')}Kinds</button></div>
+        <div class="filters"><span class="segmented"><button class="on">Open <span class="count">4</span></button><button>Resolved <span class="count">0</span></button><button>All</button></span><span class="grow"></span><button class="icon-btn sm" title="Kinds shown">${ic('list-filter')}</button></div>
         <div class="fgrp"><span class="dir">src/</span>cache.js</div>
         <div class="rrow cur"><span class="dot s-failed"></span><div><div>Colon escaping still allows key collisions</div><div class="meta"><span class="ln">L10–12</span><span>Bug</span><span>2 replies</span><span>1m</span></div></div></div>
         <div class="fgrp"><span class="dir">src/</span>cache.test.js</div>
@@ -713,6 +720,8 @@ const SCREENS = [
       </aside></div>`
   },
 ]
+
+const EXPANDERS = () => `<span class="xp" role="group" aria-label="Show hidden lines"><span class="pair"><span title="Show 10 more lines under the change above">${ic('chevron-up')}</span><span title="Show 10 more lines over this change">${ic('chevron-down')}</span></span><span class="all" title="Show all hidden lines">${ic('chevrons-up-down', 's14')}</span></span>`
 
 // One split-diff row per entry: [oldNo, oldText, newNo, newText, kind]
 function dl(rows) {
