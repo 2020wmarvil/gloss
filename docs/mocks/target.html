@@ -502,11 +502,10 @@ const SCREENS = [
   },
   {
     id: 'project', name: 'Project, no session',
-    notes: '<b>A project with no session open.</b> The bead beside the project\'s name, like the welcome lockup, with its folder below, and one action: a new session with the default agent. No branch: a session picks its own branch or worktree. The switcher\'s second line is the parent folder, not a truncated monospace path (full path in its tooltip). <i>Fixes 19, 30.</i>',
+    notes: '<b>A project with no session open.</b> The bead beside the project\'s name, like the welcome lockup, and one action: a new session with the default agent. No folder or branch: the switcher has the folder, and a session picks its own branch or worktree. The switcher\'s second line is the parent folder, not a truncated monospace path (full path in its tooltip). <i>Fixes 19, 30.</i>',
     render: () => `${sidebar({ cur: null })}<div class="sheet"><div class="main"><div class="empty"><div class="in">
       <div class="lockup project">${BEAD(44)}<span>cachekit</span></div>
-      <p>C:\\Users\\you\\Desktop\\cachekit</p>
-      <div style="margin-top:8px"><button class="btn primary lg">${ic('plus')}New session</button></div>
+      <div style="margin-top:14px"><button class="btn primary lg">${ic('plus')}New session</button></div>
     </div></div></div></div>`
   },
   {
