@@ -510,13 +510,11 @@ const SCREENS = [
   },
   {
     id: 'new', name: 'New session',
-    notes: '<b>A new session, nothing sent.</b> The welcome sits just above the composer, where the eye already is, and teaches the one thing that makes Gloss different (threads). The side panel stays a rail: no "0", just the threads icon with its shortcut in the tooltip; a count appears once there are threads. <i>Fixes 29, 30.</i>',
+    notes: '<b>A new session, nothing sent.</b> One line just above the composer, where the eye already is, with no tutorial. The side panel stays a rail: no "0", just the threads icon with its shortcut in the tooltip; a count appears once there are threads. <i>Fixes 29, 30.</i>',
     render: () => `${sidebar({ cur: 'new', rows: ['cache', 'review', 'evict'] }).replace('<div class="rows">', `<div class="rows"><div class="lrow cur"><span class="lead"></span><div style="min-width:0"><div class="tt">New session</div><div class="sub">Claude Code</div></div><span class="trail">now</span></div>`)}
       <div class="sheet"><div class="main">${mainHead('New session')}
         <div class="log"><div class="hint-new"><div class="in">
           <h3>What should Claude Code do in cachekit?</h3>
-          <p>When it answers, reply to any point in a thread of its own. The main conversation stays on track.</p>
-          <div class="tips"><span class="tip">${ic('reply', 's14')}Hover a list item, then Reply</span><span class="tip">${ic('text-select', 's14')}Or select any text</span></div>
         </div></div></div>
         <div class="composer-wrap">${composer({ focus: true, btn: 'sendOff' })}</div>${statusLine({ limit: false })}
       </div>${rail(0)}</div>`
