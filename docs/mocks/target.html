@@ -228,9 +228,10 @@ code.inl { font: .87em var(--font-mono); background: var(--sunken); padding: 1px
 .composer.focus { border-color: var(--line-strong); box-shadow: inset 0 1px 0 var(--edge), var(--lift-2), 0 0 0 3px var(--focus); }
 .composer .ed { flex: 1; min-width: 0; padding: 0 4px; color: var(--faint); font-size: var(--t-14); }
 .composer .ed.typed { color: var(--ink); }
-.status { max-width: 760px; width: 100%; margin: 0 auto; display: flex; align-items: center; gap: 2px; padding: 6px 26px 10px; font-size: var(--t-12); color: var(--muted); }
-.status { overflow: hidden; }
-.status .sb.shrink { min-width: 0; flex-shrink: 1; overflow: hidden; }
+.status { width: 100%; display: flex; align-items: center; gap: 2px; padding: 6px 14px 8px; font-size: var(--t-12); color: var(--muted); }
+.status { flex-wrap: wrap; row-gap: 0; }
+.status .right { display: flex; align-items: center; gap: 2px; margin-left: auto; min-width: 0; max-width: 100%; }
+.status .sb.shrink { min-width: 64px; flex-shrink: 1; overflow: hidden; }
 .status .sb.shrink .tx { overflow: hidden; text-overflow: ellipsis; }
 .status .sb { flex-shrink: 0; white-space: nowrap; height: 24px; padding: 0 6px; border-radius: var(--r-sm); display: inline-flex; align-items: center; gap: 5px; }
 .status .sb .lb { color: var(--faint); }
@@ -452,10 +453,13 @@ const statusLine = ({ branch = 'main', limit = true } = {}) => `<div class="stat
   <span class="sb">${ic('sliders-horizontal', 's14')}Medium${ic('chevron-down', 's12')}</span>
   <span class="sb" title="Auto-approve">${ic('shield-check', 's14')}</span>
   <span class="sb" title="Extensions">${ic('puzzle', 's14')}</span>
-  <span class="grow"></span>
-  <span class="sb"><span class="dot s-done" style="width:6px;height:6px"></span>#31 open</span>
+  <span class="right"><span class="sb shrink" title="Open the folder">${ic('folder', 's14')}<span class="tx">cachekit</span></span>
   <span class="sb shrink">${ic('git-branch', 's14')}<span class="tx">${branch}</span></span>
-  <span class="sb shrink">${ic('folder', 's14')}<span class="tx">cachekit</span></span></div>`
+  <span class="sb"><span class="dot s-done" style="width:6px;height:6px"></span>#31 open</span>
+  <span class="sb" title="Open Obsidian vault “cachekit notes”">${OBSIDIAN}</span></span></div>`
+
+// Obsidian's mark, simplified (the app uses the real logo).
+const OBSIDIAN = '<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 2.2 4.6 10.4a2 2 0 0 0 .1 1.9l3.6 6.4a2 2 0 0 0 1 .9l5.3 2.1a1.5 1.5 0 0 0 1.9-.8l3.1-6.7a2 2 0 0 0-.1-1.8L15.3 4a2 2 0 0 0-.9-.8L10.3 1.4a1.5 1.5 0 0 0-1.8.8z" fill="#7f6df2"/></svg>'
 
 const composer = ({ text = '', ph = 'Message the agent', btn = 'send', focus = false } = {}) => {
   const b = {
