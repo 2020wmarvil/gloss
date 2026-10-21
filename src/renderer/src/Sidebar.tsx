@@ -1,5 +1,5 @@
 import { modKey } from './shortcuts'
-// The sidebar (docs/mocks/sidebar-switcher.html): a project switcher and one list of
+// The sidebar (docs/mocks/target.html): a project switcher and one list of
 // the project's sessions, Gloss's and the agent's own (SPEC → Projects and sessions).
 import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'

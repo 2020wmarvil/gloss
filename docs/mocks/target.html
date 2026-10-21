@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock – Gloss target interface (M12)</title>
+<style>
+/* Inter from the app's own dependency, so this page works offline from the repo. */
+@font-face { font-family: 'Inter Gloss'; font-weight: 100 900; src: url('../../node_modules/@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2-variations'); }
+
+/* ================= Tokens: styles.css's, plus the depth tokens (C · Gloss) ================= */
+:root {
+  --font-ui: 'Inter Gloss', system-ui, 'Segoe UI', sans-serif;
+  --font-mono: 'Cascadia Mono', ui-monospace, Consolas, monospace;
+  --t-11: 11px; --t-12: 12px; --t-13: 13px; --t-14: 14px; --t-15: 15px; --t-17: 17px; --t-20: 20px; --t-24: 24px;
+  --r-xs: 4px; --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-pill: 999px;
+  --control: 32px; --control-sm: 26px; --control-lg: 40px;
+  --bg: #f7f6f2; --title-bar: #ebeae4; --surface: #ffffff; --raised: #ffffff; --sunken: #efeee9;
+  --ink: #1c1b18; --ink-2: #3a3833; --muted: #5f5c55; --faint: #8a867d;
+  --line: #e3e1da; --line-soft: #eeece6; --line-strong: #d3d0c6;
+  --hover: rgba(28, 27, 24, .05); --pressed: rgba(28, 27, 24, .09); --selected: rgba(28, 27, 24, .07);
+  --shadow-2: 0 1px 2px rgba(28, 27, 24, .06), 0 8px 24px rgba(28, 27, 24, .12);
+  --shadow-3: 0 2px 6px rgba(28, 27, 24, .08), 0 18px 48px rgba(28, 27, 24, .18);
+  --scrim: rgba(28, 27, 24, .35);
+  --brand: linear-gradient(120deg, #ff3da6, #ff9f3d); --on-brand: #17040e;
+  --accent: #c2147a; --accent-tint: #fae5f0; --accent-mark: #f3c6dd; --focus: rgba(194, 20, 122, .35);
+  --working: #2c55c9; --working-tint: #e8eefb;
+  --done: #2e7d32; --done-tint: #e7f5e9;
+  --queued: #9a5b00; --queued-tint: #fbf0dc;
+  --paused: #7a4fc4; --paused-tint: #f0eafb;
+  --failed: #c4361c; --failed-tint: #fbe9e4; --failed-line: #edc6bb;
+  --merged: #7a4fc4;
+  --code-ink: #2b2a26;
+  --diff-add: #e9f5ea; --diff-add-gutter: #d5edd7; --diff-del: #fbecea; --diff-del-gutter: #f5d7d3; --diff-hunk: #f1f0eb;
+  /* Depth (C · Gloss): the frame behind the sheet, light on top edges, short lifts, pressed wells. */
+  --frame: #ebeae4;
+  --edge: rgba(255, 255, 255, .9);
+  --lift-1: 0 1px 2px rgba(28, 27, 24, .07);
+  --lift-2: 0 1px 2px rgba(28, 27, 24, .06), 0 4px 14px -4px rgba(28, 27, 24, .12);
+  --lift-pane: 0 0 0 1px rgba(28, 27, 24, .07), 0 2px 4px rgba(28, 27, 24, .04), 0 12px 32px -8px rgba(28, 27, 24, .14);
+  --sink: inset 0 1px 2px rgba(28, 27, 24, .07);
+  --sheen: linear-gradient(to bottom, rgba(255, 255, 255, .7), rgba(255, 255, 255, 0) 220px);
+  --gloss: linear-gradient(to bottom, rgba(255, 255, 255, .42), rgba(255, 255, 255, .08) 50%, rgba(255, 255, 255, 0) 51%);
+  --brand-glow: 0 1px 2px rgba(194, 20, 122, .25), 0 4px 12px -3px rgba(255, 61, 166, .45);
+}
+:root[data-theme='dark'] {
+  --bg: #141312; --title-bar: #0c0b0a; --surface: #1c1b19; --raised: #262522; --sunken: #0f0e0d;
+  --ink: #efeee9; --ink-2: #d4d1c8; --muted: #a39f96; --faint: #7d796f;
+  --line: #2c2a27; --line-soft: #242220; --line-strong: #3e3b36;
+  --hover: rgba(255, 255, 255, .05); --pressed: rgba(255, 255, 255, .09); --selected: rgba(255, 255, 255, .07);
+  --shadow-2: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .45);
+  --shadow-3: 0 2px 6px rgba(0, 0, 0, .5), 0 18px 48px rgba(0, 0, 0, .6);
+  --scrim: rgba(0, 0, 0, .55);
+  --accent: #ff5c9e; --accent-tint: #3a1a2c; --accent-mark: #5a2440; --focus: rgba(255, 92, 158, .4);
+  --working: #7c9cf0; --working-tint: #1f2740;
+  --done: #6cc070; --done-tint: #1b2a1d;
+  --queued: #f0b04a; --queued-tint: #33280f;
+  --paused: #b394f0; --paused-tint: #2a2240;
+  --failed: #f07a5f; --failed-tint: #3a1d16; --failed-line: #5c2a1f;
+  --merged: #b394f0;
+  --code-ink: #e9e6de;
+  --diff-add: #182a1b; --diff-add-gutter: #1f3a23; --diff-del: #2f1c1a; --diff-del-gutter: #45231f; --diff-hunk: #1a1917;
+  --frame: #0c0b0a;
+  --edge: rgba(255, 255, 255, .08);
+  --lift-1: 0 1px 2px rgba(0, 0, 0, .5);
+  --lift-2: 0 1px 2px rgba(0, 0, 0, .5), 0 4px 14px -4px rgba(0, 0, 0, .6);
+  --lift-pane: 0 0 0 1px rgba(255, 255, 255, .05), 0 2px 4px rgba(0, 0, 0, .3), 0 12px 32px -8px rgba(0, 0, 0, .7);
+  --sink: inset 0 1px 2px rgba(0, 0, 0, .5);
+  --sheen: linear-gradient(to bottom, rgba(255, 255, 255, .035), rgba(255, 255, 255, 0) 220px);
+  --gloss: linear-gradient(to bottom, rgba(255, 255, 255, .38), rgba(255, 255, 255, .06) 50%, rgba(255, 255, 255, 0) 51%);
+  --brand-glow: 0 1px 2px rgba(0, 0, 0, .5), 0 4px 14px -3px rgba(255, 61, 166, .35);
+}
+
+/* ================= Page around the mock ================= */
+* { box-sizing: border-box; }
+body { margin: 0; background: #8f8b84; color: var(--ink); font: 400 var(--t-14)/1.5 var(--font-ui); }
+:root[data-theme='dark'] body { background: #3a3835; }
+.top { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 24px; background: #fff; color: #1c1b18; border-bottom: 1px solid #ddd; font-size: 13px; }
+.top h1 { margin: 0 8px 0 0; font-size: 16px; font-weight: 600; }
+.top .grow { flex: 1; }
+.pick { display: inline-flex; flex-wrap: wrap; padding: 2px; border-radius: 8px; background: #efeee9; gap: 2px; }
+.pick button { height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: #5f5c55; font: 500 12px var(--font-ui); cursor: pointer; }
+.pick button[aria-pressed='true'] { background: #fff; color: #1c1b18; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.notes { width: 1280px; margin: 16px auto 0; color: #fff; font-size: 13px; line-height: 1.6; }
+.notes b { font-weight: 600; }
+.notes ul { margin: 4px 0 0; padding-left: 18px; }
+.stage { padding: 14px 24px 60px; display: grid; place-items: center; }
+
+/* ================= Components ================= */
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.s12 { width: 12px; height: 12px; } svg.i.s14 { width: 14px; height: 14px; } svg.i.s20 { width: 20px; height: 20px; }
+.btn { height: var(--control); padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: var(--r-md); font: 500 var(--t-13)/1 var(--font-ui); color: var(--ink); background: transparent; cursor: pointer; white-space: nowrap; }
+.btn.primary { background: var(--gloss), var(--brand); color: var(--on-brand); font-weight: 600; box-shadow: inset 0 1px 0 rgba(255,255,255,.55), inset 0 -1px 0 rgba(120,10,60,.18), var(--brand-glow); }
+.btn.secondary { background: linear-gradient(to bottom, var(--surface), var(--bg)); box-shadow: inset 0 0 0 1px var(--line-strong), inset 0 1px 0 var(--edge), var(--lift-1); }
+:root[data-theme='dark'] .btn.secondary { background: linear-gradient(to bottom, var(--raised), var(--surface)); }
+.btn.ghost { color: var(--ink-2); }
+.btn.ghost:hover, .btn.ghost.hl { background: var(--hover); }
+.btn.danger { background: var(--failed); color: #fff; }
+.btn:disabled { background: var(--sunken); color: var(--faint); box-shadow: var(--sink); cursor: default; }
+.btn.sm { height: var(--control-sm); padding: 0 9px; font-size: var(--t-12); }
+.btn.lg { height: var(--control-lg); padding: 0 18px; font-size: var(--t-14); }
+.icon-btn { width: var(--control); height: var(--control); display: inline-grid; place-items: center; border: 0; border-radius: var(--r-md); background: transparent; color: var(--muted); cursor: pointer; flex: none; }
+.icon-btn:hover { background: var(--hover); color: var(--ink); }
+.icon-btn.on { background: var(--selected); color: var(--ink); }
+.icon-btn.sm { width: var(--control-sm); height: var(--control-sm); }
+.field { white-space: nowrap; height: var(--control); display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md); color: var(--ink); font-size: var(--t-13); box-shadow: var(--sink); }
+.field.focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+.field .ph { color: var(--faint); }
+.field .grow { flex: 1; min-width: 0; }
+.select { justify-content: space-between; cursor: pointer; box-shadow: inset 0 1px 0 var(--edge), var(--lift-1); background: linear-gradient(to bottom, var(--surface), var(--bg)); }
+:root[data-theme='dark'] .select { background: linear-gradient(to bottom, var(--raised), var(--surface)); }
+.select .i { color: var(--muted); }
+.switch { width: 34px; height: 20px; border-radius: var(--r-pill); background: var(--line-strong); position: relative; flex: none; border: 0; box-shadow: var(--sink); }
+.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.switch.on { background: var(--ink); }
+.switch.on::after { transform: translateX(14px); }
+:root[data-theme='dark'] .switch.on::after { background: var(--bg); }
+.segmented { display: inline-flex; padding: 2px; border-radius: var(--r-md); background: var(--sunken); gap: 2px; box-shadow: var(--sink); }
+.segmented button { height: 26px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--muted); font: 500 var(--t-13)/1 var(--font-ui); display: inline-flex; align-items: center; gap: 6px; }
+.segmented button.on { background: var(--surface); color: var(--ink); box-shadow: inset 0 1px 0 var(--edge), var(--lift-1); }
+:root[data-theme='dark'] .segmented button.on { background: var(--raised); }
+.count { display: inline-flex; align-items: center; height: 18px; min-width: 18px; padding: 0 6px; justify-content: center; border-radius: var(--r-pill); background: var(--sunken); color: var(--muted); font: 600 var(--t-11)/1 var(--font-ui); font-variant-numeric: tabular-nums; box-shadow: var(--sink); }
+.state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-12); font-weight: 500; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.ring { width: 8px; height: 8px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--faint); flex: none; }
+.s-working { color: var(--working) !important; } .s-done { color: var(--done) !important; } .s-queued { color: var(--queued) !important; } .s-paused { color: var(--paused) !important; } .s-failed { color: var(--failed) !important; }
+.tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: var(--r-xs); font: 600 var(--t-11)/1 var(--font-ui); letter-spacing: .02em; }
+.tag.bug { background: var(--failed-tint); color: var(--failed); } .tag.suggestion { background: var(--working-tint); color: var(--working); }
+.tag.nit { background: var(--sunken); color: var(--muted); } .tag.yours { background: var(--paused-tint); color: var(--paused); }
+kbd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: var(--r-xs); background: linear-gradient(to bottom, var(--surface), var(--bg)); box-shadow: inset 0 0 0 1px var(--line-strong), 0 1px 0 var(--line-strong); font: 500 var(--t-11)/1 var(--font-ui); color: var(--muted); }
+.menu { position: absolute; z-index: 30; min-width: 220px; background: var(--raised); background-image: var(--sheen); border-radius: var(--r-lg); box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge); padding: 6px; font-size: var(--t-13); }
+.menu .sec { padding: 8px 10px 4px; font-size: var(--t-11); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.menu .it { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: var(--r-sm); }
+.menu .it.hl { background: var(--hover); }
+.menu .it .i { color: var(--muted); }
+.menu .it .grow { flex: 1; min-width: 0; }
+.menu .it .d { color: var(--muted); font-size: var(--t-12); }
+.menu .sep { height: 1px; background: var(--line); margin: 6px 4px; }
+code.inl { font: .87em var(--font-mono); background: var(--sunken); padding: 1px 5px; border-radius: 4px; box-shadow: var(--sink); }
+.mono { font-family: var(--font-mono); }
+.code { background: var(--sunken); border-radius: var(--r-md); font: 400 var(--t-13)/1.55 var(--font-mono); color: var(--code-ink); box-shadow: var(--sink); position: relative; }
+.code pre { margin: 0; padding: 10px 12px; overflow: hidden; }
+.code .k { color: #cf2273; } .code .n { color: #2c55c9; } .code .c { color: var(--faint); }
+:root[data-theme='dark'] .code .k { color: #ff7ab3; } :root[data-theme='dark'] .code .n { color: #8fb0ff; }
+.anchor { background: var(--accent-tint); border-bottom: 2px solid var(--accent); border-radius: 2px; }
+.reply-count { display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 5px; margin-left: 3px; border-radius: var(--r-xs); background: var(--accent-tint); color: var(--accent); font: 600 var(--t-11)/1 var(--font-ui); vertical-align: 1px; white-space: nowrap; }
+.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+
+/* ================= The window ================= */
+.win { width: 1280px; height: 800px; display: grid; grid-template-rows: 40px minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); border-radius: 8px; overflow: hidden; background: var(--frame); box-shadow: 0 30px 80px rgba(0,0,0,.35), 0 0 0 1px rgba(0,0,0,.25); position: relative; }
+.tbar { display: flex; align-items: center; gap: 8px; padding: 0 14px; background: var(--frame); }
+.tbar .wm { font: 600 19px/1 var(--font-ui); letter-spacing: -.02em; }
+.tbar .grow { flex: 1; }
+.tbar .wc { width: 46px; height: 40px; display: grid; place-items: center; color: var(--ink-2); }
+.tbar .wc .i { width: 14px; height: 14px; }
+.body { display: flex; min-height: 0; position: relative; }
+
+/* Sidebar: part of the frame */
+.side { flex: 0 0 240px; padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.switcher { display: flex; align-items: center; gap: 4px; }
+.switch-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 10px; border-radius: var(--r-md); background: linear-gradient(to bottom, var(--surface), var(--bg)); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); }
+:root[data-theme='dark'] .switch-btn { background: linear-gradient(to bottom, var(--raised), var(--surface)); }
+.switch-btn .names { flex: 1; min-width: 0; line-height: 1.3; }
+.switch-btn b { display: block; font-size: var(--t-13); font-weight: 600; }
+.switch-btn .p { display: block; font-size: var(--t-12); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.split { display: flex; }
+.split .btn:first-child { flex: 1; justify-content: flex-start; border-radius: var(--r-md) 0 0 var(--r-md); }
+.split .btn:last-child { width: 30px; padding: 0; justify-content: center; border-radius: 0 var(--r-md) var(--r-md) 0; margin-left: 1px; }
+.split .ag { color: var(--muted); font-weight: 400; margin-left: auto; }
+.side .label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); padding: 8px 10px 2px; }
+.side .rows { display: flex; flex-direction: column; gap: 1px; }
+.side .grow { flex: 1; }
+.side .foot { display: flex; flex-direction: column; gap: 1px; }
+.side .foot .btn { justify-content: flex-start; color: var(--ink-2); }
+.side .foot .btn .k { margin-left: auto; display: flex; gap: 3px; }
+.lrow { display: grid; grid-template-columns: 16px 1fr auto; gap: 10px; align-items: center; padding: 7px 8px 7px 10px; border-radius: var(--r-md); position: relative; }
+.lrow.hov { background: var(--hover); }
+.lrow.cur { background: var(--surface); box-shadow: inset 0 1px 0 var(--edge), var(--lift-1), 0 0 0 1px var(--line); }
+:root[data-theme='dark'] .lrow.cur { background: var(--raised); }
+.lrow.cur::before { content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 2px; background: var(--accent); }
+.lrow .lead { display: grid; place-items: center; color: var(--faint); }
+.lrow .tt { font-size: var(--t-13); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lrow .sub { font-size: var(--t-12); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lrow .trail { color: var(--faint); font-size: var(--t-12); font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 4px; }
+.lrow.ext .tt { color: var(--muted); font-weight: 400; }
+.rail-l { flex: 0 0 48px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; }
+
+/* The sheet: everything right of the sidebar, laid on the frame */
+.sheet { flex: 1; min-width: 0; display: flex; overflow: hidden; border-top-left-radius: var(--r-lg); background: var(--bg); box-shadow: var(--lift-pane), inset 0 1px 0 var(--edge); position: relative; }
+.sheet.full { border-top-left-radius: 0; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; background-image: var(--sheen); position: relative; }
+.head { height: 56px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 24px; border-bottom: 1px solid var(--line); }
+.head .tt { font-weight: 600; font-size: var(--t-17); white-space: nowrap; }
+.head .ag { color: var(--muted); font-size: var(--t-13); white-space: nowrap; }
+.head .grow { flex: 1; }
+.log { flex: 1; overflow: hidden; padding: 20px 0 8px; position: relative; }
+.col { max-width: 760px; margin: 0 auto; padding: 0 32px; display: flex; flex-direction: column; gap: 14px; font-size: var(--t-15); line-height: 1.6; }
+.col p { margin: 0; }
+.you { align-self: flex-end; max-width: 75%; background: var(--sunken); border-radius: var(--r-lg); padding: 9px 13px; box-shadow: var(--sink); }
+.tools { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 1px 0 var(--edge), var(--lift-1); }
+.trow { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px 0 12px; font-size: var(--t-13); }
+.trow + .trow { border-top: 1px solid var(--line); }
+.trow .i { color: var(--faint); }
+.trow .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trow .title code { font: 400 var(--t-12)/1 var(--font-mono); color: var(--ink-2); }
+.trow .dur { color: var(--faint); font-size: var(--t-12); }
+.plan { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 1px 0 var(--edge), var(--lift-1); padding: 10px 14px; font-size: var(--t-14); }
+.plan .ph { display: flex; justify-content: space-between; font-size: var(--t-12); color: var(--muted); margin-bottom: 6px; }
+.plan .ph b { color: var(--ink); font-size: var(--t-13); }
+.plan .st { display: flex; gap: 10px; align-items: center; padding: 3px 0; }
+.plan .st.done { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line-strong); }
+.box { width: 14px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1.5px var(--line-strong); flex: none; display: grid; place-items: center; }
+.box.done { background: var(--done); box-shadow: none; color: #fff; }
+.box.run { box-shadow: inset 0 0 0 1.5px var(--working); }
+.box.run::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--working); }
+/* List-item replies (fix 24): the list stays a list; Reply sits in the item's margin on hover. */
+.col ol { margin: 0; padding-left: 26px; display: flex; flex-direction: column; gap: 10px; }
+.col li { position: relative; padding-left: 2px; }
+.col li .reply { position: absolute; left: -30px; top: 1px; width: 24px; height: 24px; display: none; place-items: center; border-radius: var(--r-sm); color: var(--muted); }
+.col li.hov::marker { color: transparent; }
+.col li.hov { background: var(--hover-soft, rgba(0,0,0,.02)); border-radius: var(--r-sm); box-shadow: -8px 0 0 var(--hover-soft, rgba(0,0,0,.02)), 8px 0 0 var(--hover-soft, rgba(0,0,0,.02)); }
+.col li.hov .reply { display: inline-grid; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); color: var(--ink-2); }
+.strip { max-width: 760px; width: 100%; margin: 0 auto 8px; padding: 0 32px; }
+.strip > div { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 6px 0 12px; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); font-size: var(--t-13); }
+.strip .grow { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.composer-wrap { max-width: 760px; width: 100%; margin: 0 auto; padding: 0 32px; }
+.composer { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 7px; display: flex; align-items: center; gap: 6px; box-shadow: inset 0 1px 0 var(--edge), var(--lift-2); }
+.composer.focus { border-color: var(--line-strong); box-shadow: inset 0 1px 0 var(--edge), var(--lift-2), 0 0 0 3px var(--focus); }
+.composer .ed { flex: 1; min-width: 0; padding: 0 4px; color: var(--faint); font-size: var(--t-14); }
+.composer .ed.typed { color: var(--ink); }
+.status { max-width: 760px; width: 100%; margin: 0 auto; display: flex; align-items: center; gap: 12px; padding: 6px 26px 10px; font-size: var(--t-12); color: var(--muted); }
+/* The agent's items wrap onto a hidden second row: what doesn't fit disappears, right to left. */
+.status .agent { flex: 1; min-width: 0; height: 24px; overflow: hidden; display: flex; flex-wrap: wrap; gap: 0 2px; }
+.status .right { flex: none; display: flex; align-items: center; gap: 2px; }
+.status .sb.shrink { max-width: 180px; overflow: hidden; }
+.status .sb.shrink .tx { overflow: hidden; text-overflow: ellipsis; }
+.status .sb { flex-shrink: 0; white-space: nowrap; height: 24px; padding: 0 6px; border-radius: var(--r-sm); display: inline-flex; align-items: center; gap: 5px; }
+.status .sb .lb { color: var(--faint); }
+.status .grow { flex: 1; }
+.meter { width: 30px; height: 4px; border-radius: 2px; background: var(--line-strong); overflow: hidden; box-shadow: var(--sink); }
+.meter i { display: block; height: 100%; width: 12%; background: var(--ink-2); }
+.note-failed { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-md); background: var(--failed-tint); box-shadow: inset 0 0 0 1px var(--failed-line); font-size: var(--t-14); }
+.note-failed .i { color: var(--failed); margin-top: 3px; }
+.note-failed .t b { display: block; font-weight: 600; }
+.note-failed .t span { color: var(--ink-2); font-size: var(--t-13); }
+.note-failed .acts { display: flex; gap: 6px; margin-top: 10px; }
+
+/* Side panel and rail */
+.panel { flex: 0 0 400px; display: flex; flex-direction: column; background: var(--surface); background-image: var(--sheen); border-left: 1px solid var(--line); min-height: 0; position: relative; }
+.panel .ph { height: 56px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--line); }
+.panel .ph .grow { flex: 1; }
+.panel .ph .back { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px; border-radius: var(--r-sm); color: var(--ink-2); font-size: var(--t-13); font-weight: 500; }
+.panel .quote { margin: 14px 18px 4px; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--accent-tint); border-radius: 0 var(--r-sm) var(--r-sm) 0; font-size: var(--t-13); }
+.panel .msgs { flex: 1; padding: 10px 18px; font-size: var(--t-14); display: flex; flex-direction: column; gap: 12px; line-height: 1.55; overflow: hidden; }
+.panel .msgs p { margin: 0; }
+.panel .msgs .you { max-width: 88%; }
+.panel .composer { margin: 0 14px 14px; }
+.queued { border: 1px dashed var(--line-strong); border-radius: var(--r-md); padding: 6px 6px 6px 10px; display: flex; gap: 8px; align-items: center; font-size: 13px; background: var(--bg); }
+.queued .grow { flex: 1; min-width: 0; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rail { flex: 0 0 48px; display: flex; flex-direction: column; align-items: center; padding-top: 12px; gap: 4px; border-left: 1px solid var(--line); background: var(--bg); }
+.rail .rb { position: relative; }
+.rail .badge { position: absolute; right: -2px; top: -2px; }
+.trows { padding: 8px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.thr { padding: 10px 10px 10px 12px; border-radius: var(--r-md); display: flex; flex-direction: column; gap: 4px; }
+.thr.hov { background: var(--hover); }
+.thr .q { font-size: var(--t-14); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.thr .q::before { content: ''; display: inline-block; width: 3px; height: 13px; border-radius: 2px; background: var(--accent); margin-right: 8px; vertical-align: -1px; }
+.thr .ctx { font-size: var(--t-12); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thr .meta { display: flex; gap: 10px; align-items: center; font-size: var(--t-12); color: var(--muted); }
+.qgroup { padding: 10px 18px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.qrow { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: start; padding: 8px 10px; margin: 0 8px; border-radius: var(--r-md); font-size: var(--t-13); }
+.qrow .w { font-size: var(--t-12); color: var(--faint); }
+.qrow .tx { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qrow .dot { margin-top: 6px; }
+.qrow.run { background: var(--working-tint); }
+.qdiv { display: flex; align-items: center; gap: 8px; margin: 8px 18px; font-size: var(--t-12); color: var(--faint); }
+.qdiv::before, .qdiv::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+/* Empty states (fix 30) */
+.empty { flex: 1; display: grid; place-items: center; padding: 24px; }
+.empty .in { width: 440px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; }
+/* The bead beside the wordmark, its diameter a little larger than the type (docs/BRAND.md). */
+.lockup { display: flex; align-items: center; gap: 12px; }
+.lockup span { font: 600 44px/1 var(--font-ui); letter-spacing: -.02em; }
+.lockup.project { gap: 10px; max-width: 100%; }
+.lockup.project span { font-size: 36px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 4px; }
+.empty h2 { margin: 6px 0 0; font-size: var(--t-24); font-weight: 600; letter-spacing: -.02em; }
+.empty p { margin: 0; color: var(--muted); font-size: var(--t-14); }
+.empty .card { width: 100%; text-align: left; margin-top: 14px; background: var(--surface); border-radius: var(--r-lg); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); padding: 6px; }
+.empty .card .cap { padding: 8px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.hint-new { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; }
+.hint-new .in { display: inline-flex; flex-direction: column; align-items: center; gap: 10px; max-width: 520px; }
+.hint-new h3 { margin: 0; font-size: var(--t-20); font-weight: 600; letter-spacing: -.01em; }
+.hint-new p { margin: 0; color: var(--muted); font-size: var(--t-14); }
+.hint-new .tips { display: flex; gap: 8px; margin-top: 4px; }
+.tip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); font-size: var(--t-13); color: var(--ink-2); }
+
+/* Dialogs */
+.scrim { position: absolute; inset: 0; z-index: 40; background: var(--scrim); display: flex; justify-content: center; }
+.dialog { background: var(--raised); background-image: var(--sheen); border-radius: var(--r-lg); box-shadow: var(--shadow-3), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge); }
+.signin { width: 460px; align-self: center; padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+.signin h3 { margin: 0; font-size: var(--t-17); font-weight: 600; }
+.signin p { margin: 0; color: var(--muted); font-size: var(--t-13); }
+.opt { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); }
+.opt.hl { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--focus); }
+.opt .grow { flex: 1; }
+.opt b { display: block; font-size: var(--t-14); font-weight: 600; }
+.opt span { font-size: var(--t-12); color: var(--muted); }
+.opt .i { margin-top: 2px; color: var(--muted); }
+.search { width: 760px; margin-top: 32px; align-self: flex-start; display: flex; flex-direction: column; max-height: 680px; }
+.search .sh { padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--line); }
+.search .sh .row { display: flex; gap: 8px; align-items: center; }
+.search .res { overflow: hidden; padding: 6px; }
+.sgroup { padding: 10px 10px 4px; display: flex; align-items: baseline; gap: 8px; }
+.sgroup b { font-size: var(--t-13); font-weight: 600; }
+.sgroup span { font-size: var(--t-12); color: var(--faint); }
+.sres { display: grid; grid-template-columns: 18px 1fr; gap: 10px; padding: 8px 10px; border-radius: var(--r-md); }
+.sres.hl { background: var(--hover); box-shadow: inset 0 0 0 1px var(--line); }
+.sres .i { color: var(--faint); margin-top: 2px; }
+.sres .where { font-size: var(--t-12); color: var(--muted); }
+.sres .snip { font-size: var(--t-14); line-height: 1.5; }
+mark { background: var(--accent-tint); color: inherit; border-radius: 3px; padding: 0 1px; box-shadow: inset 0 -2px 0 var(--accent-mark); }
+.search .sf { padding: 8px 14px; border-top: 1px solid var(--line); display: flex; gap: 14px; font-size: var(--t-12); color: var(--muted); align-items: center; }
+
+/* Settings (fix 31) */
+.settings { flex: 1; display: flex; min-width: 0; background-image: var(--sheen); }
+.snav { flex: 0 0 210px; padding: 20px 12px; display: flex; flex-direction: column; gap: 1px; border-right: 1px solid var(--line); }
+.snav .t { font-size: var(--t-17); font-weight: 600; padding: 0 10px 12px; }
+.snav .it { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: var(--r-md); font-size: var(--t-13); color: var(--ink-2); position: relative; }
+.snav .it.cur { background: var(--surface); box-shadow: inset 0 1px 0 var(--edge), var(--lift-1), 0 0 0 1px var(--line); color: var(--ink); font-weight: 500; }
+:root[data-theme='dark'] .snav .it.cur { background: var(--raised); }
+.snav .it.cur::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--accent); }
+.snav .it .i { color: var(--muted); }
+.snav .sub { padding: 14px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.scontent { flex: 1; min-width: 0; overflow: hidden; padding: 20px 40px; }
+.scontent .top2 { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; font-size: var(--t-12); color: var(--muted); }
+.scontent .top2 .grow { flex: 1; }
+.scontent h2 { margin: 0 0 4px; font-size: var(--t-20); font-weight: 600; letter-spacing: -.01em; }
+.scontent .lede { margin: 0 0 14px; color: var(--muted); font-size: var(--t-13); }
+.sgrp { background: var(--surface); border-radius: var(--r-lg); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); margin-bottom: 22px; }
+.srow { display: flex; gap: 24px; align-items: center; padding: 14px 18px; }
+.srow + .srow { border-top: 1px solid var(--line); }
+.srow .l { flex: 1; min-width: 0; }
+.srow .l b { display: block; font-size: var(--t-14); font-weight: 500; }
+.srow .l span { font-size: var(--t-13); color: var(--muted); }
+.sgh { font-size: var(--t-13); font-weight: 600; margin: 0 0 8px 2px; color: var(--ink-2); }
+
+/* Review (fixes 25, 26) */
+.rhead { flex: none; padding: 12px 20px 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.rhead .r1 { display: flex; align-items: center; gap: 10px; }
+.rhead .r1 .tt { font-weight: 600; font-size: var(--t-17); }
+.rhead .r2 { display: flex; align-items: center; gap: 6px; font-size: var(--t-12); color: var(--muted); }
+.rhead .r2 .grow { flex: 1; }
+.rpick { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: var(--r-sm); background: linear-gradient(to bottom, var(--surface), var(--bg)); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); color: var(--ink-2); font-size: var(--t-12); }
+:root[data-theme='dark'] .rpick { background: linear-gradient(to bottom, var(--raised), var(--surface)); }
+.rpick .lb { color: var(--faint); }
+.add { color: var(--done); } .del { color: var(--failed); }
+.tools-r { display: inline-flex; gap: 2px; align-items: center; }
+.vsep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+.diff { flex: 1; overflow: hidden; font: 400 var(--t-12)/20px var(--font-mono); }
+.fhead { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px 0 14px; background: var(--surface); border-bottom: 1px solid var(--line); box-shadow: inset 0 1px 0 var(--edge); font: 500 var(--t-13)/1 var(--font-ui); }
+.fhead .dir { color: var(--faint); font-weight: 400; }
+.fhead .grow { flex: 1; }
+.fhead .pill { font-size: var(--t-11); color: var(--muted); padding: 2px 6px; border-radius: var(--r-xs); background: var(--sunken); }
+.hunk { display: flex; align-items: center; height: 26px; padding: 0 0 0 14px; background: var(--diff-hunk); color: var(--muted); border-bottom: 1px solid var(--line-soft); }
+.hunk .grow { flex: 1; }
+/* The app's expander (DiffView): two stacked half-height buttons for 10 more lines up or
+   down, and one beside them for the whole gap. */
+.xp { flex: none; display: inline-flex; height: 26px; border: 1px solid var(--line-strong); background: var(--surface); box-shadow: inset 0 1px 0 var(--edge); }
+.xp .pair { display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+.xp .pair span { flex: 1; width: 28px; display: grid; place-items: center; color: var(--muted); }
+.xp .pair span:first-child { border-bottom: 1px solid var(--line); }
+.xp .pair .i { width: 13px; height: 13px; }
+.xp .all { width: 32px; display: grid; place-items: center; color: var(--muted); }
+.dl { display: grid; grid-template-columns: 44px 16px 1fr 44px 16px 1fr; }
+.dl > span { white-space: pre; overflow: hidden; padding-right: 8px; }
+.dl .n { text-align: right; padding-right: 8px; color: var(--faint); }
+.dl .m { color: var(--faint); }
+.dl .a { background: var(--diff-add); } .dl .ag { background: var(--diff-add-gutter); }
+.dl .d { background: var(--diff-del); } .dl .dg { background: var(--diff-del-gutter); }
+.dl .e { background: var(--sunken); opacity: .55; }
+.gm { position: relative; }
+.gm::after { content: ''; position: absolute; left: 4px; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--failed); }
+.gm.sugg::after { background: var(--working); }
+.fcard-row { display: grid; grid-template-columns: 1fr 1fr; }
+.fcard { grid-column: 2; margin: 2px 12px 8px 60px; padding: 10px 12px; font: 400 var(--t-13)/1.5 var(--font-ui); border-left: 3px solid var(--failed); background: var(--surface); border-radius: 0 var(--r-sm) var(--r-sm) 0; box-shadow: inset 0 0 0 1px var(--line); }
+.fcard .t { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.fcard .t .grow { flex: 1; }
+.fcard .b { color: var(--ink-2); margin-top: 4px; }
+.fcard .m { color: var(--faint); font-size: var(--t-12); margin-top: 6px; }
+.band { flex: none; border-top: 1px solid var(--line); background: var(--surface); }
+.band .status { max-width: none; padding: 4px 14px; }
+.gcard { margin: 12px; padding: 12px 14px; border-radius: var(--r-md); background: var(--bg); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); }
+.gcard .t { display: flex; gap: 8px; align-items: center; font-weight: 600; font-size: var(--t-13); }
+.gcard p { margin: 4px 0 0; color: var(--ink-2); font-size: var(--t-13); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.filters { display: flex; gap: 6px; align-items: center; padding: 0 12px 8px; }
+.filters .grow { flex: 1; }
+.fgrp { padding: 10px 14px 2px; font-size: var(--t-12); font-weight: 600; color: var(--ink-2); }
+.fgrp .dir { color: var(--faint); font-weight: 400; }
+.rrow { display: grid; grid-template-columns: 10px 1fr; gap: 10px; padding: 8px 10px; margin: 0 6px; border-radius: var(--r-md); font-size: var(--t-13); }
+.rrow.cur { background: var(--hover); }
+.rrow .dot { margin-top: 6px; }
+.rrow .meta { font-size: var(--t-12); color: var(--muted); display: flex; gap: 8px; }
+.rrow .ln { color: var(--faint); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Gloss target interface</h1>
+  <div class="pick" id="screenPick"></div>
+  <span class="grow"></span>
+  <div class="pick" id="themePick"><button data-v="light" aria-pressed="true">Light</button><button data-v="dark">Dark</button></div>
+</div>
+<div class="notes" id="notes"></div>
+<div class="stage"><div class="win" id="win"></div></div>
+
+<script>
+// Icons from lucide-static 1.60.0 (ISC license, https://lucide.dev).
+const ICONS = {"panel-left":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M9 3v18\" />","panel-right":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M15 3v18\" />","chevron-down":"<path d=\"m6 9 6 6 6-6\" />","chevron-up":"<path d=\"m18 15-6-6-6 6\" />","chevron-right":"<path d=\"m9 18 6-6-6-6\" />","chevrons-up-down":"<path d=\"m7 15 5 5 5-5\" /> <path d=\"m7 9 5-5 5 5\" />","plus":"<path d=\"M5 12h14\" /> <path d=\"M12 5v14\" />","x":"<path d=\"M18 6 6 18\" /> <path d=\"m6 6 12 12\" />","minus":"<path d=\"M5 12h14\" />","search":"<path d=\"m21 21-4.34-4.34\" /> <circle cx=\"11\" cy=\"11\" r=\"8\" />","settings":"<path d=\"M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915\" /> <circle cx=\"12\" cy=\"12\" r=\"3\" />","message-square":"<path d=\"M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z\" />","git-compare":"<circle cx=\"18\" cy=\"18\" r=\"3\" /> <circle cx=\"6\" cy=\"6\" r=\"3\" /> <path d=\"M13 6h3a2 2 0 0 1 2 2v7\" /> <path d=\"M11 18H8a2 2 0 0 1-2-2V9\" />","ellipsis":"<circle cx=\"12\" cy=\"12\" r=\"1\" /> <circle cx=\"19\" cy=\"12\" r=\"1\" /> <circle cx=\"5\" cy=\"12\" r=\"1\" />","check":"<path d=\"M20 6 9 17l-5-5\" />","copy":"<rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\" /> <path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\" />","share":"<path d=\"M12 2v13\" /> <path d=\"m16 6-4-4-4 4\" /> <path d=\"M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8\" />","file-text":"<path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> <path d=\"M10 9H8\" /> <path d=\"M16 13H8\" /> <path d=\"M16 17H8\" />","terminal":"<path d=\"M12 19h8\" /> <path d=\"m4 17 6-6-6-6\" />","paperclip":"<path d=\"m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551\" />","arrow-up":"<path d=\"m5 12 7-7 7 7\" /> <path d=\"M12 19V5\" />","arrow-left":"<path d=\"m12 19-7-7 7-7\" /> <path d=\"M19 12H5\" />","square":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" />","git-branch":"<path d=\"M15 6a9 9 0 0 0-9 9V3\" /> <circle cx=\"18\" cy=\"6\" r=\"3\" /> <circle cx=\"6\" cy=\"18\" r=\"3\" />","git-pull-request":"<circle cx=\"18\" cy=\"18\" r=\"3\" /> <circle cx=\"6\" cy=\"6\" r=\"3\" /> <path d=\"M13 6h3a2 2 0 0 1 2 2v7\" /> <line x1=\"6\" x2=\"6\" y1=\"9\" y2=\"21\" />","corner-down-right":"<path d=\"m15 10 5 5-5 5\" /> <path d=\"M4 4v7a4 4 0 0 0 4 4h12\" />","cpu":"<path d=\"M12 20v2\" /> <path d=\"M12 2v2\" /> <path d=\"M17 20v2\" /> <path d=\"M17 2v2\" /> <path d=\"M2 12h2\" /> <path d=\"M2 17h2\" /> <path d=\"M2 7h2\" /> <path d=\"M20 12h2\" /> <path d=\"M20 17h2\" /> <path d=\"M20 7h2\" /> <path d=\"M7 20v2\" /> <path d=\"M7 2v2\" /> <rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"2\" /> <rect x=\"8\" y=\"8\" width=\"8\" height=\"8\" rx=\"1\" />","sliders-horizontal":"<path d=\"M10 5H3\" /> <path d=\"M12 19H3\" /> <path d=\"M14 3v4\" /> <path d=\"M16 17v4\" /> <path d=\"M21 12h-9\" /> <path d=\"M21 19h-5\" /> <path d=\"M21 5h-7\" /> <path d=\"M8 10v4\" /> <path d=\"M8 12H3\" />","shield-check":"<path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\" /> <path d=\"m9 12 2 2 4-4\" />","puzzle":"<path d=\"M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z\" />","pencil":"<path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\" /> <path d=\"m15 5 4 4\" />","trash-2":"<path d=\"M10 11v6\" /> <path d=\"M14 11v6\" /> <path d=\"M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6\" /> <path d=\"M3 6h18\" /> <path d=\"M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\" />","folder":"<path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\" />","folder-open":"<path d=\"m6 14 1.5-2.900A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\" />","external-link":"<path d=\"M15 3h6v6\" /> <path d=\"M10 14 21 3\" /> <path d=\"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6\" />","circle-alert":"<circle cx=\"12\" cy=\"12\" r=\"10\" /> <line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\" /> <line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\" />","rotate-ccw":"<path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\" /> <path d=\"M3 3v5h5\" />","log-in":"<path d=\"m10 17 5-5-5-5\" /> <path d=\"M15 12H3\" /> <path d=\"M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4\" />","clock":"<circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"M12 6v6l4 2\" />","reply":"<path d=\"M20 18v-2a4 4 0 0 0-4-4H4\" /> <path d=\"m9 17-5-5 5-5\" />","locate":"<line x1=\"2\" x2=\"5\" y1=\"12\" y2=\"12\" /> <line x1=\"19\" x2=\"22\" y1=\"12\" y2=\"12\" /> <line x1=\"12\" x2=\"12\" y1=\"2\" y2=\"5\" /> <line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\" /> <circle cx=\"12\" cy=\"12\" r=\"7\" />","user":"<path d=\"M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2\" /> <circle cx=\"12\" cy=\"7\" r=\"4\" />","bot":"<path d=\"M12 8V4H8\" /> <rect width=\"16\" height=\"12\" x=\"4\" y=\"8\" rx=\"2\" /> <path d=\"M2 14h2\" /> <path d=\"M20 14h2\" /> <path d=\"M15 13v2\" /> <path d=\"M9 13v2\" />","palette":"<path d=\"M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z\" /> <circle cx=\"13.5\" cy=\"6.5\" r=\".5\" fill=\"currentColor\" /> <circle cx=\"17.5\" cy=\"10.5\" r=\".5\" fill=\"currentColor\" /> <circle cx=\"6.5\" cy=\"12.5\" r=\".5\" fill=\"currentColor\" /> <circle cx=\"8.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\" />","server":"<rect width=\"20\" height=\"8\" x=\"2\" y=\"2\" rx=\"2\" ry=\"2\" /> <rect width=\"20\" height=\"8\" x=\"2\" y=\"14\" rx=\"2\" ry=\"2\" /> <line x1=\"6\" x2=\"6.01\" y1=\"6\" y2=\"6\" /> <line x1=\"6\" x2=\"6.01\" y1=\"18\" y2=\"18\" />","keyboard":"<path d=\"M10 8h.01\" /> <path d=\"M12 12h.01\" /> <path d=\"M14 8h.01\" /> <path d=\"M16 12h.01\" /> <path d=\"M18 8h.01\" /> <path d=\"M6 8h.01\" /> <path d=\"M7 16h10\" /> <path d=\"M8 12h.01\" /> <rect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\" />","sliders-vertical":"<path d=\"M10 8h4\" /> <path d=\"M12 21v-9\" /> <path d=\"M12 8V3\" /> <path d=\"M17 16h4\" /> <path d=\"M19 12V3\" /> <path d=\"M19 21v-5\" /> <path d=\"M3 14h4\" /> <path d=\"M5 10V3\" /> <path d=\"M5 21v-7\" />","list-filter":"<path d=\"M2 5h20\" /> <path d=\"M6 12h12\" /> <path d=\"M9 19h6\" />","columns-2":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M12 3v18\" />","rows-2":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M3 12h18\" />","list-tree":"<path d=\"M8 5h13\" /> <path d=\"M13 12h8\" /> <path d=\"M13 19h8\" /> <path d=\"M3 10a2 2 0 0 0 2 2h3\" /> <path d=\"M3 5v12a2 2 0 0 0 2 2h3\" />","fold-vertical":"<path d=\"M12 22v-6\" /> <path d=\"M12 8V2\" /> <path d=\"M4 12H2\" /> <path d=\"M10 12H8\" /> <path d=\"M16 12h-2\" /> <path d=\"M22 12h-2\" /> <path d=\"m15 19-3-3-3 3\" /> <path d=\"m15 5-3 3-3-3\" />","sparkles":"<path d=\"M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z\" />","mouse-pointer-click":"<path d=\"M14 4.1 12 6\" /> <path d=\"m5.1 8-2.9-.8\" /> <path d=\"m6 12-1.9 2\" /> <path d=\"M7.2 2.2 8 5.1\" /> <path d=\"M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z\" />","text-select":"<path d=\"M14 21h1\" /> <path d=\"M14 3h1\" /> <path d=\"M19 3a2 2 0 0 1 2 2\" /> <path d=\"M21 14v1\" /> <path d=\"M21 19a2 2 0 0 1-2 2\" /> <path d=\"M21 9v1\" /> <path d=\"M3 14v1\" /> <path d=\"M3 9v1\" /> <path d=\"M5 21a2 2 0 0 1-2-2\" /> <path d=\"M5 3a2 2 0 0 0-2 2\" /> <path d=\"M7 12h10\" /> <path d=\"M7 16h6\" /> <path d=\"M7 8h8\" /> <path d=\"M9 21h1\" /> <path d=\"M9 3h1\" />","star":"<path d=\"M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z\" />"};
+const ic = (n, cls = '') => ICONS[n] ? `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>` : ''
+
+const BEAD = (s) => `<svg width="${s}" height="${s}" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="bf${s}" gradientUnits="userSpaceOnUse" x1="10" y1="10" x2="54" y2="54"><stop offset="0" stop-color="#FF3DA6"/><stop offset="1" stop-color="#FF9F3D"/></linearGradient><radialGradient id="bh${s}" cx=".36" cy=".3" r=".78"><stop offset="0" stop-color="#fff" stop-opacity=".28"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".42"/></radialGradient></defs><circle cx="32" cy="32" r="26" fill="url(#bf${s})"/><circle cx="32" cy="32" r="26" fill="url(#bh${s})"/><path d="M17 26a16 16 0 0 1 12-12" stroke="#fff" stroke-opacity=".75" stroke-width="4" stroke-linecap="round" fill="none"/></svg>`
+
+const titleBar = () => `<div class="tbar">${BEAD(22)}<span class="wm">gloss</span><span class="grow"></span><span class="wc">${ic('minus')}</span><span class="wc">${ic('square')}</span><span class="wc">${ic('x')}</span></div>`
+
+/* ---------------- Shared parts ---------------- */
+const ROWS = {
+  cache: { lead: '<span class="dot s-working"></span>', tt: 'Cache and stats module', sub: 'Claude Code', trail: '<span class="count">2</span>' },
+  review: { lead: ic('git-compare'), tt: 'Review: namespaced keys', sub: 'Claude Code · 4 open', trail: '5m' },
+  evict: { lead: '', tt: 'Eviction policy options', sub: 'Codex', trail: '2h' },
+  failed: { lead: '<span class="dot s-failed"></span>', tt: 'Release notes draft', sub: 'Claude Code', trail: '3h' },
+  ext: { lead: '<span class="ring"></span>', tt: 'Understand cache.js', sub: 'Claude Code', trail: '1d', ext: true },
+  ext2: { lead: '<span class="ring"></span>', tt: 'Why is the LRU test flaky?', sub: 'Claude Code', trail: '3d', ext: true },
+}
+function row(key, cur, hov) {
+  const r = ROWS[key]
+  const trail = hov ? `<button class="icon-btn sm" style="width:22px;height:22px">${ic('ellipsis')}</button>` : r.trail
+  return `<div class="lrow${cur ? ' cur' : ''}${hov ? ' hov' : ''}${r.ext ? ' ext' : ''}"><span class="lead">${r.lead}</span><div style="min-width:0"><div class="tt">${r.tt}</div><div class="sub">${r.sub}</div></div><span class="trail">${trail}</span></div>`
+}
+function sidebar({ project = true, cur = 'cache', rows = ['cache', 'review', 'failed', 'evict', 'ext', 'ext2'], hov = null, settings = false } = {}) {
+  if (!project) {
+    return `<nav class="side">
+      <div class="switcher"><div class="switch-btn"><div class="names"><b>No project</b><span class="p">Open a folder to start</span></div>${ic('chevron-down')}</div><button class="icon-btn" title="Hide sidebar (Ctrl+B)">${ic('panel-left')}</button></div>
+      <span class="grow"></span>${foot(settings)}</nav>`
+  }
+  return `<nav class="side">
+    <div class="switcher"><div class="switch-btn" title="C:\\Users\\you\\Desktop\\cachekit"><div class="names"><b>cachekit</b><span class="p">~\\Desktop</span></div>${ic('chevrons-up-down')}</div><button class="icon-btn" title="Hide sidebar">${ic('panel-left')}</button></div>
+    <div class="split"><button class="btn secondary">${ic('plus')}New session<span class="ag">Claude</span></button><button class="btn secondary" title="New session with another agent">${ic('chevron-down')}</button></div>
+    <button class="btn ghost" style="justify-content:flex-start">${ic('git-compare')}Review changes</button>
+    <div class="label">Sessions</div>
+    <div class="rows">${rows.map((k) => row(k, k === cur, k === hov)).join('')}</div>
+    <span class="grow"></span>${foot(settings)}</nav>`
+}
+const foot = (settings) => `<div class="foot"><button class="btn ghost" title="Search conversations (Ctrl+Shift+F)">${ic('search')}Search</button><button class="btn ghost${settings ? ' hl' : ''}">${ic('settings')}Settings</button></div>`
+
+const statusLine = ({ branch = 'main', limit = true } = {}) => `<div class="status"><span class="agent">
+  <span class="sb" title="Context: 4% of 1M tokens"><span class="lb">Context</span><span class="meter"><i></i></span>4%</span>
+  <span class="sb">$0.18</span>
+  ${limit ? '<span class="sb"><span class="lb">5h limit</span>OK</span>' : ''}
+  <span class="sb">${ic('cpu', 's14')}Opus 5.5${ic('chevron-down', 's12')}</span>
+  <span class="sb">${ic('sliders-horizontal', 's14')}Medium${ic('chevron-down', 's12')}</span>
+  <span class="sb" title="Auto-approve">${ic('shield-check', 's14')}</span>
+  <span class="sb" title="Extensions">${ic('puzzle', 's14')}</span>
+  </span><span class="right"><span class="sb shrink" title="Open the folder">${ic('folder', 's14')}<span class="tx">cachekit</span></span>
+  <span class="sb shrink">${ic('git-branch', 's14')}<span class="tx">${branch}</span></span>
+  <span class="sb"><span class="dot s-done" style="width:6px;height:6px"></span>#31 open</span>
+  <span class="sb" title="Open Obsidian vault “cachekit notes”">${OBSIDIAN}</span></span></div>`
+
+// Obsidian's mark, simplified (the app uses the real logo).
+const OBSIDIAN = '<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 2.2 4.6 10.4a2 2 0 0 0 .1 1.9l3.6 6.4a2 2 0 0 0 1 .9l5.3 2.1a1.5 1.5 0 0 0 1.9-.8l3.1-6.7a2 2 0 0 0-.1-1.8L15.3 4a2 2 0 0 0-.9-.8L10.3 1.4a1.5 1.5 0 0 0-1.8.8z" fill="#7f6df2"/></svg>'
+
+const composer = ({ text = '', ph = 'Message the agent', btn = 'send', focus = false } = {}) => {
+  const b = {
+    send: `<button class="btn primary">${ic('arrow-up')}Send</button>`,
+    sendOff: `<button class="btn" disabled>${ic('arrow-up')}Send</button>`,
+    steer: `<button class="btn ghost">${ic('square')}Stop</button><button class="btn primary">${ic('corner-down-right')}Steer</button>`,
+    queue: `<button class="btn secondary">${ic('clock')}Queue</button>`,
+    threadQueue: `<button class="icon-btn sm">${ic('ellipsis')}</button><button class="btn secondary">${ic('clock')}Queue</button>`,
+    threadSteer: `<button class="icon-btn sm">${ic('ellipsis')}</button><button class="btn ghost">${ic('square')}Stop</button><button class="btn primary">${ic('corner-down-right')}Steer</button>`,
+  }[btn]
+  return `<div class="composer${focus ? ' focus' : ''}"><button class="icon-btn sm" title="Attach">${ic('paperclip')}</button><span class="ed${text ? ' typed' : ''}">${text || ph}</span>${b}</div>`
+}
+const rail = (count, running) => `<div class="rail"><span class="rb"><button class="icon-btn" title="Threads (Ctrl+Shift+T)">${ic('message-square')}</button>${count ? `<span class="count badge" style="background:var(--surface);box-shadow:inset 0 0 0 1px var(--line)">${count}</span>` : ''}</span>${running ? '<span class="dot s-working" style="width:6px;height:6px"></span>' : ''}</div>`
+
+const TOOLS = `<div class="tools">
+  <div class="trow">${ic('file-text')}<span class="title">Read <code>src/cache.js</code></span>${ic('check', 's14')}</div>
+  <div class="trow">${ic('terminal')}<span class="title"><code>node --test</code></span><span class="dur">0.9s</span>${ic('check', 's14')}</div>
+</div>`.replaceAll(ic('check', 's14'), `<span class="s-done" style="display:inline-grid">${ic('check', 's14')}</span>`)
+
+const PLAN = `<div class="plan"><div class="ph"><b>Plan</b><span>2 of 4 done</span></div>
+  <div class="st done"><span class="box done">${ic('check', 's12')}</span>Read the cache and stats modules</div>
+  <div class="st done"><span class="box done">${ic('check', 's12')}</span>Run the test suite</div>
+  <div class="st"><span class="box run"></span>Write up improvements</div>
+  <div class="st"><span class="box"></span>Check the eviction tests</div></div>`
+
+const ANSWER = (hov) => `<p>All 14 tests pass. Four changes worth making:</p>
+  <ol>
+    <li><b>Sweep expired entries on write.</b> <code class="inl">get</code> only removes an entry when someone asks for it. In <code class="inl">set</code>, <span class="anchor">walk the Map and delete entries</span><span class="reply-count">${ic('message-square', 's12')}6</span> whose time has passed.</li>
+    <li class="${hov ? 'hov' : ''}"><span class="reply" title="Reply in a thread">${ic('reply', 's14')}</span><b>Count hits and misses</b> in one <code class="inl">stats</code> object, so callers can read the hit rate without wrapping <code class="inl">get</code>.<span class="reply-count">${ic('message-square', 's12')}2</span></li>
+    <li><b>Cap the key length.</b> Namespaced keys can grow without bound; reject keys over 256 characters in <code class="inl">set</code>.</li>
+  </ol>`
+
+const mainHead = (title, right = '') => `<div class="head"><span class="tt">${title}</span><span class="ag">Claude Code</span><span class="grow"></span>${right}</div>`
+
+/* ---------------- Screens ---------------- */
+const SCREENS = [
+  {
+    id: 'welcome', name: 'Welcome',
+    notes: '<b>First run, no project.</b> The bead and wordmark as one lockup (as in the title bar, larger), and one primary action. <i>Fixes 30.</i>',
+    render: () => `${sidebar({ project: false })}<div class="sheet"><div class="main"><div class="empty"><div class="in">
+      <div class="lockup">${BEAD(52)}<span>gloss</span></div>
+      <div style="margin-top:14px"><button class="btn primary lg">${ic('folder-open')}Open a project folder…</button></div>
+    </div></div></div></div>`
+  },
+  {
+    id: 'project', name: 'Project, no session',
+    notes: '<b>A project with no session open.</b> The bead beside the project\'s name, like the welcome lockup, and one action: a new session with the default agent. No folder or branch: the switcher has the folder, and a session picks its own branch or worktree. The switcher\'s second line is the parent folder, not a truncated monospace path (full path in its tooltip). <i>Fixes 19, 30.</i>',
+    render: () => `${sidebar({ cur: null })}<div class="sheet"><div class="main"><div class="empty"><div class="in">
+      <div class="lockup project">${BEAD(44)}<span>cachekit</span></div>
+      <div style="margin-top:14px"><button class="btn primary lg">${ic('plus')}New session</button></div>
+    </div></div></div></div>`
+  },
+  {
+    id: 'new', name: 'New session',
+    notes: '<b>A new session, nothing sent.</b> One line just above the composer, where the eye already is, with no tutorial. The side panel stays a rail: no "0", just the threads icon with its shortcut in the tooltip; a count appears once there are threads. <i>Fixes 29, 30.</i>',
+    render: () => `${sidebar({ cur: 'new', rows: ['cache', 'review', 'evict'] }).replace('<div class="rows">', `<div class="rows"><div class="lrow cur"><span class="lead"></span><div style="min-width:0"><div class="tt">New session</div><div class="sub">Claude Code</div></div><span class="trail">now</span></div>`)}
+      <div class="sheet"><div class="main">${mainHead('New session')}
+        <div class="log"><div class="hint-new"><div class="in">
+          <h3>What should Claude Code do in cachekit?</h3>
+        </div></div></div>
+        <div class="composer-wrap">${composer({ focus: true, btn: 'sendOff' })}</div>${statusLine({ limit: false })}
+      </div>${rail(0)}</div>`
+  },
+  {
+    id: 'session', name: 'Session with a thread',
+    notes: '<b>The main view.</b> A finished main turn (plan, tools, a numbered answer) while the agent works in a thread. List-item replies keep the list a list: <b>Reply</b> appears in the item\'s left margin on hover, and the count chip stays on the item\'s last line. The activity strip names the thread; the main composer queues. In the thread, the quote, the conversation, a queued message, and Stop / Steer. <i>Fixes 24.</i>',
+    render: () => `${sidebar()}<div class="sheet"><div class="main">${mainHead('Cache and stats module')}
+        <div class="log"><div class="col">
+          <div class="you">Run the tests and give me improvements to the cache.</div>
+          ${PLAN}${TOOLS}${ANSWER(true)}
+        </div></div>
+        <div class="strip"><div><span class="state s-working"><span class="dot"></span></span><span class="grow">Working in “walk the Map and delete entries”</span><button class="btn ghost sm">${ic('clock', 's14')}1 queued</button></div></div>
+        <div class="composer-wrap">${composer({ btn: 'queue', text: 'Also add a test for the sweep.' })}</div>${statusLine()}
+      </div>
+      <aside class="panel"><div class="ph"><span class="back">${ic('arrow-left', 's14')}All threads</span><span class="grow"></span><button class="icon-btn sm" title="Find in main session">${ic('locate')}</button><button class="icon-btn sm" title="Export thread">${ic('share')}</button><button class="icon-btn sm" title="Hide panel">${ic('panel-right')}</button></div>
+        <div class="quote">walk the Map and delete entries</div>
+        <div class="msgs">
+          <div class="you">Would a sweep on every set be too slow?</div>
+          <p>A full sweep is O(n) per write. Sweep only when the cache is at capacity, or at most once per interval, and keep <code class="inl">get</code>'s lazy check for exact results between sweeps.</p>
+          <div class="you">Show me the interval version.</div>
+          <div class="tools"><div class="trow">${ic('pencil')}<span class="title">Edit <code>src/cache.js</code></span><span class="dot s-working"></span></div></div>
+          <div class="queued"><span class="state s-queued"><span class="dot"></span>Queued</span><span class="grow">Should sweep() be public?</span><button class="icon-btn sm">${ic('pencil')}</button><button class="icon-btn sm">${ic('trash-2')}</button></div>
+        </div>
+        ${composer({ btn: 'threadSteer', ph: 'Reply in thread' })}
+      </aside></div>`
+  },
+  {
+    id: 'selection', name: 'Selection popover',
+    notes: '<b>Replying to a selection.</b> The popover is a raised surface with the same lit edge as menus, next to the selection; Reply is the one primary action. The rail shows the thread count once threads exist.',
+    render: () => `${sidebar()}<div class="sheet"><div class="main">${mainHead('Cache and stats module')}
+        <div class="log"><div class="col">
+          <div class="you">Run the tests and give me improvements to the cache.</div>
+          ${TOOLS}
+          <p>All 14 tests pass. Four changes worth making:</p>
+          <ol>
+            <li><b>Sweep expired entries on write.</b> <code class="inl">get</code> only removes an entry when someone asks for it. In <code class="inl">set</code>, <span class="anchor">walk the Map and delete entries</span><span class="reply-count">${ic('message-square', 's12')}6</span> whose time has passed.</li>
+            <li><b>Count hits and misses</b> in one <code class="inl">stats</code> object, so callers can read <span class="sel">the hit rate without wrapping</span> <code class="inl">get</code>.</li>
+          </ol>
+          <div class="code"><pre><span class="k">const</span> stats = { hits: <span class="n">0</span>, misses: <span class="n">0</span> }</pre></div>
+        </div>
+        </div>
+        <div class="menu" style="left:600px;top:362px;min-width:0;display:flex;gap:4px;padding:4px"><button class="btn primary sm">${ic('reply', 's14')}Reply to selection</button><button class="btn ghost sm">${ic('copy', 's14')}Copy</button></div>
+        <div class="composer-wrap">${composer()}</div>${statusLine()}
+      </div>${rail(2)}</div>`
+  },
+  {
+    id: 'overview', name: 'Threads overview',
+    notes: '<b>The threads tab.</b> Each row shows its quote with the anchor\'s pink mark, then where it hangs (the start of the agent message it replies to), then state, replies and last activity. Hovering a row offers Find in main. <i>Fixes 30 (rows don\'t show which message they hang off).</i>',
+    render: () => `${sidebar()}<div class="sheet"><div class="main">${mainHead('Cache and stats module')}
+        <div class="log"><div class="col"><div class="you">Run the tests and give me improvements to the cache.</div>${TOOLS}${ANSWER(false)}</div></div>
+        <div class="composer-wrap">${composer()}</div>${statusLine()}
+      </div>
+      <aside class="panel"><div class="ph"><div class="segmented"><button class="on">Threads <span class="count">3</span></button><button>Queue <span class="count">1</span></button></div><span class="grow"></span><button class="icon-btn sm" title="Hide panel">${ic('panel-right')}</button></div>
+        <div class="trows">
+          <div class="thr"><div class="q">walk the Map and delete entries</div><div class="ctx">in “All 14 tests pass. Four changes worth making…”</div><div class="meta"><span class="state s-working"><span class="dot"></span>Working</span><span>6 replies</span><span>· 1 queued</span></div></div>
+          <div class="thr hov"><div class="q">Count hits and misses in one stats object, so callers can read the hit rate</div><div class="ctx">in “All 14 tests pass. Four changes worth making…”</div><div class="meta"><span>2 replies</span><span>· 12m ago</span><span class="grow" style="flex:1"></span><button class="btn ghost sm" style="margin:-4px 0">${ic('locate', 's14')}Find in main</button></div></div>
+          <div class="thr"><div class="q">the default maxEntries is 100</div><div class="ctx">in “I read src/cache.js and src/stats.js…”</div><div class="meta"><span>4 replies</span><span>· 1h ago</span></div></div>
+        </div>
+      </aside></div>`
+  },
+  {
+    id: 'queue', name: 'Queue tab',
+    notes: '<b>The queue tab.</b> Waiting messages on top (next one at the bottom), then a divider, then what was sent, newest first, each with its state dot and the thread it ran in. The running turn is tinted in the working color. Unchanged in behavior; restyled.',
+    render: () => `${sidebar()}<div class="sheet"><div class="main">${mainHead('Cache and stats module')}
+        <div class="log"><div class="col"><div class="you">Run the tests and give me improvements to the cache.</div>${TOOLS}${ANSWER(false)}</div></div>
+        <div class="composer-wrap">${composer()}</div>${statusLine()}
+      </div>
+      <aside class="panel"><div class="ph"><div class="segmented"><button>Threads <span class="count">3</span></button><button class="on">Queue <span class="count">1</span></button></div><span class="grow"></span><button class="icon-btn sm" title="Hide panel">${ic('panel-right')}</button></div>
+        <div class="qgroup">Waiting</div>
+        <div class="qrow"><span class="dot s-queued"></span><div style="min-width:0"><div class="w">walk the Map and delete entries</div><div class="tx">Should sweep() be public?</div></div><span style="display:flex"><button class="icon-btn sm">${ic('pencil')}</button><button class="icon-btn sm">${ic('trash-2')}</button></span></div>
+        <div class="qdiv">Sent</div>
+        <div class="qrow run"><span class="dot s-working"></span><div style="min-width:0"><div class="w">walk the Map and delete entries · now</div><div class="tx">Show me the interval version.</div></div><span></span></div>
+        <div class="qrow"><span class="dot s-done"></span><div style="min-width:0"><div class="w">walk the Map and delete entries · 3m</div><div class="tx">Would a sweep on every set be too slow?</div></div><span></span></div>
+        <div class="qrow"><span class="dot s-done"></span><div style="min-width:0"><div class="w">Count hits and misses · 12m</div><div class="tx">Where would the stats object live?</div></div><span></span></div>
+        <div class="qrow"><span class="dot s-done"></span><div style="min-width:0"><div class="w">Main conversation · 14m</div><div class="tx">Run the tests and give me improvements to the cache.</div></div><span></span></div>
+      </aside></div>`
+  },
+  {
+    id: 'failed', name: 'Failed turn',
+    notes: '<b>A failed turn offers what fixes it</b> (the Failed-turn actions PR). The note names the error in plain words, then <b>Retry</b> resends the same prompt; <b>Copy error</b> keeps the raw text at hand. In the sidebar, the session that failed in the background keeps its red dot until opened.',
+    render: () => `${sidebar({ cur: 'failed' })}<div class="sheet"><div class="main">${mainHead('Release notes draft')}
+        <div class="log"><div class="col">
+          <div class="you">Draft release notes for 0.4 from the commits since the last tag.</div>
+          <div class="tools"><div class="trow">${ic('terminal')}<span class="title"><code>git log v0.3.0..HEAD --oneline</code></span><span class="dur">0.2s</span><span class="s-done" style="display:inline-grid">${ic('check', 's14')}</span></div></div>
+          <div class="note-failed">${ic('circle-alert', 's20')}<div class="t"><b>The turn failed: the agent's connection closed.</b><span>The agent process exited while it was working (code 1). Nothing after the last tool call was saved.</span>
+            <div class="acts"><button class="btn secondary sm">${ic('rotate-ccw', 's14')}Retry</button><button class="btn ghost sm">${ic('copy', 's14')}Copy error</button></div></div></div>
+        </div></div>
+        <div class="composer-wrap">${composer()}</div>${statusLine()}
+      </div>${rail(0)}</div>`
+  },
+  {
+    id: 'signin', name: 'Sign in',
+    notes: '<b>Signing in.</b> A turn that failed because the agent needs a login says so and offers <b>Sign in</b>. The dialog says what will happen (a terminal window opens; Gloss retries when it closes). Each method shows its description only when it adds something beyond the name, and terminal methods are marked. <i>Fixes 32; part of the Failed-turn actions PR.</i>',
+    render: () => `${sidebar({ cur: 'failed' })}<div class="sheet"><div class="main">${mainHead('Release notes draft')}
+        <div class="log"><div class="col">
+          <div class="you">Draft release notes for 0.4 from the commits since the last tag.</div>
+          <div class="note-failed">${ic('circle-alert', 's20')}<div class="t"><b>Claude Code needs you to sign in.</b><span>Your login expired or this computer hasn't signed in yet.</span>
+            <div class="acts"><button class="btn secondary sm">${ic('log-in', 's14')}Sign in</button></div></div></div>
+        </div></div>
+        <div class="composer-wrap">${composer()}</div>${statusLine()}
+      </div>${rail(0)}</div>
+      <div class="scrim"><div class="dialog signin">
+        <h3>Sign in to Claude Code</h3>
+        <p>Choose how to sign in. A terminal window opens to finish; when it closes, Gloss sends your message again.</p>
+        <div class="opt hl">${ic('terminal')}<div class="grow"><b>Claude Subscription</b><span>Opens a terminal</span></div></div>
+        <div class="opt">${ic('terminal')}<div class="grow"><b>Anthropic Console</b><span>API usage billing · opens a terminal</span></div></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px"><button class="btn ghost">Cancel</button><button class="btn primary">Continue</button></div>
+      </div></div>`
+  },
+  {
+    id: 'search', name: 'Search',
+    notes: '<b>Search conversations.</b> The scope and filter sit on one line with the field. Results are grouped by session, so the title and folder show once per group; each result says who wrote it and where (main conversation or the thread\'s quote). Excerpts render inline code as code instead of raw backticks. Enter opens the highlighted result. <i>Fixes 22.</i>',
+    render: () => `${sidebar()}<div class="sheet"><div class="main">${mainHead('Cache and stats module')}<div class="log"></div><div class="composer-wrap">${composer()}</div>${statusLine()}</div>${rail(3)}</div>
+      <div class="scrim"><div class="dialog search">
+        <div class="sh"><div class="field focus">${ic('search')}<span class="grow">sweep</span><kbd>Esc</kbd></div>
+          <div class="row"><div class="field select" style="width:190px;height:28px"><span><span style="color:var(--faint)">In</span> Everything</span>${ic('chevron-down', 's14')}</div><div class="field select" style="width:210px;height:28px"><span><span style="color:var(--faint)">Show</span> All messages and tools</span>${ic('chevron-down', 's14')}</div><span style="flex:1"></span><span style="font-size:12px;color:var(--muted)">9 results</span></div></div>
+        <div class="res">
+          <div class="sgroup"><b>Cache and stats module</b><span>cachekit · 5 results</span></div>
+          <div class="sres hl">${ic('bot')}<div><div class="where">Agent · in “walk the Map and delete entries”</div><div class="snip">Yes, a full <mark>sweep</mark> on every <code class="inl">set</code> would be O(n) per write, so with a large <code class="inl">maxEntries</code> it adds a noticeable cost to each insert…</div></div></div>
+          <div class="sres">${ic('user')}<div><div class="where">You · in “walk the Map and delete entries”</div><div class="snip">Should <mark>sweep</mark>() be public?</div></div></div>
+          <div class="sres">${ic('user')}<div><div class="where">You · in “walk the Map and delete entries”</div><div class="snip">Would a <mark>sweep</mark> on every set be too slow?</div></div></div>
+          <div class="sres">${ic('terminal')}<div><div class="where">Tool output · Main conversation</div><div class="snip"><code class="inl">node --test</code> ✔ <mark>sweep</mark> removes expired entries (2.1ms)</div></div></div>
+          <div class="sgroup"><b>Review: namespaced keys</b><span>cachekit · 2 results</span></div>
+          <div class="sres">${ic('bot')}<div><div class="where">Agent · General conversation</div><div class="snip">The branch adds a lazy <mark>sweep</mark> to <code class="inl">get</code> but never calls it from <code class="inl">set</code>…</div></div></div>
+        </div>
+        <div class="sf"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span style="flex:1"></span><span>Words match in any order; "quotes" match a phrase</span></div>
+      </div></div>`
+  },
+  {
+    id: 'settings', name: 'Settings',
+    notes: '<b>Settings with sections.</b> A section list on the left (General, Appearance, MCP servers, OpenCode, this project, Keyboard shortcuts) replaces one 3,100px scroll; each section is a card of rows with the label and help on the left and one control on the right. The file\'s path and Open in editor stay at the top. Theme becomes a three-way segmented control. <i>Fixes 31.</i>',
+    render: () => `${sidebar({ settings: true })}<div class="sheet"><div class="settings">
+        <div class="snav"><div class="t">Settings</div>
+          <div class="it cur">${ic('sliders-vertical')}General</div>
+          <div class="it">${ic('palette')}Appearance</div>
+          <div class="it">${ic('server')}MCP servers</div>
+          <div class="it">${ic('terminal')}OpenCode</div>
+          <div class="sub">Project</div>
+          <div class="it">${ic('folder')}cachekit</div>
+          <div class="sub">Reference</div>
+          <div class="it">${ic('keyboard')}Keyboard shortcuts</div>
+        </div>
+        <div class="scontent">
+          <div class="top2"><span class="mono">%APPDATA%\\gloss\\settings.json</span><button class="btn ghost sm">${ic('external-link', 's14')}Open in editor</button><span class="grow"></span><button class="btn secondary">Done</button></div>
+          <h2>General</h2><p class="lede">Saved to settings.json as you change them. Edits made in the file show up here.</p>
+          <div class="sgrp">
+            <div class="srow"><div class="l"><b>List item replies</b><span>Show Reply on numbered and bulleted list items. When off, select text to reply to it.</span></div><span class="switch on"></span></div>
+            <div class="srow"><div class="l"><b>Session order</b><span>How the sidebar sorts a project's sessions.</span></div><div class="field select" style="width:200px">Newest first${ic('chevron-down', 's14')}</div></div>
+            <div class="srow"><div class="l"><b>External editor</b><span>Opens a review's files. <code class="inl">{file}</code> and <code class="inl">{line}</code> are filled in; empty uses the system's default app.</span></div><div class="field" style="width:240px"><span class="mono" style="font-size:12px">code -g {file}:{line}</span></div></div>
+          </div>
+          <div class="sgh">Appearance</div>
+          <div class="sgrp">
+            <div class="srow"><div class="l"><b>Theme</b><span>System follows the operating system's setting.</span></div><div class="segmented"><button>System</button><button class="on">Light</button><button>Dark</button></div></div>
+          </div>
+        </div>
+      </div></div>`
+  },
+  {
+    id: 'review', name: 'Review session',
+    notes: '<b>A review after its first pass.</b> One header row for the title and tools, one for the range and counts. Hunk headers keep the app\'s expander (10 more lines up, 10 more down, or the whole gap). Finding cards sit flat in the diff (a colored edge, no floating shadow). The status line is a band under the diff. In the side panel, the filters fit one row (Open / Resolved / All and a filter button for kinds) and file groups show the name with its folder dimmed, so "src" doesn\'t repeat. <i>Fixes 25, 26.</i>',
+    render: () => `<div class="rail-l"><button class="icon-btn" title="Show sidebar">${ic('panel-left')}</button></div>
+      <div class="sheet"><div class="main">
+        <div class="rhead">
+          <div class="r1"><span class="tt">Review: namespaced keys</span><span class="ag" style="color:var(--muted);font-size:13px">Claude Code</span><span style="flex:1"></span>
+            <span class="tools-r"><button class="icon-btn sm" title="Files">${ic('list-tree')}</button><button class="icon-btn sm" title="Collapse all">${ic('fold-vertical')}</button><span class="vsep"></span><span class="segmented"><button class="on" title="Split">${ic('columns-2', 's14')}</button><button title="Unified">${ic('rows-2', 's14')}</button></span><span class="vsep"></span><button class="icon-btn sm on" title="Comments (Ctrl+Shift+H)">${ic('message-square')}</button><span style="font-size:12px;color:var(--muted);margin:0 4px">1 of 4 open</span><button class="icon-btn sm">${ic('chevron-up')}</button><button class="icon-btn sm">${ic('chevron-down')}</button></span></div>
+          <div class="r2"><span class="rpick"><span class="lb">Base</span>merge base with main · <span class="mono">9e029c3</span>${ic('chevron-down', 's12')}</span>${ic('arrow-left', 's12').replace('class="i', 'style="transform:scaleX(-1)" class="i')}<span class="rpick"><span class="lb">Review</span>working tree${ic('chevron-down', 's12')}</span><span style="margin-left:6px">3 files</span><span class="add">+25</span><span class="del">−1</span><span class="grow"></span></div>
+        </div>
+        <div class="diff">
+          <div class="fhead">${ic('chevron-down', 's14')}<span><span class="dir">src/</span>cache.js</span><span class="pill">committed</span><button class="icon-btn sm" title="Show in File Explorer">${ic('folder', 's14')}</button><button class="icon-btn sm" title="Open in external editor">${ic('external-link', 's14')}</button><span class="grow"></span><span class="add">+6</span><span class="del">−1</span></div>
+          <div class="hunk"><span class="grow">@@ -6,8 +6,13 @@ export class Cache {</span>${EXPANDERS()}</div>
+          ${dl([['6', '    this.entries = new Map()', '6', '    this.entries = new Map()'], ['7', '  }', '7', '  }'], [null, '', '9', '  // Namespaces may contain \':\', so escape it.', 'add'], ['9', '  key(namespace, id) {', '10', '  key(namespace, id) {', 'mark'], ['10', "    return namespace + ':' + id", '11', "    return namespace.replaceAll(':', '::') + ':' + id", 'chg'], [null, '', '12', '  }', 'add']])}
+          <div class="fcard-row"><div class="fcard"><div class="t"><span class="tag bug">Bug</span><span class="grow">Colon escaping still allows key collisions</span><button class="icon-btn sm" style="width:22px;height:22px">${ic('chevron-up', 's14')}</button></div><div class="b">Only the namespace is escaped. set('a:', 'b') and set('a', '::b') both build the key 'a:::b'.</div><div class="m">2 replies · 1m ago</div></div></div>
+          ${dl([['11', '  }', '13', '  }'], [null, '', '14', '  delete(namespace, id) {', 'add'], [null, '', '15', '    return this.entries.delete(this.key(namespace, id))', 'add'], [null, '', '16', '  }', 'add'], ['12', '', '17', '']])}
+          <div class="fhead">${ic('chevron-down', 's14')}<span><span class="dir">src/</span>cache.test.js</span><span class="pill">uncommitted</span><button class="icon-btn sm">${ic('folder', 's14')}</button><button class="icon-btn sm">${ic('external-link', 's14')}</button><span class="grow"></span><span class="add">+7</span><span class="del">−0</span></div>
+          <div class="hunk"><span class="grow">@@ -7,3 +7,10 @@ test('stores and reads a value', () => {</span>${EXPANDERS()}</div>
+          ${dl([['7', "  c.set('user', 1, 'ada')", '7', "  c.set('user', 1, 'ada')"], [null, '', '11', "test('namespaces with colons do not collide', () => {", 'sugg']])}
+        </div>
+        <div class="band">${statusLine({ branch: 'feature/namespaced-keys' })}</div>
+      </div>
+      <aside class="panel"><div class="ph"><div class="segmented"><button class="on">Threads <span class="count">5</span></button><button>Queue <span class="count">0</span></button></div><span class="grow"></span><button class="icon-btn sm">${ic('panel-right')}</button></div>
+        <div class="gcard"><div class="t">${ic('message-square', 's14')}General conversation<span class="count" style="margin-left:auto">3</span></div><p>The branch escapes colons in namespaces and adds Cache.delete with a regression test. Four findings, opened as threads.</p></div>
+        <div class="filters"><span class="segmented"><button class="on">Open <span class="count">4</span></button><button>Resolved <span class="count">0</span></button><button>All</button></span><span class="grow"></span><button class="icon-btn sm" title="Kinds shown">${ic('list-filter')}</button></div>
+        <div class="fgrp"><span class="dir">src/</span>cache.js</div>
+        <div class="rrow cur"><span class="dot s-failed"></span><div><div>Colon escaping still allows key collisions</div><div class="meta"><span class="ln">L10–12</span><span>Bug</span><span>2 replies</span><span>1m</span></div></div></div>
+        <div class="fgrp"><span class="dir">src/</span>cache.test.js</div>
+        <div class="rrow"><span class="dot s-working"></span><div><div>Test misses the colon-prefixed id case</div><div class="meta"><span class="ln">L11–16</span><span>Suggestion</span><span>0 replies</span><span>1m</span></div></div></div>
+        <div class="fgrp"><span class="dir">src/</span>stats.js</div>
+        <div class="rrow"><span class="dot s-working"></span><div><div>Unused, untested module added to the branch</div><div class="meta"><span class="ln">L1–12</span><span>Suggestion</span><span>0 replies</span><span>1m</span></div></div></div>
+        <div class="rrow"><span class="dot" style="color:var(--faint)"></span><div><div>Stored undefined values count as misses</div><div class="meta"><span class="ln">L7–8</span><span>Nit</span><span>0 replies</span><span>1m</span></div></div></div>
+      </aside></div>`
+  },
+]
+
+const EXPANDERS = () => `<span class="xp" role="group" aria-label="Show hidden lines"><span class="pair"><span title="Show 10 more lines under the change above">${ic('chevron-up')}</span><span title="Show 10 more lines over this change">${ic('chevron-down')}</span></span><span class="all" title="Show all hidden lines">${ic('chevrons-up-down', 's14')}</span></span>`
+
+// One split-diff row per entry: [oldNo, oldText, newNo, newText, kind]
+function dl(rows) {
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  return rows.map(([on, ot, nn, nt, kind]) => {
+    if (kind === 'add') return `<div class="dl"><span class="n e"></span><span class="e"></span><span class="e"></span><span class="n ag">${nn}</span><span class="m a">+</span><span class="a">${esc(nt)}</span></div>`
+    if (kind === 'chg') return `<div class="dl"><span class="n dg">${on}</span><span class="m d">−</span><span class="d">${esc(ot)}</span><span class="n ag">${nn}</span><span class="m a">+</span><span class="a">${esc(nt)}</span></div>`
+    if (kind === 'mark') return `<div class="dl"><span class="n">${on}</span><span></span><span>${esc(ot)}</span><span class="n gm">${nn}</span><span></span><span>${esc(nt)}</span></div>`
+    if (kind === 'sugg') return `<div class="dl"><span class="n e"></span><span class="e"></span><span class="e"></span><span class="n ag gm sugg">${nn}</span><span class="m a">+</span><span class="a">${esc(nt)}</span></div>`
+    return `<div class="dl"><span class="n">${on}</span><span></span><span>${esc(ot)}</span><span class="n">${nn}</span><span></span><span>${esc(nt)}</span></div>`
+  }).join('')
+}
+
+const root = document.documentElement
+const win = document.getElementById('win')
+const screenPick = document.getElementById('screenPick')
+function show(id) {
+  const s = SCREENS.find((x) => x.id === id) ?? SCREENS[0]
+  win.innerHTML = `${titleBar()}<div class="body">${s.render()}</div>`
+  document.getElementById('notes').innerHTML = s.notes
+  for (const b of screenPick.children) b.setAttribute('aria-pressed', String(b.dataset.v === s.id))
+  history.replaceState(null, '', `#${s.id}`)
+}
+screenPick.innerHTML = SCREENS.map((s) => `<button data-v="${s.id}">${s.name}</button>`).join('')
+screenPick.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) show(b.dataset.v) })
+const themePick = document.getElementById('themePick')
+themePick.addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return
+  root.dataset.theme = b.dataset.v
+  for (const x of themePick.children) x.setAttribute('aria-pressed', String(x === b))
+})
+show(location.hash.slice(1))
+</script>
+</body>
+</html>

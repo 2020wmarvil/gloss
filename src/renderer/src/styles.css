@@ -3519,7 +3519,7 @@ button.status.link {
 .mcp-settings button:disabled, .opencode-settings button:disabled { opacity: 0.5; cursor: default; }
 .opencode-settings a { color: var(--ink); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 
-/* Review sessions (docs/mocks/review-session.html) */
+/* Review sessions (docs/mocks/target.html#review) */
 
 .review-changes {
   height: 32px;

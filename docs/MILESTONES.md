@@ -59,7 +59,7 @@ A home for Gloss's settings, editable by hand (and by agents) as well as in the 
 - **Settings screen** (from the sidebar, or `Ctrl+,`): global and current-project sections, the file's path, and "Open in editor". Saving from the screen writes the file, keeping unknown keys.
 - Validated and owned by the main process; the renderer reads and writes through the IPC API.
 - Move the dev model (Haiku) toggle into it.
-- Later milestones add their own sections (M7: default model, status line items; M12: theme, transparency; M13: default agent, MCP servers; M14: updates). No section appears before its feature exists.
+- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M14: updates). No section appears before its feature exists.
 
 **Done when:** a setting changed in the screen shows up in the file, a change made in an editor (or by an agent) shows up in the app without a restart, and a broken edit is reported without losing the previous settings.
 
@@ -130,7 +130,7 @@ Find anything you discussed: "where did we decide the cache key format?"
 **Done when:** a phrase from any past session or thread is found in under a second and opening the result lands on it.
 
 ## M11 — Review sessions
-A session type for checking an agent's work: the main view is the branch's diff, threads hang off its lines, and the agent reviews first. To the agent it is still one linear session, separate from the one that wrote the code. Designed in `docs/mocks/review-session.html` and specified in `SPEC.md` (Review sessions).
+A session type for checking an agent's work: the main view is the branch's diff, threads hang off its lines, and the agent reviews first. To the agent it is still one linear session, separate from the one that wrote the code. Designed in a mock since replaced by `docs/mocks/target.html#review`, and specified in `SPEC.md` (Review sessions).
 
 - **Start a review** from a project ("Review changes"). The session list shows review sessions distinctly, with their open thread count.
 - **What is reviewed:** from a base (by default the merge base with the pull request's base, else the default branch) to the working tree (committed or not, plus untracked files) or a commit, both picked in dropdowns; read by the main process and refreshed as the agent works.
@@ -154,10 +154,11 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - List what is inconsistent, cluttered or unclear.
   *Done (with the inventory above): `docs/ux-review/README.md`, screenshots in `docs/ux-review/screens/`.*
 - **Brand identity:** a logo and wordmark for Gloss, an app icon (with the sizes and formats Windows, macOS and Linux need), a brand color, typography, and the overall visual style (the "margin note" idea is a natural starting point). *Done: a glossy bead in a Sunset gradient, lowercase `gloss` wordmark; see `docs/BRAND.md`.*
-- **Live up to the name:** the interface should feel glossy: a slightly translucent window with sheen and depth, not flat panels. Electron 44 offers native materials for this: `backgroundMaterial` (`mica`, `acrylic`) on Windows 11 and `vibrancy` on macOS; Linux gets a solid fallback. Text must stay readable (AA contrast over the material), and transparency is turned off when the OS asks for reduced transparency.
+- **Live up to the name:** the interface should feel glossy, with sheen and depth, not flat panels. The window stays opaque: sheen and depth come from the styles (light catching the top edges of panes, layered elevation), defined in the target mocks. *A translucent window (Electron's `backgroundMaterial` Mica and Acrylic on Windows 11) was tried in a live demo and rejected: Mica was too faint to notice and Acrylic looked muddy over other windows.*
 - Define a small design system: color, type scale, spacing, radii, elevation and motion tokens for light and dark, an icon set, and the core components (buttons, chips and badges, inputs, panels, list rows, popovers).
   *Done and implemented early (the visual-language items of the review): `docs/mocks/design-system.html`; the stylesheet is built on its tokens.*
 - Updated mocks in `docs/mocks/` for the target interface. These replace the M1-era mocks as the reference.
+  *Done: `docs/mocks/target.html`, with the sheen and depth from `docs/mocks/depth.html` (option C).*
 
 **Phase 2: implementation**
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
@@ -169,8 +170,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 **Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
 
 **Order of the remaining work.** The visual-language PR also fixes the review's P1 problems on the existing screens (narrow windows, the activity strip, the failed-turn and deleted-session notices), labels the status line, and stops the whole page from scrolling. The rest comes in separate PRs:
-- **Window material:** the translucent window from "Live up to the name", with its contrast checks over the material in both themes, reduced transparency and the Linux fallback.
-- **Target mocks:** the updated layout mocks, the last Phase 1 item. Review stop after it.
+- **Target mocks:** the updated layout mocks, the last Phase 1 item, including the sheen and depth from "Live up to the name". Review stop after it.
 - **Screen pass:** Phase 2's pass bringing every screen in line with the approved mocks.
 - **Failed-turn actions:** a failed turn offers what fixes it: Sign in when the agent needs authentication, Retry (resend the same prompt) otherwise.
 
@@ -311,8 +311,8 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 
 ## Design passes needed
 - **M7:** sidebar with projects (folders) and their sessions, including the agent's existing sessions not yet opened in Gloss.
-- **M9:** done: the overview lives in a collapsible right-hand side panel, which also shows a thread (`docs/mocks/threads-overview.html`).
-- **M11:** done: `docs/mocks/review-session.html`.
+- **M9:** done: the overview lives in a collapsible right-hand side panel, which also shows a thread (now `docs/mocks/target.html#overview`).
+- **M11:** done (now `docs/mocks/target.html#review`).
 - The M7–M11 passes are deliberately light: enough to build them. M12 revisits everything as a whole.
 - **M15:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 - **M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.
