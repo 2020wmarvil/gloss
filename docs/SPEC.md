@@ -282,7 +282,7 @@ Agents inherit Gloss's environment, so a test run can pick a cheap model with `A
 
 ## Projects and sessions
 
-The sidebar (`docs/mocks/sidebar-switcher.html`) shows one project at a time:
+The sidebar (`docs/mocks/target.html`) shows one project at a time:
 
 - **Project switcher** at the top: the current project's name and path. Its menu lists every project (a dot marks one with a running session) and "Open project…", a folder picker that adds a project. Hovering a project in the menu shows a small **×** that deletes it.
 - **Delete project** asks for confirmation, then deletes each of the project's sessions that were opened in Gloss as below (the agent's copies too) and removes the project. The agent's sessions that were never opened in Gloss are kept, and the folder's files are not touched.
@@ -311,7 +311,7 @@ When the agent advertises `loadSession` (Claude Code does), the agent's own copy
 ## Conversation view
 
 - **Layout:** the log, composer and status line share one centered column that grows with the pane (820px up to 1080px), and the conversation text grows from 15px to 16px and 17px on wide panes (markdown sizes are relative to it). The thread panel grows with the window too (420px up to 600px). The sidebar and the thread panel can be resized by dragging their inner edge, or by focusing that edge and pressing the arrow keys; double-click resets it. **«** beside the project switcher at the top of the sidebar collapses it to a thin rail (a button that expands it, and a running dot while any session runs); the collapsed state is remembered like the widths. The sidebar stays between 180px and 480px (at most 40% of the window), the thread panel at least 320px while leaving the conversation 360px. Widths are UI state, remembered in the renderer's localStorage, not settings. In a narrow window the panes make room for the conversation's 360px: the thread panel narrows first (down to 320px), then the sidebar (down to 180px). If both are open and that is still not enough, the one opened earlier shows as its rail until the window is wide enough again (this doesn't change the remembered collapsed state); expanding that rail keeps it open and collapses the other instead. The window itself never scrolls; only its panes do.
-- **Side panel** (`docs/mocks/threads-overview.html`): the right-hand panel is collapsible and shows one of two views.
+- **Side panel** (`docs/mocks/target.html#overview`): the right-hand panel is collapsible and shows one of two views.
   - **Collapsed**, it is a thin rail with a threads button, the session's thread count when there are any (in a review session, its open line threads plus one for the general conversation, which the panel also holds) and a running dot while a turn runs in a thread. Clicking it opens the overview. `Ctrl+Shift+T` toggles the panel.
   - **Threads overview:** two tabs, **Threads** and **Queue**, each with its count.
   - **Threads tab:** the session's threads, oldest first. Each row shows its quote (two lines at most), the reply count, the last activity ("5m ago", from its newest message, or the thread's creation for messages stored before M9) "working" while the turn runs there, "queued" ("2 queued") while messages wait to run there, and "paused" when the queue is paused. Clicking a row opens that thread. With no threads, it says how to start one.
@@ -331,7 +331,7 @@ When the agent advertises `loadSession` (Claude Code does), the agent's own copy
 
 ## Review sessions
 
-A session for checking an agent's work (`docs/mocks/review-session.html`). The center shows the diff of the branch, threads hang off its lines, and the agent reviews first. To the agent it is still one linear session, separate from the session that wrote the code, so the review starts with clean context.
+A session for checking an agent's work (`docs/mocks/target.html#review`). The center shows the diff of the branch, threads hang off its lines, and the agent reviews first. To the agent it is still one linear session, separate from the session that wrote the code, so the review starts with clean context.
 
 - **Start:** **Review changes** on a project in the sidebar creates a review session with the default agent and sends the first pass straight away. A new review (this or **New review**) opens with only the diff: the sidebar collapsed to its rail, the side panel collapsed (it opens on the general conversation, where the first pass runs) and the file list hidden. From then on each keeps the state it is set to. The session list shows it with a review icon, titled "Review: #N <PR title>" when the branch has an open pull request, else "Review: <branch>", with a count of its open threads. **New review** in a review's header starts a fresh review session of the same range with the same agent (a new agent session, a new first pass); the old one stays in the sidebar with its threads.
 - **What is reviewed:** the diff from a **Base** to a **Review** commit, picked in two dropdowns in the header (`Base: merge base with origin/main · 3c3c5f9 ▾ → Review: working tree ▾`) and stored as `review.baseRef` and `review.headRef`.
@@ -423,12 +423,7 @@ When a turn ends or fails while the Gloss window isn't focused, Gloss shows an O
 ## UX reference
 
 See `docs/mocks/`:
-- `main-view.html` — session list, main thread with a numbered agent reply, reply-count badges / hover "Reply" on items, thread panel on the right. Clickable.
-- `selection-anchor.html` — the selection popover and a new thread started from a selection, plus an existing inline anchor (dotted underline + count chip).
-- `sidebar-switcher.html` — the sidebar: project switcher and the project's sessions. Its separate "Not in Gloss yet" section is superseded: the agent's sessions are now in the one session list (see Projects and sessions).
-- `threads-overview.html` — the side panel: the collapsed rail, the threads overview, a thread with **← All threads**, and an agent plan as a checklist. Clickable.
-- `review-session.html` — a review session: the diff (split and unified, file tree, sticky file headers, per-side scrolling), finding cards and gutter markers, outdated and resolved threads, the overview with the pinned general conversation and filters, a thread with Resolve, and a new thread from a code selection. Clickable.
-
-- `design-system.html` — the visual language (M12): type, color roles, surfaces, buttons, icons (Lucide), inputs, menus, rows, code and tool calls, spacing, radii, depth and motion, in light and dark. Its tokens are the stylesheet's.
-
-The other mocks show layout and interaction, not the visual design; `design-system.html` and `docs/BRAND.md` are the reference for that.
+- `target.html` — the target interface (M12), every screen in light and dark: welcome, a project with no session, a new session, a session with a thread, the selection popover, the threads overview and queue tab, a failed turn, sign-in, search, settings and a review session. Pick a screen at the top (or link one as `target.html#review`). It is the reference for layout and the visual design.
+- `design-system.html` — the visual language (M12): type, color roles, surfaces, buttons, icons (Lucide), inputs, menus, rows, code and tool calls, spacing, radii and motion. Its tokens are the stylesheet's.
+- `depth.html` — the sheen and depth explorations (M12); option C, Gloss, was chosen and is the one `target.html` uses: the title bar and sidebar are the window's frame, the panes one sheet laid on it, light on raised things' top edges, pressed-in wells and a lacquered primary button.
+- `brand.html` — the brand explorations; `docs/BRAND.md` records what was decided.

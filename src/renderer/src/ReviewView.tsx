@@ -1,4 +1,4 @@
-// A review session's main view (docs/mocks/review-session.html): the branch's diff with
+// A review session's main view (docs/mocks/target.html#review): the branch's diff with
 // threads on its lines. The general conversation lives in the side panel.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { GitStatus, PullRequest } from '@shared/ipc'

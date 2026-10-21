@@ -130,7 +130,7 @@ Find anything you discussed: "where did we decide the cache key format?"
 **Done when:** a phrase from any past session or thread is found in under a second and opening the result lands on it.
 
 ## M11 — Review sessions
-A session type for checking an agent's work: the main view is the branch's diff, threads hang off its lines, and the agent reviews first. To the agent it is still one linear session, separate from the one that wrote the code. Designed in `docs/mocks/review-session.html` and specified in `SPEC.md` (Review sessions).
+A session type for checking an agent's work: the main view is the branch's diff, threads hang off its lines, and the agent reviews first. To the agent it is still one linear session, separate from the one that wrote the code. Designed in a mock since replaced by `docs/mocks/target.html#review`, and specified in `SPEC.md` (Review sessions).
 
 - **Start a review** from a project ("Review changes"). The session list shows review sessions distinctly, with their open thread count.
 - **What is reviewed:** from a base (by default the merge base with the pull request's base, else the default branch) to the working tree (committed or not, plus untracked files) or a commit, both picked in dropdowns; read by the main process and refreshed as the agent works.
@@ -158,6 +158,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - Define a small design system: color, type scale, spacing, radii, elevation and motion tokens for light and dark, an icon set, and the core components (buttons, chips and badges, inputs, panels, list rows, popovers).
   *Done and implemented early (the visual-language items of the review): `docs/mocks/design-system.html`; the stylesheet is built on its tokens.*
 - Updated mocks in `docs/mocks/` for the target interface. These replace the M1-era mocks as the reference.
+  *Done: `docs/mocks/target.html`, with the sheen and depth from `docs/mocks/depth.html` (option C).*
 
 **Phase 2: implementation**
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
@@ -310,8 +311,8 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 
 ## Design passes needed
 - **M7:** sidebar with projects (folders) and their sessions, including the agent's existing sessions not yet opened in Gloss.
-- **M9:** done: the overview lives in a collapsible right-hand side panel, which also shows a thread (`docs/mocks/threads-overview.html`).
-- **M11:** done: `docs/mocks/review-session.html`.
+- **M9:** done: the overview lives in a collapsible right-hand side panel, which also shows a thread (now `docs/mocks/target.html#overview`).
+- **M11:** done (now `docs/mocks/target.html#review`).
 - The M7–M11 passes are deliberately light: enough to build them. M12 revisits everything as a whole.
 - **M15:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 - **M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.

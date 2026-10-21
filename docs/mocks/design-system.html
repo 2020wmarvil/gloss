@@ -442,13 +442,13 @@ kbd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; b
       <span style="width:34px;height:34px;border-radius:4px;background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line-strong)"></span><span style="width:34px;height:34px;border-radius:6px;background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line-strong)"></span><span style="width:34px;height:34px;border-radius:8px;background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line-strong)"></span><span style="width:34px;height:34px;border-radius:12px;background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line-strong)"></span><span style="width:50px;height:34px;border-radius:999px;background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line-strong)"></span></div>
       <p class="rule">4 tags and keys · 6 small controls · 8 buttons, fields, code · 12 cards, popovers, dialogs · pill for counts and switches.</p></div>
     <div class="box"><div class="cap">Depth and motion</div>
-      <p class="rule" style="margin-top:0"><b>Flat</b> (lines only) for panes and lists. <b>Shadow 2</b> for menus and popovers. <b>Shadow 3</b> for dialogs. Finding cards drop their shadow and sit flat in the diff.</p>
+      <p class="rule" style="margin-top:0">Panes lie as one sheet on the window's frame, with light on raised things' top edges and pressed-in wells (<code>depth.html</code>, option C). <b>Shadow 2</b> for menus and popovers. <b>Shadow 3</b> for dialogs. Finding cards drop their shadow and sit flat in the diff.</p>
       <p class="rule"><b>120ms</b> hover, <b>180ms</b> popovers, <b>240ms</b> panels, one ease-out curve. Reduced motion turns transitions and the working pulse off.</p></div>
   </div>
 
   <!-- 9. Composite -->
   <h2>9. Put together</h2>
-  <p class="hint">A session with a thread open, using only the parts above. Compare with <code>docs/ux-review/screens/16-thread-done-light.webp</code> and <code>23-queued-from-thread-light.webp</code>. The window material (Mica) and the full layout pass come later in M12; this is only the visual language.</p>
+  <p class="hint">A session with a thread open, using only the parts above. Compare with <code>docs/ux-review/screens/16-thread-done-light.webp</code> and <code>23-queued-from-thread-light.webp</code>. This is only the visual language; <code>target.html</code> has the full layout, with the sheen and depth chosen in <code>depth.html</code>.</p>
   <div class="app">
     <div class="side">
       <div class="field select" style="min-width:0;height:auto;padding:7px 10px;align-items:flex-start"><div><div style="font-weight:600;font-size:13px">project</div><div style="font-size:12px;color:var(--muted)">glossux</div></div><span data-i="chevron-down"></span></div>
