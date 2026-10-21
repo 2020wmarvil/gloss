@@ -209,10 +209,10 @@ export function Composer({
     held.current = true
   }
 
-  function submit(how: 'send' | 'steer' | 'queue' | 'main' = 'send'): void {
+  function submit(how: 'send' | 'steer' | 'main' = 'send'): void {
     const trimmed = text.trim()
     if (!trimmed && attachments.length === 0) return
-    if (how !== 'main' && how !== 'queue' && steer) steer(trimmed, attachments)
+    if (how !== 'main' && steer) steer(trimmed, attachments)
     else if (how === 'main' && onSendToMain) onSendToMain(trimmed, attachments)
     else onSend(trimmed, attachments)
     browsing.current = null
@@ -414,14 +414,6 @@ export function Composer({
           </button>
         </div>
       </div>
-      {running && !empty && (
-        <p className={`composer-mode mode-${mode}`}>
-          <span className="mode-dot" aria-hidden="true" />
-          {mode === 'steer'
-            ? 'Steer adds this to the running turn. Alt+Enter queues it instead.'
-            : 'The agent is busy in another thread. This runs when it is done.'}
-        </p>
-      )}
       {error && <p className="composer-error">{error}</p>}
       {footer}
     </div>

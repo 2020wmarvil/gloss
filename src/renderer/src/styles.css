@@ -2032,27 +2032,6 @@ body.resizing {
   position: relative;
 }
 
-/* What Send will do while a turn runs: steer it, or queue (SPEC → Composer). */
-.composer-mode {
-  margin: 6px 4px 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--t-12);
-  color: var(--muted);
-}
-
-.composer-mode .mode-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--working);
-}
-
-.composer-mode.mode-queue .mode-dot {
-  background: var(--queued);
-}
-
 /* The composer's "…" menu: other ways to send. It opens upward, at the button's right. */
 .box .popover-anchor {
   position: relative;
@@ -2165,14 +2144,16 @@ body.resizing {
 }
 
 .md-editor .cm-scroller {
-  max-height: calc(8lh + 16px);
+  max-height: calc(7lh + var(--control));
   font-family: inherit;
   line-height: 1.5;
   overflow-y: auto;
 }
 
+/* One line is exactly a control's height, so the text lines up with the buttons beside it
+   (which stay by the last line as it grows). */
 .md-editor .cm-content {
-  padding: 8px 0;
+  padding: calc((var(--control) - 1lh) / 2) 0;
   caret-color: var(--ink);
 }
 
