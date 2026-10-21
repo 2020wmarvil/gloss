@@ -228,10 +228,11 @@ code.inl { font: .87em var(--font-mono); background: var(--sunken); padding: 1px
 .composer.focus { border-color: var(--line-strong); box-shadow: inset 0 1px 0 var(--edge), var(--lift-2), 0 0 0 3px var(--focus); }
 .composer .ed { flex: 1; min-width: 0; padding: 0 4px; color: var(--faint); font-size: var(--t-14); }
 .composer .ed.typed { color: var(--ink); }
-.status { width: 100%; display: flex; align-items: center; gap: 2px; padding: 6px 14px 8px; font-size: var(--t-12); color: var(--muted); }
-.status { flex-wrap: wrap; row-gap: 0; }
-.status .right { display: flex; align-items: center; gap: 2px; margin-left: auto; min-width: 0; max-width: 100%; }
-.status .sb.shrink { min-width: 64px; flex-shrink: 1; overflow: hidden; }
+.status { max-width: 760px; width: 100%; margin: 0 auto; display: flex; align-items: center; gap: 12px; padding: 6px 26px 10px; font-size: var(--t-12); color: var(--muted); }
+/* The agent's items wrap onto a hidden second row: what doesn't fit disappears, right to left. */
+.status .agent { flex: 1; min-width: 0; height: 24px; overflow: hidden; display: flex; flex-wrap: wrap; gap: 0 2px; }
+.status .right { flex: none; display: flex; align-items: center; gap: 2px; }
+.status .sb.shrink { max-width: 180px; overflow: hidden; }
 .status .sb.shrink .tx { overflow: hidden; text-overflow: ellipsis; }
 .status .sb { flex-shrink: 0; white-space: nowrap; height: 24px; padding: 0 6px; border-radius: var(--r-sm); display: inline-flex; align-items: center; gap: 5px; }
 .status .sb .lb { color: var(--faint); }
@@ -445,7 +446,7 @@ function sidebar({ project = true, cur = 'cache', rows = ['cache', 'review', 'fa
 }
 const foot = (settings) => `<div class="foot"><button class="btn ghost" title="Search conversations (Ctrl+Shift+F)">${ic('search')}Search</button><button class="btn ghost${settings ? ' hl' : ''}">${ic('settings')}Settings</button></div>`
 
-const statusLine = ({ branch = 'main', limit = true } = {}) => `<div class="status">
+const statusLine = ({ branch = 'main', limit = true } = {}) => `<div class="status"><span class="agent">
   <span class="sb" title="Context: 4% of 1M tokens"><span class="lb">Context</span><span class="meter"><i></i></span>4%</span>
   <span class="sb">$0.18</span>
   ${limit ? '<span class="sb"><span class="lb">5h limit</span>OK</span>' : ''}
@@ -453,7 +454,7 @@ const statusLine = ({ branch = 'main', limit = true } = {}) => `<div class="stat
   <span class="sb">${ic('sliders-horizontal', 's14')}Medium${ic('chevron-down', 's12')}</span>
   <span class="sb" title="Auto-approve">${ic('shield-check', 's14')}</span>
   <span class="sb" title="Extensions">${ic('puzzle', 's14')}</span>
-  <span class="right"><span class="sb shrink" title="Open the folder">${ic('folder', 's14')}<span class="tx">cachekit</span></span>
+  </span><span class="right"><span class="sb shrink" title="Open the folder">${ic('folder', 's14')}<span class="tx">cachekit</span></span>
   <span class="sb shrink">${ic('git-branch', 's14')}<span class="tx">${branch}</span></span>
   <span class="sb"><span class="dot s-done" style="width:6px;height:6px"></span>#31 open</span>
   <span class="sb" title="Open Obsidian vault “cachekit notes”">${OBSIDIAN}</span></span></div>`
