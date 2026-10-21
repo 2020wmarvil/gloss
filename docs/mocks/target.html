@@ -442,7 +442,7 @@ function sidebar({ project = true, cur = 'cache', rows = ['cache', 'review', 'fa
     <div class="rows">${rows.map((k) => row(k, k === cur, k === hov)).join('')}</div>
     <span class="grow"></span>${foot(settings)}</nav>`
 }
-const foot = (settings) => `<div class="foot"><button class="btn ghost">${ic('search')}Search<span class="k"><kbd>Ctrl</kbd><kbd>⇧</kbd><kbd>F</kbd></span></button><button class="btn ghost${settings ? ' hl' : ''}">${ic('settings')}Settings</button></div>`
+const foot = (settings) => `<div class="foot"><button class="btn ghost" title="Search conversations (Ctrl+Shift+F)">${ic('search')}Search</button><button class="btn ghost${settings ? ' hl' : ''}">${ic('settings')}Settings</button></div>`
 
 const statusLine = ({ branch = 'main', limit = true } = {}) => `<div class="status">
   <span class="sb" title="Context: 4% of 1M tokens"><span class="lb">Context</span><span class="meter"><i></i></span>4%</span>
