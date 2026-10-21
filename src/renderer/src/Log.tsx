@@ -7,7 +7,7 @@ import { hasDetails, ToolDetails } from './ToolDetails'
 import { Brain, Check, ChevronDown, ChevronRight, CircleAlert, FilePen, FileText, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
 
 /** A transient, client-side note shown in a log (not part of the conversation). */
-export type Notice = { id: string; threadId: string | null; text: string; afterSeq: number }
+export type Notice = { id: string; threadId: string | null; text: string; afterSeq: number; tone?: 'failed' }
 
 export type LogItem =
   | { kind: 'message'; seq: number; message: Message }
@@ -131,7 +131,12 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
             case 'plan':
               return <PlanChecklist key={item.plan.id} plan={item.plan} />
             case 'notice':
-              return (
+              return item.notice.tone === 'failed' ? (
+                <p key={item.notice.id} className="notice failed" role="alert">
+                  <CircleAlert className="notice-icon" aria-hidden />
+                  <span>{item.notice.text}</span>
+                </p>
+              ) : (
                 <p key={item.notice.id} className="notice">
                   {item.notice.text}
                 </p>

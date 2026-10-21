@@ -7,7 +7,7 @@ import type { ConfigChoice, MessageQueue, ModelOption, RateLimit, Session, Sessi
 import { errorText } from './errors'
 import { Popover } from './Popover'
 import { UsagePanel } from './UsagePanel'
-import { Check } from 'lucide-react'
+import { Check, ChevronDown, Cpu, Gauge, Folder, GitBranch, Puzzle, ShieldAlert, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 
 type Props = {
   session: Session
@@ -18,6 +18,8 @@ type Props = {
   /** A turn is running (the activity strip says where). */
   running: boolean
   queue: MessageQueue
+  /** An activity strip above already counts the queued messages. */
+  queueShownAbove?: boolean
   onResumeQueue(): void
   onSetChoice(kind: 'model' | 'effort', value: string): Promise<void>
   /** Sends a slash command as a message in the main thread. */
@@ -32,17 +34,19 @@ function formatCost(cost: { amount: number; currency: string }): string {
   }
 }
 
-function formatTokens(n: number): string {
+/** 200000 → "200k", 1000000 → "1M". */
+export function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${Number((n / 1_000_000).toFixed(1))}M`
   return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
 }
 
 const WINDOW_LABELS: Record<string, [short: string, long: string]> = {
-  five_hour: ['5h', '5-hour limit'],
-  seven_day: ['week', 'weekly limit'],
-  seven_day_opus: ['week (Opus)', 'weekly Opus limit'],
-  seven_day_sonnet: ['week (Sonnet)', 'weekly Sonnet limit'],
-  seven_day_overage_included: ['week', 'weekly limit'],
-  overage: ['extra', 'extra usage']
+  five_hour: ['5h limit', '5-hour limit'],
+  seven_day: ['Week limit', 'weekly limit'],
+  seven_day_opus: ['Opus week limit', 'weekly Opus limit'],
+  seven_day_sonnet: ['Sonnet week limit', 'weekly Sonnet limit'],
+  seven_day_overage_included: ['Week limit', 'weekly limit'],
+  overage: ['Extra usage', 'extra usage']
 }
 
 function formatReset(ms: number): string {
@@ -52,16 +56,16 @@ function formatReset(ms: number): string {
   return sameDay ? time : `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`
 }
 
-/** One plan usage window: "5h ok", "5h 82%", or "5h limit · resets 3:40 PM". */
+/** One plan usage window: "5h limit OK", "5h limit 82%", or "5h limit reached · resets 3:40 PM". */
 function RateLimitItem({ limit }: { limit: RateLimit }): React.JSX.Element {
   const [short, long] = WINDOW_LABELS[limit.window] ?? [limit.window, limit.window.replace(/_/g, ' ')]
   const reset = limit.resetsAt ? formatReset(limit.resetsAt) : null
-  const text =
+  const value =
     limit.status === 'rejected'
-      ? `${short} limit${reset ? ` · resets ${reset}` : ''}`
+      ? `reached${reset ? ` · resets ${reset}` : ''}`
       : limit.utilization !== undefined
-        ? `${short} ${limit.utilization}%`
-        : `${short} ok`
+        ? `${limit.utilization}%`
+        : 'OK'
   const title = [
     `Claude ${long}: ${
       limit.status === 'rejected'
@@ -79,7 +83,8 @@ function RateLimitItem({ limit }: { limit: RateLimit }): React.JSX.Element {
   const className = `status-item${limit.status === 'rejected' ? ' error' : limit.status === 'warning' ? ' warn' : ''}`
   return (
     <span className={className} title={title}>
-      {text}
+      <span className="status-label">{short}</span>
+      {value}
     </span>
   )
 }
@@ -137,13 +142,18 @@ export function optionDescription(name: string, description?: string | null): st
 /** A popover listing a config option's values (the model or the effort); picking one sets it. */
 function ChoicePicker(props: {
   label: string
+  icon: React.JSX.Element
   title: string
   choice: ConfigChoice
   onPick(value: string): void
 }): React.JSX.Element {
   const { choice } = props
   return (
-    <Popover label={props.label} title={props.title}>
+    <Popover
+      label={<>{props.icon}{props.label}<ChevronDown className="status-chevron" aria-hidden /></>}
+      title={props.title}
+      className="status-item status-button"
+    >
       {(close) => (
         <ul className="option-list" role="listbox" aria-label={props.title}>
           {choice.options.map((o) => (
@@ -188,11 +198,12 @@ export function StatusLine(props: Props): React.JSX.Element {
   const usageLabel = <>
     {pct !== null && usage && (
       <span className={`status-item context${pct >= 80 ? ' high' : ''}`}>
+        <span className="status-label">Context</span>
         <span className="meter" aria-hidden><span style={{ width: `${pct}%` }} /></span>
-        {pct}% <span className="muted">of {formatTokens(usage.size)}</span>
+        {pct}% <span className="status-label">of {formatTokens(usage.size)}</span>
       </span>
     )}
-    {usage?.cost && <span className="status-item">{formatCost(usage.cost)}</span>}
+    {usage?.cost && <span className="status-item" title="What this session has cost so far">{formatCost(usage.cost)}</span>}
     {live.rateLimits.map((l) => <RateLimitItem key={l.window} limit={l} />)}
   </>
 
@@ -205,22 +216,29 @@ export function StatusLine(props: Props): React.JSX.Element {
             {props.queue.items.length} queued, paused · Resume
           </button>
         ) : (
-          <span className="status-item queue-count">{props.queue.items.length} queued</span>
+          !props.queueShownAbove && <span className="status-item queue-count">{props.queue.items.length} queued</span>
         ))}
 
       {session.agentId === 'claude' || session.agentId === 'codex' ? (
-        <Popover key={session.id} label={pct !== null || usage?.cost || live.rateLimits.length ? usageLabel : 'Usage'}
-          title="Usage details" className="status-item usage-trigger">
+        <Popover key={session.id} label={pct !== null || usage?.cost || live.rateLimits.length ? usageLabel : <><Gauge className="status-icon" aria-hidden />Usage</>}
+          title="Usage details" className="status-item status-button usage-trigger">
           {() => <UsagePanel sessionId={session.id} context={usage} />}
         </Popover>
       ) : usageLabel}
 
       {model && (
-        <ChoicePicker label={currentModel ? modelLabel(currentModel) : model.current} title="Model" choice={model} onPick={pick('model')} />
+        <ChoicePicker
+          label={currentModel ? modelLabel(currentModel) : model.current}
+          icon={<Cpu className="status-icon" aria-hidden />}
+          title="Model"
+          choice={model}
+          onPick={pick('model')}
+        />
       )}
       {effort && (
         <ChoicePicker
           label={optionName(currentEffort?.name ?? effort.current)}
+          icon={<SlidersHorizontal className="status-icon" aria-hidden />}
           title="Effort"
           // Gloss replaces Claude's "default" with a real level, so it isn't offered (unless that failed).
           choice={{ ...effort, options: effort.options.filter((o) => o.value !== 'default' || o.value === effort.current) }}
@@ -229,22 +247,28 @@ export function StatusLine(props: Props): React.JSX.Element {
       )}
       {choiceError && <span className="status-item error">{choiceError}</span>}
 
+      {/* Tools run without asking either way; amber when Gloss does the approving. */}
       {live.permissions === 'bypass' && (
-        <span className="status-item" title="The agent runs without permission prompts (its bypass mode).">
-          bypass
+        <span className="status-item" title="Auto-approve: the agent runs tools without asking (its bypass mode)." aria-label="Auto-approve">
+          <ShieldCheck className="status-icon" aria-hidden />
         </span>
       )}
       {live.permissions === 'auto' && (
         <span
           className="status-item warn"
-          title="The agent didn't switch to its bypass mode, so Gloss approves each permission request it makes."
+          title="Auto-approve: the agent didn't switch to its bypass mode, so Gloss approves each permission request it makes."
         >
-          auto-approving
+          <ShieldAlert className="status-icon" aria-hidden />
+          Auto-approve
         </span>
       )}
 
       {(live.commands.length > 0 || hasMcpCommand) && (
-        <Popover label="Extensions" title="What the agent loaded">
+        <Popover
+          label={<><Puzzle className="status-icon" aria-label="Extensions" /><ChevronDown className="status-chevron" aria-hidden /></>}
+          title="Extensions: what the agent loaded"
+          className="status-item status-button"
+        >
           {(close) => (
             <div className="extensions">
               <p className="muted">The agent loads its own plugins, skills and MCP servers. Gloss shows what it reports.</p>
@@ -276,47 +300,52 @@ export function StatusLine(props: Props): React.JSX.Element {
         </Popover>
       )}
 
-      <span className="status-spacer" />
-      {props.pr && <PullRequestItem pr={props.pr} />}
-      {git &&
-        (git.url ? (
-          <a
-            className="status-item link mono"
-            href={git.url}
-            target="_blank"
-            rel="noreferrer"
-            title={`${git.dirty ? 'Uncommitted changes' : 'Clean working tree'}. Click to open the branch on GitHub.`}
-          >
-            {git.branch}
-            {git.dirty && <span className="dirty">*</span>}
-          </a>
-        ) : (
-          <span className="status-item mono" title={git.dirty ? 'Uncommitted changes' : 'Clean working tree'}>
-            {git.branch}
-            {git.dirty && <span className="dirty">*</span>}
-          </span>
-        ))}
-      <button
-        className="status-item mono"
-        title={`${session.cwd}\nClick to open the folder.`}
-        onClick={() => {
-          setFolderError(null)
-          void window.gloss.sessions.openFolder(session.id).then(setFolderError, (err: unknown) => setFolderError(errorText(err)))
-        }}
-      >
-        {folderName(session.cwd)}
-      </button>
-      {props.obsidianVault?.trim() && (
-        <button className="status-item" title={`Open Obsidian vault: ${props.obsidianVault.trim()}`}
-          aria-label="Open Obsidian vault"
+      {/* Where the session works, at the right end. The branch name shortens before the group wraps. */}
+      <span className="status-place">
+        {props.pr && <PullRequestItem pr={props.pr} />}
+        {git &&
+          (git.url ? (
+            <a
+              className="status-item link branch"
+              href={git.url}
+              target="_blank"
+              rel="noreferrer"
+              title={`${git.dirty ? 'Uncommitted changes' : 'Clean working tree'}. Click to open the branch on GitHub.`}
+            >
+              <GitBranch className="status-icon" aria-hidden />
+              <span className="status-branch">{git.branch}</span>
+              {git.dirty && <span className="dirty">*</span>}
+            </a>
+          ) : (
+            <span className="status-item branch" title={git.dirty ? 'Uncommitted changes' : 'Clean working tree'}>
+              <GitBranch className="status-icon" aria-hidden />
+              <span className="status-branch">{git.branch}</span>
+              {git.dirty && <span className="dirty">*</span>}
+            </span>
+          ))}
+        <button
+          className="status-item"
+          title={`${session.cwd}\nClick to open the folder.`}
           onClick={() => {
-            setObsidianError(null)
-            void window.gloss.sessions.openObsidian(session.id).catch((err: unknown) => setObsidianError(errorText(err)))
-          }}>
-          <img src={new URL('./assets/obsidian-logo.svg', import.meta.url).href}
-            width="18" height="18" alt="" aria-hidden="true" />
+            setFolderError(null)
+            void window.gloss.sessions.openFolder(session.id).then(setFolderError, (err: unknown) => setFolderError(errorText(err)))
+          }}
+        >
+          <Folder className="status-icon" aria-hidden />
+          {folderName(session.cwd)}
         </button>
-      )}
+        {props.obsidianVault?.trim() && (
+          <button className="status-item" title={`Open Obsidian vault: ${props.obsidianVault.trim()}`}
+            aria-label="Open Obsidian vault"
+            onClick={() => {
+              setObsidianError(null)
+              void window.gloss.sessions.openObsidian(session.id).catch((err: unknown) => setObsidianError(errorText(err)))
+            }}>
+            <img src={new URL('./assets/obsidian-logo.svg', import.meta.url).href}
+              width="18" height="18" alt="" aria-hidden="true" />
+          </button>
+        )}
+      </span>
       {obsidianError && <span className="status-item error">Couldn&apos;t open Obsidian: {obsidianError}</span>}
       {folderError && <span className="status-item error">Couldn&apos;t open the folder: {folderError}</span>}
     </div>

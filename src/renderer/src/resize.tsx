@@ -6,21 +6,66 @@ export type WidthLimits = { min: number; max: number }
 
 /** The CSS default widths, used until the user resizes a pane. */
 export const SIDEBAR_DEFAULT = 240
-/** The collapsed sidebar's rail. */
+/** The collapsed sidebar's rail, and the collapsed side panel's. */
 export const SIDEBAR_RAIL = 44
-/** The narrowest the conversation gets when a pane is dragged wide. */
+export const SIDE_RAIL = 44
+const SIDEBAR_MIN = 180
+const THREAD_PANEL_MIN = 320
+/** The narrowest the conversation gets while the window has room for it. */
 const CONVERSATION_MIN = 360
 
 export function clampWidth(width: number, limits: WidthLimits): number {
   return Math.round(Math.min(Math.max(width, limits.min), Math.max(limits.min, limits.max)))
 }
 
-export function sidebarLimits(windowWidth: number): WidthLimits {
-  return { min: 180, max: Math.min(480, Math.round(windowWidth * 0.4)) }
+/** `side`: the thread panel's width while it is open, null when it is a rail, undefined when there is none. */
+export function sidebarLimits(windowWidth: number, side?: number | null): WidthLimits {
+  const others = side === undefined ? 0 : side === null ? SIDE_RAIL : THREAD_PANEL_MIN
+  return { min: SIDEBAR_MIN, max: Math.min(480, Math.round(windowWidth * 0.4), windowWidth - others - CONVERSATION_MIN) }
 }
 
 export function threadPanelLimits(windowWidth: number, sidebarWidth: number): WidthLimits {
-  return { min: 320, max: windowWidth - sidebarWidth - CONVERSATION_MIN }
+  return { min: THREAD_PANEL_MIN, max: windowWidth - sidebarWidth - CONVERSATION_MIN }
+}
+
+/** The thread panel's width until it is dragged: it grows with the window (the CSS default). */
+export function threadPanelDefault(windowWidth: number): number {
+  return clampWidth(windowWidth * 0.32, { min: 420, max: 600 })
+}
+
+/**
+ * The widths the panes get in this window. null = shown as a rail; for the side
+ * panel, undefined = there is none (no session open, or settings).
+ */
+export type PaneWidths = { sidebar: number | null; side: number | null | undefined }
+
+/**
+ * Fits the panes around a conversation of at least 360px: the thread panel gives up
+ * width first (down to 320px), then the sidebar (down to 180px). When both are open
+ * and that isn't enough, the one not in `keep` (the one opened last) collapses to its
+ * rail, until the window is wide enough again.
+ */
+export function fitPanes(windowWidth: number, wanted: PaneWidths, keep: 'sidebar' | 'side'): PaneWidths {
+  function squeeze(sidebar: number | null, side: number | null | undefined): PaneWidths & { fits: boolean } {
+    const used = (sidebar ?? SIDEBAR_RAIL) + (side === undefined ? 0 : (side ?? SIDE_RAIL))
+    let over = CONVERSATION_MIN - (windowWidth - used)
+    if (over > 0 && typeof side === 'number') {
+      const cut = Math.min(over, Math.max(0, side - THREAD_PANEL_MIN))
+      side -= cut
+      over -= cut
+    }
+    if (over > 0 && sidebar !== null) {
+      const cut = Math.min(over, Math.max(0, sidebar - SIDEBAR_MIN))
+      sidebar -= cut
+      over -= cut
+    }
+    return { sidebar, side, fits: over <= 0 }
+  }
+  let fitted = squeeze(wanted.sidebar, wanted.side)
+  if (!fitted.fits && wanted.sidebar !== null && typeof wanted.side === 'number') {
+    fitted = keep === 'side' ? squeeze(null, wanted.side) : squeeze(wanted.sidebar, null)
+  }
+  return { sidebar: fitted.sidebar, side: fitted.side }
 }
 
 /** A pane width remembered across restarts; null = the pane's CSS default. */

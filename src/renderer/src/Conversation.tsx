@@ -156,6 +156,7 @@ export function Conversation(props: Props): React.JSX.Element {
         pr={props.pr}
         running={running}
         queue={props.queue}
+        queueShownAbove
         onResumeQueue={() => void props.composerQueue.onResume()}
         onSetChoice={props.onSetChoice}
         onCommand={(text) => props.onSend(text, [])}

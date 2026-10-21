@@ -178,6 +178,8 @@ body,
 
 body {
   margin: 0;
+  /* The window never scrolls; the panes do. */
+  overflow: hidden;
   background: var(--bg);
   color: var(--ink);
   font: 400 var(--t-15)/1.55 var(--font-ui);
@@ -307,6 +309,11 @@ button.primary:disabled {
 .line-label {
   font-size: var(--t-12);
   color: var(--muted);
+}
+
+.agent-name {
+  flex: none;
+  white-space: nowrap;
 }
 
 .label {
@@ -564,6 +571,52 @@ body.resizing {
   font-size: var(--t-13);
   color: var(--failed);
   overflow-wrap: anywhere;
+}
+
+/* A message over the session list, dismissed with its ×. */
+.sidebar-note {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 4px 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--t-13);
+}
+
+.sidebar-note.failed {
+  border-color: var(--failed-line);
+  background: var(--failed-tint);
+  color: var(--failed);
+}
+
+.sidebar-note p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-note-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 0.2em;
+  color: var(--muted);
+}
+
+.sidebar-note.failed .sidebar-note-icon {
+  color: inherit;
+}
+
+.sidebar-note .icon-button {
+  width: 24px;
+  height: 24px;
+  margin: -3px 0;
+  color: inherit;
 }
 
 .sidebar .label {
@@ -851,6 +904,14 @@ body.resizing {
   border-radius: 50%;
   background: var(--state-working);
   animation: pulse 1.2s ease-in-out infinite;
+}
+
+.failed-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--state-failed);
 }
 
 @keyframes pulse {
@@ -1447,6 +1508,29 @@ body.resizing {
   font-size: var(--t-13);
   color: var(--muted);
   text-align: center;
+}
+
+/* A failed turn: where the answer would be, in the failed color. */
+.notice.failed {
+  align-self: stretch;
+  max-width: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--failed-line);
+  border-radius: var(--r-md);
+  background: var(--failed-tint);
+  color: var(--failed);
+  font-size: var(--t-14);
+  text-align: left;
+}
+
+.notice-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 0.15em;
 }
 
 /* Tool calls */
@@ -2387,12 +2471,13 @@ body.resizing {
 
 /* Status line */
 
+/* Each item a 24px pill: an icon or a faint label, then its value (docs/mocks/design-system.html). */
 .status-line {
   display: flex;
   align-items: center;
-  gap: 4px 14px;
+  gap: 2px;
   flex-wrap: wrap;
-  padding: 0 32px 12px;
+  padding: 0 25px 10px;
   font-size: var(--t-12);
   color: var(--muted);
 }
@@ -2400,25 +2485,58 @@ body.resizing {
 .status-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: var(--r-sm);
   white-space: nowrap;
 }
 
 button.status-item,
 .status-item.link {
-  padding: 2px 6px;
-  margin: 0 -6px;
   border: 0;
-  border-radius: var(--r-sm);
   background: transparent;
   font-size: var(--t-12);
   color: var(--muted);
 }
 
 button.status-item:hover:not(:disabled),
-a.status-item:hover {
-  background: var(--sunken);
+a.status-item:hover,
+.status-button[aria-expanded='true'] {
+  background: var(--hover);
   color: var(--ink);
+}
+
+.status-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.status-chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-left: -1px;
+  color: var(--faint);
+}
+
+.status-label {
+  color: var(--faint);
+}
+
+/* A review has no composer above it: the status line is a band under the diff. */
+.review > .status-line {
+  max-width: none;
+  padding: 4px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+/* The usage button holds the context, cost and limit items. */
+.usage-trigger .status-item {
+  height: auto;
+  padding: 0;
 }
 
 a.status-item {
@@ -2483,8 +2601,22 @@ a.status-item {
   margin-left: 1px;
 }
 
-.status-spacer {
-  flex: 1;
+.status-place {
+  flex: 1 1 0;
+  min-width: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.status-item.branch {
+  min-width: 0;
+}
+
+.status-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .meter {
@@ -2535,7 +2667,7 @@ a.status-item {
 }
 
 .status-item.usage-trigger {
-  gap: 14px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
@@ -3184,8 +3316,12 @@ button.status.link {
   background: var(--state-done);
 }
 
+/* Pinned to its containing block's corner: left at its place in a long log, it would
+   stretch the page below the window. */
 .sr-only {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   overflow: hidden;

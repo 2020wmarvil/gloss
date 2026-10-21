@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import type { SessionOrder } from '@shared/settings'
 import type { AgentInfo, AgentSession, Project, Session } from '@shared/types'
-import { ChevronDown, Ellipsis, GitCompare, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
+import { ChevronDown, CircleAlert, Ellipsis, GitCompare, Info, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
 
 type Props = {
   agents: AgentInfo[]
@@ -20,6 +20,8 @@ type Props = {
   sessions: Session[]
   openId: string | null
   running: Record<string, string | null>
+  /** Sessions whose last turn failed while they weren't open. */
+  failed: Record<string, true>
   /** The agents' sessions in the project that Gloss has no record of; null while loading. */
   agentSessions: ListedAgentSession[] | null
   /** Newest first, or most recent activity first (the `sessionOrder` setting). */
@@ -28,7 +30,8 @@ type Props = {
   /** The agent session being imported. */
   importing: string | null
   creating: boolean
-  createError: string | null
+  note: SidebarNote | null
+  onDismissNote(): void
   settingsOpen: boolean
   /** settings.json's last edit was rejected. */
   settingsError: boolean
@@ -81,6 +84,9 @@ export function SidebarRail(props: { running: boolean; onExpand(): void }): Reac
 
 /** One of an agent's own sessions, with the agent it belongs to. */
 export type ListedAgentSession = AgentSession & { agentId: string }
+
+/** A message over the session list: something that failed, or (`info`) news. */
+export type SidebarNote = { text: string; tone: 'failed' | 'info' }
 
 type Row =
   | { kind: 'gloss'; session: Session; at: number }
@@ -163,8 +169,16 @@ export function Sidebar(props: Props): React.JSX.Element {
           if (e.key === 'F2') setRenaming(s.id)
         }}
       >
-        {/* One lead slot: running, else the review icon. One trail slot: the time, and … on hover. */}
-        <span className="row-lead">{s.id in running ? <span className="running-dot" aria-label="Running" /> : s.review && reviewIcon}</span>
+        {/* One lead slot: running, else failed, else the review icon. One trail slot: the time, and … on hover. */}
+        <span className="row-lead">
+          {s.id in running ? (
+            <span className="running-dot" aria-label="Running" />
+          ) : s.id in props.failed ? (
+            <span className="failed-dot" aria-label="The last turn failed" title="The last turn failed" />
+          ) : (
+            s.review && reviewIcon
+          )}
+        </span>
         <span className="session-title" onDoubleClick={() => setRenaming(s.id)}>
           {s.title}
           <small className="session-agent">
@@ -337,7 +351,15 @@ export function Sidebar(props: Props): React.JSX.Element {
           Review changes
         </button>
       )}
-      {props.createError && <p className="sidebar-error">{props.createError}</p>}
+      {props.note && (
+        <div className={`sidebar-note ${props.note.tone}`} role={props.note.tone === 'failed' ? 'alert' : 'status'}>
+          {props.note.tone === 'failed' ? <CircleAlert className="sidebar-note-icon" aria-hidden /> : <Info className="sidebar-note-icon" aria-hidden />}
+          <p>{props.note.text}</p>
+          <button className="icon-button" aria-label="Dismiss" title="Dismiss" onClick={props.onDismissNote}>
+            <X />
+          </button>
+        </div>
+      )}
 
       <div className="sidebar-scroll">
         {project && (

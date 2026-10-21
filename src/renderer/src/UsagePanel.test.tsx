@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GlossApi } from '@shared/ipc'
 import type { PlanUsage } from '@shared/types'
-import { StatusLine } from './StatusLine'
+import { formatTokens, StatusLine } from './StatusLine'
 import { resetIn } from './UsagePanel'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -108,7 +108,7 @@ describe('effort picker', () => {
       effort: { configId: 'effort', current: 'medium', options: [{ value: 'default', name: 'Default' }, { value: 'medium', name: 'Medium' }, { value: 'high', name: 'High' }] }
     }
     act(() => root!.render(<StatusLine {...props} live={live} onSetChoice={onSetChoice} />))
-    const labels = [...document.querySelectorAll('.popover-anchor > button')].map((b) => b.textContent)
+    const labels = [...document.querySelectorAll('.popover-anchor > button')].map((b) => b.textContent || b.querySelector('[aria-label]')?.getAttribute('aria-label'))
     expect(labels.slice(-3)).toEqual(['Opus', 'Medium', 'Extensions'])
     await click('button[title="Effort"]')
     expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual(['Medium', 'High'])
@@ -137,4 +137,32 @@ describe('Obsidian shortcut', () => {
     mount(async () => null, { obsidianVault: '   ' })
     expect(document.querySelector('[aria-label="Open Obsidian vault"]')).toBeNull()
   })
+})
+
+describe('status line labels', () => {
+  it('names each value', () => {
+    mount(async () => null, {
+      live: { ...props.live, usage: { used: 40000, size: 1_000_000, cost: { amount: 0.01, currency: 'USD' } },
+        rateLimits: [{ window: 'five_hour', status: 'allowed' }], permissions: 'bypass' }
+    })
+    const text = document.querySelector('.status-line')!.textContent
+    expect(text).toContain('Context4% of 1M')
+    expect(text).toContain('$0.01')
+    expect(text).toContain('5h limitOK')
+    expect(document.querySelector('[aria-label="Auto-approve"]')).not.toBeNull()
+  })
+
+  it('leaves the queued count to the activity strip above it', () => {
+    const queue = { items: [{ id: 'q', threadId: null, text: 'next', attachments: [] }], paused: false }
+    mount(async () => null, { queue })
+    expect(document.querySelector('.queue-count')?.textContent).toBe('1 queued')
+    mount(async () => null, { queue, queueShownAbove: true })
+    expect(document.querySelector('.queue-count')).toBeNull()
+  })
+})
+
+it('writes token counts in k and M', () => {
+  expect(formatTokens(200_000)).toBe('200k')
+  expect(formatTokens(1_000_000)).toBe('1M')
+  expect(formatTokens(1_500_000)).toBe('1.5M')
 })
