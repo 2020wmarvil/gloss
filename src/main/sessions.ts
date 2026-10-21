@@ -101,6 +101,8 @@ type Turn = {
   unsent?: string
   /** The user messages sent in it (the first, and any steered in), which record how it ended. */
   messageIds: string[]
+  /** The tool calls reported in it, closed when it ends if the agent left them running. */
+  toolCallIds: Set<string>
 }
 
 type SessionRuntime = {
@@ -1456,7 +1458,7 @@ export class SessionManager {
       this.deps.emit({ type: 'session', session })
     }
 
-    const turn: Turn = { threadId, cancelled: false, afterToolCall: false, unsent: message.id, messageIds: [message.id] }
+    const turn: Turn = { threadId, cancelled: false, afterToolCall: false, unsent: message.id, messageIds: [message.id], toolCallIds: new Set() }
     rt.turn = turn
     this.deps.emit({ type: 'turnStart', sessionId, threadId })
 
@@ -1491,6 +1493,7 @@ export class SessionManager {
     if (attachedTo) await this.recordSynced(sessionId, attachedTo)
     rt.turn = undefined
     this.recordOutcome(turn, result)
+    this.closeToolCalls(sessionId, turn, result)
     // A review's first pass (or a later review) lists findings: open their threads.
     if (threadId === null && session.review) await this.openFindings(sessionId, message.seq)
     // The queue moves on after a turn that ended normally or was cancelled (a cancel
@@ -1521,6 +1524,18 @@ export class SessionManager {
       if (!message) continue
       this.deps.store.setMessageOutcome(id, outcome)
       this.deps.emit({ type: 'message', message: { ...message, outcome } })
+    }
+  }
+
+  /** A tool call still running when its turn ends (the agent doesn't always report a cancelled one) stops showing as running. */
+  private closeToolCalls(sessionId: string, turn: Turn, result: TurnResult): void {
+    const status = result.stopReason === 'cancelled' ? 'cancelled' : 'failed'
+    for (const id of turn.toolCallIds) {
+      const existing = this.deps.store.getToolCall(sessionId, id)
+      if (!existing || (existing.status !== 'pending' && existing.status !== 'in_progress')) continue
+      const toolCall = { ...existing, status }
+      this.deps.store.upsertToolCall(toolCall)
+      this.deps.emit({ type: 'toolCall', toolCall })
     }
   }
 
@@ -1662,6 +1677,7 @@ export class SessionManager {
         }
         store.upsertToolCall(toolCall)
         turn.afterToolCall = true
+        turn.toolCallIds.add(toolCall.id)
         emit({ type: 'toolCall', toolCall })
         return
       }
@@ -1683,6 +1699,7 @@ export class SessionManager {
         if (u.content != null) toolCall.content = u.content
         store.upsertToolCall(toolCall)
         if (!existing) turn.afterToolCall = true
+        turn.toolCallIds.add(toolCall.id)
         emit({ type: 'toolCall', toolCall })
         return
       }

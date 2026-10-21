@@ -216,10 +216,10 @@ function ToolRow({ toolCall, revealed }: { toolCall: ToolCall; revealed: boolean
         </span>
         {running ? (
           <span className="tool-dot" title="Running" />
-        ) : toolCall.status === 'failed' ? (
+        ) : toolCall.status === 'failed' || toolCall.status === 'cancelled' ? (
           <span className="tool-failed">
             <CircleAlert />
-            failed
+            {toolCall.status}
           </span>
         ) : (
           <Check className="tool-done" aria-label="Done" />

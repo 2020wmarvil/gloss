@@ -514,6 +514,32 @@ describe('SessionManager', () => {
     expect(manager.openSession(session.id).turn).toBeNull()
   })
 
+  it('closes the tool calls a turn leaves running when it ends', async () => {
+    state.script = async ({ update, cancelled }) => {
+      await update({ sessionUpdate: 'tool_call', toolCallId: 'done', title: 'Read a.ts', status: 'completed' })
+      await update({ sessionUpdate: 'tool_call', toolCallId: 'run', title: 'gh pr checks --watch', status: 'in_progress' })
+      await cancelled
+      return 'cancelled'
+    }
+    const session = await manager.createSession('/w', 'fake')
+    const turn = manager.send(session.id, 'watch CI', null)
+    await vi.waitFor(() => expect(manager.openSession(session.id).toolCalls).toHaveLength(2))
+    await manager.cancel(session.id)
+    await turn
+    expect(manager.openSession(session.id).toolCalls.map((t) => [t.id, t.status])).toEqual([
+      ['done', 'completed'],
+      ['run', 'cancelled']
+    ])
+    expect(events).toContainEqual({ type: 'toolCall', toolCall: expect.objectContaining({ id: 'run', status: 'cancelled' }) })
+
+    state.script = async ({ update }) => {
+      await update({ sessionUpdate: 'tool_call', toolCallId: 'cut', title: 'npm test', status: 'pending' })
+      return 'max_tokens'
+    }
+    await manager.send(session.id, 'test', null)
+    expect(manager.openSession(session.id).toolCalls.find((t) => t.id === 'cut')?.status).toBe('failed')
+  })
+
   describe('queue', () => {
     type Releases = Map<string, (stop?: acp.StopReason) => void>
 
