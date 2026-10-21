@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import type { SessionOrder } from '@shared/settings'
 import type { AgentInfo, AgentSession, Project, Session } from '@shared/types'
-import { ChevronDown, GitCompare, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
+import { ChevronDown, Ellipsis, GitCompare, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
 
 type Props = {
   agents: AgentInfo[]
@@ -163,17 +163,29 @@ export function Sidebar(props: Props): React.JSX.Element {
           if (e.key === 'F2') setRenaming(s.id)
         }}
       >
+        {/* One lead slot: running, else the review icon. One trail slot: the time, and … on hover. */}
+        <span className="row-lead">{s.id in running ? <span className="running-dot" aria-label="Running" /> : s.review && reviewIcon}</span>
         <span className="session-title" onDoubleClick={() => setRenaming(s.id)}>
-          {s.review && reviewIcon}
           {s.title}
-          <small className="session-agent">{agentName(s.agentId)}</small>
+          <small className="session-agent">
+            {agentName(s.agentId)}
+            {s.review && (s.openThreads ?? 0) > 0 && ` · ${s.openThreads} open`}
+          </small>
         </span>
-        {s.review && (s.openThreads ?? 0) > 0 && (
-          <span className="count-pill" title={`${s.openThreads} open ${s.openThreads === 1 ? 'thread' : 'threads'}`}>
-            {s.openThreads} open
-          </span>
-        )}
-        {s.id in running ? <span className="running-dot" aria-label="Running" /> : <span className="when">{ago(at)}</span>}
+        <span className="when">{ago(at)}</span>
+        <button
+          className="icon-button row-more"
+          aria-label="Session actions"
+          title="Rename, export or delete"
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuFor(menuFor === s.id ? null : s.id)
+            setSwitcherOpen(false)
+            setAgentMenuOpen(false)
+          }}
+        >
+          <Ellipsis />
+        </button>
         {menuFor === s.id && (
           <div className="menu row-actions" role="menu" onClick={(e) => e.stopPropagation()}>
             <button role="menuitem" onClick={() => (setMenuFor(null), setRenaming(s.id))}>
@@ -342,9 +354,12 @@ export function Sidebar(props: Props): React.JSX.Element {
                       disabled={props.importing !== null}
                       onClick={() => props.onImport(row.agent)}
                     >
+                      <span className="row-lead" aria-hidden>
+                        <span className="agent-ring" />
+                      </span>
                       <span className="session-title">
                         {row.agent.title}
-                        <small className="session-agent">{agentName(row.agent.agentId)}</small>
+                        <small className="session-agent">{agentName(row.agent.agentId)} · not opened in Gloss</small>
                       </span>
                       <span className="when">
                         {props.importing === row.agent.acpSessionId ? 'Opening…' : row.at ? ago(row.at) : ''}

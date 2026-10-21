@@ -590,17 +590,18 @@ body.resizing {
 .session-row {
   position: relative;
   width: 100%;
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
-  padding: 7px 6px 7px 8px;
+  column-gap: 10px;
+  padding: 6px 6px 6px 10px;
   border: 0;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   background: transparent;
   text-align: left;
-  font-size: var(--t-14);
+  font-size: var(--t-13);
+  font-weight: 500;
   color: var(--ink-2);
-  cursor: pointer;
 }
 
 .session-row:hover {
@@ -608,25 +609,58 @@ body.resizing {
 }
 
 .session-row.on {
-  background: var(--sunken);
+  background: var(--selected);
   color: var(--ink);
-  font-weight: 500;
+}
+
+/* The current session: a pink bar, "you are here". */
+.session-row.on::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.row-lead {
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+}
+
+.agent-ring {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--faint);
+  border-radius: 50%;
+}
+
+/* The trail: the time, swapped for … on hover (or while its menu is open). */
+.session-row .row-more {
+  display: none;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  margin: -4px 0;
+}
+
+.session-row:hover .row-more,
+.session-row:focus-within .row-more {
+  display: inline-grid;
+}
+
+.session-row:hover > .when,
+.session-row:focus-within > .when {
+  display: none;
 }
 
 .session-row.agent {
   color: var(--muted);
+  font-weight: 400;
 }
 
-.session-row.agent .session-title::before {
-  content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 8px;
-  border: 1.5px solid var(--faint);
-  border-radius: 50%;
-  vertical-align: 1px;
-}
 
 .when {
   flex: none;
@@ -1417,11 +1451,68 @@ body.resizing {
 
 /* Tool calls */
 
-.tool {
+/* A turn's consecutive tool calls: one box, a 34px row each (docs/mocks/design-system.html → Tool calls). */
+.tool-group {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--surface);
+  overflow: hidden;
+}
+
+/* Only internal steps: a quiet line instead of a box. */
+.tool-group.internal-only {
+  border-color: transparent;
+  background: transparent;
+}
+
+.tool-group.internal-only .tool-summary {
+  height: 22px;
+  padding: 0 2px;
+}
+
+.tool + .tool,
+.tool + .tool-summary {
+  border-top: 1px solid var(--line);
+}
+
+.tool {
   font-size: var(--t-13);
+}
+
+.tool-summary {
+  width: 100%;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.tool-summary:hover {
+  background: var(--hover-soft);
+  color: var(--ink);
+}
+
+.tool-kind {
+  flex: none;
+  color: var(--faint);
+}
+
+.tool-done {
+  flex: none;
+  color: var(--done);
+}
+
+.tool-failed {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--failed);
+  font-size: var(--t-12);
+  font-weight: 500;
 }
 
 .tool-row {
@@ -1429,9 +1520,10 @@ body.resizing {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 12px;
+  min-height: 34px;
+  padding: 4px 12px;
   border: 0;
-  border-radius: var(--r-md);
+  border-radius: 0;
   background: transparent;
   text-align: left;
   font-size: var(--t-13);
@@ -1447,8 +1539,7 @@ body.resizing {
 
 .tool-chevron {
   flex: none;
-  width: 12px;
-  color: var(--muted);
+  color: var(--faint);
 }
 
 .tool-details {
@@ -1533,36 +1624,26 @@ body.resizing {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--muted);
-}
-
-.tool.status-in_progress .tool-dot,
-.tool.status-pending .tool-dot {
-  background: var(--state-working);
+  background: var(--working);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
-.tool.status-completed .tool-dot {
-  background: var(--state-done);
-}
 
-.tool.status-failed .tool-dot {
-  background: var(--state-failed);
-}
+
 
 .tool-title {
   flex: 1;
   min-width: 0;
-  font-family: var(--font-mono);
-  font-size: var(--t-12);
+  font-size: var(--t-13);
+  color: var(--ink-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tool-status {
-  flex: none;
-  color: var(--muted);
+.tool-title.command {
+  font-family: var(--font-mono);
+  font-size: var(--t-12);
 }
 
 /* Agent markdown */
@@ -1623,8 +1704,8 @@ body.resizing {
 
 .md pre {
   padding: 12px 14px;
-  background: var(--hover);
-  border: 1px solid var(--line);
+  background: var(--code-bg);
+  color: var(--code-ink);
   border-radius: var(--r-md);
   overflow-x: auto;
 }
@@ -2509,10 +2590,11 @@ a.status-item {
 
 .option-list button {
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 6px 10px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+  padding: 7px 10px 7px 8px;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -2524,14 +2606,23 @@ a.status-item {
   background: var(--hover);
 }
 
-.option-list button.on span:first-child {
+.option-list button.on span:not(.muted) {
   color: var(--ink);
-  font-weight: 600;
-  font-weight: 500;
+}
+
+.option-check {
+  margin-top: 2px;
+  visibility: hidden;
+}
+
+.option-list button.on .option-check {
+  visibility: visible;
 }
 
 .option-list .muted {
+  grid-column: 2;
   font-size: var(--t-12);
+  line-height: 1.4;
 }
 
 .extensions {
@@ -3250,9 +3341,10 @@ button.status.link {
 
 .session-agent {
   display: block;
+  margin-top: 1px;
   color: var(--muted);
-  font-size: var(--t-11);
-  font-weight: normal;
+  font-size: var(--t-12);
+  font-weight: 400;
 }
 
 .search-backdrop { align-items: flex-start; padding-top: 32px; }
@@ -3337,9 +3429,6 @@ button.status.link {
   vertical-align: -2px;
 }
 
-.session-title .review-icon {
-  margin-right: 6px;
-}
 
 .count-pill {
   flex: none;

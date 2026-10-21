@@ -7,6 +7,7 @@ import type { ConfigChoice, MessageQueue, ModelOption, RateLimit, Session, Sessi
 import { errorText } from './errors'
 import { Popover } from './Popover'
 import { UsagePanel } from './UsagePanel'
+import { Check } from 'lucide-react'
 
 type Props = {
   session: Session
@@ -121,6 +122,18 @@ export function modelLabel(option: ModelOption): string {
   return option.value === 'default' && option.description ? option.description : option.name
 }
 
+/** Agents' raw option names made readable ("Xhigh" is Claude's extra-high effort). */
+export function optionName(name: string): string {
+  return /^x-?high$/i.test(name) ? 'Extra high' : name
+}
+
+/** A description without the option's name repeated at its start ("Opus 5.5 · Best for…" under "Opus 5.5"). */
+export function optionDescription(name: string, description?: string | null): string | null {
+  if (!description) return null
+  const rest = description.startsWith(name) ? description.slice(name.length).replace(/^\s*[·:-]\s*/, '') : description
+  return rest.trim() || null
+}
+
 /** A popover listing a config option's values (the model or the effort); picking one sets it. */
 function ChoicePicker(props: {
   label: string
@@ -144,8 +157,9 @@ function ChoicePicker(props: {
                   props.onPick(o.value)
                 }}
               >
-                <span>{o.name}</span>
-                {o.description && <span className="muted">{o.description}</span>}
+                <Check className="option-check" />
+                <span>{optionName(o.name)}</span>
+                {optionDescription(o.name, o.description) && <span className="muted">{optionDescription(o.name, o.description)}</span>}
               </button>
             </li>
           ))}
@@ -206,7 +220,7 @@ export function StatusLine(props: Props): React.JSX.Element {
       )}
       {effort && (
         <ChoicePicker
-          label={currentEffort?.name ?? effort.current}
+          label={optionName(currentEffort?.name ?? effort.current)}
           title="Effort"
           // Gloss replaces Claude's "default" with a real level, so it isn't offered (unless that failed).
           choice={{ ...effort, options: effort.options.filter((o) => o.value !== 'default' || o.value === effort.current) }}

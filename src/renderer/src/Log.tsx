@@ -4,7 +4,7 @@ import type { Message, Plan, ToolCall } from '@shared/types'
 import type { OpenSession } from './App'
 import { Markdown } from './Markdown'
 import { hasDetails, ToolDetails } from './ToolDetails'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { Brain, Check, ChevronDown, ChevronRight, CircleAlert, FilePen, FileText, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
 
 /** A transient, client-side note shown in a log (not part of the conversation). */
 export type Notice = { id: string; threadId: string | null; text: string; afterSeq: number }
@@ -84,7 +84,8 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
     >
       <div className={className}>
         {items.length === 0 && empty}
-        {items.map((item) => {
+        {groupTools(items).map((item) => {
+          if (Array.isArray(item)) return <ToolGroup key={item[0].toolCall.id} tools={item} reveal={reveal} />
           switch (item.kind) {
             case 'message': {
               const line = item.message.role === 'user' ? systemLine?.(item.message) : null
@@ -127,8 +128,6 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
                 </div>
               )
             }
-            case 'tool':
-              return <ToolRow key={item.toolCall.id} toolCall={item.toolCall} revealed={reveal?.messageId === `tool:${item.toolCall.id}`} />
             case 'plan':
               return <PlanChecklist key={item.plan.id} plan={item.plan} />
             case 'notice':
@@ -144,11 +143,60 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
   )
 }
 
+type ToolItem = Extract<LogItem, { kind: 'tool' }>
+
+/** Consecutive tool calls become one group (an array); everything else stays as it is. */
+function groupTools(items: LogItem[]): (LogItem | ToolItem[])[] {
+  const out: (LogItem | ToolItem[])[] = []
+  for (const item of items) {
+    const last = out.at(-1)
+    if (item.kind === 'tool' && Array.isArray(last)) last.push(item)
+    else out.push(item.kind === 'tool' ? [item] : item)
+  }
+  return out
+}
+
+/** The agent's own bookkeeping, which the user can't act on: folded into the group's summary. */
+const INTERNAL_TOOLS = new Set(['ToolSearch'])
+
+/** One icon per kind of tool call (ACP `ToolKind`). */
+const KIND_ICONS: Record<string, LucideIcon> = {
+  read: FileText,
+  edit: FilePen,
+  delete: Trash,
+  search: Search,
+  execute: Terminal,
+  fetch: Globe,
+  think: Brain
+}
+
+/** A turn's consecutive tool calls in one compact box, internal steps folded into its summary. */
+function ToolGroup({ tools, reveal }: { tools: ToolItem[]; reveal?: Reveal | null }): React.JSX.Element {
+  const [showInternal, setShowInternal] = useState(false)
+  const internal = tools.filter((t) => INTERNAL_TOOLS.has(t.toolCall.title))
+  const shown = showInternal ? tools : tools.filter((t) => !INTERNAL_TOOLS.has(t.toolCall.title))
+  return (
+    <div className={shown.length === 0 ? 'tool-group internal-only' : 'tool-group'}>
+      {shown.map((t) => (
+        <ToolRow key={t.toolCall.id} toolCall={t.toolCall} revealed={reveal?.messageId === `tool:${t.toolCall.id}`} />
+      ))}
+      {internal.length > 0 && (
+        <button className="tool-summary" onClick={() => setShowInternal((s) => !s)} aria-expanded={showInternal}>
+          {showInternal ? 'Hide' : 'Show'} {internal.length === 1 ? '1 internal step' : `${internal.length} internal steps`}
+        </button>
+      )}
+    </div>
+  )
+}
+
 /** A tool call: one line, expanding to what it did. Collapsed by default. */
 function ToolRow({ toolCall, revealed }: { toolCall: ToolCall; revealed: boolean }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   useLayoutEffect(() => { if (revealed) setOpen(true) }, [revealed])
   const expandable = hasDetails(toolCall)
+  const Kind = KIND_ICONS[toolCall.kind ?? ''] ?? Wrench
+  // The agent reports a command it is executing as "pending" as well as "in progress".
+  const running = toolCall.status === 'pending' || toolCall.status === 'in_progress'
   return (
     <div data-message-id={`tool:${toolCall.id}`} className={`tool status-${toolCall.status}${open ? ' open' : ''}${revealed ? ' revealed' : ''}`}>
       <button
@@ -157,14 +205,22 @@ function ToolRow({ toolCall, revealed }: { toolCall: ToolCall; revealed: boolean
         disabled={!expandable}
         onClick={() => setOpen((o) => !o)}
       >
-        <span className="tool-dot" aria-hidden />
-        <span className="tool-title">{toolCall.title}</span>
-        <span className="tool-status">{toolCall.status.replace('_', ' ')}</span>
-        {expandable && (
-          <span className="tool-chevron" aria-hidden>
-            {open ? <ChevronDown /> : <ChevronRight />}
+        <Kind className="tool-kind" />
+        <span className={toolCall.kind === 'execute' ? 'tool-title command' : 'tool-title'} title={toolCall.title}>
+          {toolCall.title}
+        </span>
+        {running ? (
+          <span className="tool-dot" title="Running" />
+        ) : toolCall.status === 'failed' ? (
+          <span className="tool-failed">
+            <CircleAlert />
+            failed
           </span>
+        ) : (
+          <Check className="tool-done" aria-label="Done" />
         )}
+        <span className="sr-only">{running ? 'running' : toolCall.status.replace('_', ' ')}</span>
+        {expandable && (open ? <ChevronDown className="tool-chevron" /> : <ChevronRight className="tool-chevron" />)}
       </button>
       {open && <ToolDetails toolCall={toolCall} />}
     </div>
