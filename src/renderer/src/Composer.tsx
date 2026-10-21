@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
 import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor'
-import { X } from 'lucide-react'
+import { ArrowUp, Clock, CornerDownRight, Ellipsis, Paperclip, Pencil, Square, Trash, X } from 'lucide-react'
+import { Popover } from './Popover'
 
 /** The session's queue as one composer sees it: the messages queued from its thread. */
 export type ComposerQueue = {
@@ -173,6 +174,9 @@ export function Composer({
   }
 
   const steer = running ? onSteer : undefined
+  /** What Send does now: send, steer the running turn, or queue for after it (SPEC → Queue and Steer). */
+  const mode: 'send' | 'steer' | 'queue' = steer ? 'steer' : running ? 'queue' : 'send'
+  const empty = !text.trim() && attachments.length === 0
 
   /**
    * Up on the first line starts cycling through the history: from then on Up shows the
@@ -205,10 +209,10 @@ export function Composer({
     held.current = true
   }
 
-  function submit(how: 'send' | 'steer' | 'main' = 'send'): void {
+  function submit(how: 'send' | 'steer' | 'queue' | 'main' = 'send'): void {
     const trimmed = text.trim()
     if (!trimmed && attachments.length === 0) return
-    if (how !== 'main' && steer) steer(trimmed, attachments)
+    if (how !== 'main' && how !== 'queue' && steer) steer(trimmed, attachments)
     else if (how === 'main' && onSendToMain) onSendToMain(trimmed, attachments)
     else onSend(trimmed, attachments)
     browsing.current = null
@@ -314,7 +318,7 @@ export function Composer({
                 title={accepts.image && accepts.file ? 'Attach images or files' : accepts.image ? 'Attach images' : 'Attach files'}
                 onClick={() => fileInput.current?.click()}
               >
-                +
+                <Paperclip />
               </button>
               <input
                 ref={fileInput}
@@ -379,33 +383,45 @@ export function Composer({
           />
           {running && onCancel && (
             <button className="cancel" onClick={onCancel} title="Stop the running turn (Esc)">
-              Cancel
+              <Square />
+              Stop
             </button>
           )}
           {onSendToMain && (
-            <button
-              className="to-main"
-              onClick={() => submit('main')}
-              disabled={!text.trim() && attachments.length === 0}
-              title={
-                running
-                  ? 'Send to the main conversation: steer if it is active, otherwise queue'
-                  : 'Send it to the main conversation instead of this thread'
-              }
-            >
-              Send to main
-            </button>
+            <Popover className="icon-button composer-more" title="More ways to send" label={<Ellipsis />} disabled={empty}>
+              {(close) => (
+                <div className="menu-list">
+                  <button
+                    className="to-main"
+                    onClick={() => (close(), submit('main'))}
+                    title={running ? 'Steers the main conversation if it is active, otherwise queues' : undefined}
+                  >
+                    Send to main
+                    <span className="muted">Continue in the main conversation instead of this thread</span>
+                  </button>
+                </div>
+              )}
+            </Popover>
           )}
           <button
             className="primary send"
             onClick={() => submit()}
-            disabled={!text.trim() && attachments.length === 0}
-            title={steer ? 'Send into the running turn now' : running ? 'Sent when the running turn ends' : undefined}
+            disabled={empty}
+            title={mode === 'steer' ? 'Send into the running turn now' : mode === 'queue' ? 'Sent when the running turn ends' : undefined}
           >
-            {running && !steer ? 'Queue' : 'Send'}
+            {mode === 'steer' ? <CornerDownRight /> : mode === 'queue' ? <Clock /> : <ArrowUp />}
+            {mode === 'steer' ? 'Steer' : mode === 'queue' ? 'Queue' : 'Send'}
           </button>
         </div>
       </div>
+      {running && !empty && (
+        <p className={`composer-mode mode-${mode}`}>
+          <span className="mode-dot" aria-hidden="true" />
+          {mode === 'steer'
+            ? 'Steer adds this to the running turn. Alt+Enter queues it instead.'
+            : 'The agent is busy in another thread. This runs when it is done.'}
+        </p>
+      )}
       {error && <p className="composer-error">{error}</p>}
       {footer}
     </div>
@@ -447,11 +463,11 @@ export function QueuedRow(props: {
             {item.text}
             {files > 0 && <span className="muted"> (+{files === 1 ? '1 attachment' : `${files} attachments`})</span>}
           </span>
-          <button aria-label="Edit queued message" onClick={() => setDraft(item.text)}>
-            Edit
+          <button className="queued-icon" aria-label="Edit queued message" title="Edit" onClick={() => setDraft(item.text)}>
+            <Pencil size={14} />
           </button>
-          <button aria-label="Remove queued message" onClick={props.onRemove}>
-            Remove
+          <button className="queued-icon" aria-label="Remove queued message" title="Remove" onClick={props.onRemove}>
+            <Trash size={14} />
           </button>
         </>
       ) : (

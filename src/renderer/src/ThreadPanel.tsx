@@ -96,7 +96,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
           <PanelRight />
         </button>
       </header>
-      <blockquote className="anchor-quote">
+      <blockquote className="anchor-quote" title={`Sent to the agent as ${threadTag(panel.anchor)} …`}>
         {isSelection ? <p className="selection-quote">{quote}</p> : <Markdown text={quote} />}
       </blockquote>
       <Log
@@ -127,7 +127,6 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         onCancel={runningHere ? onCancel : undefined}
         // A thread that doesn't exist yet has nothing to continue.
         onSendToMain={threadId !== null ? props.onSendToMain : undefined}
-        footer={<div className="mono wire">sent as: {threadTag(panel.anchor)} …</div>}
       />
     </aside>
   )
@@ -172,7 +171,7 @@ function LineThreadPanel(
           <PanelRight />
         </button>
       </header>
-      <div className="line-quote">
+      <div className="line-quote" title={`Sent to the agent as ${threadTag(panel.anchor)} …`}>
         <div className="line-quote-head">
           <span className="mono">{anchor.file}</span>
           {location?.kind === 'outdated' && <span className="tag-outdated">Outdated: these lines changed</span>}
@@ -220,7 +219,6 @@ function LineThreadPanel(
         onSteer={live.steering && props.runningHere ? props.onSteer : undefined}
         onCancel={props.runningHere ? props.onCancel : undefined}
         onSendToMain={threadId !== null ? props.onSendToMain : undefined}
-        footer={<div className="mono wire">sent as: {threadTag(panel.anchor)} …</div>}
       />
     </aside>
   )

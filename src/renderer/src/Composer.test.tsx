@@ -288,13 +288,24 @@ describe('automatic steering', () => {
     const onSteer = vi.fn()
     const view = mount(`auto-${how}`, { running: true, onSend, onSteer })
     type(view, 'use the helper')
-    expect(document.querySelector('.send')!.textContent).toBe('Send')
+    expect(document.querySelector('.send')!.textContent).toBe('Steer')
+    expect(document.querySelector('.composer-mode')!.textContent).toContain('Alt+Enter queues it instead')
     expect(document.querySelector('button.steer')).toBeNull()
     if (how === 'button') act(() => document.querySelector<HTMLButtonElement>('.send')!.click())
     else press(view, 'Enter', { ctrlKey: how === 'Ctrl+Enter' })
     expect(onSteer).toHaveBeenCalledWith('use the helper', [])
     expect(onSend).not.toHaveBeenCalled()
     expect(text(view)).toBe('')
+  })
+
+  it('queues instead of steering with Alt+Enter', () => {
+    const onSend = vi.fn()
+    const onSteer = vi.fn()
+    const view = mount('alt-enter', { running: true, onSend, onSteer })
+    type(view, 'after this turn')
+    press(view, 'Enter', { altKey: true })
+    expect(onSend).toHaveBeenCalledWith('after this turn', [])
+    expect(onSteer).not.toHaveBeenCalled()
   })
 
   it('queues when this composer cannot steer the active turn', () => {

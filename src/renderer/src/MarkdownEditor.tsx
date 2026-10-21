@@ -23,8 +23,8 @@ type Props = {
   ariaLabel: string
   /** Runs before the editor's own keys; return true when it handled the key. */
   onKeyDown?(e: KeyboardEvent): boolean
-  /** Enter outside a code block (`send`), or Ctrl/Cmd+Enter (`steer`). */
-  onSubmit(how: 'send' | 'steer'): void
+  /** Enter outside a code block (`send`), Ctrl/Cmd+Enter (`steer`), or Alt+Enter (`queue`: queue rather than steer). */
+  onSubmit(how: 'send' | 'steer' | 'queue'): void
   /** The caret or selection moved without an edit (a click, an arrow key). */
   onSelectionChange?(): void
   /** Files pasted into the editor; return true when they were taken. */
@@ -221,7 +221,7 @@ export function MarkdownEditor(props: Props): React.JSX.Element {
 
   // A layout effect, so the editor exists when the composer restores a draft's caret.
   useLayoutEffect(() => {
-    const submit = (how: 'send' | 'steer'): StateCommand => ({ state }) => {
+    const submit = (how: 'send' | 'steer' | 'queue'): StateCommand => ({ state }) => {
       if (how === 'send' && inCodeBlock(state, state.selection.main.head)) return false
       latest.current.onSubmit(how)
       return true
@@ -256,6 +256,7 @@ export function MarkdownEditor(props: Props): React.JSX.Element {
               { key: 'Enter', run: submit('send') },
               { key: 'Enter', run: newline },
               { key: 'Mod-Enter', run: submit('steer') },
+              { key: 'Alt-Enter', run: submit('queue') },
               { key: 'Shift-Enter', run: (target) => continueList(target) || newline(target) },
               { key: 'Backspace', run: deleteMarkupBackward },
               { key: 'Tab', run: shiftListItem(1) },
