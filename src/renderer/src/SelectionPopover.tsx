@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { Message } from '@shared/types'
 import { rangeToSource } from './selection'
 import { renderedText } from './source'
+import { Reply } from 'lucide-react'
 
 export type SourceSelection = { start: number; end: number; text: string }
 
@@ -97,7 +98,8 @@ export function SelectionPopover({ scope, messages, onReply }: Props): React.JSX
       onMouseDown={(e) => e.preventDefault()}
     >
       <button className="go" onClick={reply}>
-        ↩ Reply to selection <kbd>R</kbd>
+        <Reply />
+        Reply to selection <kbd>R</kbd>
       </button>
       <button className="copy" onClick={() => document.execCommand('copy')}>
         Copy

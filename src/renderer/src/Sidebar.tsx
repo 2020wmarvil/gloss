@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import type { SessionOrder } from '@shared/settings'
 import type { AgentInfo, AgentSession, Project, Session } from '@shared/types'
+import { ChevronDown, GitCompare, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
 
 type Props = {
   agents: AgentInfo[]
@@ -64,26 +65,14 @@ export function ago(time: number, now = Date.now()): string {
 }
 
 /** Marks review sessions and the button that starts one. */
-const reviewIcon = (
-  <svg className="review-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-    <path d="M9 6h11M9 12h11M9 18h11" />
-    <path d="M4 6h.01M4 12h.01M4 18h.01" />
-  </svg>
-)
-
-const sessionsIcon = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-    <rect x="3" y="4" width="18" height="16" rx="2" />
-    <path d="M9 4v16" />
-  </svg>
-)
+const reviewIcon = <GitCompare className="review-icon" />
 
 /** The collapsed sidebar: a button that expands it, with a running dot while a session runs. */
 export function SidebarRail(props: { running: boolean; onExpand(): void }): React.JSX.Element {
   return (
     <div className="side-rail sidebar-rail">
       <button className="rail-button" onClick={props.onExpand} title="Show sidebar" aria-label="Show sidebar">
-        {sessionsIcon}
+        <PanelLeft />
         {props.running && <span className="running-dot" aria-label="Running" />}
       </button>
     </div>
@@ -227,9 +216,7 @@ export function Sidebar(props: Props): React.JSX.Element {
               <b>{project?.name ?? 'No project'}</b>
               {project && <span className="mono">{project.path}</span>}
             </span>
-            <span className="caret" aria-hidden>
-              ▾
-            </span>
+            <ChevronDown className="caret" />
           </button>
           {switcherOpen && (
             <div className="menu project-menu" role="menu">
@@ -260,7 +247,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                       })
                     }}
                   >
-                    ×
+                    <X />
                   </button>
                 </div>
               ))}
@@ -271,15 +258,16 @@ export function Sidebar(props: Props): React.JSX.Element {
             </div>
           )}
         </div>
-        <button className="sidebar-collapse" onClick={props.onCollapse} aria-label="Hide sidebar" title="Hide sidebar">
-          «
+        <button className="icon-button sidebar-collapse" onClick={props.onCollapse} aria-label="Hide sidebar" title="Hide sidebar">
+          <PanelLeft />
         </button>
       </div>
 
       {project ? (
         <div className="new-session-split">
           <button className="new-session" onClick={() => props.onNew()} disabled={props.creating || props.agents.find((a) => a.id === props.defaultAgent)?.available === false} title="New session (Ctrl+N)">
-            {props.creating ? 'Starting agent…' : '+ New session'}
+            {!props.creating && <Plus />}
+            <span className="new-session-label">{props.creating ? 'Starting agent…' : 'New session'}</span>
             {!props.creating && <span className="new-session-agent">{agentName(props.defaultAgent)}</span>}
           </button>
           <button
@@ -295,9 +283,7 @@ export function Sidebar(props: Props): React.JSX.Element {
               setMenuFor(null)
             }}
           >
-            <span className="caret" aria-hidden>
-              ▾
-            </span>
+            <ChevronDown className="caret" />
           </button>
           {agentMenuOpen && (
             <div className="menu agent-menu" role="menu" onClick={(e) => e.stopPropagation()}>
@@ -316,7 +302,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                     title={a.id === props.defaultAgent ? 'Default agent' : 'Make default'}
                     onClick={() => props.onSetDefaultAgent(a.id)}
                   >
-                    {a.id === props.defaultAgent ? '★' : '☆'}
+                    <Star fill={a.id === props.defaultAgent ? 'currentColor' : 'none'} />
                   </button>
                 </div>
               ))}
@@ -375,12 +361,16 @@ export function Sidebar(props: Props): React.JSX.Element {
         )}
       </div>
 
-      <button className="settings-button" onClick={props.onSearch} title={`${modKey()}+Shift+F`}>Search conversations</button>
+      <button className="settings-button" onClick={props.onSearch} title={`${modKey()}+Shift+F`}>
+        <Search />
+        Search conversations
+      </button>
       <button
         className={props.settingsOpen ? 'settings-button on' : 'settings-button'}
         onClick={props.onSettings}
         title="Settings (Ctrl+,)"
       >
+        <Settings />
         Settings
         {props.settingsError && (
           <span className="settings-alert" title="settings.json has a problem">

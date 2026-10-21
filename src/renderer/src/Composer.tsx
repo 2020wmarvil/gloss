@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
 import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor'
+import { X } from 'lucide-react'
 
 /** The session's queue as one composer sees it: the messages queued from its thread. */
 export type ComposerQueue = {
@@ -298,7 +299,7 @@ export function Composer({
                   aria-label={`Remove ${a.name}`}
                   onClick={() => setAttachments((list) => list.filter((_, j) => j !== i))}
                 >
-                  ×
+                  <X size={14} />
                 </button>
               </li>
             ))}

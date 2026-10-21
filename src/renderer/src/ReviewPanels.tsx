@@ -11,6 +11,7 @@ import { Markdown } from './Markdown'
 import { inDiffOrder, KIND_NAMES, kindOf, shownLine, titleOf, type ThreadKind } from './reviewThreads'
 import { ago } from './Sidebar'
 import { threadSummaries } from './ThreadsOverview'
+import { ArrowLeft, PanelRight } from 'lucide-react'
 
 type Filter = 'open' | 'resolved' | 'all'
 const KINDS: ThreadKind[] = ['bug', 'suggestion', 'nit', 'you']
@@ -200,12 +201,13 @@ export function GeneralPanel(props: {
     <aside className="thread-panel general-panel" aria-label="General conversation" style={props.width === null ? undefined : { flexBasis: props.width }}>
       <header>
         <button className="back" onClick={props.onBack}>
-          ← All threads
+          <ArrowLeft />
+          All threads
         </button>
         <h2 className="thread-label">General conversation</h2>
-        {runningHere && <span className="status">Agent is working…</span>}
+        {runningHere && <span className="status"><span className="running-dot" aria-hidden="true" />Working</span>}
         <button className="close" onClick={props.onClose} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
-          »
+          <PanelRight />
         </button>
       </header>
       <Log

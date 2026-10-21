@@ -4,6 +4,7 @@ import type { Message, Plan, ToolCall } from '@shared/types'
 import type { OpenSession } from './App'
 import { Markdown } from './Markdown'
 import { hasDetails, ToolDetails } from './ToolDetails'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 
 /** A transient, client-side note shown in a log (not part of the conversation). */
 export type Notice = { id: string; threadId: string | null; text: string; afterSeq: number }
@@ -161,7 +162,7 @@ function ToolRow({ toolCall, revealed }: { toolCall: ToolCall; revealed: boolean
         <span className="tool-status">{toolCall.status.replace('_', ' ')}</span>
         {expandable && (
           <span className="tool-chevron" aria-hidden>
-            {open ? '▾' : '▸'}
+            {open ? <ChevronDown /> : <ChevronRight />}
           </span>
         )}
       </button>
