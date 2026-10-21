@@ -3459,6 +3459,8 @@ button.status.link {
    so the dropdowns can open below it. */
 .conversation header .review-meta {
   overflow: visible;
+  font-size: var(--t-13);
+  color: var(--muted);
   white-space: normal;
   display: flex;
   align-items: center;
