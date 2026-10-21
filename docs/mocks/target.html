@@ -280,6 +280,8 @@ code.inl { font: .87em var(--font-mono); background: var(--sunken); padding: 1px
 /* The bead beside the wordmark, its diameter a little larger than the type (docs/BRAND.md). */
 .lockup { display: flex; align-items: center; gap: 12px; }
 .lockup span { font: 600 44px/1 var(--font-ui); letter-spacing: -.02em; }
+.lockup.project { gap: 10px; max-width: 100%; }
+.lockup.project span { font-size: 36px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 4px; }
 .empty h2 { margin: 6px 0 0; font-size: var(--t-24); font-weight: 600; letter-spacing: -.02em; }
 .empty p { margin: 0; color: var(--muted); font-size: var(--t-14); }
 .empty .card { width: 100%; text-align: left; margin-top: 14px; background: var(--surface); border-radius: var(--r-lg); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); padding: 6px; }
@@ -500,12 +502,11 @@ const SCREENS = [
   },
   {
     id: 'project', name: 'Project, no session',
-    notes: '<b>A project with no session open.</b> The empty state offers the next step for this project: a new session with the default agent, or one of the agent\'s own sessions not yet opened in Gloss, listed right here instead of only in the sidebar. The switcher\'s second line is the parent folder, not a truncated monospace path (full path in its tooltip). <i>Fixes 19, 30.</i>',
+    notes: '<b>A project with no session open.</b> The bead beside the project\'s name, like the welcome lockup, with its folder below, and one action: a new session with the default agent. No branch: a session picks its own branch or worktree. The switcher\'s second line is the parent folder, not a truncated monospace path (full path in its tooltip). <i>Fixes 19, 30.</i>',
     render: () => `${sidebar({ cur: null })}<div class="sheet"><div class="main"><div class="empty"><div class="in">
-      ${BEAD(48)}<h2>cachekit</h2>
-      <p>C:\\Users\\you\\Desktop\\cachekit · <span style="white-space:nowrap">${ic('git-branch', 's12')} main</span></p>
-      <div style="display:flex;gap:8px;margin-top:6px"><button class="btn primary lg">${ic('plus')}New session</button><button class="btn secondary lg">${ic('git-compare')}Review changes</button></div>
-      <div class="card"><div class="cap">Continue a Claude Code session</div>${row('ext')}${row('ext2')}</div>
+      <div class="lockup project">${BEAD(44)}<span>cachekit</span></div>
+      <p>C:\\Users\\you\\Desktop\\cachekit</p>
+      <div style="margin-top:8px"><button class="btn primary lg">${ic('plus')}New session</button></div>
     </div></div></div></div>`
   },
   {
