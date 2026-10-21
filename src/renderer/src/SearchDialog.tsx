@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SearchRequest, SearchResponse, SearchResult } from '@shared/search'
 import { errorText } from './errors'
+import { Select } from './Select'
+import { X } from 'lucide-react'
 
 type Props = {
   sessionId: string | null
@@ -60,17 +62,15 @@ export function SearchDialog({ sessionId, cwd, onClose, onOpen }: Props): React.
             else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus() }
           }
         }}>
-        <div className="search-heading"><h2 id="search-title">Search conversations</h2><button onClick={onClose} disabled={opening}>Close</button></div>
+        <div className="search-heading"><h2 id="search-title">Search conversations</h2><button className="icon-button" onClick={onClose} disabled={opening} aria-label="Close" title="Close (Esc)"><X /></button></div>
         <input ref={input} aria-label="Search conversations" placeholder='Search words or "an exact phrase"' value={query} maxLength={1000}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && response?.results[0] && !loading && !opening) void choose(response.results[0]) }} />
         <div className="search-filters">
-          <label>Search in <select value={scope} onChange={(e) => setScope(e.target.value as SearchRequest['scope'])}>
-            <option value="all">Everything</option><option value="project" disabled={!cwd}>Current project</option><option value="session" disabled={!sessionId}>Current session</option>
-          </select></label>
-          <label>Show <select value={kind} onChange={(e) => setKind(e.target.value as SearchRequest['kind'])}>
-            <option value="all">All messages and tools</option><option value="user">Your messages</option><option value="agent">Agent messages</option><option value="tool">Tool output</option>
-          </select></label>
+          <span className="search-filter">Search in <Select ariaLabel="Search in" value={scope} onChange={(v) => setScope(v as SearchRequest['scope'])}
+            options={[{ value: 'all', label: 'Everything' }, { value: 'project', label: 'Current project', disabled: !cwd }, { value: 'session', label: 'Current session', disabled: !sessionId }]} /></span>
+          <span className="search-filter">Show <Select ariaLabel="Show" value={kind} onChange={(v) => setKind(v as SearchRequest['kind'])}
+            options={[{ value: 'all', label: 'All messages and tools' }, { value: 'user', label: 'Your messages' }, { value: 'agent', label: 'Agent messages' }, { value: 'tool', label: 'Tool output' }]} /></span>
         </div>
         <p className="muted">Searches history loaded into Gloss. Open other agent sessions to include them.</p>
         <div role="status" aria-live="polite">

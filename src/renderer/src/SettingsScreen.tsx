@@ -5,6 +5,7 @@ import { errorText } from './errors'
 import { modKey, SHORTCUTS } from './shortcuts'
 import { McpSettings } from './McpSettings'
 import { OpenCodeSettings } from './OpenCodeSettings'
+import { Select, Switch } from './Select'
 
 type Props = {
   state: SettingsState
@@ -205,26 +206,16 @@ function Field(props: { field: SettingField; value: unknown; onChange(value: unk
       {field.type === 'string' ? (
         <TextSetting id={id} field={field} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'enum' ? (
-        <select
+        <Select
           id={id}
-          aria-describedby={`${id}-description`}
+          ariaLabel={field.label}
+          ariaDescribedBy={`${id}-description`}
           value={String(value)}
-          onChange={(e) => props.onChange(e.target.value)}
-        >
-          {field.options?.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          id={id}
-          type="checkbox"
-          aria-describedby={`${id}-description`}
-          checked={value === true}
-          onChange={(e) => props.onChange(e.target.checked)}
+          options={(field.options ?? []).map((o) => ({ value: String(o.value), label: o.label }))}
+          onChange={props.onChange}
         />
+      ) : (
+        <Switch id={id} ariaLabel={field.label} ariaDescribedBy={`${id}-description`} checked={value === true} onChange={props.onChange} />
       )}
     </div>
   )

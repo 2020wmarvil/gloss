@@ -12,6 +12,8 @@ import { inDiffOrder, KIND_NAMES, kindOf, shownLine, titleOf, type ThreadKind } 
 import { ago } from './Sidebar'
 import { threadSummaries } from './ThreadsOverview'
 import { ArrowLeft, PanelRight } from 'lucide-react'
+import { Check, ListFilter } from 'lucide-react'
+import { Popover } from './Popover'
 
 type Filter = 'open' | 'resolved' | 'all'
 const KINDS: ThreadKind[] = ['bug', 'suggestion', 'nit', 'you']
@@ -73,23 +75,41 @@ export function ReviewThreadList(props: {
             </button>
           ))}
         </div>
-        {KINDS.map((k) => (
-          <button
-            key={k}
-            className={`kind-filter kind-${k}${kinds.has(k) ? ' on' : ''}`}
-            aria-pressed={kinds.has(k)}
-            onClick={() =>
-              setKinds((s) => {
-                const next = new Set(s)
-                if (!next.delete(k)) next.add(k)
-                return next
-              })
-            }
-          >
-            <i aria-hidden />
-            {KIND_NAMES[k]}
-          </button>
-        ))}
+        {/* One menu for the kinds of thread shown, rather than a chip each. */}
+        <Popover
+          down
+          className="kind-menu-button"
+          title="Kinds of thread shown"
+          label={
+            <>
+              <ListFilter />
+              {kinds.size === KINDS.length ? 'All kinds' : kinds.size === 0 ? 'No kinds' : KINDS.filter((k) => kinds.has(k)).map((k) => KIND_NAMES[k]).join(', ')}
+            </>
+          }
+        >
+          {() => (
+            <div className="menu-list kind-menu" role="group" aria-label="Kinds">
+              {KINDS.map((k) => (
+                <button
+                  key={k}
+                  className={`kind-filter kind-${k}${kinds.has(k) ? ' on' : ''}`}
+                  aria-pressed={kinds.has(k)}
+                  onClick={() =>
+                    setKinds((s) => {
+                      const next = new Set(s)
+                      if (!next.delete(k)) next.add(k)
+                      return next
+                    })
+                  }
+                >
+                  <Check className="kind-check" size={14} />
+                  <i aria-hidden />
+                  {KIND_NAMES[k]}
+                </button>
+              ))}
+            </div>
+          )}
+        </Popover>
       </div>
       {ordered.length === 0 && (
         <p className="muted empty">

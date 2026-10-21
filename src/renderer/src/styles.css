@@ -972,12 +972,14 @@ body.resizing {
   display: block;
   width: 100%;
   margin: 8px 0 12px;
-  padding: 8px 10px;
-  font: inherit;
-  color: inherit;
-  background: var(--bg);
+  height: var(--control);
+  padding: 0 10px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-13);
 }
 
 .opencode-settings .mono {
@@ -988,31 +990,144 @@ body.resizing {
   grid-template-columns: minmax(0, 1fr) 260px;
 }
 
-.setting input.setting-text {
-  justify-self: stretch;
-  width: 100%;
-  height: 34px;
-  margin: 0;
-  cursor: text;
-  padding: 0 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  color: var(--ink);
-  font-family: var(--font-ui);
-  font-size: var(--t-13);
+/* Fields and dropdowns (docs/mocks/design-system.html → Inputs and controls): one style;
+   the focus ring is the global pink halo. */
+.select {
+  position: relative;
+  display: inline-flex;
 }
 
-.setting select {
-  width: 100%;
-  height: 34px;
+.select-button {
+  height: var(--control);
   padding: 0 10px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: var(--t-14);
+  font-size: var(--t-13);
+  min-width: 160px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+}
+
+.select-button svg {
+  color: var(--muted);
+}
+
+.select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 100%;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--raised);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line);
+  font-size: var(--t-13);
+}
+
+.select-menu li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 8px;
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.select-menu li.active {
+  background: var(--hover);
+}
+
+.select-menu li[aria-disabled] {
+  color: var(--faint);
+  cursor: default;
+}
+
+.select-check {
+  visibility: hidden;
+}
+
+.select-menu li[aria-selected='true'] .select-check {
+  visibility: visible;
+}
+
+.switch {
+  flex: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--line-strong);
+  transition: background var(--d-fast) var(--ease);
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform var(--d-med) var(--ease);
+}
+
+.switch[aria-checked='true'] {
+  background: var(--ink);
+}
+
+.switch[aria-checked='true']::after {
+  transform: translateX(14px);
+  background: var(--surface);
+}
+
+.setting input.setting-text {
+  justify-self: stretch;
+  width: 100%;
+  margin: 0;
+  cursor: text;
+  height: var(--control);
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-13);
+}
+
+.setting .select {
+  justify-self: stretch;
+}
+
+.setting .select-button {
+  width: 100%;
+}
+
+.setting .switch {
+  justify-self: end;
+  margin-top: 4px;
 }
 
 .setting-copy {
@@ -1031,11 +1146,6 @@ body.resizing {
   color: var(--muted);
 }
 
-.setting :is(input, select):focus-visible,
-.settings :is(button):focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
 
 .shortcut-group h2 {
   margin: 14px 0 6px;
@@ -3150,9 +3260,9 @@ button.status.link {
 .search-dialog { width: min(800px, calc(100vw - 48px)); max-height: calc(100vh - 64px); display: flex; flex-direction: column; gap: 12px; }
 .search-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .search-heading h2 { margin: 0; }
-.search-dialog > input { width: 100%; padding: 10px; box-sizing: border-box; }
+.search-dialog > input { width: 100%; box-sizing: border-box; height: var(--control-lg); font-size: var(--t-14); }
 .search-filters { display: flex; flex-wrap: wrap; gap: 16px; }
-.search-filters label { display: flex; align-items: center; gap: 8px; }
+
 .search-dialog > p { margin: 0; font-size: var(--t-12); }
 .search-results { overflow-y: auto; min-height: 0; }
 .search-result { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px; text-align: left; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
@@ -3160,14 +3270,17 @@ button.status.link {
 .search-snippet { white-space: pre-wrap; overflow-wrap: anywhere; }
 .search-snippet mark { background: var(--accent-mark); color: var(--ink); border-radius: var(--r-xs); }
 
-.search-dialog input, .search-dialog select, .search-heading button {
-  font: inherit;
-  color: var(--ink);
-  background: var(--surface);
+.search-dialog > input {
+  height: var(--control);
+  padding: 0 10px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-13);
 }
-.search-dialog select, .search-heading button { padding: 5px 8px; }
+.search-filter { display: inline-flex; align-items: center; gap: 8px; font-size: var(--t-13); color: var(--muted); }
 .search-result { background: var(--surface); color: var(--ink); }
 .search-result:hover:not(:disabled), .search-result:focus-visible { background: var(--hover); }
 
@@ -3186,10 +3299,12 @@ button.status.link {
 .mcp-editor, .mcp-import-preview { padding: 16px; margin: 12px 0; border: 1px solid var(--line-strong); border-radius: var(--r-md); }
 .mcp-settings h4 { margin: 0 0 12px; }
 .mcp-editor label, .mcp-import-entry label { display: block; margin: 10px 0; font-size: var(--t-12); }
-.mcp-editor input, .mcp-editor select, .mcp-import-entry input:not([type=checkbox]) { display: block; box-sizing: border-box; width: 100%; padding: 8px; margin-top: 6px; font: inherit; background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r-sm); }
+.mcp-editor input, .mcp-import-entry input:not([type=checkbox]) { display: block; box-sizing: border-box; width: 100%; height: var(--control); padding: 0 10px; margin-top: 6px; font: inherit; font-size: var(--t-13); background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r-md); }
+.mcp-editor .select { display: flex; margin-top: 6px; }
+.mcp-editor .select-button { width: 100%; }
 .mcp-editor textarea { margin-top: 6px; font-family: var(--font-mono, monospace); }
 .mcp-import-entry { padding: 10px 0; border-bottom: 1px solid var(--line); }
-.mcp-import-entry input[type=checkbox] { margin-right: 8px; }
+.mcp-import-entry input[type=checkbox] { margin-right: 8px; accent-color: var(--ink); }
 .mcp-settings button, .opencode-settings button { height: var(--control); padding: 0 12px; font: inherit; font-size: var(--t-13); font-weight: 500; color: var(--ink); background: var(--selected); border: 0; box-shadow: inset 0 0 0 1px var(--line); border-radius: var(--r-md); cursor: pointer; }
 .mcp-settings button:hover:not(:disabled), .opencode-settings button:hover:not(:disabled) { background: var(--hover); }
 .mcp-settings button:disabled, .opencode-settings button:disabled { opacity: 0.5; cursor: default; }
@@ -4203,15 +4318,38 @@ button.status.link {
 }
 
 .kind-filter {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.kind-filter .kind-check {
+  visibility: hidden;
+  color: var(--ink);
+}
+
+.kind-filter.on .kind-check {
+  visibility: visible;
+}
+
+.kind-menu-button {
+  height: var(--control-sm);
+  padding: 0 8px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 1px 9px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  background: var(--surface);
+  gap: 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
   color: var(--muted);
-  font-size: var(--t-12);
+  font-size: var(--t-13);
+  font-weight: 500;
+}
+
+.kind-menu-button:hover {
+  background: var(--hover);
+  color: var(--ink);
 }
 
 .kind-filter i {
@@ -4222,8 +4360,6 @@ button.status.link {
 }
 
 .kind-filter.on {
-  border-color: color-mix(in srgb, var(--kind) 45%, transparent);
-  background: color-mix(in srgb, var(--kind) 8%, transparent);
   color: var(--ink);
 }
 
