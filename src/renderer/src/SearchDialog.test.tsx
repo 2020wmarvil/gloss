@@ -37,8 +37,14 @@ it('searches with scope and type filters, highlights plain text safely, and open
   expect(el.querySelector('mark')!.textContent).toBe('cache')
   expect(el.querySelector('script')).toBeNull()
   expect(el.textContent).toContain('Showing the first 100')
-  const selects = el.querySelectorAll('select')
-  await act(async () => { selects[0].value = 'project'; selects[0].dispatchEvent(new Event('change', { bubbles: true })); selects[1].value = 'tool'; selects[1].dispatchEvent(new Event('change', { bubbles: true })) })
+  // The filters are Gloss's own dropdowns: open one, then pick an option.
+  const pick = async (label: string, option: string): Promise<void> => {
+    await act(async () => (el.querySelector(`.select-button[aria-label="${label}"]`) as HTMLButtonElement).click())
+    const item = [...el.querySelectorAll('[role="option"]')].find((o) => o.textContent === option) as HTMLElement
+    await act(async () => item.click())
+  }
+  await pick('Search in', 'Current project')
+  await pick('Show', 'Tool output')
   await act(async () => vi.advanceTimersByTimeAsync(151))
   expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'project', kind: 'tool' }))
   await act(async () => (el.querySelector('.search-result') as HTMLButtonElement).click())
@@ -63,7 +69,7 @@ it('discards an older response, clears stale results, and reports errors', async
 it('traps focus and closes on Escape without forwarding it to the working composer', async () => {
   const { el, input, close } = await mount(async () => ({ results: [], more: false }))
   const buttons = el.querySelectorAll('button')
-  const last = el.querySelectorAll('select')[1]
+  const last = el.querySelector('.select-button[aria-label="Show"]') as HTMLButtonElement
   last.focus()
   await act(async () => last.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })))
   expect(document.activeElement).toBe(buttons[0])

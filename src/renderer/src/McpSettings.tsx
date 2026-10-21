@@ -1,6 +1,7 @@
 ﻿import { useState } from 'react'
 import { mcpError, mcpName, type McpImportPreview, type McpImportSource, type McpServer } from '@shared/mcp'
 import { errorText } from './errors'
+import { Select } from './Select'
 
 type Props = { servers: McpServer[]; hasLegacy?: boolean; onSave(servers: McpServer[]): Promise<void> }
 type Draft = { name: string; type: 'stdio' | 'http' | 'sse'; command: string; args: string; env: string; url: string; headers: string }
@@ -92,7 +93,7 @@ export function McpSettings({ servers, onSave, hasLegacy }: Props): React.JSX.El
     {editor && <form className="mcp-editor" onSubmit={(e) => { e.preventDefault(); saveEditor() }}>
       <h4>{editor.index < 0 ? 'Add server' : 'Edit server'}</h4>
       <label>Name<input required value={editor.draft.name} disabled={busy} onChange={(e) => field('name', e.target.value)} autoFocus /></label>
-      <label>Transport<select value={editor.draft.type} disabled={busy} onChange={(e) => field('type', e.target.value)}><option value="stdio">stdio (local command)</option><option value="http">HTTP</option><option value="sse">SSE (Claude only)</option></select></label>
+      <label>Transport<Select ariaLabel="Transport" value={editor.draft.type} disabled={busy} onChange={(v) => field('type', v)} options={[{ value: 'stdio', label: 'stdio (local command)' }, { value: 'http', label: 'HTTP' }, { value: 'sse', label: 'SSE (Claude only)' }]} /></label>
       {editor.draft.type === 'stdio' ? <>
         <label>Command<input required value={editor.draft.command} disabled={busy} onChange={(e) => field('command', e.target.value)} placeholder="C:/tools/mcp-server.exe" /></label>
         <label>Arguments (JSON list)<textarea rows={3} value={editor.draft.args} disabled={busy} onChange={(e) => field('args', e.target.value)} /></label>

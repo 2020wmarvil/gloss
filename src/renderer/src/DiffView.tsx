@@ -7,6 +7,7 @@ import { codeColors, useHighlighting } from './highlight'
 import { Markdown } from './Markdown'
 import { KIND_NAMES, type LineThread, type ThreadKind } from './reviewThreads'
 import { ago } from './Sidebar'
+import { ChevronDown, ChevronRight, ChevronsUpDown, ChevronUp, ExternalLink, FileText, Folder } from 'lucide-react'
 
 export type Layout = 'split' | 'unified'
 
@@ -403,7 +404,7 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
             props.onToggleFile(file.path)
           }}
         >
-          {collapsed ? '▸' : '▾'}
+          {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
         </button>
         <span className="diff-file-path" title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
           {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
@@ -516,38 +517,15 @@ export const REVEAL_LABEL = /Mac/.test(navigator.userAgent)
     ? 'Show in File Explorer'
     : 'Show in folder'
 
-const FOLDER_ICON = (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
-    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-  </svg>
-)
-
-/** A page of text. */
-const FILE_ICON = (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
-    <path d="M14 3v6h6M8 13h8M8 17h8" />
-  </svg>
-)
-
-/** A window with an arrow out of it. */
-const EDITOR_ICON = (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
-  </svg>
-)
-
-const icon = (d: string, size: number): React.JSX.Element => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d={d} />
-  </svg>
-)
+const FOLDER_ICON = <Folder size={14} />
+const FILE_ICON = <FileText size={14} />
+const EDITOR_ICON = <ExternalLink size={14} />
 
 /** The expanders' buttons: up for the top of a gap, down for its bottom, up and down for all of it. */
 const EXPAND_ICONS = {
-  top: icon('M6 15l6-6 6 6', 11),
-  all: icon('M7 15l5 5 5-5M7 9l5-5 5 5', 14),
-  bottom: icon('M6 9l6 6 6-6', 11)
+  top: <ChevronUp size={13} />,
+  all: <ChevronsUpDown size={14} />,
+  bottom: <ChevronDown size={13} />
 }
 
 /** Keeps an empty line one line tall (a zero-width space). */
@@ -602,7 +580,7 @@ export function ThreadCard(props: { card: Card; active: boolean; onOpen(): void;
             props.onCollapse()
           }}
         >
-          ▴
+          <ChevronUp size={14} />
         </button>
       </div>
       {card.body && (

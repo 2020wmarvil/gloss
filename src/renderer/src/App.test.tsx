@@ -212,7 +212,14 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
       ],
       threads: [{ id: 't1', sessionId: 'a', anchorMessageId: 'x', anchor: { kind: 'listItem', path: [0], text: 'The item' }, createdAt: 1 }]
     },
-    b: { messages: [{ id: 'b1', sessionId: 'b', seq: 1, role: 'user', text: 'only main', threadId: null }], threads: [] }
+    b: { messages: [{ id: 'b1', sessionId: 'b', seq: 1, role: 'user', text: 'only main', threadId: null }], threads: [] },
+    c: {
+      messages: [
+        { id: 'c1', sessionId: 'c', seq: 1, role: 'user', text: 'in thread', threadId: 't2', outcome: 'completed' },
+        { id: 'c2', sessionId: 'c', seq: 2, role: 'user', text: 'then main', threadId: null, outcome: 'completed' }
+      ],
+      threads: [{ id: 't2', sessionId: 'c', anchorMessageId: 'x', anchor: { kind: 'listItem', path: [0], text: 'Old item' }, createdAt: 1 }]
+    }
   }
   window.gloss = {
     history: async () => [],
@@ -220,10 +227,10 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
     agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
-      list: async () => [session('a', 2), session('b', 1)],
+      list: async () => [session('a', 3), session('b', 2), session('c', 1)],
       refresh: async () => {},
       open: async (id: string) => ({
-        session: session(id, id === 'a' ? 2 : 1), toolCalls: [], plans: [], turn: null, ...views[id],
+        session: session(id, { a: 3, b: 2, c: 1 }[id]!), toolCalls: [], plans: [], turn: null, ...views[id],
         live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], permissions: null, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })
@@ -257,6 +264,10 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
 
   await select('a')
   expect(el.querySelector('.thread-panel .anchor-quote')!.textContent).toContain('The item')
+
+  // A turn in the main conversation since the thread's: the strip no longer names it.
+  await select('c')
+  expect(el.querySelector('.activity-strip')).toBeNull()
 })
 
 it('opens search anywhere and reveals matches in another session, its thread, or tool output', async () => {

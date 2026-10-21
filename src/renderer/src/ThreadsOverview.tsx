@@ -6,6 +6,7 @@ import type { OpenSession } from './App'
 import { QueuedRow } from './Composer'
 import { errorText } from './errors'
 import { ago } from './Sidebar'
+import { MessageSquare, PanelRight } from 'lucide-react'
 
 export type ThreadSummary = {
   thread: Thread
@@ -28,12 +29,6 @@ export function threadSummaries(open: OpenSession): ThreadSummary[] {
   return [...byThread.values()].sort((a, b) => a.thread.createdAt - b.thread.createdAt)
 }
 
-const threadsIcon = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-  </svg>
-)
-
 /**
  * The collapsed side panel: a threads button with the count and a running dot. `label`
  * says what the count is, when it isn't just threads.
@@ -48,8 +43,8 @@ export function SideRail(props: { count: number; running: boolean; label?: strin
         title={`${what} (Ctrl+Shift+T)`}
         aria-label={`Show ${what}`}
       >
-        {threadsIcon}
-        <span className="rail-count">{props.count}</span>
+        <MessageSquare size={18} />
+        {props.count > 0 && <span className="rail-count">{props.count}</span>}
         {props.running && <span className="running-dot" aria-label="Running" />}
       </button>
     </div>
@@ -108,7 +103,7 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
       <header>
         <div className="side-tabs" role="tablist">
           <button role="tab" aria-selected={props.tab === 'threads'} onClick={() => props.onTab('threads')}>
-            Threads <span className="mono">{props.review?.count ?? summaries.length}</span>
+            Threads <span className="count">{props.review?.count ?? summaries.length}</span>
           </button>
           <button
             role="tab"
@@ -116,11 +111,11 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
             onClick={() => props.onTab('queue')}
             title="Queue (Ctrl+Shift+Q)"
           >
-            Queue <span className="mono">{queue.items.length}</span>
+            Queue <span className="count">{queue.items.length}</span>
           </button>
         </div>
         <button className="close" onClick={onCollapse} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
-          »
+          <PanelRight />
         </button>
       </header>
       {props.tab === 'threads' && props.review ? (

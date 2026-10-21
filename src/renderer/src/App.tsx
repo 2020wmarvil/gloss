@@ -31,7 +31,7 @@ import { FOCUS_COMPOSER, FOCUS_MAIN_COMPOSER, type ComposerQueue } from './Compo
 import { errorText } from './errors'
 import { Conversation, type StripThread } from './Conversation'
 import type { Notice, Reveal } from './Log'
-import { Sidebar, SidebarRail, type ListedAgentSession } from './Sidebar'
+import { Sidebar, SidebarRail, type ListedAgentSession, type SidebarNote } from './Sidebar'
 import type { SourceSelection } from './SelectionPopover'
 import { SettingsScreen } from './SettingsScreen'
 import { SignInDialog } from './SignInDialog'
@@ -40,9 +40,11 @@ import { SideRail, ThreadsOverview, type SideTab } from './ThreadsOverview'
 import {
   clampWidth,
   ResizeHandle,
-  SIDEBAR_DEFAULT,
+  fitPanes,
   SIDEBAR_RAIL,
+  SIDEBAR_DEFAULT,
   sidebarLimits,
+  threadPanelDefault,
   threadPanelLimits,
   useStoredWidth,
   useWindowWidth
@@ -178,10 +180,22 @@ export function App(): React.JSX.Element {
   const [reveal, setReveal] = useState<Reveal | null>(null)
   /** The side panel is expanded. It starts collapsed on every launch. */
   const [sideOpen, setSideOpen] = useState(false)
+  /** The pane opened last, which stays open when the window is too narrow for both. */
+  const [keepPane, setKeepPane] = useState<'sidebar' | 'side'>('side')
   /** The overview's tab: the threads, or the queue. */
   const [sideTab, setSideTab] = useState<SideTab>('threads')
   /** sessionId → threadId of its running turn. */
   const [running, setRunning] = useState<Record<string, string | null>>({})
+  /** Sessions whose last turn failed while they weren't open, until they are opened or run again. */
+  const [failed, setFailed] = useState<Record<string, true>>({})
+  const clearFailed = useCallback((id: string) => {
+    setFailed((f) => {
+      if (!(id in f)) return f
+      const next = { ...f }
+      delete next[id]
+      return next
+    })
+  }, [])
   const [notices, setNotices] = useState<Record<string, Notice[]>>({})
   const [lives, setLives] = useState<Record<string, SessionLive>>({})
   const [queues, setQueues] = useState<Record<string, MessageQueue>>({})
@@ -191,7 +205,9 @@ export function App(): React.JSX.Element {
   const [creating, setCreating] = useState(false)
   /** Counts entries into full screen; each shows the hint on how to leave again. */
   const [fullScreenHint, setFullScreenHint] = useState(0)
-  const [sidebarError, setSidebarError] = useState<string | null>(null)
+  /** A message over the session list: an error, or (`info`) news such as a session removed outside Gloss. */
+  const [sidebarNote, setSidebarNote] = useState<SidebarNote | null>(null)
+  const setSidebarError = useCallback((text: string | null) => setSidebarNote(text === null ? null : { text, tone: 'failed' }), [])
   const windowWidth = useWindowWidth()
   const [sidebarStored, setSidebarWidth] = useStoredWidth('gloss.sidebarWidth')
   const [threadStored, setThreadPanelWidth] = useStoredWidth('gloss.threadPanelWidth')
@@ -199,6 +215,7 @@ export function App(): React.JSX.Element {
   const [sidebarHidden, setSidebarHidden] = useState(() => localStorage.getItem('gloss.sidebarHidden') === '1')
   const hideSidebar = (hidden: boolean): void => {
     setSidebarHidden(hidden)
+    if (!hidden) setKeepPane('sidebar')
     if (hidden) localStorage.setItem('gloss.sidebarHidden', '1')
     else localStorage.removeItem('gloss.sidebarHidden')
   }
@@ -216,21 +233,27 @@ export function App(): React.JSX.Element {
   const project = projects.find((p) => projectPath !== null && sameFolder(p.path, projectPath)) ?? null
   const agent = settings ? agents.find((a) => a.id === settings.global.defaultAgent) ?? agents[0] : undefined
 
+  /** Expands the side panel. */
+  const openSide = useCallback(() => {
+    setSideOpen(true)
+    setKeepPane('side')
+  }, [])
+
   /** Opens a thread in the side panel, expanding it. */
   const showPanel = useCallback(
     (p: Panel) => {
       setPanel(p)
-      setSideOpen(true)
+      openSide()
     },
-    [setPanel]
+    [setPanel, openSide]
   )
 
   /** Opens the side panel on its Queue tab. */
   const showQueue = useCallback(() => {
     setPanel(null)
     setSideTab('queue')
-    setSideOpen(true)
-  }, [setPanel])
+    openSide()
+  }, [setPanel, openSide])
 
   /** Collapses the side panel; it reopens on the same thread. */
   const collapseSide = useCallback(() => setSideOpen(false), [])
@@ -240,7 +263,7 @@ export function App(): React.JSX.Element {
     if (openId.current) panels.current.set(openId.current, panelRef.current)
   }, [])
 
-  const addNotice = useCallback((sessionId: string, threadId: string | null, text: string) => {
+  const addNotice = useCallback((sessionId: string, threadId: string | null, text: string, tone?: Notice['tone']) => {
     setNotices((all) => ({
       ...all,
       [sessionId]: [
@@ -249,6 +272,7 @@ export function App(): React.JSX.Element {
           id: crypto.randomUUID(),
           threadId,
           text,
+          ...(tone ? { tone } : {}),
           afterSeq: openId.current === sessionId ? lastSeq.current : Infinity
         }
       ]
@@ -324,6 +348,7 @@ export function App(): React.JSX.Element {
   const selectSession = useCallback(
     async (id: string, threadId: string | null = null, target?: SearchResult): Promise<void> => {
       setShowSettings(false)
+      clearFailed(id)
       const switching = openId.current !== id
       if (switching) {
         leaveSession()
@@ -408,7 +433,7 @@ export function App(): React.JSX.Element {
           panels.current.delete(event.sessionId)
           setSessions((list) => list.filter((s) => s.id !== event.sessionId))
           if (event.deletedOutside) {
-            setSidebarError(`“${event.deletedOutside.title}” was deleted outside Gloss, so it was removed here too.`)
+            setSidebarNote({ text: `“${event.deletedOutside.title}” was deleted outside Gloss, so it was removed here too.`, tone: 'info' })
           }
           if (openId.current === event.sessionId) {
             openId.current = null
@@ -476,6 +501,7 @@ export function App(): React.JSX.Element {
           break
         case 'turnStart':
           setRunning((r) => ({ ...r, [event.sessionId]: event.threadId }))
+          clearFailed(event.sessionId)
           break
         case 'turnEnd':
           setRunning((r) => {
@@ -483,7 +509,10 @@ export function App(): React.JSX.Element {
             delete next[event.sessionId]
             return next
           })
-          if (event.error) addNotice(event.sessionId, event.threadId, `The turn failed: ${event.error}`)
+          if (event.error) {
+            addNotice(event.sessionId, event.threadId, `The turn failed: ${event.error}`, 'failed')
+            if (event.sessionId !== openId.current) setFailed((f) => ({ ...f, [event.sessionId]: true }))
+          }
           else if (event.stopReason === 'cancelled') addNotice(event.sessionId, event.threadId, 'Cancelled.')
           else if (event.stopReason && event.stopReason !== 'end_turn')
             addNotice(event.sessionId, event.threadId, `The agent stopped: ${event.stopReason.replace(/_/g, ' ')}.`)
@@ -736,7 +765,7 @@ export function App(): React.JSX.Element {
   function openGeneral(): void {
     setPanelState(null)
     setGeneral(true)
-    setSideOpen(true)
+    openSide()
   }
 
   async function send(
@@ -863,8 +892,8 @@ export function App(): React.JSX.Element {
       void newSession()
     } else if (e.key.toLowerCase() === 't' && e.shiftKey && !e.altKey) {
       e.preventDefault()
-      if (sideOpen) collapseSide()
-      else setSideOpen(true)
+      if (sideShown) collapseSide()
+      else openSide()
     } else if (e.key.toLowerCase() === 'q' && e.shiftKey && !e.altKey) {
       e.preventDefault()
       if (open) {
@@ -926,9 +955,25 @@ export function App(): React.JSX.Element {
     ? agents.map((a) => agentSessionErrors[agentSessionsKey(projectPath, a.id)]).filter(Boolean).join(' ') || null
     : null
 
+  // The widths the panes want (dragged or default), fitted to what the window has room for now.
+  const hasSide = open !== null && !showSettings
+  const panes = fitPanes(
+    windowWidth,
+    {
+      sidebar: sidebarHidden ? null : clampWidth(sidebarStored ?? SIDEBAR_DEFAULT, sidebarLimits(windowWidth)),
+      side: !hasSide ? undefined : sideOpen ? (threadStored ?? threadPanelDefault(windowWidth)) : null
+    },
+    keepPane
+  )
+  const sidebarWidth = panes.sidebar
+  const threadWidth = panes.side ?? null
+  const sideShown = hasSide && threadWidth !== null
+  const sidebarLimit = sidebarLimits(windowWidth, panes.side)
+  const threadLimit = threadPanelLimits(windowWidth, sidebarWidth ?? SIDEBAR_RAIL)
+
   const sessionId = open?.session.id
   /** The panel's thread while it is expanded. */
-  const shownPanel = sideOpen ? panel : null
+  const shownPanel = sideShown ? panel : null
   const panelThread = shownPanel?.threadId ?? null
   // Each new view goes on the history, dropping the views ahead of it. Not while one is
   // restored, nor while another session loads (its panel is already cleared).
@@ -945,18 +990,21 @@ export function App(): React.JSX.Element {
   }, [showSettings, sessionId, panelThread])
   const runningThread = sessionId !== undefined && sessionId in running ? running[sessionId] : undefined
   const runningThreadRow = open?.threads.find((t) => t.id === runningThread)
-  /** The thread a turn runs in, else the thread of the latest message sent in one, with its state. */
-  const lastThreadMessage = open?.messages.reduce<Message | undefined>(
-    (latest, m) => (m.role === 'user' && m.threadId !== null && (!latest || m.seq > latest.seq) ? m : latest),
+  /**
+   * The thread a turn runs in, else the thread of the latest message if it was sent in
+   * one, with its state. A turn in the main conversation clears it.
+   */
+  const lastMessage = open?.messages.reduce<Message | undefined>(
+    (latest, m) => (m.role === 'user' && (!latest || m.seq > latest.seq) ? m : latest),
     undefined
   )
-  const lastThreadId = typeof runningThread === 'string' ? runningThread : lastThreadMessage?.threadId
-  const lastThreadRow = open?.threads.find((t) => t.id === lastThreadId)
-  const lastThread: StripThread | null = lastThreadRow
+  const stripThreadId = runningThread !== undefined ? runningThread : lastMessage?.threadId
+  const stripThreadRow = open?.threads.find((t) => t.id === stripThreadId)
+  const lastThread: StripThread | null = stripThreadRow
     ? {
-        id: lastThreadRow.id,
-        name: threadName(lastThreadRow),
-        state: lastThreadRow.id === runningThread ? 'working' : (lastThreadMessage?.outcome ?? null)
+        id: stripThreadRow.id,
+        name: threadName(stripThreadRow),
+        state: stripThreadRow.id === runningThread ? 'working' : (lastMessage?.outcome ?? null)
       }
     : null
   const sessionNotices = sessionId ? (notices[sessionId] ?? []) : []
@@ -979,16 +1027,11 @@ export function App(): React.JSX.Element {
     onRemove: (itemId) => window.gloss.queue.remove(id, itemId),
     onResume: () => window.gloss.queue.resume(id)
   })
-  // Dragged widths, kept within what the window has room for now.
-  const sidebarLimit = sidebarLimits(windowWidth)
-  const sidebarWidth = sidebarStored === null ? null : clampWidth(sidebarStored, sidebarLimit)
-  const threadLimit = threadPanelLimits(windowWidth, sidebarHidden ? SIDEBAR_RAIL : (sidebarWidth ?? SIDEBAR_DEFAULT))
-  const threadWidth = threadStored === null ? null : clampWidth(threadStored, threadLimit)
 
   return (
     <div className="app">
       <TitleBar />
-      {sidebarHidden ? (
+      {sidebarWidth === null ? (
         <SidebarRail running={Object.keys(running).length > 0} onExpand={() => hideSidebar(false)} />
       ) : (
         <>
@@ -1002,12 +1045,14 @@ export function App(): React.JSX.Element {
             sessions={sessions}
             openId={sessionId ?? null}
             running={running}
+            failed={failed}
             agentSessions={listedAgentSessions}
             order={settings?.global.sessionOrder ?? 'created'}
             agentSessionsError={agentSessionsError}
             importing={importing}
             creating={creating}
-            createError={sidebarError}
+            note={sidebarNote}
+            onDismissNote={() => setSidebarNote(null)}
             settingsOpen={showSettings}
             settingsError={settings?.error != null}
             onSelectProject={(path) => selectProject(path, sessions)}
@@ -1136,14 +1181,14 @@ export function App(): React.JSX.Element {
           )}
         </main>
       )}
-      {open && !showSettings && !sideOpen && (
+      {open && !showSettings && !sideShown && (
         <SideRail
           {...sideRailCount(open, isReview)}
           running={runningThreadRow !== undefined}
-          onExpand={() => setSideOpen(true)}
+          onExpand={openSide}
         />
       )}
-      {open && !showSettings && sideOpen && (
+      {open && !showSettings && sideShown && (
         <>
           <ResizeHandle
             label="Resize side panel"

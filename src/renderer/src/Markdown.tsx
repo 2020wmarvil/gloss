@@ -10,6 +10,7 @@ import remarkGfm from 'remark-gfm'
 import { itemMarker, listItemSpans, type ListItemSpan } from './anchors'
 import { codeColors, useHighlighting } from './highlight'
 import { remarkSourceSpans, type Mark } from './sourceSpans'
+import { MessageSquare } from 'lucide-react'
 
 type Node = { type: string; children?: Node[] }
 type HastNode = { type: string; value?: string; children?: HastNode[] }
@@ -99,11 +100,7 @@ export type MessageAnchors = {
   onOpenThread(threadId: string): void
 }
 
-const replyIcon = (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-  </svg>
-)
+const replyIcon = <MessageSquare size={13} />
 
 function anchorComponents(text: string, anchors: MessageAnchors, listItemReplies: boolean): Components {
   const byStart = new Map((listItemReplies ? listItemSpans(text) : []).map((s) => [s.start, s]))

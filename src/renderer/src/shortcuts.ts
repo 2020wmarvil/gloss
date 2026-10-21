@@ -41,6 +41,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: [['Mod', 'K']], action: 'Link (pasting a URL over selected text also makes a link)' },
       { keys: [['Mod', 'Z'], ['Mod', 'Shift', 'Z']], action: 'Undo, redo' },
       { keys: [['Mod', 'Enter']], action: 'Send, including inside a code block (steers the active thread when supported)' },
+      { keys: [['Alt', 'Enter']], action: 'Queue for after the running turn, instead of steering it' },
       { keys: [['/']], action: 'At the start, list the slash commands' },
       { keys: [['↑'], ['↓']], action: 'Move through the slash commands' },
       { keys: [['Tab'], ['Enter']], action: 'Complete the slash command (Enter on an exact match sends it)' },

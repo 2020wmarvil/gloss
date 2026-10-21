@@ -9,6 +9,7 @@ import { Composer, type ComposerQueue } from './Composer'
 import { ExportMenu } from './ExportMenu'
 import { Log, logItems, type Notice, type Reveal } from './Log'
 import { Markdown } from './Markdown'
+import { ArrowLeft, Locate, PanelRight } from 'lucide-react'
 
 type Props = {
   /** Width the user dragged it to; null = the CSS default. */
@@ -46,14 +47,6 @@ type Props = {
   onResolve?(threadId: string, resolved: boolean): void
 }
 
-const findIcon = (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <circle cx="12" cy="12" r="7" />
-    <circle cx="12" cy="12" r="2" />
-    <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
-  </svg>
-)
-
 export function ThreadPanel(props: Props): React.JSX.Element {
   const { open, panel, runningThread, notices, live, onSend, onCancel, onClose } = props
   const threadId = panel.threadId
@@ -82,13 +75,14 @@ export function ThreadPanel(props: Props): React.JSX.Element {
     >
       <header>
         <button className="back" onClick={props.onBack}>
-          {props.backTo === 'queue' ? '← Queue' : '← All threads'}
+          <ArrowLeft />
+          {props.backTo === 'queue' ? 'Queue' : 'All threads'}
         </button>
         {threadId === null && <h2 className="thread-label">New thread</h2>}
-        {runningHere && <span className="status">Agent is working…</span>}
+        {runningHere && <span className="status"><span className="running-dot" aria-hidden="true" />Working</span>}
         {props.onFindInMain && (
           <button className="header-button icon find-in-main" onClick={props.onFindInMain} title="Find in main session" aria-label="Find in main session">
-            {findIcon}
+            <Locate />
           </button>
         )}
         {/* Shown before the thread exists too, so the header's buttons don't move. */}
@@ -99,10 +93,10 @@ export function ThreadPanel(props: Props): React.JSX.Element {
           onSave={() => threadId !== null && props.onSaveMarkdown(threadId)}
         />
         <button className="close" onClick={onClose} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
-          »
+          <PanelRight />
         </button>
       </header>
-      <blockquote className="anchor-quote">
+      <blockquote className="anchor-quote" title={`Sent to the agent as ${threadTag(panel.anchor)} …`}>
         {isSelection ? <p className="selection-quote">{quote}</p> : <Markdown text={quote} />}
       </blockquote>
       <Log
@@ -133,7 +127,6 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         onCancel={runningHere ? onCancel : undefined}
         // A thread that doesn't exist yet has nothing to continue.
         onSendToMain={threadId !== null ? props.onSendToMain : undefined}
-        footer={<div className="mono wire">sent as: {threadTag(panel.anchor)} …</div>}
       />
     </aside>
   )
@@ -153,15 +146,16 @@ function LineThreadPanel(
     <aside className="thread-panel line-thread" aria-label="Thread" style={props.width === null ? undefined : { flexBasis: props.width }}>
       <header>
         <button className="back" onClick={props.onBack}>
-          {props.backTo === 'queue' ? '← Queue' : '← All threads'}
+          <ArrowLeft />
+          {props.backTo === 'queue' ? 'Queue' : 'All threads'}
         </button>
         <span className={`kind-chip kind-${kind}`}>{KIND_NAMES[kind]}</span>
-        <span className="mono thread-lines" title={lineLabel(anchor)}>
+        <span className="thread-lines" title={lineLabel(anchor)}>
           {anchor.end === anchor.start ? `L${first}` : `L${first}–${first + anchor.end - anchor.start}`}
           {anchor.side === 'old' ? ' (old)' : ''}
         </span>
         {threadId === null && <h2 className="thread-label">New thread</h2>}
-        {props.runningHere && <span className="status">Agent is working…</span>}
+        {props.runningHere && <span className="status"><span className="running-dot" aria-hidden="true" />Working</span>}
         {thread && props.onResolve && (
           <button className="resolve" onClick={() => props.onResolve?.(thread.id, !resolved)}>
             {resolved ? 'Reopen' : 'Resolve'}
@@ -174,10 +168,10 @@ function LineThreadPanel(
           onSave={() => threadId !== null && props.onSaveMarkdown(threadId)}
         />
         <button className="close" onClick={props.onClose} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
-          »
+          <PanelRight />
         </button>
       </header>
-      <div className="line-quote">
+      <div className="line-quote" title={`Sent to the agent as ${threadTag(panel.anchor)} …`}>
         <div className="line-quote-head">
           <span className="mono">{anchor.file}</span>
           {location?.kind === 'outdated' && <span className="tag-outdated">Outdated: these lines changed</span>}
@@ -225,7 +219,6 @@ function LineThreadPanel(
         onSteer={live.steering && props.runningHere ? props.onSteer : undefined}
         onCancel={props.runningHere ? props.onCancel : undefined}
         onSendToMain={threadId !== null ? props.onSendToMain : undefined}
-        footer={<div className="mono wire">sent as: {threadTag(panel.anchor)} …</div>}
       />
     </aside>
   )

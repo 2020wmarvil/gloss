@@ -23,7 +23,7 @@ type Props = {
   ariaLabel: string
   /** Runs before the editor's own keys; return true when it handled the key. */
   onKeyDown?(e: KeyboardEvent): boolean
-  /** Enter outside a code block (`send`), or Ctrl/Cmd+Enter (`steer`). */
+  /** Enter outside a code block (`send`), or Ctrl/Cmd+Enter (`steer`, also in one). */
   onSubmit(how: 'send' | 'steer'): void
   /** The caret or selection moved without an edit (a click, an arrow key). */
   onSelectionChange?(): void
@@ -185,8 +185,8 @@ const highlight = HighlightStyle.define([
   { tag: tags.strong, fontWeight: '600' },
   { tag: tags.emphasis, fontStyle: 'italic' },
   { tag: tags.strikethrough, textDecoration: 'line-through' },
-  { tag: tags.monospace, fontFamily: 'var(--mono)', fontSize: '0.92em' },
-  { tag: tags.link, color: 'var(--accent)' },
+  { tag: tags.monospace, fontFamily: 'var(--font-mono)', fontSize: '0.92em' },
+  { tag: tags.link, color: 'var(--ink)', textDecoration: 'underline' },
   { tag: tags.url, color: 'var(--muted)' },
   { tag: tags.quote, color: 'var(--muted)', fontStyle: 'italic' },
   { tag: [tags.processingInstruction, tags.contentSeparator], color: 'var(--faint)' }
@@ -195,7 +195,7 @@ const highlight = HighlightStyle.define([
 /** The selection in the app's colors; CodeMirror's own rules need its selectors to override. */
 const theme = EditorView.theme({
   '.cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
-    background: 'var(--accent-tint-4)'
+    background: 'var(--accent-mark)'
   }
 })
 

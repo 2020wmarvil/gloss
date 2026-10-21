@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { isCommitId, type ReviewDiff, type ReviewRange, type ReviewRefs } from '@shared/review'
 import { ago } from './Sidebar'
+import { ArrowRight, ChevronDown } from 'lucide-react'
 
 /**
  * One choice in a dropdown; `value` null is the working tree. `sha` shows (and links to)
@@ -112,9 +113,7 @@ function Picker(props: PickerProps): React.JSX.Element {
       >
         <span className="range-name">{props.label}</span>
         <span className="range-current">{props.current}</span>
-        <span className="caret" aria-hidden>
-          ▾
-        </span>
+        <ChevronDown className="caret" size={14} />
       </button>
       {open && (
         <div className="menu range-menu" role="menu" aria-label={props.label}>
@@ -191,9 +190,7 @@ export function RangePicker(props: Props): React.JSX.Element {
         onOpen={props.onRefresh}
         onPick={(value) => value !== null && props.onChange({ baseRef: value, ...(head !== null ? { headRef: head } : {}) })}
       />
-      <span className="range-arrow" aria-hidden>
-        →
-      </span>
+      <ArrowRight className="range-arrow" size={13} />
       <Picker
         label="Review"
         current={headCurrent}

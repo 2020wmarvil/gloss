@@ -13,6 +13,7 @@ import { inDiffOrder, isLineThread, kindOf, titleOf } from './reviewThreads'
 import { StatusLine } from './StatusLine'
 import { threadSummaries } from './ThreadsOverview'
 import { modKey } from './shortcuts'
+import { ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronUp, Columns2, MessageSquare, MessageSquareOff, PanelLeft, Reply, RotateCcw, Rows2 } from 'lucide-react'
 
 export type DiffState = { diff: ReviewDiff | null; error: string | null }
 
@@ -51,31 +52,18 @@ type Props = {
   onOpenFile(path: string, how: 'reveal' | 'editor', line: number): void
 }
 
-const icon = (paths: string[], size = 16): React.JSX.Element => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {paths.map((d) => (
-      <path key={d} d={d} />
-    ))}
-  </svg>
-)
-
 /** The header's tool icons. */
 const ICONS = {
-  /** A circular arrow: start again. */
-  newReview: icon(['M3 12a9 9 0 1 0 2.6-6.4L3 8', 'M3 3v5h5']),
-  /** A panel on the left. */
-  files: icon(['M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z', 'M9 4v16']),
-  /** Chevrons pointing in, and out. */
-  collapseAll: icon(['M7 20l5-5 5 5', 'M7 4l5 5 5-5']),
-  expandAll: icon(['M7 15l5 5 5-5', 'M7 9l5-5 5 5']),
-  /** Two columns, and one. */
-  split: icon(['M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z', 'M12 4v16']),
-  unified: icon(['M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z', 'M7 9h10', 'M7 13h10', 'M7 17h6']),
-  /** A speech bubble, and one struck through. */
-  comments: icon(['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z']),
-  commentsHidden: icon(['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', 'M3 3l18 18']),
-  up: icon(['M6 15l6-6 6 6'], 12),
-  down: icon(['M6 9l6 6 6-6'], 12)
+  newReview: <RotateCcw />,
+  files: <PanelLeft />,
+  collapseAll: <ChevronsDownUp />,
+  expandAll: <ChevronsUpDown />,
+  split: <Columns2 />,
+  unified: <Rows2 />,
+  comments: <MessageSquare />,
+  commentsHidden: <MessageSquareOff />,
+  up: <ChevronUp />,
+  down: <ChevronDown />
 }
 
 /** A UI preference kept in localStorage (SPEC → Review sessions → Diff view). */
@@ -293,7 +281,7 @@ export function ReviewView(props: Props): React.JSX.Element {
       <header className="review-head">
         <div className="review-titles">
           <h1 title={open.session.title}>{open.session.title}</h1>
-          <span className="mono review-meta">
+          <span className="review-meta">
             {props.agentName}
             {review && <RangePicker range={review} diff={diff.diff} refs={refs} onRefresh={loadRefs} onChange={props.onSetRange} />}
             {diff.diff && (
@@ -674,7 +662,8 @@ function DiffSelectionPopover(props: {
   return (
     <div className="selection-popover" role="toolbar" aria-label="Selection" style={{ top, left }} onMouseDown={(e) => e.preventDefault()}>
       <button className="go" onClick={() => reply(current.anchor)}>
-        ↩ Reply to selection <kbd>R</kbd>
+        <Reply />
+        Reply to selection <kbd>R</kbd>
       </button>
       <button className="copy" onClick={() => document.execCommand('copy')}>
         Copy

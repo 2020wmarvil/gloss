@@ -11,6 +11,9 @@ import { Markdown } from './Markdown'
 import { inDiffOrder, KIND_NAMES, kindOf, shownLine, titleOf, type ThreadKind } from './reviewThreads'
 import { ago } from './Sidebar'
 import { threadSummaries } from './ThreadsOverview'
+import { ArrowLeft, PanelRight } from 'lucide-react'
+import { Check, ListFilter } from 'lucide-react'
+import { Popover } from './Popover'
 
 type Filter = 'open' | 'resolved' | 'all'
 const KINDS: ThreadKind[] = ['bug', 'suggestion', 'nit', 'you']
@@ -52,7 +55,7 @@ export function ReviewThreadList(props: {
     <div className="thread-list review-threads">
       <button className="general-card" onClick={props.onOpenGeneral}>
         <span className="general-title">
-          General conversation <span className="mono">{main.length} {main.length === 1 ? 'message' : 'messages'}</span>
+          General conversation <span className="count">{main.length} {main.length === 1 ? 'message' : 'messages'}</span>
           {working && (
             <span className="thread-working">
               <span className="running-dot" aria-hidden />
@@ -68,27 +71,45 @@ export function ReviewThreadList(props: {
         <div className="segmented" role="group" aria-label="Show">
           {(['open', 'resolved', 'all'] as const).map((f) => (
             <button key={f} className={filter === f ? 'on' : undefined} aria-pressed={filter === f} onClick={() => setFilter(f)}>
-              {f[0].toUpperCase() + f.slice(1)} <span className="mono">{counts[f]}</span>
+              {f[0].toUpperCase() + f.slice(1)} <span className="count">{counts[f]}</span>
             </button>
           ))}
         </div>
-        {KINDS.map((k) => (
-          <button
-            key={k}
-            className={`kind-filter kind-${k}${kinds.has(k) ? ' on' : ''}`}
-            aria-pressed={kinds.has(k)}
-            onClick={() =>
-              setKinds((s) => {
-                const next = new Set(s)
-                if (!next.delete(k)) next.add(k)
-                return next
-              })
-            }
-          >
-            <i aria-hidden />
-            {KIND_NAMES[k]}
-          </button>
-        ))}
+        {/* One menu for the kinds of thread shown, rather than a chip each. */}
+        <Popover
+          down
+          className="kind-menu-button"
+          title="Kinds of thread shown"
+          label={
+            <>
+              <ListFilter />
+              {kinds.size === KINDS.length ? 'All kinds' : kinds.size === 0 ? 'No kinds' : KINDS.filter((k) => kinds.has(k)).map((k) => KIND_NAMES[k]).join(', ')}
+            </>
+          }
+        >
+          {() => (
+            <div className="menu-list kind-menu" role="group" aria-label="Kinds">
+              {KINDS.map((k) => (
+                <button
+                  key={k}
+                  className={`kind-filter kind-${k}${kinds.has(k) ? ' on' : ''}`}
+                  aria-pressed={kinds.has(k)}
+                  onClick={() =>
+                    setKinds((s) => {
+                      const next = new Set(s)
+                      if (!next.delete(k)) next.add(k)
+                      return next
+                    })
+                  }
+                >
+                  <Check className="kind-check" size={14} />
+                  <i aria-hidden />
+                  {KIND_NAMES[k]}
+                </button>
+              ))}
+            </div>
+          )}
+        </Popover>
       </div>
       {ordered.length === 0 && (
         <p className="muted empty">
@@ -165,7 +186,7 @@ function GeneralMessage(props: { message: Message; open: OpenSession; onOpenThre
             <ul>
               {unplaced.map((f, i) => (
                 <li key={i}>
-                  <span className="mono">{lineLabel(f)}</span> <b>{f.title}</b>
+                  <span className="line-label">{lineLabel(f)}</span> <b>{f.title}</b>
                   {f.body && f.body !== f.title && <Markdown text={f.body} />}
                 </li>
               ))}
@@ -200,12 +221,13 @@ export function GeneralPanel(props: {
     <aside className="thread-panel general-panel" aria-label="General conversation" style={props.width === null ? undefined : { flexBasis: props.width }}>
       <header>
         <button className="back" onClick={props.onBack}>
-          ← All threads
+          <ArrowLeft />
+          All threads
         </button>
         <h2 className="thread-label">General conversation</h2>
-        {runningHere && <span className="status">Agent is working…</span>}
+        {runningHere && <span className="status"><span className="running-dot" aria-hidden="true" />Working</span>}
         <button className="close" onClick={props.onClose} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
-          »
+          <PanelRight />
         </button>
       </header>
       <Log

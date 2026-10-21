@@ -117,7 +117,7 @@ export function Conversation(props: Props): React.JSX.Element {
     <main className="conversation" ref={mainRef}>
       <header>
         <h1 title={session.title}>{session.title}</h1>
-        <span className="mono">{agentName}</span>
+        <span className="agent-name">{agentName}</span>
       </header>
       <Log
         className="log"
@@ -156,6 +156,7 @@ export function Conversation(props: Props): React.JSX.Element {
         pr={props.pr}
         running={running}
         queue={props.queue}
+        queueShownAbove
         onResumeQueue={() => void props.composerQueue.onResume()}
         onSetChoice={props.onSetChoice}
         onCommand={(text) => props.onSend(text, [])}
