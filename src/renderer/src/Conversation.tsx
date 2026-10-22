@@ -10,7 +10,7 @@ import { Composer, type ComposerQueue } from './Composer'
 
 import { Log, logItems, type Notice, type Reveal } from './Log'
 import { Markdown } from './Markdown'
-import { SelectionPopover, type SourceSelection } from './SelectionPopover'
+import { SelectionMenu, type SourceSelection } from './SelectionMenu'
 import { resolveSelection } from './source'
 import type { Mark } from './sourceSpans'
 import { StatusLine } from './StatusLine'
@@ -170,7 +170,7 @@ export function Conversation(props: Props): React.JSX.Element {
         onSetChoice={props.onSetChoice}
         onCommand={(text) => props.onSend(text, [])}
       />
-      <SelectionPopover scope={mainRef} messages={open.messages} onReply={props.onOpenSelection} />
+      <SelectionMenu scope={mainRef} messages={open.messages} onReply={props.onOpenSelection} />
     </main>
   )
 }
