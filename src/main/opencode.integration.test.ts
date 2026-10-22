@@ -3,18 +3,19 @@ import { createServer, type ServerResponse } from 'node:http'
 import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AgentConnection } from './acp'
 import { agentEnv } from './agents'
 import { OpenCodeSupport } from './opencode'
+import { AgentProfileSupport } from './agentProfiles'
 import { Store } from './db'
 import { SessionManager } from './sessions'
 import { AGENT_INSTRUCTIONS } from '../shared/wire'
 
 afterEach(() => vi.unstubAllEnvs())
 
-it.skipIf(!process.env.GLOSS_OPENCODE_EXECUTABLE)('runs OpenCode v2 with native instructions, threads, process restart and cancellation', async () => {
+it.skipIf(!process.env.GLOSS_OPENCODE_EXECUTABLE).each(['guided', 'custom'])('runs OpenCode v2 (%s) with native instructions, threads, process restart and cancellation', async (mode) => {
   const executable = process.env.GLOSS_OPENCODE_EXECUTABLE!
   const dir = mkdtempSync(join(tmpdir(), 'gloss-opencode-integration-'))
   const cwd = join(dir, 'project')
@@ -69,13 +70,17 @@ it.skipIf(!process.env.GLOSS_OPENCODE_EXECUTABLE)('runs OpenCode v2 with native 
     }
   }))
   const support = new OpenCodeSupport(join(dir, 'gloss'))
-  const config = support.config(executable)
+  const config = mode === 'guided' ? support.config(executable) : new AgentProfileSupport(join(dir, 'gloss')).config({
+    id: 'custom:opencode', name: 'OpenCode custom', command: process.execPath,
+    args: [resolve('scripts/opencode-custom-acp.mjs'), executable, '{instructions}'], env: {}
+  })
   const env = {
     ...Object.fromEntries(Object.entries(process.env).filter(([key]) => /^(path|systemroot|windir|comspec|pathext|temp|tmp|systemdrive)$/i.test(key))),
     HOME: dir, USERPROFILE: dir, APPDATA: join(dir, 'roaming'), LOCALAPPDATA: join(dir, 'local'),
     XDG_CONFIG_HOME: join(dir, 'config'), XDG_DATA_HOME: join(dir, 'data'),
     XDG_CACHE_HOME: join(dir, 'cache'), XDG_STATE_HOME: join(dir, 'state'),
-    OPENCODE_DISABLE_MODELS_FETCH: 'true'
+    OPENCODE_DISABLE_MODELS_FETCH: 'true',
+    OPENCODE_CONFIG_CONTENT: process.env.OPENCODE_CONFIG_CONTENT
   }
   const store = new Store(join(dir, 'gloss.db'))
   const makeManager = (): SessionManager => new SessionManager({
@@ -126,9 +131,8 @@ it.skipIf(!process.env.GLOSS_OPENCODE_EXECUTABLE || !process.env.GLOSS_OPENCODE_
   mkdirSync(cwd)
   vi.stubEnv('OPENCODE_CONFIG_CONTENT', JSON.stringify({
     model: 'ollama/qwen3.5:latest', update: 'disable', snapshots: false,
-    providers: { ollama: { models: { 'qwen3.5:latest': { body: { think: false, reasoning_effort: 'none', max_tokens: 128 }, limit: { output: 128 } } } } },
+    providers: { ollama: { models: { 'qwen3.5:latest': { body: { think: false, reasoning_effort: 'none', max_tokens: 512 }, limit: { output: 512 } } } } },
     agents: { title: { disabled: true } },
-    permissions: [{ action: '*', resource: '*', effect: 'deny' }],
     policies: [
       { action: 'provider.use', resource: '*', effect: 'deny' },
       { action: 'provider.use', resource: 'ollama', effect: 'allow' }
@@ -156,10 +160,15 @@ it.skipIf(!process.env.GLOSS_OPENCODE_EXECUTABLE || !process.env.GLOSS_OPENCODE_
     timer = setTimeout(() => { void manager.cancel(session.id) }, 30000)
     expect(await manager.send(session.id, 'Reply with exactly GLOSS_LOCAL_OK and nothing else. Do not use tools.', null)).toMatchObject({ stopReason: 'end_turn' })
     expect(store.listMessages(session.id).some((m) => m.role === 'agent' && m.text.includes('GLOSS_LOCAL_OK'))).toBe(true)
+    clearTimeout(timer)
+    timer = setTimeout(() => { void manager.cancel(session.id) }, 30000)
+    expect(await manager.send(session.id, 'Use the write tool to create local-proof.txt in the current directory containing exactly GLOSS_LOCAL_FILE_OK. Do not run commands. After writing, reply DONE.', null)).toMatchObject({ stopReason: 'end_turn' })
+    expect(readFileSync(join(cwd, 'local-proof.txt'), 'utf8').trim()).toBe('GLOSS_LOCAL_FILE_OK')
+    expect(store.listToolCalls(session.id).some((t) => t.status === 'completed')).toBe(true)
   } finally {
     clearTimeout(timer)
     await manager.dispose()
     store.close()
     await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
-}, 60000)
+}, 90000)

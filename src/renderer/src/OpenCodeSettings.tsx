@@ -25,8 +25,8 @@ export function OpenCodeSettings(props: { executable: string; onSave(executable:
   }
 
   return <section className="opencode-settings" aria-labelledby="settings-opencode">
-    <h2 id="settings-opencode">OpenCode</h2>
-    <p className="lede">Use OpenCode v2 with its existing providers and models, including local models served by Ollama. Test the connection to save this setup.</p>
+    <h3 id="settings-opencode">OpenCode</h3>
+    <p className="lede">Use OpenCode v2 with hosted or local models.</p>
     <label htmlFor="opencode-executable" className="setting-label">Executable path</label>
     <input id="opencode-executable" className="setting-text" type="text" spellCheck={false}
       placeholder="Find installed OpenCode automatically" value={draft} disabled={busy}
@@ -34,8 +34,8 @@ export function OpenCodeSettings(props: { executable: string; onSave(executable:
     <button className="secondary" disabled={busy} onClick={() => void test()}>{busy ? 'Connecting…' : 'Test connection and save'}</button>
     {status?.available && <p role="status">Connected to OpenCode {status.version}.<br /><span className="mono">{status.executable}</span></p>}
     {(error || status?.error) && <p role="alert" className="settings-problem">{error ?? status?.error}</p>}
-    <p className="setting-desc">Leave the path empty to discover a native executable on PATH or an OpenCode Desktop installation on Windows. Changes apply after running turns finish. The test does not send a prompt or call a model.</p>
-    <p className="setting-desc">Configure providers in OpenCode. Keep Ollama running for local models; OpenCode supplies the available models to Gloss.</p>
+    <p className="setting-desc">Empty finds an installed executable. Changes wait for running turns. Testing makes no model calls.</p>
+    <p className="setting-desc">Configure models in OpenCode. Keep Ollama running with 64K+ context; check with <code>ollama ps</code>.</p>
     <p><a href="https://opencode.ai/download">Install OpenCode</a> · <a href="https://docs.ollama.com/integrations/opencode">Ollama setup</a></p>
   </section>
 }

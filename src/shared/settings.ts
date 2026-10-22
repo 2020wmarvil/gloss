@@ -13,8 +13,26 @@ export type ThemeSetting = 'system' | 'light' | 'dark'
 
 export type SessionOrder = 'created' | 'activity'
 
+export const DEFAULT_EXTERNAL_EDITOR = 'code -g {file}:{line}'
+
+/** Commands use each editor's CLI launcher, which must be installed on PATH. */
+export const EDITOR_PRESETS = [
+  { label: 'Visual Studio Code', value: DEFAULT_EXTERNAL_EDITOR },
+  { label: 'VS Code Insiders', value: 'code-insiders -g {file}:{line}' },
+  { label: 'Cursor', value: 'cursor -g {file}:{line}' },
+  { label: 'Windsurf', value: 'windsurf -g {file}:{line}' },
+  { label: 'VSCodium', value: 'codium -g {file}:{line}' },
+  { label: 'Zed', value: 'zed {file}:{line}' },
+  { label: 'Sublime Text', value: 'subl {file}:{line}' },
+  { label: 'Notepad++', value: 'notepad++ -n{line} {file}' },
+  { label: 'Notepad', value: 'notepad {file}' },
+  { label: 'Kate', value: 'kate --line {line} {file}' },
+  { label: 'System default app', value: '' }
+] as const
+
 export type GlobalSettings = {
-  defaultAgent: 'claude' | 'codex' | 'opencode'
+  defaultAgent: string
+  agentProfiles?: import('./agentProfiles').AgentProfile[]
   /** Empty or omitted discovers an installed native OpenCode executable. */
   opencodeExecutable?: string
   /** Light, dark, or whatever the system uses. */
@@ -41,7 +59,7 @@ export type ProjectSettings = {
 export type SettingField = {
   key: string
   scope: 'global' | 'project'
-  type: 'boolean' | 'enum' | 'string' | 'mcp'
+  type: 'boolean' | 'enum' | 'string' | 'mcp' | 'profiles' | 'agent'
   label: string
   description: string
   /** For enum fields: the allowed values and how the screen labels them. */
@@ -55,43 +73,47 @@ export type SettingField = {
 
 export const SETTING_FIELDS: readonly SettingField[] = [
   {
+    key: 'agentProfiles', scope: 'global', type: 'profiles', label: 'Custom ACP agents',
+    description: 'Launch settings for custom ACP agents.', hidden: true
+  },
+  {
     key: 'opencodeExecutable', scope: 'global', type: 'string', label: 'OpenCode executable',
-    description: 'Path to the native OpenCode executable. Empty discovers an installed copy. Applied after current turns finish.',
+    description: 'Native executable path. Empty finds an installed copy.',
     hidden: true
   },
   {
     key: 'obsidianVault', scope: 'project', type: 'string', label: 'Obsidian vault',
-    description: 'The name or ID of an existing vault in Obsidian. Shows an Obsidian shortcut beside the project folder in the status line. Leave empty to hide it.',
+    description: 'Vault name or ID. Empty hides its shortcut.',
     placeholder: 'Vault name or ID'
   },
   {
     key: 'mcpServers', scope: 'global', type: 'mcp', label: 'MCP servers',
-    description: 'Tools shared by agents in all projects. Applied on the next turn or resume.', hidden: true
+    description: 'Shared tools. Applied next turn or resume.', hidden: true
   },
   {
     key: 'mcpServers', scope: 'project', type: 'mcp', label: 'MCP servers',
-    description: 'Legacy project servers. Import into global MCP settings to use them.', hidden: true
+    description: 'Import legacy servers into global MCP settings.', hidden: true
   },
   {
     key: 'listItemReplies',
     scope: 'global',
     type: 'boolean',
     label: 'List item replies',
-    description: 'Show reply buttons on numbered and bulleted list items. When off, select text to reply to it.'
+    description: 'Show Reply on list items.'
   },
   {
     key: 'turnEndSound',
     scope: 'global',
     type: 'boolean',
     label: 'Sound when a turn finishes',
-    description: "Play a chime when the agent finishes or fails, unless you're looking at that session. Not for turns you cancel."
+    description: 'Chime for background completions and failures.'
   },
   {
     key: 'defaultAgent',
     scope: 'global',
-    type: 'enum',
+    type: 'agent',
     label: 'Default agent',
-    description: 'The agent new sessions use. Starred in the New session menu.',
+    description: 'Star an agent in the New session menu.',
     options: [
       { value: 'claude', label: 'Claude Code' },
       { value: 'codex', label: 'Codex' },
@@ -104,7 +126,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     scope: 'global',
     type: 'enum',
     label: 'Theme',
-    description: 'Light or dark. System follows the operating system setting.',
+    description: 'System follows your device theme.',
     options: [
       { value: 'system', label: 'System' },
       { value: 'light', label: 'Light' },
@@ -117,7 +139,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     type: 'enum',
     label: 'Session order',
     description:
-      "How the sidebar sorts a project's sessions. The agent doesn't say when a session started outside Gloss began, so until it is opened here it counts from its last activity.",
+      "Sort by creation time or recent activity.",
     options: [
       { value: 'created', label: 'Newest first' },
       { value: 'activity', label: 'Recent activity' }
@@ -129,9 +151,8 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     type: 'string',
     label: 'External editor',
     description:
-      "The command that opens a review's files in your editor. {file} and {line} are filled in; without {file} the path goes at the end. Empty opens the file with your system's default app.",
-    placeholder: 'System default app',
-    suggestions: ['code -g {file}:{line}', 'cursor -g {file}:{line}', 'zed {file}:{line}', 'subl {file}:{line}', 'notepad++ -n{line} {file}']
+      'Open file links and review files in your editor. Custom commands replace {file} with the path and {line} with the line number. Use a command on PATH or a full executable path.',
+    placeholder: DEFAULT_EXTERNAL_EDITOR,
   }
 ]
 

@@ -287,9 +287,15 @@ export class SessionManager {
   }
 
   /** Stops the agent's process if no prompt is in flight. The next request starts a fresh one. */
-  async restartIdleAgent(agentId: string): Promise<boolean> {
+  async restartIdleAgent(agentId: string, waitForResume = false): Promise<boolean> {
     const slot = this.slot(agentId)
-    if (!slot.connection || slot.activePrompts > 0) return false
+    const turns = (): boolean => [...this.runtimes].some(([id, rt]) => rt.turn !== undefined && this.deps.store.getSession(id)?.agentId === agentId)
+    if (slot.activePrompts > 0 || (waitForResume && turns())) return false
+    // A background resume must finish before disposing the connection it is loading.
+    if (waitForResume) await Promise.all([...this.runtimes].filter(([id]) => this.deps.store.getSession(id)?.agentId === agentId)
+      .map(([, rt]) => rt.attaching?.promise.catch(() => {})))
+    if (slot.activePrompts > 0 || (waitForResume && turns())) return false
+    if (!slot.connection) return true
     const pending = slot.connection
     slot.connection = undefined
     slot.current = undefined
@@ -956,14 +962,14 @@ export class SessionManager {
 
   /**
    * session/load, syncing the log from its replay (SPEC → Shared sessions). An
-   * agent that can't load gets a new session, with a notice that it lost context.
+   * agent that can't load keeps display history and requires a new conversation.
    */
   private async doAttach(sessionId: string, conn: AgentConnection): Promise<string> {
     const rt = this.runtime(sessionId)
     const session = this.session(sessionId)
     const servers = this.mcpServers(session.cwd)
     conn.validateMcp(servers)
-    if (!conn.canLoadSession) return this.replaceAgentSession(sessionId, conn, true)
+    if (!conn.canLoadSession) throw new Error('This agent cannot resume previous sessions. The conversation is preserved here. Create a new conversation to continue with this agent.')
 
     // The agent's last change, before the load changes it: the time of what the replay adds.
     const before = await this.agentUpdatedAt(conn, session).catch(() => undefined)

@@ -21,7 +21,8 @@ The agent still sees one linear conversation. Threads are just how Gloss shows i
 - Node.js 22 or newer and npm (for development only; the agent runs on Electron's bundled Node).
 - A Claude account for Claude Code, or a ChatGPT account with Codex access for Codex. Codex uses the existing Codex login; otherwise choose **ChatGPT** in the sign-in dialog to sign in through your browser. The adapter includes the Codex CLI, so no separate CLI install is needed.
 - For Claude Code: If the agent isn't signed in, Gloss shows a **Sign in** dialog with the agent's own sign-in options and opens a terminal window to complete it. It uses the same login as the `claude` command, so if `claude` already works, you're set.
-- For OpenCode: install OpenCode v2, then use **Settings > OpenCode > Test connection and save**. Leave the executable path empty to discover an installed native CLI, including OpenCode Desktop on Windows. OpenCode supplies its own configured providers and models, including local models through Ollama. See [OpenCode setup and validation](docs/OPENCODE.md).
+- For custom ACP agents: use **Settings > Agents > Add ACP agent**. Supply the native executable, argument array, environment references and documented instruction-file delivery. Test connection and save before choosing the profile in New session. See [custom profile setup](docs/ACP-PROFILES.md).
+- For OpenCode: install OpenCode v2, then use **Settings > Agents > OpenCode > Test connection and save**. Leave the executable path empty to discover an installed native CLI, including OpenCode Desktop on Windows. OpenCode supplies its own configured providers and models, including local models through Ollama. Use at least 64K context for tool use. See [OpenCode setup and validation](docs/OPENCODE.md).
 
 ## Getting started
 

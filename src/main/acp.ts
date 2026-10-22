@@ -60,7 +60,8 @@ export class AgentConnection {
   private constructor(
     private readonly conn: acp.ClientConnection,
     readonly init: acp.InitializeResponse,
-    private readonly child?: ChildProcess
+    private readonly child?: ChildProcess,
+    private readonly privateDiagnostics = false
   ) {}
 
   /** Spawns the agent's ACP entrypoint and initializes the connection. */
@@ -78,7 +79,7 @@ export class AgentConnection {
       child.once('spawn', resolve)
       child.once('error', reject)
     })
-    createInterface({ input: child.stderr! }).on('line', handlers.onStderr)
+    createInterface({ input: child.stderr! }).on('line', config.privateDiagnostics ? () => {} : handlers.onStderr)
     const stream = acp.ndJsonStream(
       Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>,
       Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>
@@ -90,9 +91,12 @@ export class AgentConnection {
       await spawned
     } catch (err) {
       child.kill()
+      // The original cause can contain credentials in arguments or native config.
+      // eslint-disable-next-line preserve-caught-error
+      if (config.privateDiagnostics) throw new Error('Could not start the custom agent. Check that its executable is installed and accessible.')
       throw err
     }
-    return AgentConnection.open(stream, handlers, child, config.startupTimeoutMs)
+    return AgentConnection.open(stream, handlers, child, config.startupTimeoutMs, config.privateDiagnostics)
   }
 
   /** Connects to an ACP stream or an in-process agent app and initializes. */
@@ -100,7 +104,8 @@ export class AgentConnection {
     target: acp.Stream | acp.AgentApp,
     handlers: AgentHandlers,
     child?: ChildProcess,
-    timeoutMs?: number
+    timeoutMs?: number,
+    privateDiagnostics = false
   ): Promise<AgentConnection> {
     const app = acp
       .client({ name: 'gloss' })
@@ -128,7 +133,7 @@ export class AgentConnection {
         })
       ]) : await request
       if (init.protocolVersion !== acp.PROTOCOL_VERSION) throw new Error(`Unsupported ACP protocol version ${init.protocolVersion}`)
-      const connection = new AgentConnection(conn, init, child)
+      const connection = new AgentConnection(conn, init, child, privateDiagnostics)
       const onClosed = (): void => {
         connection.closed = true
         handlers.onClosed()
@@ -138,9 +143,27 @@ export class AgentConnection {
     } catch (err) {
       conn.close(err)
       child?.kill()
+      if (privateDiagnostics) {
+        const message = err instanceof Error ? err.message : ''
+        // eslint-disable-next-line preserve-caught-error
+        if (!(err instanceof acp.RequestError) && (message === 'Agent initialization timed out. Check the executable and its configuration.' || /^Unsupported ACP protocol version \d+$/.test(message))) throw new Error(message)
+        // eslint-disable-next-line preserve-caught-error
+        throw new Error('Could not start the custom agent. ACP initialization failed or the process exited. Check its executable, arguments and native configuration.')
+      }
       throw err
     } finally {
       clearTimeout(timeout)
+    }
+  }
+
+  /** Keep ACP error codes for sign-in and recovery, but never expose external payloads. */
+  private async guard<T>(pending: Promise<T>): Promise<T> {
+    try { return await pending } catch (err) {
+      if (!this.privateDiagnostics) throw err
+      const message = 'Custom agent request failed. Check its native provider configuration and model server, then retry.'
+      if (err instanceof acp.RequestError) throw new acp.RequestError(err.code, message)
+      // eslint-disable-next-line preserve-caught-error
+      throw new Error(message)
     }
   }
 
@@ -191,7 +214,7 @@ export class AgentConnection {
     const sessions: acp.SessionInfo[] = []
     let cursor: string | null | undefined
     for (let page = 0; page < maxPages; page++) {
-      const res = await this.conn.agent.request(acp.methods.agent.session.list, { cwd, cursor })
+      const res = await this.guard(this.conn.agent.request(acp.methods.agent.session.list, { cwd, cursor }))
       sessions.push(...res.sessions)
       cursor = res.nextCursor
       if (!cursor) break
@@ -203,7 +226,7 @@ export class AgentConnection {
   async findSession(cwd: string, sessionId: string, maxPages = 10): Promise<acp.SessionInfo | undefined> {
     let cursor: string | null | undefined
     for (let page = 0; page < maxPages; page++) {
-      const res = await this.conn.agent.request(acp.methods.agent.session.list, { cwd, cursor })
+      const res = await this.guard(this.conn.agent.request(acp.methods.agent.session.list, { cwd, cursor }))
       const found = res.sessions.find((s) => s.sessionId === sessionId)
       if (found) return found
       cursor = res.nextCursor
@@ -213,50 +236,50 @@ export class AgentConnection {
   }
 
   async deleteSession(sessionId: string): Promise<void> {
-    await this.conn.agent.request(acp.methods.agent.session.delete, { sessionId })
+    await this.guard(this.conn.agent.request(acp.methods.agent.session.delete, { sessionId }))
   }
 
   /** Stops the agent's live copy of the session; a later session/load starts it again from its saved history. */
   async closeSession(sessionId: string): Promise<void> {
-    await this.conn.agent.request(acp.methods.agent.session.close, { sessionId })
+    await this.guard(this.conn.agent.request(acp.methods.agent.session.close, { sessionId }))
   }
 
   setConfigOption(sessionId: string, configId: string, value: string): Promise<acp.SetSessionConfigOptionResponse> {
-    return this.conn.agent.request(acp.methods.agent.session.setConfigOption, { sessionId, configId, value })
+    return this.guard(this.conn.agent.request(acp.methods.agent.session.setConfigOption, { sessionId, configId, value }))
   }
 
   newSession(cwd: string, meta?: Record<string, unknown>, mcpServers: acp.McpServer[] = []): Promise<acp.NewSessionResponse> {
     this.validateMcp(mcpServers)
-    return this.conn.agent.request(acp.methods.agent.session.new, { cwd, mcpServers, ...(meta ? { _meta: meta } : {}) })
+    return this.guard(this.conn.agent.request(acp.methods.agent.session.new, { cwd, mcpServers, ...(meta ? { _meta: meta } : {}) }))
   }
 
   loadSession(sessionId: string, cwd: string, meta?: Record<string, unknown>, mcpServers: acp.McpServer[] = []): Promise<acp.LoadSessionResponse> {
     this.validateMcp(mcpServers)
-    return this.conn.agent.request(acp.methods.agent.session.load, {
+    return this.guard(this.conn.agent.request(acp.methods.agent.session.load, {
       sessionId,
       cwd,
       mcpServers,
       ...(meta ? { _meta: meta } : {})
-    })
+    }))
   }
 
   async setMode(sessionId: string, modeId: string): Promise<void> {
-    await this.conn.agent.request(acp.methods.agent.session.setMode, { sessionId, modeId })
+    await this.guard(this.conn.agent.request(acp.methods.agent.session.setMode, { sessionId, modeId }))
   }
 
   prompt(sessionId: string, prompt: acp.ContentBlock[]): Promise<acp.PromptResponse> {
-    return this.conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt })
+    return this.guard(this.conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt }))
   }
 
   /** Injects a message into the session's running turn (see STEER_METHOD). */
   async steer(sessionId: string, prompt: acp.ContentBlock[]): Promise<SteerOutcome> {
     // promptRequired: if the turn already ended, the adapter sends nothing
     // instead of starting a turn Gloss doesn't know about.
-    const res = await this.conn.agent.request<{ outcome?: unknown }>(STEER_METHOD, {
+    const res = await this.guard(this.conn.agent.request<{ outcome?: unknown }>(STEER_METHOD, {
       sessionId,
       prompt,
       _meta: { steering: { idleBehavior: 'promptRequired' } }
-    })
+    }))
     if (res.outcome === 'injected' || res.outcome === 'promptRequired') return res.outcome
     throw new Error(`Unexpected steering outcome: ${String(res.outcome)}`)
   }
@@ -266,7 +289,7 @@ export class AgentConnection {
   }
 
   async authenticate(methodId: string): Promise<void> {
-    await this.conn.agent.request(acp.methods.agent.authenticate, { methodId })
+    await this.guard(this.conn.agent.request(acp.methods.agent.authenticate, { methodId }))
   }
 
   dispose(): void {

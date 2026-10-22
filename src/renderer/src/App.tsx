@@ -856,7 +856,7 @@ export function App(): React.JSX.Element {
 
   async function updateSettings(patch: SettingsPatch): Promise<void> {
     setSettings(await window.gloss.settings.update(patch))
-    if (patch.global && 'opencodeExecutable' in patch.global) setAgents(await window.gloss.agents.list())
+    if (patch.global && ('opencodeExecutable' in patch.global || 'agentProfiles' in patch.global)) setAgents(await window.gloss.agents.list())
   }
 
   /** Puts the caret in the main conversation's composer, or the side panel's, once it shows. */
@@ -1142,6 +1142,7 @@ export function App(): React.JSX.Element {
           <SettingsScreen
             state={settings}
             projectPath={projectPath}
+            projects={projects}
             onUpdate={updateSettings}
             onOpenFile={() => window.gloss.settings.openFile()}
             onClose={closeSettings}

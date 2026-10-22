@@ -2,16 +2,19 @@
 // one section at a time on the right, each a card of rows with one control each.
 import { useEffect, useState } from 'react'
 import type { SettingsPatch, SettingsState } from '@shared/ipc'
-import { folderName } from '@shared/paths'
+import type { Project } from '@shared/types'
+import { folderName, sameFolder } from '@shared/paths'
 import { SETTING_FIELDS, projectSettings, type ProjectSettings, type GlobalSettings, type SettingField } from '@shared/settings'
 import { errorText } from './errors'
 import { modKey, SHORTCUTS } from './shortcuts'
 import { McpSettings } from './McpSettings'
 import { OpenCodeSettings } from './OpenCodeSettings'
+import { AgentProfileSettings } from './AgentProfileSettings'
 import { Segmented, Select, Switch } from './Select'
+import { EditorSetting } from './EditorSetting'
 import { ExternalLink, Folder, Keyboard, Palette, Server, SlidersVertical, Terminal } from 'lucide-react'
 
-export type SettingsSection = 'general' | 'appearance' | 'mcp' | 'opencode' | 'project' | 'shortcuts'
+export type SettingsSection = 'general' | 'appearance' | 'mcp' | 'agents' | 'project' | 'shortcuts'
 
 /** Fields shown in Appearance; the other visible global fields are General. */
 const APPEARANCE = new Set(['theme'])
@@ -20,14 +23,15 @@ const SEGMENTED = new Set(['theme'])
 
 type Props = {
   state: SettingsState
-  /** The open session's folder, if any. */
+  /** The initially selected project folder, if any. */
   projectPath: string | null
+  projects: Project[]
   onUpdate(patch: SettingsPatch): Promise<void>
   onOpenFile(): Promise<string | null>
   onClose(): void
 }
 
-export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClose }: Props): React.JSX.Element {
+export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenFile, onClose }: Props): React.JSX.Element {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
 
@@ -56,6 +60,10 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
   }
 
   const [section, setSection] = useState<SettingsSection>('general')
+  const [selectedProject, setSelectedProject] = useState(projectPath)
+  const settingsProject = projects.find((p) => selectedProject !== null && sameFolder(p.path, selectedProject))
+    ?? projects.find((p) => projectPath !== null && sameFolder(p.path, projectPath)) ?? projects[0]
+  const settingsProjectPath = settingsProject?.path ?? null
   const projectFields = SETTING_FIELDS.filter((f) => f.scope === 'project' && !f.hidden)
   const globalFields = (appearance: boolean): React.JSX.Element[] =>
     SETTING_FIELDS.filter((f) => f.scope === 'global' && !f.hidden && APPEARANCE.has(f.key) === appearance).map((f) => (
@@ -66,8 +74,10 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
         onChange={(value) => void update({ global: { [f.key]: value } })}
       />
     ))
-  const nav = (id: SettingsSection, icon: React.JSX.Element, label: string): React.JSX.Element => (
-    <button className={section === id ? 'settings-nav-item on' : 'settings-nav-item'} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}>
+  const nav = (id: SettingsSection, icon: React.JSX.Element, label: string, path?: string): React.JSX.Element => (
+    <button key={path ?? id} title={path} className={section === id && (!path || path === settingsProjectPath) ? 'settings-nav-item on' : 'settings-nav-item'}
+      aria-current={section === id && (!path || path === settingsProjectPath) ? 'page' : undefined}
+      onClick={() => { if (path) setSelectedProject(path); setSection(id) }}>
       {icon}
       <span>{label}</span>
     </button>
@@ -80,11 +90,12 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
         {nav('general', <SlidersVertical />, 'General')}
         {nav('appearance', <Palette />, 'Appearance')}
         {nav('mcp', <Server />, 'MCP servers')}
-        {nav('opencode', <Terminal />, 'OpenCode')}
+        {nav('agents', <Terminal />, 'Agents')}
         {projectFields.length > 0 && (
           <>
-            <div className="settings-nav-group">Project</div>
-            {nav('project', <Folder />, projectPath ? folderName(projectPath) : 'This project')}
+            <div className="settings-nav-group">Projects</div>
+            {projects.length ? projects.map((p) => nav('project', <Folder />, p.name || folderName(p.path), p.path))
+              : nav('project', <Folder />, 'Projects')}
           </>
         )}
         <div className="settings-nav-group">Reference</div>
@@ -118,7 +129,6 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
         {section === 'general' && (
           <section aria-labelledby="settings-general">
             <h2 id="settings-general">General</h2>
-            <p className="lede">Saved to settings.json as you change them. Edits made in the file show up here.</p>
             <div className="settings-card">{globalFields(false)}</div>
           </section>
         )}
@@ -136,26 +146,32 @@ export function SettingsScreen({ state, projectPath, onUpdate, onOpenFile, onClo
               onSave={async (mcpServers) => { await onUpdate({ global: { mcpServers } }) }} />
           </section>
         )}
-        {section === 'opencode' && (
-          <OpenCodeSettings executable={state.global.opencodeExecutable ?? ''}
-            onSave={async (opencodeExecutable) => { await onUpdate({ global: { opencodeExecutable } }) }} />
+        {section === 'agents' && (
+          <section className="agents-settings" aria-labelledby="settings-agents">
+            <h2 id="settings-agents">Agents</h2>
+            <p className="lede">Claude Code and Codex are built in. Add other agents below.</p>
+            <OpenCodeSettings executable={state.global.opencodeExecutable ?? ''}
+              onSave={async (opencodeExecutable) => { await onUpdate({ global: { opencodeExecutable } }) }} />
+            <AgentProfileSettings profiles={state.global.agentProfiles ?? []} defaultAgent={state.global.defaultAgent}
+              onSave={async (agentProfiles, resetDefault) => { await onUpdate({ global: { agentProfiles, ...(resetDefault ? { defaultAgent: 'claude' } : {}) } }) }} />
+          </section>
         )}
         {section === 'project' && (
           <section aria-labelledby="settings-project">
-            <h2 id="settings-project">{projectPath ? folderName(projectPath) : 'Project'}</h2>
-            {projectPath ? (
+            <h2 id="settings-project">{settingsProject?.name ?? 'Project'}</h2>
+            {settingsProjectPath ? (
               <>
-                <p className="lede mono" title={projectPath}>{projectPath}</p>
+                <p className="lede mono" title={settingsProjectPath}>{settingsProjectPath}</p>
                 <div className="settings-card">
                   {projectFields.map((f) => (
-                    <Field key={`${projectPath}:${f.key}`} field={f}
-                      value={projectSettings(state.projects, projectPath)[f.key as keyof ProjectSettings]}
-                      onChange={(value) => void update({ project: { path: projectPath, values: { [f.key]: value } } })} />
+                    <Field key={`${settingsProjectPath}:${f.key}`} field={f}
+                      value={projectSettings(state.projects, settingsProjectPath)[f.key as keyof ProjectSettings]}
+                      onChange={(value) => void update({ project: { path: settingsProjectPath, values: { [f.key]: value } } })} />
                   ))}
                 </div>
               </>
             ) : (
-              <p className="lede">Open a session to see its project&apos;s settings.</p>
+              <p className="lede">Open a project to configure its settings.</p>
             )}
           </section>
         )}
@@ -253,7 +269,9 @@ function Field(props: { field: SettingField; value: unknown; onChange(value: unk
           {field.description}
         </p>
       </div>
-      {field.type === 'string' ? (
+      {field.key === 'externalEditor' ? (
+        <EditorSetting id={id} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
+      ) : field.type === 'string' ? (
         <TextSetting id={id} field={field} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'enum' && SEGMENTED.has(field.key) ? (
         <Segmented

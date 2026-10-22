@@ -75,7 +75,7 @@ export function McpSettings({ servers, onSave, hasLegacy }: Props): React.JSX.El
   const imports = (preview?.entries ?? []).flatMap((e) => selected.has(e.id) && e.server ? [{ ...e.server, name: names[e.id] ?? e.name }] : [])
   const importProblem = mcpError([...servers, ...imports])
   return <div className="mcp-settings">
-    <p className="lede">Shared across agents in all projects. Changes apply on the next turn or resume. Every listed server is included; agent-owned servers may also load independently. Codex and OpenCode do not support SSE.</p>
+    <p className="lede">Shared across agents and projects. Applied next turn or resume. SSE requires Claude.</p>
     <div className="mcp-actions">
       <button className="secondary" disabled={busy} onClick={() => edit(-1)}>Add server</button>
       <button className="secondary" disabled={busy} onClick={() => void discover('claude')}>Import from Claude</button>
@@ -86,7 +86,7 @@ export function McpSettings({ servers, onSave, hasLegacy }: Props): React.JSX.El
     {servers.length > 0 && <ul className="mcp-server-list settings-card">{servers.map((server, index) => <li key={server.name}>
       <div><strong>{server.name}</strong><span className="muted">{'type' in server ? server.type.toUpperCase() : 'stdio'}</span><p className="mono">{describe(server)}</p></div>
       <button className="ghost sm" disabled={busy} onClick={() => edit(index)} aria-label={`Edit ${server.name}`}>Edit</button>
-      <button className="ghost sm" disabled={busy} onClick={() => void save(servers.filter((_, i) => i !== index), 'Server removed from Gloss. Native agent settings are unchanged.')} aria-label={`Remove ${server.name}`}>Remove</button>
+      <button className="ghost sm" disabled={busy} onClick={() => void save(servers.filter((_, i) => i !== index), 'Removed from Gloss. Native settings kept.')} aria-label={`Remove ${server.name}`}>Remove</button>
     </li>)}</ul>}
     {editor && <form className="mcp-editor" onSubmit={(e) => { e.preventDefault(); saveEditor() }}>
       <h4>{editor.index < 0 ? 'Add server' : 'Edit server'}</h4>
@@ -104,7 +104,7 @@ export function McpSettings({ servers, onSave, hasLegacy }: Props): React.JSX.El
     </form>}
     {preview && <div className="mcp-import-preview">
       <h4>Review import</h4>
-      <p className="setting-desc">Selected servers will be copied into Gloss for all projects. Original files stay unchanged. Environment-based credentials are copied as current values; OAuth sign-ins are not transferred.</p>
+      <p className="setting-desc">Copies selected servers and current credential values. Source files stay unchanged; OAuth sign-ins aren&apos;t copied.</p>
       {preview.entries.length === 0 && <p>No MCP servers found.</p>}
       {preview.problems.map((problem, i) => <p className="settings-problem" key={i}>{problem}</p>)}
       {preview.entries.map((entry) => <div key={entry.id} className="mcp-import-entry">
@@ -112,7 +112,7 @@ export function McpSettings({ servers, onSave, hasLegacy }: Props): React.JSX.El
         <p className="muted mono">{entry.source}</p>
         {entry.server && <><p className="mono">{describe(entry.server)}</p><label>Import as<input aria-label={`Import ${entry.name} as (${entry.id})`} disabled={busy} value={names[entry.id] ?? entry.name} onChange={(e) => setNames((old) => ({ ...old, [entry.id]: e.target.value }))} /></label></>}
         {entry.problem && <p className="settings-problem">{entry.problem}</p>}
-        {entry.server && servers.some((s) => mcpName(s.name) === mcpName(names[entry.id] ?? entry.name)) && <p className="muted">This name already exists. Rename it to import another copy.</p>}
+        {entry.server && servers.some((s) => mcpName(s.name) === mcpName(names[entry.id] ?? entry.name)) && <p className="muted">Name taken. Rename to import another copy.</p>}
         {entry.server && 'type' in entry.server && entry.server.type === 'sse' && <p className="settings-problem">SSE is unsupported by Codex.</p>}
       </div>)}
       {imports.length > 0 && importProblem && <p className="settings-problem">{importProblem}</p>}

@@ -84,6 +84,13 @@ export type OpenCodeStatus = {
   error: string | null
 }
 
+export type AgentProfileStatus = {
+  available: boolean
+  version: string | null
+  error: string | null
+  capabilities: { resume: boolean; discovery: boolean; steering: boolean; images: boolean; context: boolean } | null
+}
+
 export type GlossEvent =
   | { type: 'session'; session: Session }
   /** `deletedOutside`: the agent no longer had it, so Gloss deleted it too (SPEC → Shared sessions). */
@@ -130,6 +137,7 @@ export type GlossApi = {
   agents: {
     list(): Promise<AgentInfo[]>
     testOpenCode(executable: string): Promise<OpenCodeStatus>
+    testProfile(profile: import('./agentProfiles').AgentProfile): Promise<AgentProfileStatus>
   }
   projects: {
     list(): Promise<Project[]>
@@ -257,6 +265,7 @@ export const IPC = {
   search: 'gloss:search',
   agentsList: 'gloss:agents:list',
   agentsTestOpenCode: 'gloss:agents:testOpenCode',
+  agentsTestProfile: 'gloss:agents:testProfile',
   projectsList: 'gloss:projects:list',
   projectsOpen: 'gloss:projects:open',
   projectsAgentSessions: 'gloss:projects:agentSessions',
