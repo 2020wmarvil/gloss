@@ -69,6 +69,10 @@
   --accent: #c2147a;
   --accent-tint: #fae5f0;
   --accent-mark: #f3c6dd;
+  /* The user's messages: the brand gradient's pink to orange, faint. */
+  --you-fill: linear-gradient(135deg, #fce8f2, #fdeee0);
+  --you-sheen: linear-gradient(to bottom, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 70%);
+  --you-ring: rgba(194, 20, 122, 0.1);
   --on-accent: #fff;
   --focus: rgba(194, 20, 122, 0.35);
 
@@ -158,6 +162,9 @@
   --accent: #ff5c9e;
   --accent-tint: #3a1a2c;
   --accent-mark: #5a2440;
+  --you-fill: linear-gradient(135deg, #3a1a2c, #3a2419);
+  --you-sheen: linear-gradient(to bottom, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 70%);
+  --you-ring: rgba(255, 92, 158, 0.14);
   --on-accent: #17040e;
   --focus: rgba(255, 92, 158, 0.4);
   --working: #7c9cf0;
@@ -1022,6 +1029,14 @@ button.new-session-agents {
   background: var(--state-failed);
 }
 
+.done-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--state-done);
+}
+
 @keyframes pulse {
   50% {
     opacity: 0.3;
@@ -1722,14 +1737,16 @@ button.settings-button.on {
   gap: 16px;
 }
 
-/* The user's messages: pressed into the page. */
+/* The user's messages: a faint brand gradient under the sheen, lifted slightly off the
+   page, with a tighter corner on the user's side like a speech bubble. The edge is a faint
+   ring rather than a border or a lit top edge, which look stepped on the corners at 1x. */
 .you {
   align-self: flex-end;
   max-width: 75%;
-  background: var(--sunken);
-  border-radius: var(--r-lg);
-  padding: 9px 13px;
-  box-shadow: var(--sink);
+  background: var(--you-sheen), var(--you-fill);
+  border-radius: var(--r-lg) var(--r-lg) 8px var(--r-lg);
+  padding: 10px 14px;
+  box-shadow: 0 0 0 1px var(--you-ring), var(--lift-1);
   overflow-wrap: anywhere;
 }
 

@@ -303,6 +303,20 @@ Let users bring an ACP-compatible coding agent and run it with either a hosted m
 
 Initial references (re-check during implementation): [OpenCode ACP support](https://opencode.ai/docs/acp/) and [provider configuration](https://opencode.ai/docs/providers/).
 
+## M22: Performance (future)
+Measure first, then fix what the numbers show. Gloss has had no performance work so far; keep the app's behavior unchanged, and don't optimize anything the measurements don't point at.
+
+- **Benchmarks you can rerun:** a script that seeds a scratch user data folder (`--user-data-dir`) with large sessions (hundreds of turns, long code-heavy answers, many tool calls and diffs, dozens of threads) and drives the built app over CDP. It records: cold start to first paint and to an interactive sidebar, opening a large session, the frame time and main-process CPU while a fake agent streams a long answer at realistic chunk rates, switching sessions, opening a thread, search latency, and memory after an hour of use. Results go to a JSON file so a later run can be compared.
+- **Profile the hot paths:** the renderer with the Chrome DevTools Performance panel and React Profiler (which components render per streamed chunk, and why), the main process with `--inspect` and a CPU profile, and the database with timings of the statements run per chunk (including the full-text triggers). Count IPC messages and bytes per turn.
+- **Fix the confirmed hotspots,** each with its before and after numbers in the PR. Likely candidates to check: re-rendering and re-parsing every message's markdown on each chunk, rewriting a message's full text (and its search index) on each chunk, sending the full text over IPC on each chunk, and rendering long logs and large diffs in full. Choices like batching chunks or virtualizing the log are made here from the measurements, and recorded in `SPEC.md` where they change the design.
+- **Startup and size:** what loads before the first window (bundle size, Shiki grammars, adapter launch, the session list) and what can wait.
+- **Regression tests, in two tiers:**
+  - *Deterministic, in `npm test`:* assert counts, not times, so they don't flake. Streaming a chunk re-renders only the message it changed (React Profiler `onRender` counts). Database writes and IPC bytes per chunk stay bounded rather than growing with the message length (`SessionManager` against the fake agent, with an instrumented store and emit). Opening a large seeded session issues a bounded number of queries. The renderer bundle and the main bundle stay under a size budget.
+  - *Timed, run on demand (`npm run bench`), not in CI by default:* the benchmark compares itself against a checked-in baseline and fails past a generous margin (for example 25% slower, or any renderer long task over 50 ms while streaming). Shared CI runners are too noisy for wall-clock budgets, so the baseline is per machine, and updating it is an explicit step.
+- Add the benchmark and the regression tests to the docs, with how to run them and how to update the baseline.
+
+**Done when:** the benchmark runs from one command, each fixed hotspot shows a measured improvement and has a deterministic test that would catch it coming back, streaming a long answer into a large session stays smooth (no long tasks over 50 ms in the renderer), and the numbers are recorded for the next comparison.
+
 ## Future work (after the milestones)
 Ideas worth building once the milestones are done. Not scheduled; first item first.
 

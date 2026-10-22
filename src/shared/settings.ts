@@ -23,6 +23,8 @@ export type GlobalSettings = {
   sessionOrder: SessionOrder
   /** Show reply buttons on top-level numbered and bulleted list items. */
   listItemReplies: boolean
+  /** Play a sound when a turn finishes in a session that isn't in front of the user. */
+  turnEndSound: boolean
   /** The command that opens a file in the user's editor (`{file}`, `{line}`); empty for the system's default app. */
   externalEditor: string
   /** Tools made available to all agents in every project. */
@@ -76,6 +78,13 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     type: 'boolean',
     label: 'List item replies',
     description: 'Show reply buttons on numbered and bulleted list items. When off, select text to reply to it.'
+  },
+  {
+    key: 'turnEndSound',
+    scope: 'global',
+    type: 'boolean',
+    label: 'Sound when a turn finishes',
+    description: "Play a chime when the agent finishes or fails, unless you're looking at that session. Not for turns you cancel."
   },
   {
     key: 'defaultAgent',

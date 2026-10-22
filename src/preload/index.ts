@@ -51,6 +51,7 @@ const api: GlossApi = {
   steer: (sessionId, text, threadId, attachments) =>
     ipcRenderer.invoke(IPC.steer, sessionId, text, threadId, attachments),
   cancel: (sessionId) => ipcRenderer.invoke(IPC.cancel, sessionId),
+  setBadge: (badge) => ipcRenderer.send(IPC.setBadge, badge),
   queue: {
     edit: (sessionId, id, text) => ipcRenderer.invoke(IPC.queueEdit, sessionId, id, text),
     remove: (sessionId, id) => ipcRenderer.invoke(IPC.queueRemove, sessionId, id),

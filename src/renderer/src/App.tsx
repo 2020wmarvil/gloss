@@ -53,6 +53,7 @@ import { modKey } from './shortcuts'
 import { applyTheme } from './theme'
 import { FolderOpen, Plus } from 'lucide-react'
 import { BrandMark, TitleBar } from './Brand'
+import { playChime } from './chime'
 
 export type OpenSession = {
   session: Session
@@ -187,16 +188,39 @@ export function App(): React.JSX.Element {
   const [sideTab, setSideTab] = useState<SideTab>('threads')
   /** sessionId → threadId of its running turn. */
   const [running, setRunning] = useState<Record<string, string | null>>({})
-  /** Sessions whose last turn failed while they weren't open, until they are opened or run again. */
-  const [failed, setFailed] = useState<Record<string, true>>({})
-  const clearFailed = useCallback((id: string) => {
-    setFailed((f) => {
+  /**
+   * Sessions whose last turn finished or failed while the user wasn't looking (another
+   * session open, or Gloss in the background), until they are looked at or run again.
+   */
+  const [unseen, setUnseen] = useState<Record<string, 'completed' | 'failed'>>({})
+  const clearUnseen = useCallback((id: string) => {
+    setUnseen((f) => {
       if (!(id in f)) return f
       const next = { ...f }
       delete next[id]
       return next
     })
   }, [])
+  // The open session counts as looked at once Gloss is in front.
+  useEffect(() => {
+    const onFocus = (): void => {
+      if (openId.current) clearUnseen(openId.current)
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [clearUnseen])
+  // The app icon's badge: a failed turn, else a finished one, else working (SPEC → Notifications).
+  useEffect(() => {
+    const outcomes = Object.values(unseen)
+    const state = outcomes.includes('failed')
+      ? 'failed'
+      : outcomes.length > 0
+        ? 'completed'
+        : Object.keys(running).length > 0
+          ? 'working'
+          : null
+    window.gloss.setBadge?.({ state, unseen: outcomes.length })
+  }, [unseen, running])
   const [notices, setNotices] = useState<Record<string, Notice[]>>({})
   const [lives, setLives] = useState<Record<string, SessionLive>>({})
   const [queues, setQueues] = useState<Record<string, MessageQueue>>({})
@@ -222,6 +246,9 @@ export function App(): React.JSX.Element {
   }
 
   const openId = useRef<string | null>(null)
+  /** Settings' turnEndSound, for the event handler. */
+  const chimeOn = useRef(true)
+  chimeOn.current = settings?.global.turnEndSound ?? true
   /** Views visited, and the current one; `moving` while back or forward restores one. */
   const history = useRef<{ views: View[]; at: number; moving: boolean }>({ views: [], at: -1, moving: false })
   /** The open session's folder, for refreshing its git status. */
@@ -349,7 +376,7 @@ export function App(): React.JSX.Element {
   const selectSession = useCallback(
     async (id: string, threadId: string | null = null, target?: SearchResult): Promise<void> => {
       setShowSettings(false)
-      clearFailed(id)
+      clearUnseen(id)
       const switching = openId.current !== id
       if (switching) {
         leaveSession()
@@ -502,7 +529,7 @@ export function App(): React.JSX.Element {
           break
         case 'turnStart':
           setRunning((r) => ({ ...r, [event.sessionId]: event.threadId }))
-          clearFailed(event.sessionId)
+          clearUnseen(event.sessionId)
           break
         case 'turnEnd':
           setRunning((r) => {
@@ -510,13 +537,21 @@ export function App(): React.JSX.Element {
             delete next[event.sessionId]
             return next
           })
-          if (event.error) {
-            addNotice(event.sessionId, event.threadId, `The turn failed: ${event.error}`, 'failed')
-            if (event.sessionId !== openId.current) setFailed((f) => ({ ...f, [event.sessionId]: true }))
-          }
+          if (event.error) addNotice(event.sessionId, event.threadId, `The turn failed: ${event.error}`, 'failed')
           else if (event.stopReason === 'cancelled') addNotice(event.sessionId, event.threadId, 'Cancelled.')
           else if (event.stopReason && event.stopReason !== 'end_turn')
             addNotice(event.sessionId, event.threadId, `The agent stopped: ${event.stopReason.replace(/_/g, ' ')}.`)
+          // Work the user isn't watching (another session, or Gloss in the background) is
+          // marked unseen and chimes. A cancel is the user's own; a queued follow-up isn't the end.
+          if (
+            !event.continues &&
+            event.stopReason !== 'cancelled' &&
+            (event.sessionId !== openId.current || !document.hasFocus())
+          ) {
+            const outcome = event.error ? 'failed' : 'completed'
+            setUnseen((u) => ({ ...u, [event.sessionId]: outcome }))
+            if (chimeOn.current) playChime()
+          }
           // The agent may have changed files: refresh the branch's dirty marker.
           if (event.sessionId === openId.current && openCwd.current) refreshGit(openCwd.current, event.sessionId)
           if (event.sessionId === openId.current && openReview.current) refreshDiff(event.sessionId)
@@ -992,8 +1027,8 @@ export function App(): React.JSX.Element {
   const runningThread = sessionId !== undefined && sessionId in running ? running[sessionId] : undefined
   const runningThreadRow = open?.threads.find((t) => t.id === runningThread)
   /**
-   * The thread a turn runs in, else the thread of the latest message if it was sent in
-   * one, with its state. A turn in the main conversation clears it.
+   * Where a turn runs (a thread or the main conversation), else where the latest message
+   * was sent, with its state.
    */
   const lastMessage = open?.messages.reduce<Message | undefined>(
     (latest, m) => (m.role === 'user' && (!latest || m.seq > latest.seq) ? m : latest),
@@ -1001,13 +1036,12 @@ export function App(): React.JSX.Element {
   )
   const stripThreadId = runningThread !== undefined ? runningThread : lastMessage?.threadId
   const stripThreadRow = open?.threads.find((t) => t.id === stripThreadId)
+  const stripState = runningThread !== undefined ? 'working' : (lastMessage?.outcome ?? null)
   const lastThread: StripThread | null = stripThreadRow
-    ? {
-        id: stripThreadRow.id,
-        name: threadName(stripThreadRow),
-        state: stripThreadRow.id === runningThread ? 'working' : (lastMessage?.outcome ?? null)
-      }
-    : null
+    ? { id: stripThreadRow.id, name: threadName(stripThreadRow), state: stripState }
+    : stripThreadId === null
+      ? { id: null, name: 'main conversation', state: stripState }
+      : null
   const sessionNotices = sessionId ? (notices[sessionId] ?? []) : []
   const isReview = open?.session.review !== undefined
   const diffState: DiffState =
@@ -1046,7 +1080,7 @@ export function App(): React.JSX.Element {
             sessions={sessions}
             openId={sessionId ?? null}
             running={running}
-            failed={failed}
+            unseen={unseen}
             agentSessions={listedAgentSessions}
             order={settings?.global.sessionOrder ?? 'created'}
             agentSessionsError={agentSessionsError}
@@ -1157,6 +1191,7 @@ export function App(): React.JSX.Element {
             onOpenItem={openItem}
             onOpenSelection={openSelection}
             onOpenThread={openThread}
+            onOpenMain={() => focusComposer(true)}
             onOpenQueue={showQueue}
           />
         ) : (

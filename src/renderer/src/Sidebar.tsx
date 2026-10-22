@@ -20,8 +20,8 @@ type Props = {
   sessions: Session[]
   openId: string | null
   running: Record<string, string | null>
-  /** Sessions whose last turn failed while they weren't open. */
-  failed: Record<string, true>
+  /** Sessions whose last turn finished or failed while the user wasn't looking. */
+  unseen: Record<string, 'completed' | 'failed'>
   /** The agents' sessions in the project that Gloss has no record of; null while loading. */
   agentSessions: ListedAgentSession[] | null
   /** Newest first, or most recent activity first (the `sessionOrder` setting). */
@@ -170,12 +170,14 @@ export function Sidebar(props: Props): React.JSX.Element {
           if (e.key === 'F2') setRenaming(s.id)
         }}
       >
-        {/* One lead slot: running, else failed, else the review icon. One trail slot: the time, and … on hover. */}
+        {/* One lead slot: running, else an unseen failure or finish, else the review icon. One trail slot: the time, and … on hover. */}
         <span className="row-lead">
           {s.id in running ? (
             <span className="running-dot" aria-label="Running" />
-          ) : s.id in props.failed ? (
+          ) : props.unseen[s.id] === 'failed' ? (
             <span className="failed-dot" aria-label="The last turn failed" title="The last turn failed" />
+          ) : props.unseen[s.id] === 'completed' ? (
+            <span className="done-dot" aria-label="Finished" title="Finished since you last looked" />
           ) : (
             s.review && reviewIcon
           )}
