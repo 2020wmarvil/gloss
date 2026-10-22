@@ -5303,3 +5303,8 @@ button.review-changes {
   padding-left: 18px;
   font-size: var(--t-13);
 }
+
+.notice-content { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+.notice-action { padding: 4px 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.notice-action:disabled { opacity: 0.6; cursor: wait; }
+.notice-action-error { color: var(--failed); font-size: var(--t-13); }

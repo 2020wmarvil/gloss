@@ -5,6 +5,7 @@ Build in order. Stop at the end of each milestone, show what works and how to tr
 M1–M5 built the design in `SPEC.md`. These milestones add settings, make Gloss a daily driver, let you queue and steer, take threads further, add search and code review sessions, converge on a long-term interface, add a second agent, and ship it; then future work (sub-agent threads, visual feedback, agent questions and permission modes). Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## Failed-turn actions (after M12)
+**Implemented, awaiting review.** Also includes non-interrupting background completion and history refresh, and a smaller, plain taskbar status dot matching the in-app state dots.
 A failed turn offers what fixes it, instead of only saying it failed.
 
 - **Sign in** when the turn failed because the agent needs authentication (ACP `auth_required`): opens the sign-in flow, then resends the prompt.

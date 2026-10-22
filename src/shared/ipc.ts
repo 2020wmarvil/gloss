@@ -109,6 +109,8 @@ export type GlossEvent =
       threadId: string | null
       stopReason?: string
       error?: string
+      /** Recovery offered on the failed-turn notice. */
+      recovery?: { messageId: string; action: 'signIn' | 'retry' }
       /** A queued message starts right away. */
       continues?: true
     }
@@ -212,6 +214,7 @@ export type GlossApi = {
    * Sent as usual when idle; queued first if the turn is just ending.
    */
   steer(sessionId: string, text: string, threadId: string | null, attachments: Attachment[]): Promise<TurnResult>
+  retry(sessionId: string, messageId: string): Promise<TurnResult>
   cancel(sessionId: string): Promise<void>
   /** What the taskbar (or dock) badge shows (SPEC → Notifications). */
   setBadge(badge: AppBadge): void
@@ -284,6 +287,7 @@ export const IPC = {
   history: 'gloss:history',
   send: 'gloss:send',
   steer: 'gloss:steer',
+  retry: 'gloss:retry',
   cancel: 'gloss:cancel',
   setBadge: 'gloss:setBadge',
   queueEdit: 'gloss:queue:edit',
