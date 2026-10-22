@@ -82,7 +82,6 @@ function createWindow(): void {
   })
   mainWindow = win
   win.once('ready-to-show', () => win.show())
-  win.on('focus', () => win.flashFrame(false))
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = undefined
   })
@@ -171,7 +170,6 @@ function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
   })
   n.on('close', () => notifications.delete(n))
   n.show()
-  if (process.platform === 'win32') win.flashFrame(true)
 }
 
 /**
@@ -422,6 +420,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     manager.steer(str(sessionId, 'sessionId'), str(text, 'text'), threadArg(threadId), attachmentsArg(attachments))
   )
   ipcMain.on(IPC.setBadge, (_e, badge: unknown) => setBadge(badge))
+  ipcMain.handle(IPC.retry, (_e, sessionId: unknown, messageId: unknown) => manager.retry(str(sessionId, 'sessionId'), str(messageId, 'messageId')))
   ipcMain.handle(IPC.cancel, (_e, sessionId: unknown) => manager.cancel(str(sessionId, 'sessionId')))
   ipcMain.handle(IPC.queueEdit, (_e, sessionId: unknown, id: unknown, text: unknown) =>
     manager.editQueued(str(sessionId, 'sessionId'), str(id, 'id'), str(text, 'text'))

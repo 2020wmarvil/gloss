@@ -13,29 +13,23 @@ const COLORS: Record<NonNullable<AppBadge['state']>, [number, number, number]> =
 /** Side of the bitmap: a 16 px overlay at twice the scale. */
 export const BADGE_SIZE = 32
 
-/**
- * A filled dot in the state's color inside a white ring, as premultiplied BGRA pixels
- * (what `nativeImage.createFromBitmap` takes), edges antialiased.
+/** A small plain dot matching the in-app status dots, with transparent padding.
+ * Keep the full overlay canvas so Windows doesn't scale the dot up to fill it.
+ * Pixels are antialiased, premultiplied BGRA for nativeImage.createFromBitmap.
  */
 export function badgePixels(state: NonNullable<AppBadge['state']>, size = BADGE_SIZE): Buffer {
   const [r, g, b] = COLORS[state]
   const out = Buffer.alloc(size * size * 4)
   const c = size / 2
-  const outer = size / 2 - 0.5
-  const inner = outer - size / 10
-  // Coverage of a pixel by a disc of radius `radius`: 1 inside, 0 outside, linear over 1 px.
-  const cover = (d: number, radius: number): number => Math.min(1, Math.max(0, radius - d + 0.5))
+  const radius = size / 4
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const d = Math.hypot(x + 0.5 - c, y + 0.5 - c)
-      const alpha = cover(d, outer)
-      const fill = cover(d, inner)
-      // The ring is white; the fill blends over it.
-      const mix = (channel: number): number => Math.round((channel * fill + 255 * (1 - fill)) * alpha)
+      const alpha = Math.min(1, Math.max(0, radius - d + 0.5))
       const i = (y * size + x) * 4
-      out[i] = mix(b)
-      out[i + 1] = mix(g)
-      out[i + 2] = mix(r)
+      out[i] = Math.round(b * alpha)
+      out[i + 1] = Math.round(g * alpha)
+      out[i + 2] = Math.round(r * alpha)
       out[i + 3] = Math.round(255 * alpha)
     }
   }

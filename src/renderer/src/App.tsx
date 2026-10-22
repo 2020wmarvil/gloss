@@ -291,7 +291,7 @@ export function App(): React.JSX.Element {
     if (openId.current) panels.current.set(openId.current, panelRef.current)
   }, [])
 
-  const addNotice = useCallback((sessionId: string, threadId: string | null, text: string, tone?: Notice['tone']) => {
+  const addNotice = useCallback((sessionId: string, threadId: string | null, text: string, tone?: Notice['tone'], action?: Notice['action']) => {
     setNotices((all) => ({
       ...all,
       [sessionId]: [
@@ -301,6 +301,7 @@ export function App(): React.JSX.Element {
           threadId,
           text,
           ...(tone ? { tone } : {}),
+          ...(action ? { action } : {}),
           afterSeq: openId.current === sessionId ? lastSeq.current : Infinity
         }
       ]
@@ -470,8 +471,16 @@ export function App(): React.JSX.Element {
           }
           break
         case 'sessionSynced':
-          // The log changed under the open session (turns taken elsewhere): show it again.
-          if (openId.current === event.sessionId) void selectSession(event.sessionId)
+          // Refresh the log without navigating, closing settings, or moving focus.
+          if (openId.current === event.sessionId) {
+            void window.gloss.sessions.open(event.sessionId).then((view) => {
+              if (openId.current !== event.sessionId) return
+              lastSeq.current = Math.max(-1, ...view.messages.map((m) => m.seq), ...view.toolCalls.map((t) => t.messageSeq))
+              setOpen((o) => o?.session.id === event.sessionId ? {
+                session: view.session, messages: view.messages, toolCalls: view.toolCalls, plans: view.plans, threads: view.threads
+              } : o)
+            }).catch((err: unknown) => addNotice(event.sessionId, null, errorText(err)))
+          }
           break
         case 'sessionCleared':
           panels.current.delete(event.sessionId)
@@ -531,16 +540,26 @@ export function App(): React.JSX.Element {
           setRunning((r) => ({ ...r, [event.sessionId]: event.threadId }))
           clearUnseen(event.sessionId)
           break
-        case 'turnEnd':
+        case 'turnEnd': {
+          const recovery = event.recovery
+          const action: Notice['action'] = recovery ? {
+            label: recovery.action === 'signIn' ? 'Sign in' : 'Retry',
+            run: async () => {
+              await window.gloss.retry(event.sessionId, recovery.messageId)
+              setNotices((all) => ({
+                ...all, [event.sessionId]: (all[event.sessionId] ?? []).map((n) => n.action === action ? { ...n, action: undefined } : n)
+              }))
+            }
+          } : undefined
           setRunning((r) => {
             const next = { ...r }
             delete next[event.sessionId]
             return next
           })
-          if (event.error) addNotice(event.sessionId, event.threadId, `The turn failed: ${event.error}`, 'failed')
+          if (event.error) addNotice(event.sessionId, event.threadId, `The turn failed: ${event.error}`, 'failed', action)
           else if (event.stopReason === 'cancelled') addNotice(event.sessionId, event.threadId, 'Cancelled.')
           else if (event.stopReason && event.stopReason !== 'end_turn')
-            addNotice(event.sessionId, event.threadId, `The agent stopped: ${event.stopReason.replace(/_/g, ' ')}.`)
+            addNotice(event.sessionId, event.threadId, `The agent stopped: ${event.stopReason.replace(/_/g, ' ')}.`, 'failed', action)
           // Work the user isn't watching (another session, or Gloss in the background) is
           // marked unseen and chimes. A cancel is the user's own; a queued follow-up isn't the end.
           if (
@@ -556,6 +575,7 @@ export function App(): React.JSX.Element {
           if (event.sessionId === openId.current && openCwd.current) refreshGit(openCwd.current, event.sessionId)
           if (event.sessionId === openId.current && openReview.current) refreshDiff(event.sessionId)
           break
+        }
         case 'notice':
           addNotice(event.sessionId, event.threadId, event.text)
           break

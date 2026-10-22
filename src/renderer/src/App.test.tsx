@@ -428,3 +428,61 @@ it("marks, badges and chimes a turn that finishes where the user isn't looking",
   expect(chime).toHaveBeenCalledTimes(2)
   focused.mockRestore()
 })
+
+
+it('keeps background completions and syncs from taking focus or closing settings, and retries the original failed session', async () => {
+  const session = (id: string): object => ({ id, title: id, cwd: '/project', agentId: 'claude', createdAt: id === 'a' ? 2 : 1 })
+  let emit: (event: object) => void = () => {}
+  let finish!: () => void
+  const retry = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+  window.gloss = {
+    history: async () => [],
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, turnEndSound: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
+    projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
+    sessions: {
+      list: async () => [session('a'), session('b')], refresh: async () => {},
+      open: async (id: string) => ({
+        session: session(id), messages: [], toolCalls: [], plans: [], threads: [], turn: null,
+        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], permissions: null, accepts: { image: false, file: false }, steering: false },
+        queue: { items: [], paused: false }
+      })
+    },
+    git: { status: async () => null, pullRequest: async () => null },
+    retry,
+    onEvent: (handler: (event: object) => void) => { emit = handler; return () => {} }
+  } as unknown as typeof window.gloss
+  const el = document.createElement('div')
+  document.body.replaceChildren(el)
+  root = createRoot(el)
+  await act(async () => root!.render(<App />))
+  const elsewhere = document.createElement('input')
+  document.body.append(elsewhere)
+  elsewhere.focus()
+  await act(async () => {
+    emit({ type: 'turnEnd', sessionId: 'b', threadId: null, error: 'Offline', recovery: { messageId: 'failed-b', action: 'retry' } })
+    emit({ type: 'toolCall', toolCall: { id: 'tool', sessionId: 'b', messageSeq: 0, threadId: null, title: 'Read', status: 'completed' } })
+    emit({ type: 'sessionSynced', sessionId: 'a' })
+  })
+  expect(document.activeElement).toBe(elsewhere)
+  expect(el.querySelector('.session-row.on')!.getAttribute('title')).toBe('a')
+  await act(async () => void window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', ctrlKey: true })))
+  expect(el.querySelector('main.settings')).not.toBeNull()
+  await act(async () => {
+    emit({ type: 'sessionSynced', sessionId: 'a' })
+    emit({ type: 'turnEnd', sessionId: 'a', threadId: null, stopReason: 'end_turn' })
+  })
+  expect(el.querySelector('main.settings')).not.toBeNull()
+  await act(async () => [...el.querySelectorAll<HTMLElement>('.session-row')].find((r) => r.title === 'b')!.click())
+  const button = el.querySelector<HTMLButtonElement>('.notice-action')!
+  expect(button.textContent).toBe('Retry')
+  await act(async () => button.click())
+  expect(retry).toHaveBeenCalledWith('b', 'failed-b')
+  expect(button.disabled).toBe(true)
+  await act(async () => button.click())
+  expect(retry).toHaveBeenCalledTimes(1)
+  await act(async () => finish())
+  expect(el.querySelector('.notice-action')).toBeNull()
+  await act(async () => emit({ type: 'turnEnd', sessionId: 'b', threadId: null, error: 'Authentication required', recovery: { messageId: 'auth-b', action: 'signIn' } }))
+  expect(el.querySelector('.notice-action')!.textContent).toBe('Sign in')
+})

@@ -120,6 +120,7 @@ type SessionRuntime = {
   /** The session is being imported: a failed load removes it instead of starting a new agent session. */
   importing?: boolean
   turn?: Turn
+  failures?: Map<string, { signIn: boolean; fromThread: string | null; pending?: boolean }>
   /** Messages sent while a turn was running (SPEC → Queue). */
   queue: MessageQueue
   live: SessionLive
@@ -748,6 +749,7 @@ export class SessionManager {
     this.register(session.acpSessionId, id)
     rt.attachedTo = conn
     rt.mcpFingerprint = JSON.stringify(servers)
+    rt.failures?.clear()
     this.setQueue(id, { items: [], paused: false })
     this.setLive(id, { usage: null })
     this.deps.emit({ type: 'session', session })
@@ -1432,12 +1434,13 @@ export class SessionManager {
     text: string,
     threadId: string | null,
     attachments: Attachment[],
-    fromThread: string | null = null
+    fromThread: string | null = null,
+    originalWire?: string
   ): Promise<TurnResult> {
     let session = this.session(sessionId)
     const rt = this.runtime(sessionId)
     if (rt.turn) throw new Error('A turn is already running in this session.')
-    const wire = this.wire(sessionId, text, threadId, fromThread)
+    const wire = originalWire ?? this.wire(sessionId, text, threadId, fromThread)
     // Only a session still named after its folder takes its title from the first message.
     const retitle = this.deps.store.countUserMessages(sessionId) === 0 && session.title === folderName(session.cwd)
     const message: Message = {
@@ -1464,31 +1467,44 @@ export class SessionManager {
     this.deps.emit({ type: 'turnStart', sessionId, threadId })
 
     let result: TurnResult
+    let recovery: Extract<GlossEvent, { type: 'turnEnd' }>['recovery']
     let attachedTo: AgentConnection | undefined
     try {
-      const res = await this.withAgent(session.agentId, async (conn) => {
-        // A retry after sign-in starts a fresh agent message.
-        turn.agentMessage = undefined
-        turn.afterToolCall = false
-        await this.attach(sessionId, conn)
-        // Changes made elsewhere (the agent's CLI) come in before the prompt goes out.
-        await this.ensureFresh(sessionId, conn, () => true)
-        const acpSessionId = await this.attach(sessionId, conn)
-        if (turn.cancelled) return { stopReason: 'cancelled' as const }
+      const conn = await this.connection(session.agentId)
+      await this.attach(sessionId, conn)
+      // Changes made elsewhere come in before the prompt goes out.
+      await this.ensureFresh(sessionId, conn, () => true)
+      const acpSessionId = await this.attach(sessionId, conn)
+      if (turn.cancelled) {
+        result = { stopReason: 'cancelled' }
+      } else {
         attachedTo = conn
         const prompt = promptBlocks(wire, attachments, conn.promptCapabilities)
         const slot = this.slot(session.agentId)
         slot.activePrompts++
         turn.unsent = undefined
         try {
-          return await conn.prompt(acpSessionId, prompt)
+          const res = await conn.prompt(acpSessionId, prompt)
+          result = { stopReason: res.stopReason }
         } finally {
           slot.activePrompts--
         }
-      })
-      result = { stopReason: res.stopReason }
+      }
     } catch (err) {
       result = turn.cancelled ? { stopReason: 'cancelled' } : { error: errorMessage(err) }
+      if (!turn.cancelled) {
+        let cause = err
+        while (cause instanceof Error && cause.cause) cause = cause.cause
+        const signIn = isAuthRequired(cause)
+        rt.failures ??= new Map()
+        rt.failures.set(message.id, { signIn, fromThread })
+        recovery = { messageId: message.id, action: signIn ? 'signIn' : 'retry' }
+      }
+    }
+    if (!result.error && result.stopReason !== 'end_turn' && result.stopReason !== 'cancelled') {
+      rt.failures ??= new Map()
+      rt.failures.set(message.id, { signIn: false, fromThread })
+      recovery = { messageId: message.id, action: 'retry' }
     }
     // The turn changed the agent's copy: remember its updatedAt so it isn't taken for a change made elsewhere.
     if (attachedTo) await this.recordSynced(sessionId, attachedTo)
@@ -1505,9 +1521,34 @@ export class SessionManager {
       continues = !result.error && (result.stopReason === 'end_turn' || result.stopReason === 'cancelled')
       if (rt.queue.paused !== !continues) this.setQueue(sessionId, { ...rt.queue, paused: !continues })
     }
-    this.deps.emit({ type: 'turnEnd', sessionId, threadId, ...result, ...(continues ? { continues: true } : {}) })
+    this.deps.emit({ type: 'turnEnd', sessionId, threadId, ...result, ...(recovery ? { recovery } : {}), ...(continues ? { continues: true } : {}) })
     if (continues) this.drain(sessionId)
     return result
+  }
+
+  /** Retry only a failed attempt recorded by this app run, preserving its thread and attachments. */
+  async retry(sessionId: string, messageId: string): Promise<TurnResult> {
+    const session = this.session(sessionId)
+    const rt = this.runtime(sessionId)
+    const failure = rt.failures?.get(messageId)
+    const message = this.deps.store.getMessage(messageId)
+    if (!failure || !message || message.sessionId !== sessionId) throw new Error('This failed turn is no longer available.')
+    if (failure.pending || rt.turn) throw new Error('Wait for the current attempt to finish before retrying.')
+    failure.pending = true
+    try {
+      if (failure.signIn) {
+        const conn = await this.connection(session.agentId)
+        if (conn.authMethods.length === 0) throw new Error('The agent offers no sign-in methods. Sign in outside Gloss, then try again.')
+        if (!await this.requestSignIn(session.agentId, conn)) throw new SignInCancelledError()
+      }
+      // Sign-in may have taken time. Recheck before sending into this session.
+      if (this.runtimes.get(sessionId) !== rt || rt.failures?.get(messageId) !== failure) throw new Error('This failed turn is no longer available.')
+      if (rt.turn) throw new Error('Wait for the running turn to finish before retrying.')
+      rt.failures!.delete(messageId)
+      return await this.runTurn(sessionId, message.text, message.threadId, message.attachments ?? [], failure.fromThread, message.wireText)
+    } finally {
+      failure.pending = false
+    }
   }
 
   /** Marks the turn's user messages with how it ended (SPEC → Turn outcomes). */

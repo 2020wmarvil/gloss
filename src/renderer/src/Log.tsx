@@ -7,7 +7,7 @@ import { hasDetails, ToolDetails } from './ToolDetails'
 import { Brain, Check, ChevronDown, ChevronRight, CircleAlert, FilePen, FileText, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
 
 /** A transient, client-side note shown in a log (not part of the conversation). */
-export type Notice = { id: string; threadId: string | null; text: string; afterSeq: number; tone?: 'failed' }
+export type Notice = { id: string; threadId: string | null; text: string; afterSeq: number; tone?: 'failed'; action?: { label: string; run(): Promise<unknown> } }
 
 export type LogItem =
   | { kind: 'message'; seq: number; message: Message }
@@ -132,10 +132,7 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
               return <PlanChecklist key={item.plan.id} plan={item.plan} />
             case 'notice':
               return item.notice.tone === 'failed' ? (
-                <p key={item.notice.id} className="notice failed" role="alert">
-                  <CircleAlert className="notice-icon" aria-hidden />
-                  <span>{item.notice.text}</span>
-                </p>
+                <FailedNotice key={item.notice.id} notice={item.notice} />
               ) : (
                 <p key={item.notice.id} className="notice">
                   {item.notice.text}
@@ -143,6 +140,38 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
               )
           }
         })}
+      </div>
+    </div>
+  )
+}
+
+function FailedNotice({ notice }: { notice: Notice }): React.JSX.Element {
+  const [pending, setPending] = useState(false)
+  const [done, setDone] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const inFlight = useRef(false)
+  async function recover(): Promise<void> {
+    if (!notice.action || inFlight.current) return
+    inFlight.current = true
+    setPending(true)
+    setError(null)
+    try {
+      await notice.action.run()
+      setDone(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      inFlight.current = false
+      setPending(false)
+    }
+  }
+  return (
+    <div className="notice failed" role="alert">
+      <CircleAlert className="notice-icon" aria-hidden />
+      <div className="notice-content">
+        <span>{notice.text}</span>
+        {notice.action && !done && <button className="notice-action" disabled={pending} onClick={() => void recover()}>{pending ? 'Waiting?' : notice.action.label}</button>}
+        {error && <span className="notice-action-error">{error}</span>}
       </div>
     </div>
   )

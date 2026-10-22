@@ -873,12 +873,18 @@ describe('SessionManager', () => {
     expect(view.messages.map((m) => m.text)).toEqual(['first', 'Hello world', 'second', 'Hello world'])
   })
 
-  it('signs in with an agent method on auth_required and retries the prompt', async () => {
+  it('offers sign-in on a failed turn and retries only when requested', async () => {
     state.authMethods = [{ id: 'oauth', name: 'Log in', description: 'Use your account' }]
     const session = await manager.createSession('/w', 'fake')
     state.signedIn = false
 
-    const turn = manager.send(session.id, 'hi', null)
+    const failed = await manager.send(session.id, 'hi', null)
+    expect(failed.error).toMatch(/Authentication required/)
+    expect(events.some((e) => e.type === 'authRequired')).toBe(false)
+    const ended = events.findLast((e) => e.type === 'turnEnd')!
+    expect(ended).toMatchObject({ recovery: { action: 'signIn' } })
+    if (ended.type !== 'turnEnd' || !ended.recovery) throw new Error('Missing recovery')
+    const turn = manager.retry(session.id, ended.recovery.messageId)
     await vi.waitFor(() =>
       expect(events).toContainEqual({
         type: 'authRequired',
@@ -893,8 +899,8 @@ describe('SessionManager', () => {
     expect(state.authenticated).toEqual(['oauth'])
     expect(runInTerminal).not.toHaveBeenCalled()
     expect(events).toContainEqual({ type: 'authResolved', agentId: 'fake' })
-    // The user's message is stored once even though the prompt was sent twice.
-    expect(manager.openSession(session.id).messages.map((m) => m.text)).toEqual(['hi', 'Hello world'])
+    expect(manager.openSession(session.id).messages.map((m) => m.text)).toEqual(['hi', 'hi', 'Hello world'])
+    await expect(manager.retry(session.id, ended.recovery.messageId)).rejects.toThrow(/no longer available/)
   })
 
   it('runs terminal sign-in methods with the agent command, then restarts the agent', async () => {
@@ -908,7 +914,10 @@ describe('SessionManager', () => {
     const session = await manager.createSession('/w', 'fake')
     state.signedIn = false
 
-    const turn = manager.send(session.id, 'hi', null)
+    await manager.send(session.id, 'hi', null)
+    const ended = events.findLast((e) => e.type === 'turnEnd')!
+    if (ended.type !== 'turnEnd' || !ended.recovery) throw new Error('Missing recovery')
+    const turn = manager.retry(session.id, ended.recovery.messageId)
     await vi.waitFor(() => expect(events.some((e) => e.type === 'authRequired')).toBe(true))
     await expect(manager.signIn('fake', 'login')).resolves.toEqual({ ok: true })
     await expect(turn).resolves.toEqual({ stopReason: 'end_turn' })
@@ -925,10 +934,14 @@ describe('SessionManager', () => {
     state.authMethods = [{ id: 'oauth', name: 'Log in' }]
     const session = await manager.createSession('/w', 'fake')
     state.signedIn = false
-    const turn = manager.send(session.id, 'hi', null)
+    await manager.send(session.id, 'hi', null)
+    const ended = events.findLast((e) => e.type === 'turnEnd')!
+    if (ended.type !== 'turnEnd' || !ended.recovery) throw new Error('Missing recovery')
+    const turn = manager.retry(session.id, ended.recovery.messageId)
     await vi.waitFor(() => expect(events.some((e) => e.type === 'authRequired')).toBe(true))
     manager.dismissSignIn('fake')
-    await expect(turn).resolves.toEqual({ error: 'Sign-in was cancelled.' })
+    await expect(turn).rejects.toThrow('Sign-in was cancelled.')
+    expect(manager.openSession(session.id).messages.filter((m) => m.role === 'user')).toHaveLength(1)
   })
 
   it('reports auth_required as an error when the agent offers no sign-in methods', async () => {
@@ -937,6 +950,43 @@ describe('SessionManager', () => {
     const result = await manager.send(session.id, 'hi', null)
     expect(result.error).toMatch(/Authentication required/)
     expect(events.some((e) => e.type === 'authRequired')).toBe(false)
+  })
+
+  it('retries a failed thread turn with the same prompt and attachments, rejecting concurrent retries', async () => {
+    state.promptCapabilities = { embeddedContext: true, image: true }
+    const session = await manager.createSession('/w', 'fake')
+    await manager.send(session.id, 'hello', null)
+    const agentMessage = manager.openSession(session.id).messages.find((m) => m.role === 'agent')!
+    const thread = manager.createThread(session.id, agentMessage.id, { kind: 'selection', start: 0, end: 5, text: 'Hello' })
+    const attachments = [{ kind: 'file' as const, name: 'note.txt', text: 'context' }, { kind: 'image' as const, name: 'x.png', mimeType: 'image/png', data: 'aGVsbG8=' }]
+    state.script = async () => { throw new Error('Disconnected') }
+    await manager.send(session.id, 'try this', thread.id, attachments)
+    const ended = events.findLast((e) => e.type === 'turnEnd')!
+    expect(ended).toMatchObject({ threadId: thread.id, recovery: { action: 'retry' } })
+    if (ended.type !== 'turnEnd' || !ended.recovery) throw new Error('Missing recovery')
+    const original = state.promptBlocks.at(-1)
+    let finish!: () => void
+    state.script = async () => { await new Promise<void>((r) => { finish = r }); return 'end_turn' }
+    const retry = manager.retry(session.id, ended.recovery.messageId)
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    await expect(manager.retry(session.id, ended.recovery.messageId)).rejects.toThrow()
+    expect(state.promptBlocks.at(-1)).toEqual(original)
+    finish()
+    await expect(retry).resolves.toEqual({ stopReason: 'end_turn' })
+    const sent = manager.openSession(session.id).messages.filter((m) => m.role === 'user')
+    expect(sent).toHaveLength(3)
+    expect(sent[2]).toMatchObject({ text: 'try this', threadId: thread.id, attachments })
+  })
+
+  it('offers retry for a cut-short turn and invalidates recovery when cleared', async () => {
+    const session = await manager.createSession('/w', 'fake')
+    state.script = async () => 'max_tokens'
+    await manager.send(session.id, 'continue this', null)
+    const ended = events.findLast((e) => e.type === 'turnEnd')!
+    expect(ended).toMatchObject({ stopReason: 'max_tokens', recovery: { action: 'retry' } })
+    if (ended.type !== 'turnEnd' || !ended.recovery) throw new Error('Missing recovery')
+    await manager.clearSession(session.id)
+    await expect(manager.retry(session.id, ended.recovery.messageId)).rejects.toThrow(/no longer available/)
   })
 
   describe('threads', () => {
