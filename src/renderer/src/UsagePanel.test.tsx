@@ -15,7 +15,7 @@ const props: ComponentProps<typeof StatusLine> = {
   session: { id: 's1', agentId: 'claude', acpSessionId: 'a1', cwd: '/project', title: 'Test', createdAt: 1 },
   live: { attached: true, model: null, effort: null, commands: [{ name: 'usage', description: 'Usage' }],
     usage: { used: 40000, size: 200000 }, rateLimits: [{ window: 'five_hour', status: 'rejected' }],
-    permissions: null, accepts: { image: false, file: false }, steering: false },
+    modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
   git: null, pr: null, running: false,
   queue: { items: [], paused: false }, onResumeQueue() {}, async onSetChoice() {}, onCommand
 }
@@ -109,7 +109,7 @@ describe('effort picker', () => {
     }
     act(() => root!.render(<StatusLine {...props} live={live} onSetChoice={onSetChoice} />))
     const labels = [...document.querySelectorAll('.popover-anchor > button')].map((b) => b.textContent || b.querySelector('[aria-label]')?.getAttribute('aria-label'))
-    expect(labels.slice(-3)).toEqual(['Opus', 'Medium', 'Extensions'])
+    expect(labels.slice(-4)).toEqual(['Opus', 'Medium', 'Ask', 'Extensions'])
     await click('button[title="Effort"]')
     expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual(['Medium', 'High'])
     await click('[role="option"]:not([aria-selected="true"])')
@@ -117,6 +117,51 @@ describe('effort picker', () => {
   })
 })
 
+
+describe('permission mode picker', () => {
+  const modes = {
+    current: 'default',
+    bypass: 'bypassPermissions',
+    options: [
+      { value: 'default', name: 'Manual', description: 'Always ask before making changes' },
+      { value: 'bypassPermissions', name: 'Bypass permissions' }
+    ]
+  }
+
+  it("picks one of the agent's modes", async () => {
+    mount(async () => null, { live: { ...props.live, modes, autoApprove: false } })
+    const setMode = vi.fn(async () => {})
+    window.gloss.sessions.setMode = setMode
+    expect(document.querySelector('.mode-picker')?.textContent).toBe('Manual')
+    await click('.mode-picker')
+    expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual([
+      'ManualAlways ask before making changes',
+      'Bypass permissions'
+    ])
+    // An agent with a bypass mode has no separate auto-approval.
+    expect(document.querySelector('[role="menuitemcheckbox"]')).toBeNull()
+    await click('[role="option"]:not([aria-selected="true"])')
+    expect(setMode).toHaveBeenCalledWith('s1', 'bypassPermissions')
+  })
+
+  it('offers auto-approval for an agent without a bypass mode, and shows when Gloss approves', async () => {
+    const plain = { current: 'build', bypass: null, options: [{ value: 'build', name: 'Build' }, { value: 'plan', name: 'Plan' }] }
+    mount(async () => null, { live: { ...props.live, modes: plain, autoApprove: true } })
+    const setAutoApprove = vi.fn(async () => {})
+    window.gloss.sessions.setAutoApprove = setAutoApprove
+    const picker = document.querySelector('.mode-picker')!
+    expect(picker.textContent).toBe('Build· auto-approve')
+    expect(picker.classList.contains('warn')).toBe(true)
+    await click('.mode-picker')
+    await click('[role="menuitemcheckbox"]')
+    expect(setAutoApprove).toHaveBeenCalledWith('s1', false)
+  })
+
+  it('says when the agent is waiting for the user', () => {
+    mount(async () => null, { waiting: 1 })
+    expect(document.querySelector('.status-item.waiting')?.textContent).toBe('Waiting for you')
+  })
+})
 
 describe('Obsidian shortcut', () => {
   it('appears beside the folder and reports launch failures', async () => {
@@ -143,13 +188,13 @@ describe('status line labels', () => {
   it('names each value', () => {
     mount(async () => null, {
       live: { ...props.live, usage: { used: 40000, size: 1_000_000, cost: { amount: 0.01, currency: 'USD' } },
-        rateLimits: [{ window: 'five_hour', status: 'allowed' }], permissions: 'bypass' }
+        rateLimits: [{ window: 'five_hour', status: 'allowed' }], modes: null, autoApprove: true }
     })
     const text = document.querySelector('.status-line')!.textContent
     expect(text).toContain('Context4% of 1M')
     expect(text).toContain('$0.01')
     expect(text).toContain('5h limitOK')
-    expect(document.querySelector('[aria-label="Auto-approve"]')).not.toBeNull()
+    expect(document.querySelector('.mode-picker')?.textContent).toBe('Auto-approve')
   })
 
   it('leaves the queued count to the activity strip above it', () => {

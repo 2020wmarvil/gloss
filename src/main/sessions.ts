@@ -20,6 +20,7 @@ import type {
   RateLimit,
   Session,
   SessionLive,
+  SessionModes,
   SlashCommand,
   Thread,
   ToolCall,
@@ -40,6 +41,8 @@ import {
   type ReviewRefs
 } from '../shared/review'
 import type { McpServer } from '../shared/mcp'
+import type { PermissionModeSetting } from '../shared/settings'
+import { answerError, questionFields, type PermissionChoice, type RequestAnswer, type UserRequest } from '../shared/requests'
 import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, type AgentHandlers, type SteerOutcome } from './acp'
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
@@ -60,6 +63,8 @@ export type SessionManagerDeps = {
   runInTerminal: TerminalRunner
   now?(): number
   mcpServers?(cwd: string): McpServer[]
+  /** The permission mode new sessions in `cwd` start in (SPEC → Permission modes); bypass by default. */
+  permissionMode?(cwd: string): PermissionModeSetting
   /** Git for review sessions; the real one by default. */
   git?: ReviewGit
 }
@@ -124,7 +129,15 @@ type SessionRuntime = {
   /** Messages sent while a turn was running (SPEC → Queue). */
   queue: MessageQueue
   live: SessionLive
+  /** Questions and approvals the agent is waiting on, by id (SPEC → Questions and approvals). */
+  requests: Map<string, OpenRequest>
 }
+
+/** A request waiting on the user. `settle(null)`: withdrawn, or the turn was cancelled. */
+type OpenRequest = { request: UserRequest; settle(answer: RequestAnswer | null): void }
+
+/** What the session's mode is once attached, and what to save on the session. */
+type ModeState = { live: Pick<SessionLive, 'modes' | 'autoApprove'>; saved: Pick<Session, 'mode' | 'autoApprove'> }
 
 /** Slash commands Gloss runs itself instead of sending them to the agent. */
 const GLOSS_COMMANDS: SlashCommand[] = [{ name: 'clear', description: 'Start over with a fresh conversation' }]
@@ -137,7 +150,8 @@ function emptyLive(): SessionLive {
     commands: GLOSS_COMMANDS,
     usage: null,
     rateLimits: [],
-    permissions: null,
+    modes: null,
+    autoApprove: false,
     accepts: { image: false, file: false },
     steering: false
   }
@@ -187,7 +201,7 @@ export class SessionManager {
   private runtime(sessionId: string): SessionRuntime {
     let rt = this.runtimes.get(sessionId)
     if (!rt) {
-      rt = { loading: false, queue: { items: [], paused: false }, live: emptyLive() }
+      rt = { loading: false, queue: { items: [], paused: false }, live: emptyLive(), requests: new Map() }
       this.runtimes.set(sessionId, rt)
     }
     return rt
@@ -245,7 +259,8 @@ export class SessionManager {
   private handlers(agentId: string): AgentHandlers {
     return {
       onUpdate: (n) => this.onUpdate(n),
-      onPermission: (req) => this.onPermission(req),
+      onPermission: (req, signal) => this.onPermission(req, signal),
+      onElicitation: (req, signal) => this.onElicitation(req, signal),
       onStderr: (line) => console.error(`[${agentId}]`, line),
       onClosed: () => this.onClosed(agentId)
     }
@@ -265,6 +280,7 @@ export class SessionManager {
     for (const [id, rt] of this.runtimes) {
       if (rt.attachedTo?.isClosed) {
         rt.attachedTo = undefined
+        this.withdrawRequests(id)
         this.setLive(id, { attached: false })
       }
     }
@@ -409,11 +425,11 @@ export class SessionManager {
   async createSession(cwd: string, agentId: string, review?: ReviewRange & { title: string }): Promise<Session> {
     const servers = this.mcpServers(cwd)
     let conn!: AgentConnection
-    let permissions: SessionLive['permissions'] = null
+    let mode!: ModeState
     const res = await this.withAgent(agentId, async (c) => {
       conn = c
       const created = await c.newSession(cwd, this.sessionMeta(agentId, 'new', review !== undefined), servers)
-      permissions = await this.enterBypassMode(agentId, c, created.sessionId, created.modes)
+      mode = await this.applyMode(agentId, cwd, {}, c, created.sessionId, created.modes)
       return created
     })
     const session: Session = {
@@ -427,13 +443,14 @@ export class SessionManager {
       createdAt: this.now()
     }
     this.deps.store.insertSession(session)
+    if (mode.saved.mode !== undefined || mode.saved.autoApprove !== undefined) this.deps.store.updateSession(session.id, mode.saved)
     this.deps.store.addProject(cwd, this.now())
     this.register(session.acpSessionId, session.id)
     this.runtime(session.id).attachedTo = conn
     this.runtime(session.id).mcpFingerprint = JSON.stringify(servers)
     const created = this.session(session.id)
     this.deps.emit({ type: 'session', session: created })
-    await this.attached(session.id, conn, res.configOptions, permissions)
+    await this.attached(session.id, conn, res.configOptions, mode)
     return created
   }
 
@@ -647,7 +664,8 @@ export class SessionManager {
       threads: this.deps.store.listThreads(id),
       turn: rt.turn ? { threadId: rt.turn.threadId } : null,
       queue: rt.queue,
-      live: rt.live
+      live: rt.live,
+      requests: [...rt.requests.values()].map((r) => r.request)
     }
   }
 
@@ -712,6 +730,7 @@ export class SessionManager {
         warning = `Deleted from Gloss, but the agent couldn't delete its own copy: ${errorMessage(err)}`
       }
     }
+    this.withdrawRequests(id)
     this.deps.store.deleteSession(id)
     this.runtimes.delete(id)
     this.byAcpId.delete(session.acpSessionId)
@@ -738,11 +757,12 @@ export class SessionManager {
     // A resume in progress would attach the old agent session after this.
     await rt.attaching?.promise.catch(() => {})
     let conn!: AgentConnection
-    let permissions: SessionLive['permissions'] = null
+    let mode!: ModeState
     const res = await this.withAgent(session.agentId, async (c) => {
       conn = c
       const created = await c.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', !!session.review), servers)
-      permissions = await this.enterBypassMode(session.agentId, c, created.sessionId, created.modes)
+      // The fresh conversation keeps the session's mode.
+      mode = await this.applyMode(session.agentId, session.cwd, session, c, created.sessionId, created.modes)
       return created
     })
     if (rt.turn) throw new Error('Cancel the running turn before clearing the session.')
@@ -758,9 +778,10 @@ export class SessionManager {
     rt.failures?.clear()
     this.setQueue(id, { items: [], paused: false })
     this.setLive(id, { usage: null })
+    session = this.saveMode(id, mode)
     this.deps.emit({ type: 'session', session })
     this.deps.emit({ type: 'sessionCleared', sessionId: id })
-    await this.attached(id, conn, res.configOptions, permissions)
+    await this.attached(id, conn, res.configOptions, mode)
 
     if (conn.canDeleteSessions) {
       try {
@@ -787,6 +808,45 @@ export class SessionManager {
     })
     const updated = this.deps.store.updateSession(id, { [kind]: value })
     this.deps.emit({ type: 'session', session: updated })
+  }
+
+  /** Switches the session's permission mode (session/set_mode) and saves it on the session (SPEC → Permission modes). */
+  async setMode(id: string, modeId: string): Promise<void> {
+    const session = this.session(id)
+    await this.withAgent(session.agentId, async (conn) => {
+      const acpSessionId = await this.attach(id, conn)
+      const modes = this.runtime(id).live.modes
+      if (!modes?.options.some((o) => o.value === modeId)) throw new Error(`The agent doesn't offer the mode "${modeId}".`)
+      await conn.setMode(acpSessionId, modeId)
+      this.modeChanged(id, modeId)
+    })
+  }
+
+  /** Turns Gloss's own approval of permission requests on or off, for an agent without a bypass mode. */
+  setAutoApprove(id: string, on: boolean): void {
+    this.session(id)
+    const live = this.runtime(id).live
+    if (live.modes?.bypass) throw new Error('This agent has a bypass mode: pick it instead.')
+    const updated = this.deps.store.updateSession(id, { autoApprove: on })
+    this.deps.emit({ type: 'session', session: updated })
+    this.setLive(id, { autoApprove: on })
+  }
+
+  /** The session is now in `modeId` (picked in Gloss, or switched by the agent): save it and show it. */
+  private modeChanged(id: string, modeId: string): void {
+    const rt = this.runtimes.get(id)
+    const session = this.deps.store.getSession(id)
+    if (!rt || !session) return
+    if (session.mode !== modeId) {
+      const updated = this.deps.store.updateSession(id, { mode: modeId })
+      this.deps.emit({ type: 'session', session: updated })
+    }
+    const modes = rt.live.modes
+    if (!modes) return
+    this.setLive(id, {
+      modes: { ...modes, current: modeId },
+      autoApprove: modes.bypass ? modeId === modes.bypass : session.autoApprove === true
+    })
   }
 
   // Projects
@@ -1002,10 +1062,11 @@ export class SessionManager {
 
     const at = before ? Date.parse(before) : NaN
     this.sync(sessionId, replay, Number.isFinite(at) ? at : this.now())
-    const permissions = await this.enterBypassMode(session.agentId, conn, session.acpSessionId, loaded.modes)
+    const mode = await this.applyMode(session.agentId, session.cwd, session, conn, session.acpSessionId, loaded.modes)
     rt.attachedTo = conn
     rt.mcpFingerprint = JSON.stringify(servers)
-    await this.attached(sessionId, conn, loaded.configOptions, permissions)
+    this.saveMode(sessionId, mode)
+    await this.attached(sessionId, conn, loaded.configOptions, mode)
     await this.recordSynced(sessionId, conn)
     return session.acpSessionId
   }
@@ -1016,14 +1077,15 @@ export class SessionManager {
     let session = this.session(sessionId)
     const servers = this.mcpServers(session.cwd)
     const res = await conn.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', !!session.review), servers)
-    const permissions = await this.enterBypassMode(session.agentId, conn, res.sessionId, res.modes)
+    const mode = await this.applyMode(session.agentId, session.cwd, session, conn, res.sessionId, res.modes)
     this.byAcpId.delete(session.acpSessionId)
-    session = this.deps.store.updateSession(session.id, { acpSessionId: res.sessionId, syncedAt: null })
+    this.deps.store.updateSession(session.id, { acpSessionId: res.sessionId, syncedAt: null })
+    session = this.saveMode(session.id, mode)
     this.register(session.acpSessionId, session.id)
     rt.attachedTo = conn
     rt.mcpFingerprint = JSON.stringify(servers)
     this.deps.emit({ type: 'session', session })
-    await this.attached(sessionId, conn, res.configOptions, permissions)
+    await this.attached(sessionId, conn, res.configOptions, mode)
     if (notice) {
       this.notice(
         sessionId,
@@ -1096,6 +1158,7 @@ export class SessionManager {
   /** Deletes a session the agent no longer has from Gloss too. */
   private removeDeletedOutside(sessionId: string): void {
     const session = this.session(sessionId)
+    this.withdrawRequests(sessionId)
     this.deps.store.deleteSession(sessionId)
     this.runtimes.delete(sessionId)
     this.byAcpId.delete(session.acpSessionId)
@@ -1213,29 +1276,54 @@ export class SessionManager {
   }
 
   /**
-   * Switches an ACP session to the agent's bypass-permissions mode when the
-   * agent offers it. Best effort: permission requests are auto-approved anyway.
+   * Puts a new or resumed ACP session in its permission mode (SPEC → Permission modes):
+   * the session's saved mode, else the default setting's (the agent's bypass mode, or
+   * whatever the agent starts in). An agent without a bypass mode gets Gloss's
+   * auto-approval instead, saved likewise. Best effort: if the switch fails, the session
+   * stays in the agent's mode and its requests are shown.
    */
-  private async enterBypassMode(
+  private async applyMode(
     agentId: string,
+    cwd: string,
+    saved: Pick<Session, 'mode' | 'autoApprove'>,
     conn: AgentConnection,
     acpSessionId: string,
     modes: acp.SessionModeState | null | undefined
-  ): Promise<SessionLive['permissions']> {
-    const modeId = this.deps.getAgentConfig(agentId).bypassModeId
-    if (!modeId || !modes) return 'auto'
-    if (modes.currentModeId === modeId) return 'bypass'
-    if (!modes.availableModes.some((m) => m.id === modeId)) {
-      console.warn(`[gloss] ${agentId} does not offer mode "${modeId}" here; auto-approving permission requests instead.`)
-      return 'auto'
+  ): Promise<ModeState> {
+    const offered = (id: string | null | undefined): id is string => !!id && !!modes?.availableModes.some((m) => m.id === id)
+    const bypassId = this.deps.getAgentConfig(agentId).bypassModeId
+    const bypass = offered(bypassId) ? bypassId : null
+    const setting = this.deps.permissionMode?.(cwd) ?? 'bypass'
+    let current = modes?.currentModeId ?? null
+    const wanted = saved.mode ?? (setting === 'bypass' ? bypass : null)
+    if (wanted !== current && offered(wanted)) {
+      try {
+        await conn.setMode(acpSessionId, wanted)
+        current = wanted
+      } catch (err) {
+        console.warn(`[gloss] could not switch to mode "${wanted}":`, errorMessage(err))
+      }
     }
-    try {
-      await conn.setMode(acpSessionId, modeId)
-      return 'bypass'
-    } catch (err) {
-      console.warn(`[gloss] could not switch to mode "${modeId}":`, errorMessage(err))
-      return 'auto'
+    const autoApprove = bypass ? undefined : (saved.autoApprove ?? setting === 'bypass')
+    return {
+      live: {
+        modes: modes && current !== null ? { current, options: modeOptions(modes), bypass } : null,
+        autoApprove: bypass ? current === bypass : autoApprove === true
+      },
+      saved: { ...(current !== null ? { mode: current } : {}), ...(autoApprove !== undefined ? { autoApprove } : {}) }
     }
+  }
+
+  /** Saves the session's mode, so it is re-applied when the session is resumed. */
+  private saveMode(sessionId: string, mode: ModeState): Session {
+    const session = this.session(sessionId)
+    const patch: Pick<Session, 'mode' | 'autoApprove'> = {}
+    if (mode.saved.mode !== undefined && mode.saved.mode !== session.mode) patch.mode = mode.saved.mode
+    if (mode.saved.autoApprove !== undefined && mode.saved.autoApprove !== session.autoApprove) patch.autoApprove = mode.saved.autoApprove
+    if (Object.keys(patch).length === 0) return session
+    const updated = this.deps.store.updateSession(sessionId, patch)
+    this.deps.emit({ type: 'session', session: updated })
+    return updated
   }
 
   /** Records what the agent reported on attach, and re-applies the session's model, then its effort (whose levels depend on the model). */
@@ -1243,7 +1331,7 @@ export class SessionManager {
     sessionId: string,
     conn: AgentConnection,
     configOptions: acp.SessionConfigOption[] | null | undefined,
-    permissions: SessionLive['permissions']
+    mode: ModeState
   ): Promise<void> {
     const caps = conn.promptCapabilities
     let choices = configChoices(configOptions ?? [])
@@ -1262,7 +1350,7 @@ export class SessionManager {
     this.setLive(sessionId, {
       attached: true,
       ...choices,
-      permissions,
+      ...mode.live,
       accepts: { image: caps.image === true, file: caps.embeddedContext === true },
       steering: conn.canSteer
     })
@@ -1643,6 +1731,8 @@ export class SessionManager {
     // A turn waiting on sign-in stops waiting.
     this.settleSignIn(session.agentId, false)
     if (rt.attachedTo && !rt.loading) await rt.attachedTo.cancel(session.acpSessionId)
+    // And so does one waiting on the user: after session/cancel, ACP has the client answer `cancelled`.
+    this.withdrawRequests(sessionId)
   }
 
   // Agent → client
@@ -1666,12 +1756,10 @@ export class SessionManager {
     if (!rt) return
 
     switch (u.sessionUpdate) {
-      case 'current_mode_update': {
-        const session = this.deps.store.getSession(sessionId)
-        const bypass = session && this.deps.getAgentConfig(session.agentId).bypassModeId
-        if (bypass) this.setLive(sessionId, { permissions: u.currentModeId === bypass ? 'bypass' : 'auto' })
+      case 'current_mode_update':
+        // The agent switched modes itself (e.g. Claude Code leaving Plan once the plan is approved).
+        this.modeChanged(sessionId, u.currentModeId)
         return
-      }
     }
 
     // session/load replays the history: it is synced once the load ends (SPEC → Shared sessions).
@@ -1770,18 +1858,141 @@ export class SessionManager {
     }
   }
 
-  private async onPermission(req: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
-    // Gloss runs agents without permission prompts (SPEC → Permissions): approve
-    // every request. Prefer "allow once": "allow always" can make the agent save
-    // a rule (e.g. into the project's settings).
-    const allow =
-      req.options.find((o) => o.kind === 'allow_once') ?? req.options.find((o) => o.kind === 'allow_always')
-    if (!allow) {
-      console.warn(`[gloss] permission request for "${req.toolCall.title ?? 'a tool'}" has no allow option`)
+  // Questions and approvals (SPEC → Questions and approvals)
+
+  /**
+   * Shows the agent's permission request in the thread of the running turn and waits for
+   * the user's pick, or approves it right away when Gloss auto-approves for the session.
+   */
+  private async onPermission(req: acp.RequestPermissionRequest, signal: AbortSignal): Promise<acp.RequestPermissionResponse> {
+    const sessionId = this.byAcpId.get(req.sessionId)
+    const rt = sessionId ? this.runtimes.get(sessionId) : undefined
+    if (!sessionId || !rt) {
+      console.warn(`[gloss] permission request for an unknown session ${req.sessionId}`)
       return { outcome: { outcome: 'cancelled' } }
     }
-    return { outcome: { outcome: 'selected', optionId: allow.optionId } }
+    if (rt.live.autoApprove) return autoApproval(req)
+    const known = this.deps.store.getToolCall(sessionId, req.toolCall.toolCallId)
+    const raw = req.toolCall.rawInput as { command?: unknown } | null | undefined
+    const command = typeof raw?.command === 'string' ? raw.command : Array.isArray(raw?.command) ? raw.command.join(' ') : undefined
+    const kind = req.toolCall.kind ?? known?.kind
+    const content = req.toolCall.content ?? known?.content
+    const answer = await this.ask(sessionId, signal, {
+      kind: 'permission',
+      title: req.toolCall.title ?? known?.title ?? 'Tool call',
+      toolCallId: req.toolCall.toolCallId,
+      ...(kind ? { toolKind: kind } : {}),
+      ...(content != null ? { content } : {}),
+      ...(command ? { command } : {}),
+      options: req.options.map((o): PermissionChoice => ({ id: o.optionId, name: o.name, kind: o.kind }))
+    }, known?.threadId)
+    return answer?.kind === 'permission' && 'optionId' in answer
+      ? { outcome: { outcome: 'selected', optionId: answer.optionId } }
+      : { outcome: { outcome: 'cancelled' } }
   }
+
+  /** Shows the agent's question (a form elicitation) and waits for the user's answer. URL elicitations aren't supported. */
+  private async onElicitation(req: acp.CreateElicitationRequest, signal: AbortSignal): Promise<acp.CreateElicitationResponse> {
+    const acpSessionId = 'sessionId' in req && typeof req.sessionId === 'string' ? req.sessionId : undefined
+    const sessionId = acpSessionId ? this.byAcpId.get(acpSessionId) : undefined
+    if (req.mode !== 'form' || !sessionId || !this.runtimes.has(sessionId) || !('requestedSchema' in req)) {
+      console.warn(`[gloss] declined an elicitation Gloss can't show (mode ${String(req.mode)})`)
+      return { action: 'decline' }
+    }
+    const toolCallId = 'toolCallId' in req && typeof req.toolCallId === 'string' ? req.toolCallId : undefined
+    const known = toolCallId ? this.deps.store.getToolCall(sessionId, toolCallId) : undefined
+    const answer = await this.ask(sessionId, signal, {
+      kind: 'question',
+      message: req.message,
+      fields: questionFields(req.requestedSchema)
+    }, known?.threadId)
+    if (answer?.kind !== 'question') return { action: 'cancel' }
+    return answer.action === 'accept' ? { action: 'accept', content: answer.content } : { action: answer.action }
+  }
+
+  /**
+   * Opens a request in the session and waits until the user answers it. Resolves to null
+   * when it is withdrawn: the agent cancelled it, the turn was cancelled, or the agent stopped.
+   */
+  private ask(
+    sessionId: string,
+    signal: AbortSignal,
+    body: DistributiveOmit<UserRequest, 'id' | 'sessionId' | 'threadId' | 'createdAt'>,
+    threadId: string | null | undefined
+  ): Promise<RequestAnswer | null> {
+    const rt = this.runtime(sessionId)
+    if (signal.aborted) return Promise.resolve(null)
+    const request = {
+      ...body,
+      id: randomUUID(),
+      sessionId,
+      // The thread whose turn asked; the tool call's own thread if it is known.
+      threadId: threadId !== undefined ? threadId : (rt.turn?.threadId ?? null),
+      createdAt: this.now()
+    } as UserRequest
+    return new Promise((resolve) => {
+      const settle = (answer: RequestAnswer | null): void => {
+        if (rt.requests.get(request.id)?.settle !== settle) return
+        rt.requests.delete(request.id)
+        signal.removeEventListener('abort', onAbort)
+        this.emitRequests(sessionId)
+        resolve(answer)
+      }
+      const onAbort = (): void => settle(null)
+      signal.addEventListener('abort', onAbort)
+      rt.requests.set(request.id, { request, settle })
+      this.emitRequests(sessionId)
+    })
+  }
+
+  private emitRequests(sessionId: string): void {
+    const rt = this.runtimes.get(sessionId)
+    if (!rt || !this.deps.store.getSession(sessionId)) return
+    this.deps.emit({ type: 'requests', sessionId, requests: [...rt.requests.values()].map((r) => r.request) })
+  }
+
+  /** Withdraws the session's open requests: the agent gets `cancelled`. */
+  private withdrawRequests(sessionId: string): void {
+    const rt = this.runtimes.get(sessionId)
+    if (!rt) return
+    for (const open of [...rt.requests.values()]) open.settle(null)
+  }
+
+  /** The user answered a question or approval. Rejects if it is no longer open or the answer doesn't fit it. */
+  answerRequest(sessionId: string, requestId: string, answer: RequestAnswer): void {
+    const open = this.runtimes.get(sessionId)?.requests.get(requestId)
+    if (!open) throw new Error('The agent is no longer waiting for this.')
+    const { request } = open
+    if (answer.kind !== request.kind) throw new Error('That answer is for a different kind of request.')
+    if (request.kind === 'permission' && 'optionId' in answer && !request.options.some((o) => o.id === answer.optionId)) {
+      throw new Error('That is not one of the options.')
+    }
+    if (request.kind === 'question' && answer.kind === 'question' && answer.action === 'accept') {
+      const error = answerError(request.fields, answer.content)
+      if (error) throw new Error(error)
+    }
+    open.settle(answer)
+  }
+}
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
+
+/**
+ * Gloss's own approval (SPEC → Permission modes): "allow once" over "allow always",
+ * which can make the agent save a rule (e.g. into the project's settings). With no
+ * allow option, the answer is `cancelled`.
+ */
+function autoApproval(req: acp.RequestPermissionRequest): acp.RequestPermissionResponse {
+  const allow = req.options.find((o) => o.kind === 'allow_once') ?? req.options.find((o) => o.kind === 'allow_always')
+  if (!allow) {
+    console.warn(`[gloss] permission request for "${req.toolCall.title ?? 'a tool'}" has no allow option`)
+    return { outcome: { outcome: 'cancelled' } }
+  }
+  return { outcome: { outcome: 'selected', optionId: allow.optionId } }
+}
+
+function modeOptions(modes: acp.SessionModeState): SessionModes['options'] {
+  return modes.availableModes.map((m) => ({ value: m.id, name: m.name, ...(m.description ? { description: m.description } : {}) }))
 }
 
 function isClear(text: string, attachments: Attachment[]): boolean {

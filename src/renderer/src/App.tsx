@@ -21,6 +21,7 @@ import type {
   ToolCall
 } from '@shared/types'
 import { lineLabel, type LineAnchor } from '@shared/review'
+import type { UserRequest } from '@shared/requests'
 import { truncate } from '@shared/wire'
 import type { ListItemSpan } from './anchors'
 import { GeneralPanel, ReviewThreadList } from './ReviewPanels'
@@ -61,6 +62,8 @@ export type OpenSession = {
   toolCalls: ToolCall[]
   plans: Plan[]
   threads: Thread[]
+  /** Questions and approvals the agent is waiting on, shown in their threads' logs. */
+  requests?: UserRequest[]
 }
 
 /**
@@ -85,7 +88,8 @@ const NO_LIVE: SessionLive = {
   commands: [],
   usage: null,
   rateLimits: [],
-  permissions: null,
+  modes: null,
+  autoApprove: false,
   accepts: { image: false, file: false },
   steering: false
 }
@@ -95,6 +99,7 @@ function agentSessionsKey(path: string, id: string): string {
 }
 
 const NO_QUEUE: MessageQueue = { items: [], paused: false }
+const NO_REQUESTS: UserRequest[] = []
 const NO_THREADS: Thread[] = []
 
 /** Most recent activity first, as the main process lists them. */
@@ -224,6 +229,8 @@ export function App(): React.JSX.Element {
   const [notices, setNotices] = useState<Record<string, Notice[]>>({})
   const [lives, setLives] = useState<Record<string, SessionLive>>({})
   const [queues, setQueues] = useState<Record<string, MessageQueue>>({})
+  /** sessionId → what its agent is waiting on the user for (SPEC → Questions and approvals). */
+  const [requests, setRequests] = useState<Record<string, UserRequest[]>>({})
   const [git, setGit] = useState<GitStatus | null>(null)
   const [pr, setPr] = useState<PullRequest | null>(null)
   const [signIn, setSignIn] = useState<SignInRequest | null>(null)
@@ -406,6 +413,7 @@ export function App(): React.JSX.Element {
       setProjectPath(view.session.cwd)
       setLives((l) => ({ ...l, [id]: view.live }))
       setQueues((q) => ({ ...q, [id]: view.queue }))
+      setRequests((r) => ({ ...r, [id]: view.requests }))
       setRunning((r) => {
         const next = { ...r }
         if (view.turn) next[id] = view.turn.threadId
@@ -461,6 +469,11 @@ export function App(): React.JSX.Element {
         case 'sessionDeleted':
           panels.current.delete(event.sessionId)
           setSessions((list) => list.filter((s) => s.id !== event.sessionId))
+          setRequests((r) => {
+            const next = { ...r }
+            delete next[event.sessionId]
+            return next
+          })
           if (event.deletedOutside) {
             setSidebarNote({ text: `“${event.deletedOutside.title}” was deleted outside Gloss, so it was removed here too.`, tone: 'info' })
           }
@@ -496,6 +509,9 @@ export function App(): React.JSX.Element {
           break
         case 'queue':
           setQueues((q) => ({ ...q, [event.sessionId]: event.queue }))
+          break
+        case 'requests':
+          setRequests((r) => ({ ...r, [event.sessionId]: event.requests }))
           break
         case 'reveal':
           void selectSession(event.sessionId, event.threadId)
@@ -1056,7 +1072,9 @@ export function App(): React.JSX.Element {
   )
   const stripThreadId = runningThread !== undefined ? runningThread : lastMessage?.threadId
   const stripThreadRow = open?.threads.find((t) => t.id === stripThreadId)
-  const stripState = runningThread !== undefined ? 'working' : (lastMessage?.outcome ?? null)
+  const stripState = runningThread !== undefined
+    ? ((sessionId && requests[sessionId]?.length) ? 'waiting' : 'working')
+    : (lastMessage?.outcome ?? null)
   const lastThread: StripThread | null = stripThreadRow
     ? { id: stripThreadRow.id, name: threadName(stripThreadRow), state: stripState }
     : stripThreadId === null
@@ -1074,6 +1092,9 @@ export function App(): React.JSX.Element {
   )
   const live = (sessionId && lives[sessionId]) || NO_LIVE
   const queue = (sessionId && queues[sessionId]) || NO_QUEUE
+  const sessionRequests = (sessionId && requests[sessionId]) || NO_REQUESTS
+  /** The open session with what its agent waits on, for the logs. */
+  const openShown = useMemo(() => (open ? { ...open, requests: sessionRequests } : null), [open, sessionRequests])
   /** Part of the session's queue (one thread's messages) with the queue's actions, for a composer. */
   const composerQueue = (id: string, items: QueuedMessage[]): ComposerQueue => ({
     items,
@@ -1087,7 +1108,11 @@ export function App(): React.JSX.Element {
     <div className="app">
       <TitleBar />
       {sidebarWidth === null ? (
-        <SidebarRail running={Object.keys(running).length > 0} onExpand={() => hideSidebar(false)} />
+        <SidebarRail
+          running={Object.keys(running).length > 0}
+          waiting={Object.values(requests).some((r) => r.length > 0)}
+          onExpand={() => hideSidebar(false)}
+        />
       ) : (
         <>
           <Sidebar
@@ -1101,6 +1126,7 @@ export function App(): React.JSX.Element {
             openId={sessionId ?? null}
             running={running}
             unseen={unseen}
+            waiting={requests}
             agentSessions={listedAgentSessions}
             order={settings?.global.sessionOrder ?? 'created'}
             agentSessionsError={agentSessionsError}
@@ -1151,7 +1177,7 @@ export function App(): React.JSX.Element {
           <ReviewView
             obsidianVault={settings ? projectSettings(settings.projects, open.session.cwd).obsidianVault : undefined}
             key={open.session.id}
-            open={open}
+            open={openShown ?? open}
             agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
             diff={diffState}
             locations={lineLocations}
@@ -1188,7 +1214,7 @@ export function App(): React.JSX.Element {
           <Conversation
             obsidianVault={settings ? projectSettings(settings.projects, open.session.cwd).obsidianVault : undefined}
             key={open.session.id}
-            open={open}
+            open={openShown ?? open}
             listItemReplies={settings?.global.listItemReplies ?? false}
             agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
             live={live}
@@ -1268,7 +1294,7 @@ export function App(): React.JSX.Element {
             {isReview && general && !panel ? (
               <GeneralPanel
                 width={threadWidth}
-                open={open}
+                open={openShown ?? open}
                 notices={sessionNotices}
                 reveal={reveal}
                 live={live}
@@ -1294,7 +1320,7 @@ export function App(): React.JSX.Element {
                     .catch((err: unknown) => addNotice(open.session.id, threadId, errorText(err)))
                 }
                 width={threadWidth}
-                open={open}
+                open={openShown ?? open}
                 panel={panel}
                 reveal={reveal}
                 backTo={sideTab}
@@ -1325,7 +1351,7 @@ export function App(): React.JSX.Element {
             ) : (
               <ThreadsOverview
                 width={threadWidth}
-                open={open}
+                open={openShown ?? open}
                 tab={sideTab}
                 onTab={setSideTab}
                 runningThread={runningThread}
@@ -1350,7 +1376,7 @@ export function App(): React.JSX.Element {
                         count: open.threads.filter((t) => t.anchor.kind === 'line').length,
                         content: (
                           <ReviewThreadList
-                            open={open}
+                            open={openShown ?? open}
                             diff={diffState.diff}
                             locations={lineLocations}
                             runningThread={runningThread}

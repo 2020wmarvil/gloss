@@ -3,11 +3,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { GitStatus, PullRequest } from '@shared/ipc'
 import { folderName } from '@shared/paths'
-import type { ConfigChoice, MessageQueue, ModelOption, RateLimit, Session, SessionLive, SlashCommand } from '@shared/types'
+import type { ConfigChoice, MessageQueue, ModelOption, RateLimit, Session, SessionLive, SessionModes, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
 import { Popover } from './Popover'
 import { UsagePanel } from './UsagePanel'
-import { Check, ChevronDown, Cpu, Gauge, Folder, GitBranch, Puzzle, ShieldAlert, ShieldCheck, SlidersHorizontal } from 'lucide-react'
+import { Check, ChevronDown, Cpu, Gauge, Folder, GitBranch, Hand, Puzzle, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 
 type Props = {
   session: Session
@@ -17,6 +17,8 @@ type Props = {
   obsidianVault?: string
   /** A turn is running (the activity strip says where). */
   running: boolean
+  /** Questions and approvals the agent is waiting on the user for. */
+  waiting?: number
   queue: MessageQueue
   /** An activity strip above already counts the queued messages. */
   queueShownAbove?: boolean
@@ -180,6 +182,80 @@ function ChoicePicker(props: {
 }
 
 /**
+ * The session's permission mode (SPEC → Permission modes): the agent's modes, and for an
+ * agent without a bypass mode, Gloss's own auto-approval. Amber while Gloss approves.
+ */
+function ModePicker(props: {
+  modes: SessionModes | null
+  autoApprove: boolean
+  onPickMode(modeId: string): void
+  onAutoApprove(on: boolean): void
+}): React.JSX.Element {
+  const { modes, autoApprove } = props
+  const current = modes?.options.find((o) => o.value === modes.current)
+  const glossApproves = autoApprove && !modes?.bypass
+  const Icon = glossApproves ? ShieldAlert : autoApprove ? ShieldCheck : Shield
+  const label = current ? optionName(current.name) : autoApprove ? 'Auto-approve' : 'Ask'
+  const title = autoApprove
+    ? glossApproves
+      ? 'Permission mode. Gloss approves each request the agent makes.'
+      : 'Permission mode. The agent runs tools without asking.'
+    : 'Permission mode. The agent asks before acting where this mode says so.'
+  return (
+    <Popover
+      label={<><Icon className="status-icon" aria-hidden />{label}{glossApproves && modes && <span className="status-label">· auto-approve</span>}<ChevronDown className="status-chevron" aria-hidden /></>}
+      title={title}
+      className={`status-item status-button mode-picker${glossApproves ? ' warn' : ''}`}
+    >
+      {(close) => (
+        <>
+          {modes && (
+            <ul className="option-list" role="listbox" aria-label="Permission mode">
+              {modes.options.map((o) => (
+                <li key={o.value}>
+                  <button
+                    className={o.value === modes.current ? 'on' : undefined}
+                    role="option"
+                    aria-selected={o.value === modes.current}
+                    onClick={() => {
+                      close()
+                      props.onPickMode(o.value)
+                    }}
+                  >
+                    <Check className="option-check" />
+                    <span>{optionName(o.name)}</span>
+                    {optionDescription(o.name, o.description) && <span className="muted">{optionDescription(o.name, o.description)}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!modes?.bypass && (
+            <ul className="option-list" aria-label="Approval">
+              <li>
+                <button
+                  className={autoApprove ? 'on' : undefined}
+                  role="menuitemcheckbox"
+                  aria-checked={autoApprove}
+                  onClick={() => {
+                    close()
+                    props.onAutoApprove(!autoApprove)
+                  }}
+                >
+                  <Check className="option-check" />
+                  <span>Approve requests automatically</span>
+                  <span className="muted">Gloss answers the agent&apos;s permission requests with allow once.</span>
+                </button>
+              </li>
+            </ul>
+          )}
+        </>
+      )}
+    </Popover>
+  )
+}
+
+/**
  * Hides the children of a wrapping row that don't fit on its first line, so items drop out
  * from the right as the pane narrows. Hidden rather than clipped: a clipping box would cut
  * off the items' popovers too.
@@ -242,6 +318,12 @@ export function StatusLine(props: Props): React.JSX.Element {
       {/* What the agent reports, in order of importance. */}
       <span className="status-agent" ref={agentItems}>
         {!live.attached && !props.running && <span className="status-item muted">Agent not running</span>}
+        {(props.waiting ?? 0) > 0 && (
+          <span className="status-item waiting" title="The agent is waiting for your answer in the conversation">
+            <Hand className="status-icon" aria-hidden />
+            Waiting for you
+          </span>
+        )}
         {props.queue.items.length > 0 &&
           (props.queue.paused ? (
             <button className="status-item paused" onClick={props.onResumeQueue} title="Send the next queued message">
@@ -278,20 +360,19 @@ export function StatusLine(props: Props): React.JSX.Element {
           />
         )}
 
-        {/* Tools run without asking either way; amber when Gloss does the approving. */}
-        {live.permissions === 'bypass' && (
-          <span className="status-item" title="Auto-approve: the agent runs tools without asking (its bypass mode)." aria-label="Auto-approve">
-            <ShieldCheck className="status-icon" aria-hidden />
-          </span>
-        )}
-        {live.permissions === 'auto' && (
-          <span
-            className="status-item warn"
-            title="Auto-approve: the agent didn't switch to its bypass mode, so Gloss approves each permission request it makes."
-          >
-            <ShieldAlert className="status-icon" aria-hidden />
-            Auto-approve
-          </span>
+        {live.attached && (
+          <ModePicker
+            modes={live.modes}
+            autoApprove={live.autoApprove}
+            onPickMode={(modeId) => {
+              setChoiceError(null)
+              window.gloss.sessions.setMode(session.id, modeId).catch((err: unknown) => setChoiceError(errorText(err)))
+            }}
+            onAutoApprove={(on) => {
+              setChoiceError(null)
+              window.gloss.sessions.setAutoApprove(session.id, on).catch((err: unknown) => setChoiceError(errorText(err)))
+            }}
+          />
         )}
 
         {(live.commands.length > 0 || hasMcpCommand) && (

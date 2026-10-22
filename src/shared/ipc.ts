@@ -1,6 +1,7 @@
 import type { SearchRequest, SearchResponse } from './search'
 import type { McpImportPreview, McpImportSource } from './mcp'
 import type { ReviewDiff, ReviewRefs } from './review'
+import type { RequestAnswer, UserRequest } from './requests'
 // The IPC contract between the main process and the renderer.
 // Type-only (plus channel names): nothing here may pull runtime code into the sandboxed preload.
 import type { GlobalSettings, ProjectSettings } from './settings'
@@ -46,6 +47,8 @@ export type SessionView = {
   turn: { threadId: string | null } | null
   queue: MessageQueue
   live: SessionLive
+  /** Questions and approvals the agent is waiting on (SPEC → Questions and approvals). */
+  requests: UserRequest[]
 }
 
 export type GitStatus = {
@@ -122,6 +125,8 @@ export type GlossEvent =
       continues?: true
     }
   | { type: 'queue'; sessionId: string; queue: MessageQueue }
+  /** The questions and approvals the session's agent is waiting on changed. */
+  | { type: 'requests'; sessionId: string; requests: UserRequest[] }
   /** Something the user should know that is not part of the conversation, shown in `threadId`. */
   | { type: 'notice'; sessionId: string; threadId: string | null; text: string }
   /** The window went full screen (F11): show how to leave it. */
@@ -181,6 +186,10 @@ export type GlossApi = {
     delete(id: string): Promise<string | null>
     /** Picks the session's model or effort. */
     setChoice(id: string, kind: 'model' | 'effort', value: string): Promise<void>
+    /** Switches the session's permission mode (an ACP mode id). */
+    setMode(id: string, modeId: string): Promise<void>
+    /** Turns Gloss's own approval of permission requests on or off (agents without a bypass mode). */
+    setAutoApprove(id: string, on: boolean): Promise<void>
     /** Copies the session (or one thread) as markdown to the clipboard. */
     copyMarkdown(id: string, threadId: string | null): Promise<void>
     /** Saves the session (or one thread) as a markdown file. Resolves to false if cancelled. */
@@ -226,6 +235,10 @@ export type GlossApi = {
   cancel(sessionId: string): Promise<void>
   /** What the taskbar (or dock) badge shows (SPEC → Notifications). */
   setBadge(badge: AppBadge): void
+  requests: {
+    /** Answers a question or approval. Rejects if it is no longer open. */
+    answer(sessionId: string, requestId: string, answer: RequestAnswer): Promise<void>
+  }
   queue: {
     /** Replaces a queued message's text. Rejects if it has already been sent. */
     edit(sessionId: string, id: string, text: string): Promise<void>
@@ -284,6 +297,9 @@ export const IPC = {
   sessionsRename: 'gloss:sessions:rename',
   sessionsDelete: 'gloss:sessions:delete',
   sessionsSetChoice: 'gloss:sessions:setChoice',
+  sessionsSetMode: 'gloss:sessions:setMode',
+  sessionsSetAutoApprove: 'gloss:sessions:setAutoApprove',
+  requestsAnswer: 'gloss:requests:answer',
   sessionsCopyMarkdown: 'gloss:sessions:copyMarkdown',
   sessionsSaveMarkdown: 'gloss:sessions:saveMarkdown',
   sessionsOpenFolder: 'gloss:sessions:openFolder',

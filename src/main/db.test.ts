@@ -76,10 +76,32 @@ describe('Store', () => {
     } finally { store.close() }
     const migrated = new DatabaseSync(path)
     try {
-      expect(migrated.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 14 })
+      expect(migrated.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 16 })
       expect(migrated.prepare('PRAGMA foreign_key_check').all()).toEqual([])
       if (branch === 'dev') expect(migrated.prepare('SELECT handoff FROM sessions').get()).toMatchObject({ handoff: 'existing handoff' })
     } finally { migrated.close() }
+  })
+
+  it('adds the permission columns to a version 15 database from the worktree branch', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gloss-db-'))
+    dirs.push(dir)
+    const path = join(dir, 'gloss.db')
+    new Store(path).close()
+    const db = new DatabaseSync(path)
+    db.exec(`
+      ALTER TABLE sessions DROP COLUMN mode;
+      ALTER TABLE sessions DROP COLUMN auto_approve;
+      ALTER TABLE sessions ADD COLUMN project_path TEXT;
+      PRAGMA user_version = 15
+    `)
+    db.close()
+    const store = new Store(path)
+    try {
+      store.insertSession({ id: 's', agentId: 'claude', acpSessionId: 'a', cwd: '/w', title: 'w', createdAt: 1 })
+      expect(store.updateSession('s', { mode: 'plan', autoApprove: true })).toMatchObject({ mode: 'plan', autoApprove: true })
+    } finally {
+      store.close()
+    }
   })
 
   it('keeps the range of a review session', () => {

@@ -17,6 +17,10 @@ export type Session = {
   model?: string
   /** The effort picked for this session in Gloss (a thought_level config option value), re-applied likewise. */
   effort?: string
+  /** The agent's permission mode for this session (an ACP mode id), re-applied when it is resumed (SPEC → Permission modes). */
+  mode?: string
+  /** Gloss approves the agent's permission requests itself. Only for agents without a bypass mode. */
+  autoApprove?: boolean
   /** The agent's `updatedAt` for the session when Gloss last synced it (SPEC → Shared sessions). */
   syncedAt?: string
   /** A review session (SPEC → Review sessions): what its diff compares. */
@@ -190,12 +194,21 @@ export type SessionLive = {
   usage: { used: number; size: number; cost?: { amount: number; currency: string } } | null
   /** Plan usage limits, per window, when the agent reports them (Claude Code does, in usage updates). */
   rateLimits: RateLimit[]
-  /** 'bypass': the agent's bypass mode is on. 'auto': Gloss auto-approves permission requests instead. */
-  permissions: 'bypass' | 'auto' | null
+  /** The agent's session modes (SPEC → Permission modes); null if it reports none. */
+  modes: SessionModes | null
+  /** Gloss answers the agent's permission requests itself instead of asking (bypass mode, or the user's pick). */
+  autoApprove: boolean
   /** What the agent accepts in a prompt besides text. */
   accepts: { image: boolean; file: boolean }
   /** The agent takes messages into a running turn (SPEC → Steer). */
   steering: boolean
+}
+
+export type SessionModes = {
+  current: string
+  options: ModelOption[]
+  /** The agent's mode that skips permission checks, when it offers one. */
+  bypass: string | null
 }
 
 export type AuthMethodInfo = {

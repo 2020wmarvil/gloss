@@ -3,6 +3,8 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { Message, Plan, ToolCall } from '@shared/types'
 import type { OpenSession } from './App'
 import { Markdown } from './Markdown'
+import { RequestCard } from './RequestCard'
+import type { UserRequest } from '@shared/requests'
 import { hasDetails, ToolDetails } from './ToolDetails'
 import { Brain, Check, ChevronDown, ChevronRight, CircleAlert, FilePen, FileText, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
 
@@ -14,6 +16,8 @@ export type LogItem =
   | { kind: 'tool'; seq: number; toolCall: ToolCall }
   | { kind: 'plan'; seq: number; plan: Plan }
   | { kind: 'notice'; seq: number; notice: Notice }
+  /** What the agent waits on the user for: always last, below the turn that asked. */
+  | { kind: 'request'; seq: number; request: UserRequest }
 
 /** Messages, tool calls, plans and notices of one thread (null = main), in seq order. */
 export function logItems(open: OpenSession, notices: Notice[], threadId: string | null): LogItem[] {
@@ -29,7 +33,10 @@ export function logItems(open: OpenSession, notices: Notice[], threadId: string 
       .map((p): LogItem => ({ kind: 'plan', seq: p.seq, plan: p })),
     ...notices
       .filter((n) => n.threadId === threadId)
-      .map((n): LogItem => ({ kind: 'notice', seq: n.afterSeq + 0.5, notice: n }))
+      .map((n): LogItem => ({ kind: 'notice', seq: n.afterSeq + 0.5, notice: n })),
+    ...(open.requests ?? [])
+      .filter((r) => r.threadId === threadId)
+      .map((r): LogItem => ({ kind: 'request', seq: Number.MAX_SAFE_INTEGER, request: r }))
   ].sort((a, b) => a.seq - b.seq)
 }
 
@@ -130,6 +137,8 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
             }
             case 'plan':
               return <PlanChecklist key={item.plan.id} plan={item.plan} />
+            case 'request':
+              return <RequestCard key={item.request.id} request={item.request} />
             case 'notice':
               return item.notice.tone === 'failed' ? (
                 <FailedNotice key={item.notice.id} notice={item.notice} />
@@ -142,6 +151,17 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
         })}
       </div>
     </div>
+  )
+}
+
+/** A thread header's turn state: working, or waiting for the user's answer in the log. */
+export function TurnStatus({ open, threadId }: { open: OpenSession; threadId: string | null }): React.JSX.Element {
+  const waiting = open.requests?.some((r) => r.threadId === threadId) ?? false
+  return (
+    <span className="status">
+      <span className={waiting ? 'waiting-dot' : 'running-dot'} aria-hidden="true" />
+      {waiting ? 'Waiting for you' : 'Working'}
+    </span>
   )
 }
 

@@ -56,6 +56,14 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
     ]
   },
   {
+    title: 'Questions and approvals (while the card has focus)',
+    shortcuts: [
+      { keys: [['1'], ['…'], ['9']], action: 'Approval: pick that option. Question: pick or unpick that choice in the focused (or first) choice' },
+      { keys: [['Enter']], action: 'Approval: allow once. Question: submit' },
+      { keys: [['Esc']], action: 'Approval: reject once. Question: decline' }
+    ]
+  },
+  {
     title: 'Conversation',
     shortcuts: [{ keys: [['R']], action: 'Reply to the selected text in a new thread' }]
   },

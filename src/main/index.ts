@@ -3,6 +3,7 @@ import { isAbsolute, join } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell } from 'electron'
 import { IPC, type AppBadge, type GlossEvent } from '../shared/ipc'
 import type { Anchor, Attachment } from '../shared/types'
+import type { AnswerValue, RequestAnswer } from '../shared/requests'
 import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, listAgents } from './agents'
 import { Store } from './db'
@@ -159,6 +160,7 @@ function handleShortcut(win: BrowserWindow, input: Electron.Input): boolean {
 function emit(event: GlossEvent): void {
   mainWindow?.webContents.send(IPC.event, event)
   if (event.type === 'turnEnd') notifyTurnEnd(event)
+  if (event.type === 'requests') notifyRequests(event)
   if (event.type === 'turnEnd' && openCodeRestartPending) {
     void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
   }
@@ -190,6 +192,34 @@ function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
     win.show()
     win.focus()
     emit({ type: 'reveal', sessionId: event.sessionId, threadId: event.threadId })
+  })
+  n.on('close', () => notifications.delete(n))
+  n.show()
+}
+
+/** Per session, the open requests already notified about, so a changed list only notifies for new ones. */
+const notifiedRequests = new Map<string, Set<string>>()
+
+/** An OS notification when the agent starts waiting on the user while Gloss isn't focused (SPEC → Questions and approvals). */
+function notifyRequests(event: Extract<GlossEvent, { type: 'requests' }>): void {
+  const seen = notifiedRequests.get(event.sessionId)
+  const fresh = event.requests.filter((r) => !seen?.has(r.id))
+  notifiedRequests.set(event.sessionId, new Set(event.requests.map((r) => r.id)))
+  const win = mainWindow
+  const first = fresh[0]
+  if (!first || !win || win.isFocused() || !Notification.isSupported()) return
+  const session = store?.getSession(event.sessionId)
+  if (!session) return
+  const body = first.kind === 'question' ? `Waiting for you: ${first.message}` : `Waiting for your approval: ${first.title}`
+  const n = new Notification({ title: session.title, body, silent: true })
+  notifications.add(n)
+  n.on('click', () => {
+    notifications.delete(n)
+    if (win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    emit({ type: 'reveal', sessionId: event.sessionId, threadId: first.threadId })
   })
   n.on('close', () => notifications.delete(n))
   n.show()
@@ -280,6 +310,30 @@ function folderArg(value: unknown, name: string): string {
   const path = str(value, name)
   if (path.trim() === '') throw new Error(`Expected ${name} to be a folder path`)
   return path
+}
+
+/** Checks an answer from the renderer; the manager checks it against the request. */
+function answerArg(value: unknown): RequestAnswer {
+  if (typeof value !== 'object' || value === null) throw new Error('Invalid answer')
+  const a = value as Record<string, unknown>
+  if (a.kind === 'permission') {
+    if (a.cancelled === true) return { kind: 'permission', cancelled: true }
+    return { kind: 'permission', optionId: str(a.optionId, 'optionId') }
+  }
+  if (a.kind === 'question') {
+    if (a.action === 'decline' || a.action === 'cancel') return { kind: 'question', action: a.action }
+    if (a.action === 'accept' && typeof a.content === 'object' && a.content !== null && !Array.isArray(a.content)) {
+      const content: Record<string, AnswerValue> = {}
+      for (const [k, v] of Object.entries(a.content)) {
+        const ok = typeof v === 'string' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v)) ||
+          (Array.isArray(v) && v.every((x) => typeof x === 'string'))
+        if (!ok) throw new Error(`Invalid answer for ${k}`)
+        content[k] = v as AnswerValue
+      }
+      return { kind: 'question', action: 'accept', content }
+    }
+  }
+  throw new Error('Invalid answer')
 }
 
 function threadArg(value: unknown): string | null {
@@ -392,6 +446,14 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     if (kind !== 'model' && kind !== 'effort') throw new Error('kind must be "model" or "effort"')
     return manager.setChoice(str(id, 'id'), kind, str(value, 'value'))
   })
+  ipcMain.handle(IPC.sessionsSetMode, (_e, id: unknown, modeId: unknown) => manager.setMode(str(id, 'id'), str(modeId, 'modeId')))
+  ipcMain.handle(IPC.sessionsSetAutoApprove, (_e, id: unknown, on: unknown) => {
+    if (typeof on !== 'boolean') throw new Error('Expected on to be a boolean')
+    return manager.setAutoApprove(str(id, 'id'), on)
+  })
+  ipcMain.handle(IPC.requestsAnswer, (_e, sessionId: unknown, requestId: unknown, answer: unknown) =>
+    manager.answerRequest(str(sessionId, 'sessionId'), str(requestId, 'requestId'), answerArg(answer))
+  )
   ipcMain.handle(IPC.sessionsCopyMarkdown, (_e, id: unknown, threadId: unknown) => {
     clipboard.writeText(exportLog(str(id, 'id'), threadArg(threadId)).markdown)
   })
@@ -494,7 +556,7 @@ app.whenReady().then(() => {
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [] },
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [] },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
       // Fires nativeTheme's 'updated', which recolors the window controls.
@@ -527,6 +589,11 @@ app.whenReady().then(() => {
         return profileSupport.config(profile)
       })() : getAgentConfig(id),
     mcpServers: () => settingsFile.state().global.mcpServers,
+    permissionMode: (cwd) => {
+      const state = settingsFile.state()
+      const project = projectSettings(state.projects, cwd).permissionMode
+      return project && project !== 'inherit' ? project : state.global.permissionMode
+    },
     agentEnv: (config) => agentEnv(config),
     connect: (config, env, handlers) => AgentConnection.start(config, env, handlers),
     runInTerminal

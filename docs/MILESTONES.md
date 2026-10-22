@@ -23,7 +23,10 @@ Let users bring an ACP-compatible coding agent and run it with either a hosted m
 
 Initial references (re-check during implementation): [OpenCode ACP support](https://opencode.ai/docs/acp/) and [provider configuration](https://opencode.ai/docs/providers/).
 
-## M15: Questions and permission modes (future)
+## M15: Questions and permission modes
+
+**Implemented, awaiting review.** Form elicitations become question cards in the asking thread (Claude's AskUserQuestion included, in every mode); permission requests become approval cards unless the session is in a bypass mode or Gloss auto-approves; a per-session mode picker in the status line replaces the bypass item, with a `permissionMode` default (global, per-project override, bypass by default) and saved per-session modes. Waiting turns show "Waiting for you" in the status line, strip, sidebar and thread, and notify when Gloss isn't focused. URL elicitations are declined. Verified live on Haiku 5.5 through the Claude adapter (`src/main/claude.integration.test.ts`, opt in with `GLOSS_CLAUDE_LIVE=1`) and in the built app.
+
 Let the agent ask the user things, and let the user choose how much it may do without asking. Replaces SPEC → Permissions ("no approval UI"); update it in this milestone.
 
 - **Agent questions:** advertise ACP's `clientCapabilities.elicitation.form` and answer `elicitation/create` requests with a question dialog built from the request's JSON Schema: single and multiple choice, free text, and the agent's "other" answer where it allows one, plus Decline and Cancel. With form support the Claude adapter turns on Claude Code's AskUserQuestion tool (disabled today because Gloss doesn't advertise it) and sends its questions this way; MCP servers' elicitations arrive the same way. The question shows in the thread whose turn asked it. URL elicitations (open a link, wait for `session/complete_elicitation`) are optional.

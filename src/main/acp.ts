@@ -7,7 +7,10 @@ import type { AgentConfig } from './agents'
 
 export type AgentHandlers = {
   onUpdate(notification: acp.SessionNotification): void
-  onPermission(request: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse>
+  /** `signal` aborts when the agent withdraws the request ($/cancel_request) or the connection closes. */
+  onPermission(request: acp.RequestPermissionRequest, signal: AbortSignal): Promise<acp.RequestPermissionResponse>
+  /** A form elicitation (SPEC → Questions and approvals). Absent: Gloss doesn't advertise elicitation. */
+  onElicitation?(request: acp.CreateElicitationRequest, signal: AbortSignal): Promise<acp.CreateElicitationResponse>
   /** A line the agent wrote to stderr. */
   onStderr(line: string): void
   /** The connection closed (agent exited, or dispose() was called). */
@@ -111,8 +114,12 @@ export class AgentConnection {
       .client({ name: 'gloss' })
       .onNotification(acp.methods.client.session.update, (ctx) => handlers.onUpdate(ctx.params))
       .onRequest(acp.methods.client.session.requestPermission, (ctx) =>
-        handlers.onPermission(ctx.params)
+        handlers.onPermission(ctx.params, ctx.signal)
       )
+    const onElicitation = handlers.onElicitation
+    if (onElicitation) {
+      app.onRequest(acp.methods.client.elicitation.create, (ctx) => onElicitation(ctx.params, ctx.signal))
+    }
     const conn = target instanceof acp.AgentApp ? app.connect(target) : app.connect(target)
     child?.once('exit', (code, signal) =>
       conn.close(new Error(`Agent process exited (code ${code}, signal ${signal})`))
@@ -121,9 +128,10 @@ export class AgentConnection {
     try {
       // No fs or terminal client capabilities in v1: the agent uses its own tools.
       // auth.terminal: we can run terminal sign-in methods (SPEC → Authentication).
+      // elicitation.form: we show the agent's questions (SPEC → Questions and approvals).
       const request = conn.agent.request(acp.methods.agent.initialize, {
         protocolVersion: acp.PROTOCOL_VERSION,
-        clientCapabilities: { auth: { terminal: true } },
+        clientCapabilities: { auth: { terminal: true }, ...(onElicitation ? { elicitation: { form: {} } } : {}) },
         clientInfo: { name: 'gloss', title: 'Gloss', version: '0.1.0' }
       })
       const init = timeoutMs ? await Promise.race([

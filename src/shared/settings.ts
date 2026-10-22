@@ -13,6 +13,13 @@ export type ThemeSetting = 'system' | 'light' | 'dark'
 
 export type SessionOrder = 'created' | 'activity'
 
+/**
+ * The permission mode new sessions start in (SPEC → Permission modes). `bypass`: the
+ * agent's bypass mode, or Gloss's auto-approval for an agent without one. `agent`: the
+ * agent's own default mode, which asks before acting where the agent does.
+ */
+export type PermissionModeSetting = 'bypass' | 'agent'
+
 export const DEFAULT_EXTERNAL_EDITOR = 'code -g {file}:{line}'
 
 /** Commands use each editor's CLI launcher, which must be installed on PATH. */
@@ -43,6 +50,8 @@ export type GlobalSettings = {
   listItemReplies: boolean
   /** Play a sound when a turn finishes in a session that isn't in front of the user. */
   turnEndSound: boolean
+  /** The permission mode new sessions start in. */
+  permissionMode: PermissionModeSetting
   /** The command that opens a file in the user's editor (`{file}`, `{line}`); empty for the system's default app. */
   externalEditor: string
   /** Tools made available to all agents in every project. */
@@ -54,6 +63,8 @@ export type ProjectSettings = {
   mcpServers?: import('./mcp').McpServer[]
   /** An existing Obsidian vault's name or ID; empty hides its shortcut. */
   obsidianVault?: string
+  /** Overrides the global permission mode for new sessions here; `inherit` (or omitted) uses it. */
+  permissionMode?: PermissionModeSetting | 'inherit'
 }
 
 export type SettingField = {
@@ -93,6 +104,29 @@ export const SETTING_FIELDS: readonly SettingField[] = [
   {
     key: 'mcpServers', scope: 'project', type: 'mcp', label: 'MCP servers',
     description: 'Import legacy servers into global MCP settings.', hidden: true
+  },
+  {
+    key: 'permissionMode',
+    scope: 'global',
+    type: 'enum',
+    label: 'Permission mode',
+    description: "How new sessions start. Bypass runs tools without asking; the agent's default asks first. Change it per session in the status line.",
+    options: [
+      { value: 'bypass', label: 'Bypass permissions' },
+      { value: 'agent', label: "Agent's default" }
+    ]
+  },
+  {
+    key: 'permissionMode',
+    scope: 'project',
+    type: 'enum',
+    label: 'Permission mode',
+    description: 'How new sessions in this project start.',
+    options: [
+      { value: 'inherit', label: 'Same as global' },
+      { value: 'bypass', label: 'Bypass permissions' },
+      { value: 'agent', label: "Agent's default" }
+    ]
   },
   {
     key: 'listItemReplies',

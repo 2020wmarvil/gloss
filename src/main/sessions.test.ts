@@ -15,7 +15,9 @@ type Script = (ctx: {
   text: string
   say(text: string, messageId?: string): Promise<void>
   update(update: acp.SessionUpdate): Promise<void>
-  requestPermission(title: string, options?: acp.PermissionOption[]): Promise<acp.RequestPermissionResponse>
+  requestPermission(title: string, options?: acp.PermissionOption[], signal?: AbortSignal): Promise<acp.RequestPermissionResponse>
+  /** Asks the client a question (elicitation/create). A form for this session unless overridden. */
+  elicit(params: Record<string, unknown>): Promise<acp.CreateElicitationResponse>
   cancelled: Promise<void>
   /** Resolves with the text of the next message steered into this turn. */
   nextSteer(): Promise<string>
@@ -84,6 +86,8 @@ type FakeAgent = {
   steers: acp.ContentBlock[][]
   /** Answer every steer with promptRequired, as if the turn had just ended. */
   turnEnding: boolean
+  /** What the client advertised in its last initialize. */
+  clientCapabilities?: acp.ClientCapabilities
   script: Script
 }
 
@@ -170,21 +174,24 @@ function agentApp(state: FakeAgent): acp.AgentApp {
   let next = 0
   return acp
     .agent({ name: 'fake' })
-    .onRequest(acp.methods.agent.initialize, () => ({
-      protocolVersion: acp.PROTOCOL_VERSION,
-      agentCapabilities: {
-        loadSession: state.loadSession,
-        promptCapabilities: state.promptCapabilities,
-        mcpCapabilities: state.mcpCapabilities,
-        sessionCapabilities: {
-          ...(state.canList ? { list: {} } : {}),
-          ...(state.canDelete ? { delete: {} } : {}),
-          ...(state.canClose ? { close: {} } : {})
-        }
-      },
-      authMethods: state.authMethods,
-      ...(state.steering ? { _meta: { steering: { supported: true } } } : {})
-    }))
+    .onRequest(acp.methods.agent.initialize, (ctx) => {
+      state.clientCapabilities = ctx.params.clientCapabilities ?? undefined
+      return {
+        protocolVersion: acp.PROTOCOL_VERSION,
+        agentCapabilities: {
+          loadSession: state.loadSession,
+          promptCapabilities: state.promptCapabilities,
+          mcpCapabilities: state.mcpCapabilities,
+          sessionCapabilities: {
+            ...(state.canList ? { list: {} } : {}),
+            ...(state.canDelete ? { delete: {} } : {}),
+            ...(state.canClose ? { close: {} } : {})
+          }
+        },
+        authMethods: state.authMethods,
+        ...(state.steering ? { _meta: { steering: { supported: true } } } : {})
+      }
+    })
     .onRequest('_session/steering', { parse: (p) => p as { sessionId: string; prompt: acp.ContentBlock[] } }, (ctx) => {
       const { sessionId, prompt } = ctx.params
       const deliver = steerTo.get(sessionId)
@@ -300,7 +307,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
             content: { type: 'text', text: t },
             ...(messageId ? { messageId } : {})
           }),
-        requestPermission: (title, options) =>
+        requestPermission: (title, options, signal) =>
           ctx.client.request(acp.methods.client.session.requestPermission, {
             sessionId,
             toolCall: { toolCallId: 'perm', title },
@@ -309,7 +316,9 @@ function agentApp(state: FakeAgent): acp.AgentApp {
               { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
               { optionId: 'deny', name: 'Deny', kind: 'reject_once' }
             ]
-          }),
+          }, signal ? { cancellationSignal: signal } : undefined),
+        elicit: (params) =>
+          ctx.client.request(acp.methods.client.elicitation.create, { mode: 'form', sessionId, ...params } as acp.CreateElicitationRequest),
         cancelled,
         nextSteer
       }).finally(() => steerTo.delete(sessionId))
@@ -351,13 +360,17 @@ describe('SessionManager', () => {
       connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
       runInTerminal: runInTerminal as never,
       now: () => 1000,
-      mcpServers: () => servers
+      mcpServers: () => servers,
+      permissionMode: () => permissionMode
     })
   }
+
+  let permissionMode: 'bypass' | 'agent'
 
   beforeEach(() => {
     store = new Store(':memory:')
     events = []
+    permissionMode = 'bypass'
     state = fakeAgent()
     servers = []
     runInTerminal = vi.fn(async () => 0)
@@ -1317,13 +1330,243 @@ describe('SessionManager', () => {
       expect(events.some((e) => e.type === 'notice')).toBe(false)
     })
 
-    it('reports bypass or auto-approval in the live state', async () => {
+    it('reports the modes and whether Gloss approves in the live state', async () => {
       state.modes = MODES
       const a = await manager.createSession('/w', 'fake')
-      expect(manager.openSession(a.id).live.permissions).toBe('bypass')
+      expect(manager.openSession(a.id).live).toMatchObject({
+        modes: { current: 'bypass', bypass: 'bypass', options: [{ value: 'default', name: 'Default' }, { value: 'bypass', name: 'Bypass permissions' }] },
+        autoApprove: true
+      })
+      // The switch failed: the agent asks, so Gloss shows its requests.
       state.refuseModes = true
       const b = await manager.createSession('/w', 'fake')
-      expect(manager.openSession(b.id).live.permissions).toBe('auto')
+      expect(manager.openSession(b.id).live).toMatchObject({ modes: { current: 'default' }, autoApprove: false })
+    })
+
+    it("starts sessions in the agent's own mode when the setting says so, and shows its requests", async () => {
+      permissionMode = 'agent'
+      state.modes = MODES
+      let outcome: acp.RequestPermissionResponse | undefined
+      state.script = async ({ requestPermission }) => {
+        outcome = await requestPermission('Edit orders.ts')
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      expect(state.modeChanges).toEqual([])
+      expect(store.getSession(session.id)?.mode).toBe('default')
+      const turn = manager.send(session.id, 'fix it', null)
+      const request = await vi.waitFor(() => {
+        const r = manager.openSession(session.id).requests[0]
+        expect(r).toBeDefined()
+        return r
+      })
+      expect(request).toMatchObject({
+        kind: 'permission',
+        title: 'Edit orders.ts',
+        threadId: null,
+        options: [
+          { id: 'always', name: 'Always allow', kind: 'allow_always' },
+          { id: 'allow', name: 'Allow', kind: 'allow_once' },
+          { id: 'deny', name: 'Deny', kind: 'reject_once' }
+        ]
+      })
+      expect(events).toContainEqual({ type: 'requests', sessionId: session.id, requests: [request] })
+      expect(() => manager.answerRequest(session.id, request.id, { kind: 'permission', optionId: 'nope' })).toThrow(/not one of the options/)
+      manager.answerRequest(session.id, request.id, { kind: 'permission', optionId: 'deny' })
+      await expect(turn).resolves.toEqual({ stopReason: 'end_turn' })
+      expect(outcome).toEqual({ outcome: { outcome: 'selected', optionId: 'deny' } })
+      expect(manager.openSession(session.id).requests).toEqual([])
+      expect(() => manager.answerRequest(session.id, request.id, { kind: 'permission', optionId: 'deny' })).toThrow(/no longer waiting/)
+    })
+
+    it("shows a request in the thread whose turn asked, and answers cancelled when the turn is cancelled", async () => {
+      permissionMode = 'agent'
+      let outcome: acp.RequestPermissionResponse | undefined
+      state.script = async ({ text, say, requestPermission }) => {
+        if (!text.includes('test it')) {
+          await say('Hello')
+          return 'end_turn'
+        }
+        outcome = await requestPermission('Run tests')
+        return 'cancelled'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'hello', null)
+      const answer = store.listMessages(session.id).find((m) => m.role === 'agent')!
+      const thread = manager.createThread(session.id, answer.id, { kind: 'selection', start: 0, end: 5, text: 'Hello' })
+      const turn = manager.send(session.id, 'test it', thread.id)
+      await vi.waitFor(() => expect(manager.openSession(session.id).requests[0]?.threadId).toBe(thread.id))
+      await manager.cancel(session.id)
+      await expect(turn).resolves.toEqual({ stopReason: 'cancelled' })
+      expect(outcome).toEqual({ outcome: { outcome: 'cancelled' } })
+      expect(manager.openSession(session.id).requests).toEqual([])
+    })
+
+    it('drops a request the agent withdraws', async () => {
+      permissionMode = 'agent'
+      state.script = async ({ requestPermission }) => {
+        const abort = new AbortController()
+        const pending = requestPermission('Run tests', undefined, abort.signal).catch(() => null)
+        await vi.waitFor(() => expect(events.some((e) => e.type === 'requests' && e.requests.length === 1)).toBe(true))
+        abort.abort()
+        await pending
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'go', null)
+      await vi.waitFor(() => expect(manager.openSession(session.id).requests).toEqual([]))
+    })
+
+    it('switches modes, saves the pick and re-applies it on resume', async () => {
+      state.modes = MODES
+      const session = await manager.createSession('/w', 'fake')
+      await manager.setMode(session.id, 'default')
+      expect(state.modeChanges).toEqual([`${session.acpSessionId}:bypass`, `${session.acpSessionId}:default`])
+      expect(store.getSession(session.id)?.mode).toBe('default')
+      expect(manager.openSession(session.id).live).toMatchObject({ modes: { current: 'default' }, autoApprove: false })
+      await expect(manager.setMode(session.id, 'yolo')).rejects.toThrow(/doesn't offer/)
+
+      // Resumed in the picked mode, not the default setting's bypass.
+      state.modes = { ...MODES, currentModeId: 'bypass' }
+      await manager.dispose()
+      manager = makeManager()
+      await manager.send(session.id, 'hi', null)
+      expect(state.modeChanges.at(-1)).toBe(`${session.acpSessionId}:default`)
+    })
+
+    it('follows a mode the agent switches to itself', async () => {
+      permissionMode = 'agent'
+      state.modes = { currentModeId: 'plan', availableModes: [...MODES.availableModes, { id: 'plan', name: 'Plan' }] }
+      state.script = async ({ update }) => {
+        await update({ sessionUpdate: 'current_mode_update', currentModeId: 'bypass' })
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'approved', null)
+      expect(store.getSession(session.id)?.mode).toBe('bypass')
+      expect(manager.openSession(session.id).live).toMatchObject({ modes: { current: 'bypass' }, autoApprove: true })
+    })
+
+    it('lets the user turn auto-approval off for an agent without a bypass mode', async () => {
+      state.modes = { currentModeId: 'build', availableModes: [{ id: 'build', name: 'Build' }, { id: 'plan', name: 'Plan' }] }
+      let outcome: acp.RequestPermissionResponse | undefined
+      state.script = async ({ requestPermission }) => {
+        outcome = await requestPermission('Edit')
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      expect(manager.openSession(session.id).live).toMatchObject({ modes: { current: 'build', bypass: null }, autoApprove: true })
+      expect(store.getSession(session.id)?.autoApprove).toBe(true)
+
+      manager.setAutoApprove(session.id, false)
+      expect(store.getSession(session.id)?.autoApprove).toBe(false)
+      const turn = manager.send(session.id, 'edit', null)
+      const request = await vi.waitFor(() => {
+        const r = manager.openSession(session.id).requests[0]
+        expect(r).toBeDefined()
+        return r
+      })
+      manager.answerRequest(session.id, request.id, { kind: 'permission', optionId: 'allow' })
+      await turn
+      expect(outcome).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } })
+
+      state.modes = MODES
+      const other = await manager.createSession('/w', 'fake')
+      expect(() => manager.setAutoApprove(other.id, true)).toThrow(/bypass mode/)
+    })
+  })
+
+  describe('questions', () => {
+    const SCHEMA: acp.ElicitationSchema = {
+      type: 'object',
+      properties: {
+        question_0: {
+          type: 'string',
+          title: 'Database',
+          oneOf: [
+            { const: 'Postgres', title: 'Postgres', description: 'Relational' },
+            { const: 'SQLite', title: 'SQLite' }
+          ]
+        },
+        question_0_custom: { type: 'string', title: 'Other' },
+        question_1: { type: 'array', title: 'Extras', items: { anyOf: [{ const: 'Cache', title: 'Cache' }, { const: 'Search', title: 'Search' }] } }
+      },
+      required: ['question_0']
+    }
+
+    it('advertises form elicitation and turns a question into a form in the asking thread', async () => {
+      let response: acp.CreateElicitationResponse | undefined
+      state.script = async ({ elicit }) => {
+        response = await elicit({ message: 'Which database?', requestedSchema: SCHEMA })
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      expect(state.clientCapabilities?.elicitation).toEqual({ form: {} })
+      const turn = manager.send(session.id, 'set it up', null)
+      const request = await vi.waitFor(() => {
+        const r = manager.openSession(session.id).requests[0]
+        expect(r).toBeDefined()
+        return r
+      })
+      expect(request).toMatchObject({
+        kind: 'question',
+        message: 'Which database?',
+        threadId: null,
+        fields: [
+          {
+            key: 'question_0', kind: 'choice', multiple: false, required: true, title: 'Database',
+            options: [{ value: 'Postgres', title: 'Postgres', description: 'Relational' }, { value: 'SQLite', title: 'SQLite' }]
+          },
+          { key: 'question_0_custom', kind: 'text', required: false, title: 'Other' },
+          { key: 'question_1', kind: 'choice', multiple: true, required: false, title: 'Extras' }
+        ]
+      })
+      expect(() => manager.answerRequest(session.id, request.id, { kind: 'question', action: 'accept', content: {} })).toThrow(/Database needs an answer/)
+      expect(() => manager.answerRequest(session.id, request.id, { kind: 'question', action: 'accept', content: { question_0: 'Mongo' } })).toThrow(/not one of the choices/)
+      manager.answerRequest(session.id, request.id, {
+        kind: 'question',
+        action: 'accept',
+        content: { question_0: 'SQLite', question_1: ['Cache', 'Search'] }
+      })
+      await turn
+      expect(response).toEqual({ action: 'accept', content: { question_0: 'SQLite', question_1: ['Cache', 'Search'] } })
+    })
+
+    it('passes on Decline and Cancel, even when Gloss auto-approves permissions', async () => {
+      state.modes = MODES
+      const responses: acp.CreateElicitationResponse[] = []
+      state.script = async ({ elicit }) => {
+        responses.push(await elicit({ message: 'One?', requestedSchema: SCHEMA }))
+        responses.push(await elicit({ message: 'Two?', requestedSchema: SCHEMA }))
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      expect(manager.openSession(session.id).live.autoApprove).toBe(true)
+      const turn = manager.send(session.id, 'go', null)
+      for (const action of ['decline', 'cancel'] as const) {
+        const before = responses.length
+        const request = await vi.waitFor(() => {
+          const r = manager.openSession(session.id).requests[0]
+          expect(r).toBeDefined()
+          return r
+        })
+        manager.answerRequest(session.id, request.id, { kind: 'question', action })
+        await vi.waitFor(() => expect(responses.length).toBe(before + 1))
+      }
+      await turn
+      expect(responses).toEqual([{ action: 'decline' }, { action: 'cancel' }])
+    })
+
+    it('declines URL elicitations and ones for unknown sessions', async () => {
+      const responses: acp.CreateElicitationResponse[] = []
+      state.script = async ({ elicit }) => {
+        responses.push(await elicit({ mode: 'url', message: 'Sign in', url: 'https://example.com', elicitationId: 'e1' }))
+        responses.push(await elicit({ message: 'Who?', requestedSchema: SCHEMA, sessionId: 'nobody' }))
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'go', null)
+      expect(responses).toEqual([{ action: 'decline' }, { action: 'decline' }])
     })
   })
 
@@ -1616,7 +1859,8 @@ describe('SessionManager', () => {
         ],
         usage: { used: 50_000, size: 200_000, cost: { amount: 0.12, currency: 'USD' } },
         rateLimits: [],
-        permissions: 'auto',
+        modes: null,
+        autoApprove: true,
         accepts: { image: true, file: true },
         steering: false
       })
