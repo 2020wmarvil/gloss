@@ -67,6 +67,8 @@
   --brand-gradient: linear-gradient(120deg, #ff3da6, #ff9f3d);
   --on-brand: #17040e;
   --accent: #c2147a;
+  /* Pins on annotated screenshots: drawn into the image, so one color in both themes. */
+  --pin: #e0157f;
   --accent-tint: #fae5f0;
   --accent-mark: #f3c6dd;
   /* The user's messages: the brand gradient's pink to orange, faint. */
@@ -5584,4 +5586,550 @@ button.review-changes {
 .request-option .request-key {
   margin-left: auto;
   align-self: center;
+}
+
+/* Visual feedback (SPEC → Visual feedback, docs/mocks/visual-feedback.html) */
+
+/* The annotation canvas: a large dialog with the capture, its pins' notes and what is sent. */
+.annotate {
+  width: min(1200px, 100%);
+  height: min(716px, 100%);
+  display: grid;
+  grid-template-rows: 52px minmax(0, 1fr) 58px;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  overflow: hidden;
+  background: var(--raised) var(--sheen);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-3), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge);
+  outline: none;
+}
+
+.annotate-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 0 18px;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+
+.annotate-head h2 {
+  margin: 0;
+  font-size: var(--t-15);
+  font-weight: 600;
+}
+
+.annotate-head .muted {
+  font-size: var(--t-12);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.annotate .grow {
+  flex: 1;
+}
+
+.annotate-tools {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-md);
+  background: var(--sunken);
+  box-shadow: var(--sink);
+}
+
+.annotate-tools button {
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+}
+
+.annotate-tools button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.annotate-tools button.on {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1);
+}
+
+:root[data-theme='dark'] .annotate-tools button.on {
+  background: var(--raised);
+}
+
+.annotate-tools button:disabled {
+  opacity: 0.35;
+}
+
+.annotate-tools .swatch {
+  width: 26px;
+}
+
+.annotate-tools .swatch i {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.55);
+}
+
+.annotate-tools .swatch.on {
+  background: transparent;
+  box-shadow: none;
+}
+
+.annotate-tools .swatch.on i {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--ink-2);
+}
+
+.annotate-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--line);
+}
+
+.annotate-stage {
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background-color: var(--sunken);
+  background-image:
+    linear-gradient(45deg, var(--line-soft) 25%, transparent 25%, transparent 75%, var(--line-soft) 75%),
+    linear-gradient(45deg, var(--line-soft) 25%, transparent 25%, transparent 75%, var(--line-soft) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+  box-shadow: var(--sink);
+  overflow: hidden;
+}
+
+.annotate-stage canvas {
+  display: block;
+  box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-2);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.annotate-stage canvas.pin-tool {
+  cursor: copy;
+}
+
+.annotate-pins {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.annotate-pins-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 6px;
+  font-size: var(--t-13);
+  font-weight: 600;
+}
+
+.annotate-pin-list {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.annotate-pin {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: 8px;
+  align-items: start;
+  padding: 6px;
+  border-radius: var(--r-md);
+}
+
+.annotate-pin.lit {
+  background: var(--hover);
+}
+
+.annotate-pin .icon-button {
+  width: var(--control-sm);
+  height: var(--control-sm);
+}
+
+.annotate-pin textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 32px;
+  resize: none;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: 400 var(--t-13) / 1.4 var(--font-ui);
+  box-shadow: var(--sink);
+  field-sizing: content;
+}
+
+.annotate-pin textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+/* A pin's number: the pink disc it has on the image. */
+.pin-number {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--pin);
+  color: #fff;
+  font: 700 11px / 1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.annotate-empty {
+  margin: 6px 8px;
+  padding: 12px;
+  border-radius: var(--r-md);
+  border: 1px dashed var(--line-strong);
+  color: var(--muted);
+  font-size: var(--t-13);
+  line-height: 1.5;
+}
+
+.annotate-text {
+  border-top: 1px solid var(--line);
+  padding: 10px 14px 12px;
+  background: var(--bg);
+}
+
+.annotate-text-head {
+  margin-bottom: 6px;
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.annotate-text pre {
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  font: 400 var(--t-12) / 1.5 var(--font-mono);
+  color: var(--ink-2);
+  white-space: pre-wrap;
+}
+
+.annotate-foot {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 0 18px;
+  border-top: 1px solid var(--line);
+}
+
+.annotate-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-12);
+}
+
+.annotate-foot button.primary kbd {
+  height: 18px;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: none;
+  color: var(--on-brand);
+}
+
+/* The composer's Capture button sits beside Attach. */
+.attach:disabled {
+  opacity: 0.4;
+  background: transparent;
+}
+
+/* A capture in the composer: the flattened image, its pin count and, on hover, Edit. */
+.attachment.capture {
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--line);
+  max-width: none;
+}
+
+.attachment.capture img {
+  height: 72px;
+  max-width: 200px;
+  object-fit: contain;
+  background: var(--sunken);
+}
+
+.capture-edit {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: rgba(28, 27, 24, 0.45);
+  color: #fff;
+  font: 500 var(--t-12) / 1 var(--font-ui);
+}
+
+.attachment.capture:hover .capture-edit,
+.capture-edit:focus-visible {
+  display: grid;
+}
+
+.capture-edit span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pin-pill {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--pin);
+  color: #fff;
+  font: 600 var(--t-11) / 1 var(--font-ui);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+.attachment.capture .attachment-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  z-index: 1;
+  margin: 0;
+  background: rgba(255, 255, 255, 0.85);
+  color: #3a3833;
+}
+
+/* An annotated screenshot in a sent message: wider bubble, the image, then the pins' notes. */
+.you.has-capture {
+  max-width: min(560px, 85%);
+}
+
+.capture-figure {
+  margin: 10px 0 2px;
+}
+
+.capture-frame {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  line-height: 0;
+}
+
+.capture-figure .capture-frame img {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  border-radius: var(--r-md);
+  box-shadow: 0 0 0 1px var(--you-ring), var(--lift-1);
+  cursor: zoom-in;
+}
+
+/* A pin's target over the image (the pin itself is drawn into it). */
+.pin-target {
+  position: absolute;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  line-height: 1;
+}
+
+.pin-target:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.pin-target:hover:not(:disabled),
+.pin-target.active,
+.pin-target.revealed {
+  box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--accent);
+}
+
+.pin-target .anchor-chip {
+  position: absolute;
+  left: calc(100% + 4px);
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+  box-shadow: 0 0 0 1px var(--surface), var(--lift-1);
+}
+
+.pin-notes {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pin-notes button {
+  width: calc(100% + 8px);
+  margin: 0 -4px;
+  padding: 3px 4px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  text-align: left;
+  font-size: var(--t-14);
+  line-height: 1.45;
+}
+
+.pin-notes button:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.pin-notes button:hover:not(:disabled),
+.pin-notes button.active {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+:root[data-theme='dark'] .pin-notes button:hover:not(:disabled),
+:root[data-theme='dark'] .pin-notes button.active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.pin-notes .pin-number,
+.pin-quote .pin-number {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  font-size: 10px;
+  box-shadow: none;
+}
+
+.pin-note {
+  flex: 1;
+  min-width: 0;
+}
+
+.pin-note.empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.pin-notes .anchor-chip {
+  flex: none;
+}
+
+/* The enlarged screenshot, pins still clickable. */
+.capture-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 48px 24px;
+  background: rgba(12, 11, 10, 0.82);
+}
+
+.capture-lightbox .capture-frame img {
+  display: block;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 96px);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-3);
+}
+
+.capture-lightbox-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  color: #fff;
+}
+
+.capture-lightbox-close:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.capture-lightbox-hint {
+  position: absolute;
+  bottom: 14px;
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: var(--t-12);
+}
+
+/* A pin thread's quote: the screenshot around the pin, and its note. */
+.anchor-quote.pin-quote {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+}
+
+.pin-crop {
+  flex: none;
+  width: 120px;
+  height: 72px;
+  border-radius: var(--r-xs);
+  background-color: var(--sunken);
+  background-repeat: no-repeat;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.pin-quote-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pin-quote-text b {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.pin-quote-text .muted {
+  font-size: var(--t-12);
 }

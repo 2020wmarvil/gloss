@@ -262,6 +262,13 @@ export type GlossApi = {
     /** Opens settings.json in the system's editor for JSON. Resolves to an error message, or null. */
     openFile(): Promise<string | null>
   }
+  capture: {
+    /**
+     * Freezes the display under the cursor and opens the region overlay (SPEC → Visual feedback).
+     * Resolves to what the user picked, or null if they cancelled.
+     */
+    start(): Promise<import('./capture').Capture | null>
+  }
   /** Subscribe to main-process events. Returns an unsubscribe function. */
   onEvent(listener: (event: GlossEvent) => void): () => void
 }
@@ -323,5 +330,6 @@ export const IPC = {
   settingsGet: 'gloss:settings:get',
   settingsUpdate: 'gloss:settings:update',
   settingsOpenFile: 'gloss:settings:openFile',
+  captureStart: 'gloss:capture:start',
   event: 'gloss:event'
 } as const

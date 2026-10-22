@@ -30,6 +30,8 @@ Anchors live on **agent messages**. Two kinds:
 
 Review sessions add a third kind, on the diff rather than a message: **diff lines** (see Review sessions).
 
+Annotated screenshots add a fourth, on the user's own message: **pins** (see Visual feedback). A pin's thread hangs off the user message the screenshot was sent in.
+
 Anchor positions are stored as offsets into the **source markdown**, not the DOM. Use the markdown renderer's source-position info (e.g. mdast `position` in remark/unified, or `map` in markdown-it) to map the DOM selection back to source offsets. Also store the anchor's text so it can be re-found if offsets drift.
 
 ## Wire format
@@ -66,6 +68,26 @@ A thread on diff lines in a review session quotes the file and lines instead, wi
 [re: src/main/git.ts:120-124 (old) "<selected text, truncated to ~80 chars>"]
 ```
 
+A thread on a pin of an annotated screenshot names the pin and quotes its note (without a note, just the pin); with several annotated screenshots in its message, the screenshot's number too:
+
+```
+[re: screenshot pin 2 "<note, truncated to ~80 chars>"]
+[re: screenshot 2 pin 1]
+```
+
+A message with annotated screenshots has their pin lists after its text, in the same text block (so the stored `wireText` is what the agent's replay gives back), then the images:
+
+```
+<user's text>
+
+Screenshot with 3 numbered pins:
+1: <note>
+2: (no note)
+3: <note>
+```
+
+With several annotated screenshots each list is headed by its number in attachment order, "Screenshot 2 with 1 numbered pin:".
+
 ### Agent instructions
 
 Every session gives the agent this text, so it reads the tags as Gloss means them (`AGENT_INSTRUCTIONS` in `src/shared/wire.ts`):
@@ -75,6 +97,7 @@ Every session gives the agent this text, so it reads the tags as Gloss means the
 > - Every message sent from a thread starts with `[re: "<quote>"]`, quoting the point it's about. Answer about that point and don't bring in other topics, open questions or follow-ups from elsewhere in the conversation; the user raises those in the main conversation.
 > - `[re: "<quote>", continued in the main conversation]` replies to that point but moves the discussion back to the main conversation, so answer it in the broader context.
 > - Messages in the main conversation are untagged, except the first one after a thread, which starts with `[re: the main conversation, not the thread above]`.
+> - A screenshot can come with numbered pins the user placed on it, listed as `1: <note>`. `[re: screenshot pin 2 "<note>"]` is a thread about pin 2.
 
 It is not a message: it goes in each agent's own channel for client instructions, so the transcript and the CLI don't show it. Claude Code: `_meta.systemPrompt.append` on `session/new`, appended to its system prompt. Codex: `_meta.jetbrains.air.customInstructions` on `session/new`, which becomes the thread's developer instructions. Both agents keep what a session was created with: a resume doesn't change it, so sessions created before Gloss sent these instructions go on without them. Gloss sends Claude's on `session/load` too, only so the adapter doesn't take the load for a changed session and restart it.
 
@@ -97,8 +120,10 @@ type Session = {
   review?: { baseRef: string; headRef?: string }  // a review session (see Review sessions): its base (a commit id, or a branch to take the merge base with, e.g. 'origin/main') and the reviewed commit (a commit id or 'HEAD'; none = the working tree)
 }
 
+type Pin = { x: number; y: number; note: string } // in the image's pixels; pin n is pins[n - 1]
+
 type Attachment =
-  | { kind: 'image'; name: string; mimeType: string; data: string }                  // base64
+  | { kind: 'image'; name: string; mimeType: string; data: string; pins?: Pin[] }    // base64; pins: an annotated screenshot's, drawn into it
   | { kind: 'file'; name: string; path?: string; mimeType?: string; text: string }   // text file
 
 type Message = {
@@ -137,12 +162,14 @@ type Plan = {                 // the agent's plan for one turn, rendered as a ch
 type Thread = {
   id: string
   sessionId: string
-  anchorMessageId: string | null  // the agent message the anchor lives in (any thread); null for line anchors
+  anchorMessageId: string | null  // the message the anchor lives in (any thread): an agent message, or the user message of a pin; null for line anchors
   anchor:
     | { kind: 'listItem'; path: number[]; text: string }               // [2] = 3rd top-level item
     | { kind: 'selection'; start: number; end: number; text: string }  // source-markdown offsets
     | { kind: 'line'; file: string; side: 'old' | 'new'; start: number; end: number;
         text: string; lines: string[] }                                // diff lines; text = the selection, lines = the full lines
+    | { kind: 'pin'; image: number; pin: number; screenshot?: number;
+        note: string; text: string }                                   // image = attachment index, pin = its number; text = "Pin 2: <note>"
   finding?: { severity: 'bug' | 'suggestion' | 'nit'; title: string; body: string }  // opened by the agent's first pass
   resolvedAt?: number        // review threads: resolved by the user
   createdAt: number
@@ -294,6 +321,7 @@ Agents inherit Gloss's environment, so a test run can pick a cheap model with `A
   - `send(sessionId, text, threadId | null, attachments, fromThread?)` (queues while a turn runs; `fromThread`: Send to main), `steer(sessionId, text, threadId | null, attachments)`, `cancel(sessionId)`, `queue.edit(sessionId, id, text) / queue.remove(sessionId, id) / queue.resume(sessionId)`
   - `git.status(cwd)`
   - `threads.create(sessionId, anchorMessageId, anchor)`
+  - `capture.start()`: the region overlay (see Visual feedback); resolves to the picked PNG or null
   - `history()`: the user's sent messages for the composers' Up and Down
   - `sessions.open` returns the session's messages, tool calls, plans and threads
   - `settings.get() / settings.update(patch) / settings.openFile()`
@@ -401,7 +429,7 @@ A session for checking an agent's work (`docs/mocks/target.html#review`). The ce
 - **Queue:** while a turn runs, the composer stays usable: messages from other threads queue, and their composer button reads **Queue** (with a clock icon). If the agent cannot steer, messages from the active thread queue too. Queued messages are listed above the composer of the thread they were written in, the next one to run at the bottom (as in the Queue tab), each with Edit (in place) and Remove, and run in that thread. When a turn ends normally (`end_turn`) or is cancelled, the next queued message is sent straight away. A failed or cut-short turn pauses the queue: the composer and status line show "paused" with **Resume**, and a message sent while paused and idle goes out right away; the queue moves on again after the next turn that ends normally. Removing the last queued message clears the pause. The queue is kept by the main process in memory, so it works for sessions that aren't open but is lost when Gloss quits. Works with any agent (no steering).
 - **Steer:** while a turn runs, the active thread's composer button reads **Steer**, and it, Enter and `Ctrl+Enter` inject the message into the running turn instead of queueing it ("skip the tests"). There is no way to queue it instead. Steering is used only when the agent advertises it; otherwise messages queue: the Claude adapter's `_session/steering` extension (`_meta.steering.supported` in `initialize`). Gloss records the message first (marked "steered" in the log) so the agent's answer lands below it, then sends it with `idleBehavior: "promptRequired"`; if the turn ended before it got in, the message is taken back and goes to the front of the queue. Other threads can only queue while a turn runs, so the reply stays in the thread it belongs to.
 - **Send to main:** a thread's composer (once the thread exists) also has **Send to main**, in its **…** menu beside the send button, which sends its text and attachments to the main conversation instead, tagged as continuing that thread (see Wire format). It is a main-thread message: it steers when the main conversation is active and steering is supported, queues when another thread is active, and shows in the main conversation. The menu item remains **Send to main**. The side panel stays on the thread.
-- **Attachments:** paste or drop images and files on the composer, or pick them with **+**. Images become ACP `image` blocks; text files become embedded `resource` blocks (with a `file://` URI when the file has a path). Only what the agent's `promptCapabilities` allow (`image`, `embeddedContext`); the **+** button and drops are off otherwise. Limits: images 10 MB, files 1 MB and text only. Attachments show as thumbnails or names in the composer and in the sent message.
+- **Attachments:** paste or drop images and files on the composer, or pick them with **+**. Images become ACP `image` blocks; text files become embedded `resource` blocks (with a `file://` URI when the file has a path). Only what the agent's `promptCapabilities` allow (`image`, `embeddedContext`); the **+** button and drops are off otherwise. Limits: images 10 MB, files 1 MB and text only. Attachments show as thumbnails or names in the composer and in the sent message. **Capture** beside **+** captures part of the screen and annotates it (see Visual feedback).
 - **Markdown editor:** the composer's text box is a CodeMirror 6 markdown editor (`@codemirror/lang-markdown`, GFM). The source stays visible and is styled: bold, italics, headings, inline code, links, quotes, with markup characters faded. What the user sees is exactly what the agent receives. Affordances:
   - Enter sends (steering the active thread when supported, otherwise queueing during a turn), except inside a ``` code block (open, or before its closing fence), where it adds a line. `Ctrl+Enter` sends with the same routing, including inside code blocks.
   - Shift+Enter adds a line; in a list or quote it continues the markup: `-`, `*`, `1.` (renumbering the items after it) and `- [ ]`. On an empty item it ends the list. Backspace right after a list marker or `>` removes it.
@@ -412,6 +440,21 @@ A session for checking an agent's work (`docs/mocks/target.html#review`). The ce
 - **Sent messages** render through the same markdown renderer as the agent's replies (no raw HTML, safe links only, highlighted code), with each newline kept as a line break.
 - **History:** Up with the caret on the composer's first line replaces its text with the previous message the user sent and starts cycling: from then on Up shows the previous message and Down the next, whatever line the caret is on, with the caret at the end of each; at the oldest, Up does nothing. Down past the newest brings back the draft that was there and stops cycling. Editing the text or moving the caret (a click, Left, Right, Home, End, even where the caret can't move) also stops it: the user is now working on that message, so Up and Down move between its lines until it is sent or the composer is cleared. Every composer shares one history: the user's messages from every session and thread, newest first, each text once (at its latest use), from the DB so it survives restarts (`history()`, at most 500). Text only: attachments aren't recalled. A recalled `/command` doesn't open the slash menu. Editing a recalled message makes it the draft.
 - **Drafts:** each composer (a session's main thread, or one thread anchor) keeps its unsent text, attachments and caret position when the user switches to another session or thread and back. Drafts are kept in the renderer's memory, so they are lost when Gloss quits.
+
+## Visual feedback
+
+Pointing at things on screen to give the agent feedback (`docs/mocks/visual-feedback.html`): capture part of the screen, mark it up with numbered pins and drawings, send it, and discuss each pin in its own thread.
+
+- **Starting:** **Capture** (a scan icon) beside the composer's **+**, or `Ctrl+Shift+S` while Gloss is focused, which goes to the composer used last (else the one shown). Disabled, with "This agent doesn't accept images" as its tooltip, when the session's agent doesn't advertise `promptCapabilities.image`. Gloss doesn't hide: it is part of what can be captured.
+- **Region overlay** (ShareX's region capture, with its defaults): the main process freezes the display under the cursor (`desktopCapturer`, in the display's own pixels) and covers it with a frameless always-on-top window showing that frozen copy, dimmed 20% except the area that would be captured, which has a 1 px accent outline with black marching ants. One display at a time.
+  - Hovering highlights the window under the cursor and a click captures it; over the desktop a click takes the whole display. Window frames come from Windows (`EnumWindows`-order `GetTopWindow`/`GetWindow`, DWM's extended frame bounds; invisible, minimized, cloaked and click-through windows skipped, ones hidden entirely under others dropped) through `koffi`. Other platforms have no window list: a region or the whole display.
+  - Dragging draws a region (Shift: a square) with its size at its corner and a crosshair at its center; releasing captures it (regions under 5 px are dropped). Space captures the whole display. Right-click drops the region being drawn, or cancels; Esc cancels. Arrow keys nudge the cursor 1 px (Shift: 10).
+  - A magnifier beside the cursor shows 15 × 15 pixels at 10×, the center pixel outlined, with the cursor's X and Y under it. A hint at the top ("Drag a region · Click a window · Space whole display · Esc cancel") fades once a drag starts.
+  - The overlay is its own page with its own preload, which can only read the frozen frame and say what was picked; the main process crops the PNG. Only the Gloss window can start a capture, one at a time.
+- **Annotation canvas:** a dialog over the session with the capture fitted to it. Tools: **Pin** (`N`), **Pen** (`F`), **Highlighter** (`H`), **Box** (`R`), **Arrow** (`A`), five colors for marks, undo and redo (`Ctrl+Z`, `Ctrl+Y`). Pins are numbered in order and always Gloss pink, so they read as anchors; placing one focuses its note, dragging one with the Pin tool moves it, deleting one renumbers the rest. The right column lists the pins with their notes and, under **Sent with the image**, exactly the text the agent will get. **Retake** reopens the overlay; **Add to message** (`Ctrl+Enter`) flattens marks and pins into the image and adds it to the composer; Esc cancels. The last tool and color are kept while Gloss runs.
+- **In the composer:** the capture is an image attachment with a pin count; hovering shows **Edit**, which reopens the canvas with its pins and marks until the message is sent. The flattened image is a PNG, or a JPEG when the PNG would pass the API's 5 MB image limit.
+- **Sending:** the image goes as an ACP `image` block and its pins as text after the message's text (see Wire format), so the agent can refer to them by number (Set-of-Mark prompting). Pins are stored on the attachment (`pins`), so they survive restarts and syncs.
+- **Pins are anchors:** the sent message shows the screenshot (up to 420 px high) with each pin as a target, and the notes listed under it. Clicking a pin or its note opens its thread; a pin with a thread carries its reply count (a running dot while its turn runs) and the pin whose thread the panel shows is ringed. Clicking the image enlarges it, pins still clickable. The thread's quote is the screenshot around the pin (a 120 × 72 window at half size) with its note, its composer reads "Reply about pin 2", and its name elsewhere is "Pin 2: <note>". **Find in main** scrolls to the pin.
 
 ## Obsidian project shortcut
 
@@ -441,7 +484,7 @@ A line under the composer for the open session (in a review, a band under the di
 
 ## Keyboard shortcuts
 
-`Ctrl+Shift+F` search conversations · `Ctrl+N` new session · `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+PageDown` / `Ctrl+PageUp`) next / previous session in the project · `Ctrl+L` focus the composer · `Ctrl+Shift+T` show or hide the side panel · `Ctrl+J` go to where the agent is working, or last worked (the thread of the latest message sent), with the caret in that composer (the main conversation's when it was there; nothing in a session without messages) · `Ctrl+Shift+Q` show the queue · `Ctrl+Shift+H` show or hide comment cards and `N` / `P` next / previous open thread (review sessions) · `Esc` close settings or a menu, or cancel the turn from the working thread's composer · `Ctrl+,` settings. `Cmd` works for `Ctrl` on macOS. The mouse's back and forward buttons, and `Alt+Left` / `Alt+Right`, move through the views visited: a session with its open thread (or none), and the settings screen. Deleted sessions are skipped. On macOS, `Option+arrow` in a text field still moves by word. On a focused question or approval card, `1` to `9` pick, `Enter` submits or allows once, and `Esc` declines or rejects once (see Questions and approvals). The settings screen lists these and the shortcuts that apply in one place (composer, queued messages, selections, session list, panel edges, question and approval cards); they can't be changed.
+`Ctrl+Shift+F` search conversations · `Ctrl+N` new session · `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+PageDown` / `Ctrl+PageUp`) next / previous session in the project · `Ctrl+L` focus the composer · `Ctrl+Shift+T` show or hide the side panel · `Ctrl+J` go to where the agent is working, or last worked (the thread of the latest message sent), with the caret in that composer (the main conversation's when it was there; nothing in a session without messages) · `Ctrl+Shift+Q` show the queue · `Ctrl+Shift+S` capture and annotate (see Visual feedback for the overlay's and canvas's keys) · `Ctrl+Shift+H` show or hide comment cards and `N` / `P` next / previous open thread (review sessions) · `Esc` close settings or a menu, or cancel the turn from the working thread's composer · `Ctrl+,` settings. `Cmd` works for `Ctrl` on macOS. The mouse's back and forward buttons, and `Alt+Left` / `Alt+Right`, move through the views visited: a session with its open thread (or none), and the settings screen. Deleted sessions are skipped. On macOS, `Option+arrow` in a text field still moves by word. On a focused question or approval card, `1` to `9` pick, `Enter` submits or allows once, and `Esc` declines or rejects once (see Questions and approvals). The settings screen lists these and the shortcuts that apply in one place (composer, queued messages, selections, session list, panel edges, question and approval cards); they can't be changed.
 
 ## Notifications
 
@@ -456,3 +499,4 @@ See `docs/mocks/`:
 - `design-system.html` — the visual language (M12): type, color roles, surfaces, buttons, icons (Lucide), inputs, menus, rows, code and tool calls, spacing, radii and motion. Its tokens are the stylesheet's.
 - `depth.html` — the sheen and depth explorations (M12); option C, Gloss, was chosen and is the one `target.html` uses: the title bar and sidebar are the window's frame, the panes one sheet laid on it, light on raised things' top edges, pressed-in wells and a lacquered primary button.
 - `brand.html` — the brand explorations; `docs/BRAND.md` records what was decided.
+- `visual-feedback.html` — visual feedback (M16), interactive: the composer's Capture button, the region overlay on a fake desktop, the annotation canvas, the capture in the composer, and pins as anchors.

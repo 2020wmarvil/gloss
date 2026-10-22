@@ -29,10 +29,16 @@ export type Session = {
   openThreads?: number
 }
 
+/**
+ * A numbered pin on an annotated screenshot (SPEC → Visual feedback): where it is, in the
+ * image's pixels, and the user's note. Pin n is the array's (n - 1)th.
+ */
+export type Pin = { x: number; y: number; note: string }
+
 /** An image or file sent with a user message (SPEC → Attachments). */
 export type Attachment =
-  /** `data` is base64. */
-  | { kind: 'image'; name: string; mimeType: string; data: string }
+  /** `data` is base64. `pins`: an annotated screenshot's pins, already drawn on the image. */
+  | { kind: 'image'; name: string; mimeType: string; data: string; pins?: Pin[] }
   /** A text file, sent as embedded context. */
   | { kind: 'file'; name: string; path?: string; mimeType?: string; text: string }
 
@@ -121,6 +127,12 @@ export type Anchor =
    * what was selected, `lines` the full text of those lines, to re-find them.
    */
   | { kind: 'line'; file: string; side: 'old' | 'new'; start: number; end: number; text: string; lines: string[] }
+  /**
+   * A pin on an annotated screenshot in a user message: `image` is the attachment's index,
+   * `pin` its number (from 1). `screenshot` numbers the image among the message's
+   * screenshots with pins, only when it has several. `text` is "Pin 2: <note>" (or "Pin 2").
+   */
+  | { kind: 'pin'; image: number; pin: number; screenshot?: number; note: string; text: string }
 
 export type Severity = 'bug' | 'suggestion' | 'nit'
 
@@ -130,7 +142,7 @@ export type Finding = { severity: Severity; title: string; body: string }
 export type Thread = {
   id: string
   sessionId: string
-  /** The agent message the anchor lives in (any thread); null for a line anchor. */
+  /** The message the anchor lives in (any thread): an agent message, or a user message for a pin; null for a line anchor. */
   anchorMessageId: string | null
   anchor: Anchor
   /** Opened by the agent's first pass. */

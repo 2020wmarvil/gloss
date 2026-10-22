@@ -2,7 +2,7 @@
 import type { Message, Session, Thread, ToolCall } from '../shared/types'
 import type { Anchor } from '../shared/types'
 import { lineLabel } from '../shared/review'
-import { truncate } from '../shared/wire'
+import { pinList, truncate } from '../shared/wire'
 
 type Log = { session: Session; messages: Message[]; toolCalls: ToolCall[]; threads: Thread[] }
 
@@ -20,7 +20,9 @@ function blocks(log: Log, threadId: string | null): string[] {
     }
     const m = item.message
     const attached = m.attachments?.length ? `\n\n_Attached: ${m.attachments.map((a) => a.name).join(', ')}_` : ''
-    out.push(`**${m.role === 'user' ? 'You' : 'Agent'}**\n\n${m.text.trim()}${attached}`)
+    // An annotated screenshot's pins, as the agent got them.
+    const pins = m.attachments ? pinList(m.attachments) : ''
+    out.push(`**${m.role === 'user' ? 'You' : 'Agent'}**\n\n${m.text.trim()}${attached}${pins ? `\n\n${pins}` : ''}`)
   }
   return out
 }

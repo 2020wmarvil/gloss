@@ -26,7 +26,7 @@ import type {
   ToolCall,
   TurnOutcome
 } from '../shared/types'
-import { AGENT_INSTRUCTIONS, wireText } from '../shared/wire'
+import { AGENT_INSTRUCTIONS, pinAnchor, wireText, withPins } from '../shared/wire'
 import {
   findingsBlocks,
   findingThread,
@@ -936,6 +936,12 @@ export class SessionManager {
     const session = this.session(sessionId)
     if (anchor.kind === 'line') {
       if (!session.review || anchorMessageId !== null) throw new Error('Only a review session has threads on diff lines.')
+    } else if (anchor.kind === 'pin') {
+      const message = anchorMessageId === null ? undefined : this.deps.store.getMessage(anchorMessageId)
+      if (!message || message.sessionId !== sessionId || message.role !== 'user') {
+        throw new Error('A pin thread must be anchored to a message you sent in this session.')
+      }
+      anchor = pinAnchor(message.attachments ?? [], anchor.image, anchor.pin)
     } else {
       const message = anchorMessageId === null ? undefined : this.deps.store.getMessage(anchorMessageId)
       if (!message || message.sessionId !== sessionId || message.role !== 'agent') {
@@ -943,7 +949,9 @@ export class SessionManager {
       }
     }
     const valid =
-      anchor.kind === 'listItem'
+      anchor.kind === 'pin'
+        ? true
+        : anchor.kind === 'listItem'
         ? anchor.path.length > 0 && anchor.path.every((i) => Number.isInteger(i) && i >= 0)
         : anchor.kind === 'selection'
           ? Number.isInteger(anchor.start) && Number.isInteger(anchor.end) && anchor.start < anchor.end
@@ -1434,7 +1442,7 @@ export class SessionManager {
   ): Promise<TurnResult> {
     this.session(sessionId)
     if (isClear(text, attachments)) return this.send(sessionId, text, threadId, attachments, fromThread)
-    const wire = this.wire(sessionId, text, threadId, fromThread)
+    const wire = this.wire(sessionId, text, threadId, attachments, fromThread)
     const rt = this.runtime(sessionId)
     const turn = rt.turn
     if (!turn) return this.runTurn(sessionId, text, threadId, attachments, fromThread)
@@ -1502,9 +1510,15 @@ export class SessionManager {
   }
 
   /** What to send for a new user message (SPEC → Wire format). Call it before the message is stored. */
-  private wire(sessionId: string, text: string, threadId: string | null, fromThread: string | null = null): string {
+  private wire(
+    sessionId: string,
+    text: string,
+    threadId: string | null,
+    attachments: Attachment[],
+    fromThread: string | null = null
+  ): string {
     const afterThread = threadId === null && (this.deps.store.lastUserMessage(sessionId)?.threadId ?? null) !== null
-    const wire = wireText(text, this.anchorOf(sessionId, threadId), afterThread, this.anchorOf(sessionId, fromThread))
+    const wire = withPins(wireText(text, this.anchorOf(sessionId, threadId), afterThread, this.anchorOf(sessionId, fromThread)), attachments)
     const note = this.runtime(sessionId).rangeNote
     return note ? `${note}\n${wire}` : wire
   }
@@ -1534,7 +1548,7 @@ export class SessionManager {
     let session = this.session(sessionId)
     const rt = this.runtime(sessionId)
     if (rt.turn) throw new Error('A turn is already running in this session.')
-    const wire = originalWire ?? this.wire(sessionId, text, threadId, fromThread)
+    const wire = originalWire ?? this.wire(sessionId, text, threadId, attachments, fromThread)
     // Only a session still named after its folder takes its title from the first message.
     const retitle = this.deps.store.countUserMessages(sessionId) === 0 && session.title === folderName(session.cwd)
     const message: Message = {
@@ -2007,8 +2021,10 @@ function sameAnchor(a: Anchor, b: Anchor): boolean {
   if (a.kind === 'line' && b.kind === 'line') {
     return a.file === b.file && a.side === b.side && a.start === b.start && a.end === b.end
   }
+  if (a.kind === 'pin' && b.kind === 'pin') return a.image === b.image && a.pin === b.pin
   return false
 }
+
 
 /** Keeps only the anchor's known fields (it comes from the renderer). */
 function normalizeAnchor(a: Anchor): Anchor {
@@ -2019,6 +2035,8 @@ function normalizeAnchor(a: Anchor): Anchor {
       return { kind: 'selection', start: a.start, end: a.end, text: a.text }
     case 'line':
       return { kind: 'line', file: a.file, side: a.side, start: a.start, end: a.end, text: a.text, lines: [...a.lines] }
+    case 'pin':
+      return { kind: 'pin', image: a.image, pin: a.pin, ...(a.screenshot ? { screenshot: a.screenshot } : {}), note: a.note, text: a.text }
   }
 }
 

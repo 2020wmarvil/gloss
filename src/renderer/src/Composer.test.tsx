@@ -21,6 +21,7 @@ function mount(
     onCancel?: () => void
     queued?: string[]
     history?: string[]
+    accepts?: { image: boolean; file: boolean }
   } = {}
 ): EditorView {
   const el = document.createElement('div')
@@ -34,7 +35,7 @@ function mount(
         placeholder="Message the agent"
         running={opts.running ?? false}
         commands={opts.commands ?? []}
-        accepts={{ image: false, file: false }}
+        accepts={opts.accepts ?? { image: false, file: false }}
         queue={{
           items: (opts.queued ?? []).map((text, i) => ({ id: `q${i}`, threadId: null, text, attachments: [] })),
           paused: false, onEdit: async () => {}, onRemove: async () => {}, onResume: async () => {} }}
@@ -314,5 +315,42 @@ describe('automatic steering', () => {
     expect(document.querySelector('.send')!.textContent).toBe('Queue')
     press(view, 'Enter')
     expect(onSend).toHaveBeenCalledWith('another task', [])
+  })
+})
+
+describe('screen capture', () => {
+  afterEach(unmount)
+
+  it('is off, saying why, when the agent takes no images', () => {
+    mount('capture-off')
+    const button = document.querySelector<HTMLButtonElement>('button[aria-label="Capture and annotate"]')!
+    expect(button.disabled).toBe(true)
+    expect(button.title).toMatch(/doesn't accept images/)
+  })
+
+  it('opens the annotation canvas on the capture, and Ctrl+Shift+S goes to the composer used last', async () => {
+    // jsdom has neither layout nor canvas: the dialog still opens, without drawing.
+    vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} })
+    const start = vi.fn(async () => ({ data: 'iVBOR', width: 40, height: 30, source: 'Region' }))
+    window.gloss = { capture: { start } } as unknown as typeof window.gloss
+    const view = mount('capture-on', { accepts: { image: true, file: false } })
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('button[aria-label="Capture and annotate"]')!.click()
+    })
+    expect(start).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('[role="dialog"] h2')?.textContent).toBe('Annotate')
+    expect(document.querySelector('.annotate-head .muted')?.textContent).toBe('Region · 40 × 30')
+    expect(document.querySelector('.annotate-text pre')?.textContent).toBe('Just the screenshot, without pins.')
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('.annotate-foot button.ghost')!.click()
+    })
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+
+    act(() => view.focus())
+    await act(async () => {
+      window.dispatchEvent(new Event('gloss:capture'))
+    })
+    expect(start).toHaveBeenCalledTimes(2)
+    vi.unstubAllGlobals()
   })
 })

@@ -2,8 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
 import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor'
-import { ArrowUp, Clock, CornerDownRight, Ellipsis, Paperclip, Pencil, Square, Trash, X } from 'lucide-react'
+import { ArrowUp, Clock, CornerDownRight, Ellipsis, MapPin, Paperclip, Pencil, Scan, Square, Trash, X } from 'lucide-react'
 import { Popover } from './Popover'
+import { AnnotateDialog } from './AnnotateDialog'
+import type { Annotation } from './capture/annotate'
 
 /** The session's queue as one composer sees it: the messages queued from its thread. */
 export type ComposerQueue = {
@@ -45,6 +47,25 @@ type Props = {
 
 export const FOCUS_COMPOSER = 'gloss:focus-composer'
 export const FOCUS_MAIN_COMPOSER = 'gloss:focus-main-composer'
+/** Ctrl+Shift+S: capture into the composer used last, else the primary one (SPEC → Visual feedback). */
+export const CAPTURE = 'gloss:capture'
+
+/** The captures in drafts, so Edit reopens them with their pins and marks until they are sent. */
+const annotations = new WeakMap<Attachment, Annotation>()
+
+/** The composers on screen that can take a capture, by draftKey, and the one used last. */
+const captureTargets = new Map<string, { start(): void; primary: boolean }>()
+let lastComposer: string | null = null
+let listening = false
+
+function listenForCapture(): void {
+  if (listening) return
+  listening = true
+  window.addEventListener(CAPTURE, () => {
+    const target = (lastComposer !== null ? captureTargets.get(lastComposer) : undefined) ?? [...captureTargets.values()].find((t) => t.primary)
+    target?.start()
+  })
+}
 
 /** Unsent text, attachments and where the caret was, by draftKey, kept while Gloss runs (SPEC → Composer). */
 const drafts = new Map<string, { text: string; attachments: Attachment[]; selection?: [number, number] }>()
@@ -111,6 +132,9 @@ export function Composer({
   /** Cycling stopped on a recalled message being worked on: Up and Down are the editor's until it is sent or cleared. */
   const held = useRef(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  /** The capture being annotated, and which attachment it replaces (Edit) or null for a new one. */
+  const [annotating, setAnnotating] = useState<{ annotation: Annotation; index: number | null } | null>(null)
+  const startCapture = useRef<() => void>(() => {})
 
   // The caret goes back where it was when the user switched away (before the focus below).
   useLayoutEffect(() => {
@@ -146,6 +170,31 @@ export function Composer({
     window.addEventListener(FOCUS_MAIN_COMPOSER, focus)
     return () => window.removeEventListener(FOCUS_MAIN_COMPOSER, focus)
   }, [main])
+
+  /** Captures the screen and opens the annotation canvas on it (SPEC → Visual feedback). */
+  async function capture(): Promise<void> {
+    if (annotating) return
+    if (!accepts.image) {
+      setError("The agent doesn't accept images.")
+      return
+    }
+    setError(null)
+    try {
+      const c = await window.gloss.capture.start()
+      if (c) setAnnotating({ annotation: { capture: c, shapes: [], pins: [] }, index: null })
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+  startCapture.current = () => void capture()
+
+  useEffect(() => {
+    listenForCapture()
+    captureTargets.set(draftKey, { start: () => startCapture.current(), primary: Boolean(primary) })
+    return () => {
+      captureTargets.delete(draftKey)
+    }
+  }, [draftKey, primary])
 
   // Slash commands: offered while the text is a single "/word" at the start.
   const slash = /^\/(\S*)$/.exec(text)
@@ -237,7 +286,7 @@ export function Composer({
   }
 
   return (
-    <div className={className}>
+    <div className={className} onFocus={() => (lastComposer = draftKey)}>
       {queue.items.length > 0 && (
         <div className="queue">
           {queue.paused && (
@@ -292,7 +341,17 @@ export function Composer({
       >
         {attachments.length > 0 && (
           <ul className="attachments">
-            {attachments.map((a, i) => (
+            {attachments.map((a, i) =>
+              a.kind === 'image' && (a.pins || annotations.has(a)) ? (
+                <CaptureChip
+                  key={i}
+                  image={a}
+                  onEdit={
+                    annotations.has(a) ? () => setAnnotating({ annotation: annotations.get(a)!, index: i }) : undefined
+                  }
+                  onRemove={() => setAttachments((list) => list.filter((_, j) => j !== i))}
+                />
+              ) : (
               <li key={i} className="attachment" title={a.kind === 'file' ? (a.path ?? a.name) : a.name}>
                 {a.kind === 'image' ? (
                   <img src={`data:${a.mimeType};base64,${a.data}`} alt={a.name} />
@@ -306,7 +365,8 @@ export function Composer({
                   <X size={14} />
                 </button>
               </li>
-            ))}
+              )
+            )}
           </ul>
         )}
         <div className="box-row">
@@ -333,6 +393,15 @@ export function Composer({
               />
             </>
           )}
+          <button
+            className="attach capture-button"
+            aria-label="Capture and annotate"
+            title={accepts.image ? 'Capture and annotate (Ctrl+Shift+S)' : "This agent doesn't accept images"}
+            disabled={!accepts.image}
+            onClick={() => void capture()}
+          >
+            <Scan />
+          </button>
           <MarkdownEditor
             ref={ref}
             placeholder={placeholder}
@@ -416,7 +485,56 @@ export function Composer({
       </div>
       {error && <p className="composer-error">{error}</p>}
       {footer}
+      {annotating && (
+        <AnnotateDialog
+          initial={annotating.annotation}
+          onRetake={() => window.gloss.capture.start()}
+          onCancel={() => {
+            setAnnotating(null)
+            ref.current?.focus()
+          }}
+          onAdd={(image, annotation) => {
+            annotations.set(image, annotation)
+            const index = annotating.index
+            setAttachments((list) => (index === null ? [...list, image] : list.map((a, i) => (i === index ? image : a))))
+            setAnnotating(null)
+            ref.current?.focus()
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+/** An annotated capture in the composer: the flattened image, its pin count, Edit and Remove. */
+function CaptureChip(props: {
+  image: Extract<Attachment, { kind: 'image' }>
+  onEdit?(): void
+  onRemove(): void
+}): React.JSX.Element {
+  const { image } = props
+  const pins = image.pins?.length ?? 0
+  return (
+    <li className="attachment capture" title={`${image.name}${pins ? ` · ${pins} pin${pins === 1 ? '' : 's'}` : ''}`}>
+      <img src={`data:${image.mimeType};base64,${image.data}`} alt={`Screenshot with ${pins} pins`} />
+      {pins > 0 && (
+        <span className="pin-pill">
+          <MapPin size={11} />
+          {pins}
+        </span>
+      )}
+      {props.onEdit && (
+        <button className="capture-edit" aria-label="Edit the annotations" onClick={props.onEdit}>
+          <span>
+            <Pencil size={14} />
+            Edit
+          </span>
+        </button>
+      )}
+      <button className="attachment-remove" aria-label={`Remove ${image.name}`} onClick={props.onRemove}>
+        <X size={14} />
+      </button>
+    </li>
   )
 }
 

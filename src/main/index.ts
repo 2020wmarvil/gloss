@@ -2,7 +2,7 @@ import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell } from 'electron'
 import { IPC, type AppBadge, type GlossEvent } from '../shared/ipc'
-import type { Anchor, Attachment } from '../shared/types'
+import type { Anchor, Attachment, Pin } from '../shared/types'
 import type { AnswerValue, RequestAnswer } from '../shared/requests'
 import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, listAgents } from './agents'
@@ -16,6 +16,7 @@ import { patchArg, SettingsFile } from './settings'
 import { editorArgs, launchEditor } from './openFile'
 import { fileLink } from '../shared/fileLink'
 import { runInTerminal } from './terminal'
+import { registerCaptureIpc, startCapture } from './capture'
 import { UsageSource } from './usage'
 import { DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
@@ -128,11 +129,16 @@ function createWindow(): void {
     if (isExternalUrl(url)) void shell.openExternal(url)
   })
 
+  loadPage(win, 'index.html')
+}
+
+/** Loads one of the renderer's pages: from the dev server in development, else from the build. */
+function loadPage(win: BrowserWindow, page: 'index.html' | 'capture.html'): void {
   const devUrl = process.env.ELECTRON_RENDERER_URL
   if (!app.isPackaged && devUrl) {
-    void win.loadURL(devUrl)
+    void win.loadURL(new URL(page, devUrl.endsWith('/') ? devUrl : `${devUrl}/`).href)
   } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'))
+    void win.loadFile(join(__dirname, '../renderer', page))
   }
 }
 
@@ -269,6 +275,10 @@ function anchorArg(value: unknown): Anchor {
   ) {
     return { kind: 'line', file: a.file, side: a.side, start: a.start, end: a.end, text: a.text, lines: a.lines as string[] }
   }
+  // The manager rebuilds a pin's anchor from its message; only which pin counts.
+  if (a.kind === 'pin' && Number.isInteger(a.image) && Number.isInteger(a.pin)) {
+    return { kind: 'pin', image: a.image as number, pin: a.pin as number, note: '', text: a.text }
+  }
   throw new Error('Invalid anchor')
 }
 
@@ -289,7 +299,8 @@ function attachmentsArg(value: unknown): Attachment[] {
       typeof a.data === 'string' &&
       a.data.length <= (MAX_IMAGE_BYTES * 4) / 3 + 4
     ) {
-      return { kind: 'image', name: a.name, mimeType: a.mimeType, data: a.data }
+      const pins = pinsArg(a.pins)
+      return { kind: 'image', name: a.name, mimeType: a.mimeType, data: a.data, ...(pins ? { pins } : {}) }
     }
     if (a.kind === 'file' && typeof a.text === 'string') {
       if (a.text.length > MAX_FILE_CHARS) throw new Error(`${a.name} is too large to attach.`)
@@ -303,6 +314,23 @@ function attachmentsArg(value: unknown): Attachment[] {
     }
     throw new Error(`Invalid attachment ${a.name}`)
   })
+}
+
+const MAX_PINS = 99
+const MAX_PIN_NOTE = 2000
+
+/** An annotated screenshot's pins (SPEC → Visual feedback), or undefined for none. */
+function pinsArg(value: unknown): Pin[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length > MAX_PINS) throw new Error('Invalid pins')
+  const pins = value.map((v: unknown): Pin => {
+    const p = v as Partial<Record<string, unknown>> | null
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || typeof p.note !== 'string' || p.note.length > MAX_PIN_NOTE) {
+      throw new Error('Invalid pin')
+    }
+    return { x: p.x as number, y: p.y as number, note: p.note }
+  })
+  return pins.length > 0 ? pins : undefined
 }
 
 /** A folder path: an empty one would make the agent list every project's sessions. */
@@ -396,6 +424,11 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   })
   ipcMain.handle(IPC.search, (_e, request: SearchRequest) => store!.search(request))
   ipcMain.handle(IPC.history, () => manager.messageHistory())
+  registerCaptureIpc()
+  ipcMain.handle(IPC.captureStart, (e) => {
+    if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can start a capture.')
+    return startCapture(join(__dirname, '../preload/capture.js'), (overlay) => loadPage(overlay, 'capture.html'))
+  })
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
     manager.createSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
   )

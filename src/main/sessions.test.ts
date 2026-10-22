@@ -1999,6 +1999,55 @@ describe('SessionManager', () => {
       expect(manager.openSession(session.id).messages[0].attachments).toEqual(attachments)
     })
 
+    it("sends an annotated screenshot's pin list after the text, and threads on its pins", async () => {
+      state.promptCapabilities = { image: true, embeddedContext: true }
+      const session = await manager.createSession('/w', 'fake')
+      const shot = {
+        kind: 'image' as const,
+        name: 'screenshot.png',
+        mimeType: 'image/png',
+        data: 'iVBOR',
+        pins: [
+          { x: 10, y: 20, note: 'The legend covers the last bar' },
+          { x: 30, y: 40, note: '' }
+        ]
+      }
+      await manager.send(session.id, 'fix these', null, [shot])
+      const list = 'Screenshot with 2 numbered pins:\n1: The legend covers the last bar\n2: (no note)'
+      expect(state.promptBlocks.at(-1)).toEqual([
+        { type: 'text', text: `fix these\n\n${list}` },
+        { type: 'image', data: 'iVBOR', mimeType: 'image/png' }
+      ])
+      const sent = manager.openSession(session.id).messages[0]
+      expect(sent).toMatchObject({ text: 'fix these', wireText: `fix these\n\n${list}`, attachments: [shot] })
+
+      // The anchor comes from the message, whatever the renderer said the note was.
+      const thread = manager.createThread(session.id, sent.id, { kind: 'pin', image: 0, pin: 1, note: 'x', text: 'x' })
+      expect(thread.anchor).toEqual({ kind: 'pin', image: 0, pin: 1, note: 'The legend covers the last bar', text: 'Pin 1: The legend covers the last bar' })
+      expect(manager.createThread(session.id, sent.id, { kind: 'pin', image: 0, pin: 1, note: '', text: '' }).id).toBe(thread.id)
+      await manager.send(session.id, 'move it above the plot', thread.id)
+      expect(state.prompts.at(-1)).toBe('[re: screenshot pin 1 "The legend covers the last bar"]\nmove it above the plot')
+      const second = manager.createThread(session.id, sent.id, { kind: 'pin', image: 0, pin: 2, note: '', text: '' })
+      await manager.send(session.id, 'and this?', second.id)
+      expect(state.prompts.at(-1)).toBe('[re: screenshot pin 2]\nand this?')
+
+      expect(() => manager.createThread(session.id, sent.id, { kind: 'pin', image: 0, pin: 3, note: '', text: '' })).toThrow(/pin/)
+      const answer = manager.openSession(session.id).messages.find((m) => m.role === 'agent')!
+      expect(() => manager.createThread(session.id, answer.id, { kind: 'pin', image: 0, pin: 1, note: '', text: '' })).toThrow(/sent/)
+    })
+
+    it('numbers several annotated screenshots in one message', async () => {
+      state.promptCapabilities = { image: true, embeddedContext: true }
+      const session = await manager.createSession('/w', 'fake')
+      const image = (note: string) => ({ kind: 'image' as const, name: 'shot.png', mimeType: 'image/png', data: 'iVBOR', pins: [{ x: 1, y: 1, note }] })
+      await manager.send(session.id, '', null, [image('before'), { kind: 'image', name: 'plain.png', mimeType: 'image/png', data: 'x' }, image('after')])
+      expect(state.prompts.at(-1)).toBe('Screenshot 1 with 1 numbered pin:\n1: before\n\nScreenshot 2 with 1 numbered pin:\n1: after')
+      const sent = manager.openSession(session.id).messages[0]
+      const thread = manager.createThread(session.id, sent.id, { kind: 'pin', image: 2, pin: 1, note: '', text: '' })
+      await manager.send(session.id, 'why?', thread.id)
+      expect(state.prompts.at(-1)).toBe('[re: screenshot 2 pin 1 "after"]\nwhy?')
+    })
+
     it('fails the turn when the agent does not accept an attachment', async () => {
       const session = await manager.createSession('/w', 'fake')
       const result = await manager.send(session.id, 'look', null, [
@@ -2065,6 +2114,25 @@ describe('SessionManager', () => {
       // Messages from elsewhere are timed by the agent's last change before the load.
       expect(view.messages[4].createdAt).toBe(Date.parse(changed))
       expect(events).toContainEqual({ type: 'sessionSynced', sessionId: session.id })
+    })
+
+    it("keeps a screenshot's pins and pin threads through a sync", async () => {
+      state.promptCapabilities = { image: true, embeddedContext: true }
+      const session = await manager.createSession('/w', 'fake')
+      const shot = { kind: 'image' as const, name: 'screenshot.png', mimeType: 'image/png', data: 'iVBOR', pins: [{ x: 5, y: 6, note: 'here' }] }
+      await manager.send(session.id, 'look', null, [shot])
+      const sent = manager.openSession(session.id).messages[0]
+      const thread = manager.createThread(session.id, sent.id, { kind: 'pin', image: 0, pin: 1, note: '', text: '' })
+      await manager.send(session.id, 'about this', thread.id)
+
+      cliTurn(session.acpSessionId, 'from the cli', 'cli answer')
+      await manager.send(session.id, 'next', null)
+
+      expect(state.loads).toEqual([session.acpSessionId])
+      const view = manager.openSession(session.id)
+      expect(view.messages[0]).toMatchObject({ id: sent.id, text: 'look', attachments: [shot] })
+      expect(view.threads).toEqual([thread])
+      expect(view.messages.find((m) => m.text === 'about this')?.threadId).toBe(thread.id)
     })
 
     it("gives the agent Gloss's instructions on session/new and session/load", async () => {

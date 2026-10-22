@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Gloss capture</title>
+  </head>
+  <body>
+    <canvas id="frame"></canvas>
+    <canvas id="overlay"></canvas>
+    <div id="hint" class="hint" hidden>
+      <span>Drag a region</span><span id="hint-window">Click a window</span><span><kbd>Space</kbd> whole display</span><span><kbd>Esc</kbd> cancel</span>
+    </div>
+    <script type="module" src="./src/capture/overlay.ts"></script>
+  </body>
+</html>

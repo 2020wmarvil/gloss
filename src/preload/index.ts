@@ -56,6 +56,9 @@ const api: GlossApi = {
   retry: (sessionId, messageId) => ipcRenderer.invoke(IPC.retry, sessionId, messageId),
   cancel: (sessionId) => ipcRenderer.invoke(IPC.cancel, sessionId),
   setBadge: (badge) => ipcRenderer.send(IPC.setBadge, badge),
+  capture: {
+    start: () => ipcRenderer.invoke(IPC.captureStart)
+  },
   requests: {
     answer: (sessionId, requestId, answer) => ipcRenderer.invoke(IPC.requestsAnswer, sessionId, requestId, answer)
   },
