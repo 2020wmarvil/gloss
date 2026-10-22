@@ -213,6 +213,8 @@ export type GlossApi = {
    */
   steer(sessionId: string, text: string, threadId: string | null, attachments: Attachment[]): Promise<TurnResult>
   cancel(sessionId: string): Promise<void>
+  /** What the taskbar (or dock) badge shows (SPEC → Notifications). */
+  setBadge(badge: AppBadge): void
   queue: {
     /** Replaces a queued message's text. Rejects if it has already been sent. */
     edit(sessionId: string, id: string, text: string): Promise<void>
@@ -239,6 +241,12 @@ export type GlossApi = {
   /** Subscribe to main-process events. Returns an unsubscribe function. */
   onEvent(listener: (event: GlossEvent) => void): () => void
 }
+
+/**
+ * The app icon's badge: a finished or failed turn the user hasn't looked at, else working
+ * while a turn runs; `unseen` counts the sessions behind the first two (a dock count).
+ */
+export type AppBadge = { state: 'working' | 'completed' | 'failed' | null; unseen: number }
 
 export const IPC = {
   openFileLink: 'gloss:openFileLink',
@@ -277,6 +285,7 @@ export const IPC = {
   send: 'gloss:send',
   steer: 'gloss:steer',
   cancel: 'gloss:cancel',
+  setBadge: 'gloss:setBadge',
   queueEdit: 'gloss:queue:edit',
   queueRemove: 'gloss:queue:remove',
   queueResume: 'gloss:queue:resume',

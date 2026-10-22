@@ -30,7 +30,7 @@ type Props = {
   notices: Notice[]
   panel: Panel | null
   reveal: Reveal | null
-  /** The thread the agent works in, or last worked in, for the activity strip; null if none ever did. */
+  /** Where the agent works, or last worked, for the activity strip; null if it never did. */
   lastThread: StripThread | null
   /** The whole session's queue, for the status line. */
   queue: MessageQueue
@@ -44,6 +44,8 @@ type Props = {
   onOpenItem(message: Message, span: ListItemSpan): void
   onOpenSelection(message: Message, selection: SourceSelection): void
   onOpenThread(threadId: string): void
+  /** Focuses the main composer. */
+  onOpenMain(): void
   /** Opens the side panel's Queue tab. */
   onOpenQueue(): void
 }
@@ -132,6 +134,11 @@ export function Conversation(props: Props): React.JSX.Element {
         thread={props.lastThread}
         queued={props.queue.items.length}
         onOpenThread={props.onOpenThread}
+        onOpenMain={() => {
+          const log = mainRef.current?.querySelector('.log-scroll')
+          log?.scrollTo?.({ top: log.scrollHeight, behavior: 'smooth' })
+          props.onOpenMain()
+        }}
         onOpenQueue={props.onOpenQueue}
       />
       <Composer
@@ -168,8 +175,11 @@ export function Conversation(props: Props): React.JSX.Element {
   )
 }
 
-/** The strip's thread, and the state of its latest turn (null: Gloss didn't see it end). */
-export type StripThread = { id: string; name: string; state: 'working' | TurnOutcome | null }
+/**
+ * The strip's thread (id null: the main conversation), and the state of its latest turn
+ * (null: Gloss didn't see it end).
+ */
+export type StripThread = { id: string | null; name: string; state: 'working' | TurnOutcome | null }
 
 const STRIP_VERB = {
   working: 'Working in',
@@ -180,13 +190,14 @@ const STRIP_VERB = {
 } as const
 
 /**
- * Above the composer once a thread has had a turn: the thread the agent works in, or
- * last worked in, and what is queued. It stays put rather than coming and going.
+ * Above the composer once a turn has run: the thread (or the main conversation) the agent
+ * works in, or last worked in, and what is queued. It stays put rather than coming and going.
  */
 function ActivityStrip(props: {
   thread: StripThread | null
   queued: number
   onOpenThread(threadId: string): void
+  onOpenMain(): void
   onOpenQueue(): void
 }): React.JSX.Element | null {
   const { thread, queued } = props
@@ -195,10 +206,14 @@ function ActivityStrip(props: {
     <div className="activity-strip" role="status">
       <div className="activity-card">
         {thread !== null ? (
-          <button className="activity-thread" onClick={() => props.onOpenThread(thread.id)} title="Open the thread">
+          <button
+            className="activity-thread"
+            onClick={() => (thread.id === null ? props.onOpenMain() : props.onOpenThread(thread.id))}
+            title={thread.id === null ? 'Go to the latest message' : 'Open the thread'}
+          >
             <span className="state-dot" data-state={thread.state ?? undefined} aria-hidden />
             <span className="activity-name">
-              {STRIP_VERB[thread.state ?? 'unknown']} “{thread.name}”
+              {STRIP_VERB[thread.state ?? 'unknown']} {thread.id === null ? thread.name : `“${thread.name}”`}
             </span>
           </button>
         ) : (

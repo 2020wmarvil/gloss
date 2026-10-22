@@ -23,7 +23,7 @@
   --shadow-3: 0 2px 6px rgba(28, 27, 24, .08), 0 18px 48px rgba(28, 27, 24, .18);
   --scrim: rgba(28, 27, 24, .35);
   --brand: linear-gradient(120deg, #ff3da6, #ff9f3d); --on-brand: #17040e;
-  --accent: #c2147a; --accent-tint: #fae5f0; --accent-mark: #f3c6dd; --focus: rgba(194, 20, 122, .35);
+  --accent: #c2147a; --accent-tint: #fae5f0; --accent-mark: #f3c6dd; --you-fill: linear-gradient(135deg, #fce8f2, #fdeee0); --you-sheen: linear-gradient(to bottom, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 70%); --you-ring: rgba(194, 20, 122, .1); --focus: rgba(194, 20, 122, .35);
   --working: #2c55c9; --working-tint: #e8eefb;
   --done: #2e7d32; --done-tint: #e7f5e9;
   --queued: #9a5b00; --queued-tint: #fbf0dc;
@@ -51,7 +51,7 @@
   --shadow-2: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .45);
   --shadow-3: 0 2px 6px rgba(0, 0, 0, .5), 0 18px 48px rgba(0, 0, 0, .6);
   --scrim: rgba(0, 0, 0, .55);
-  --accent: #ff5c9e; --accent-tint: #3a1a2c; --accent-mark: #5a2440; --focus: rgba(255, 92, 158, .4);
+  --accent: #ff5c9e; --accent-tint: #3a1a2c; --accent-mark: #5a2440; --you-fill: linear-gradient(135deg, #3a1a2c, #3a2419); --you-sheen: linear-gradient(to bottom, rgba(255, 255, 255, .05), rgba(255, 255, 255, 0) 70%); --you-ring: rgba(255, 92, 158, .14); --focus: rgba(255, 92, 158, .4);
   --working: #7c9cf0; --working-tint: #1f2740;
   --done: #6cc070; --done-tint: #1b2a1d;
   --queued: #f0b04a; --queued-tint: #33280f;
@@ -196,7 +196,7 @@ code.inl { font: .87em var(--font-mono); background: var(--sunken); padding: 1px
 .log { flex: 1; overflow: hidden; padding: 20px 0 8px; position: relative; }
 .col { max-width: 760px; margin: 0 auto; padding: 0 32px; display: flex; flex-direction: column; gap: 14px; font-size: var(--t-15); line-height: 1.6; }
 .col p { margin: 0; }
-.you { align-self: flex-end; max-width: 75%; background: var(--sunken); border-radius: var(--r-lg); padding: 9px 13px; box-shadow: var(--sink); }
+.you { align-self: flex-end; max-width: 75%; background: var(--you-sheen), var(--you-fill); border-radius: var(--r-lg) var(--r-lg) 8px var(--r-lg); padding: 10px 14px; box-shadow: 0 0 0 1px var(--you-ring), var(--lift-1); }
 .tools { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 1px 0 var(--edge), var(--lift-1); }
 .trow { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px 0 12px; font-size: var(--t-13); }
 .trow + .trow { border-top: 1px solid var(--line); }

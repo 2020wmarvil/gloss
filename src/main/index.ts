@@ -1,7 +1,7 @@
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron'
-import { IPC, type GlossEvent } from '../shared/ipc'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell } from 'electron'
+import { IPC, type AppBadge, type GlossEvent } from '../shared/ipc'
 import type { Anchor, Attachment } from '../shared/types'
 import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, listAgents } from './agents'
@@ -10,6 +10,7 @@ import type { SearchRequest } from '../shared/search'
 import { toMarkdown } from './export'
 import { gitStatus, pullRequest } from './git'
 import { SessionManager } from './sessions'
+import { BADGE_LABEL, BADGE_SIZE, badgePixels } from './badge'
 import { patchArg, SettingsFile } from './settings'
 import { editorArgs, launchEditor } from './openFile'
 import { fileLink } from '../shared/fileLink'
@@ -81,11 +82,7 @@ function createWindow(): void {
   })
   mainWindow = win
   win.once('ready-to-show', () => win.show())
-  win.on('focus', () => {
-    unread = 0
-    app.setBadgeCount(0)
-    win.flashFrame(false)
-  })
+  win.on('focus', () => win.flashFrame(false))
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = undefined
   })
@@ -146,8 +143,6 @@ function emit(event: GlossEvent): void {
   }
 }
 
-/** Finished turns since the window was last focused (the badge count). */
-let unread = 0
 /** Shown notifications, kept so their click handlers survive garbage collection. */
 const notifications = new Set<Notification>()
 
@@ -163,7 +158,8 @@ function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
     : event.threadId
       ? 'The agent replied in a thread.'
       : 'The agent finished.'
-  const n = new Notification({ title: session.title, body })
+  // Gloss plays its own chime (or none, if the user turned it off) instead of the system's sound.
+  const n = new Notification({ title: session.title, body, silent: true })
   notifications.add(n)
   n.on('click', () => {
     notifications.delete(n)
@@ -175,10 +171,26 @@ function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
   })
   n.on('close', () => notifications.delete(n))
   n.show()
-  unread++
-  // A badge where the OS has one (macOS, some Linux docks); Windows flashes the taskbar button.
-  app.setBadgeCount(unread)
   if (process.platform === 'win32') win.flashFrame(true)
+}
+
+/**
+ * Shows the renderer's badge: on Windows a dot over the taskbar icon, elsewhere the count
+ * of unseen sessions where the OS has a badge (macOS, some Linux docks).
+ */
+function setBadge(value: unknown): void {
+  if (typeof value !== 'object' || value === null) return
+  const { state, unseen } = value as Partial<AppBadge>
+  if (state !== null && state !== 'working' && state !== 'completed' && state !== 'failed') return
+  if (process.platform !== 'win32') {
+    app.setBadgeCount(typeof unseen === 'number' && unseen > 0 ? Math.floor(unseen) : 0)
+    return
+  }
+  const win = mainWindow
+  if (!win || win.isDestroyed()) return
+  if (state === null) return win.setOverlayIcon(null, '')
+  const icon = nativeImage.createFromBitmap(badgePixels(state), { width: BADGE_SIZE, height: BADGE_SIZE, scaleFactor: 2 })
+  win.setOverlayIcon(icon, BADGE_LABEL[state])
 }
 
 function str(value: unknown, name: string): string {
@@ -409,6 +421,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.steer, (_e, sessionId: unknown, text: unknown, threadId: unknown, attachments: unknown) =>
     manager.steer(str(sessionId, 'sessionId'), str(text, 'text'), threadArg(threadId), attachmentsArg(attachments))
   )
+  ipcMain.on(IPC.setBadge, (_e, badge: unknown) => setBadge(badge))
   ipcMain.handle(IPC.cancel, (_e, sessionId: unknown) => manager.cancel(str(sessionId, 'sessionId')))
   ipcMain.handle(IPC.queueEdit, (_e, sessionId: unknown, id: unknown, text: unknown) =>
     manager.editQueued(str(sessionId, 'sessionId'), str(id, 'id'), str(text, 'text'))
@@ -448,7 +461,7 @@ app.whenReady().then(() => {
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] },
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, externalEditor: '', mcpServers: [] },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
       // Fires nativeTheme's 'updated', which recolors the window controls.

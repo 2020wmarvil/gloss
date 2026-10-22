@@ -6,6 +6,9 @@ vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', { writable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) })
 })
 import { App } from './App'
+import { playChime } from './chime'
+
+vi.mock('./chime', () => ({ playChime: vi.fn() }))
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 let root: Root | undefined
@@ -255,8 +258,8 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
 
   await select('b')
   expect(el.querySelector('aside[aria-label="Thread"]')).toBeNull()
-  // No thread ever worked here: no strip.
-  expect(el.querySelector('.activity-strip')).toBeNull()
+  // The agent only worked in the main conversation: the strip says so.
+  expect(el.querySelector('.activity-thread')!.textContent).toContain('Last worked in main conversation')
   // The last message was in the main conversation: its composer gets the caret.
   await key({ key: 'j', ctrlKey: true })
   await settle()
@@ -265,9 +268,10 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
   await select('a')
   expect(el.querySelector('.thread-panel .anchor-quote')!.textContent).toContain('The item')
 
-  // A turn in the main conversation since the thread's: the strip no longer names it.
+  // A turn in the main conversation since the thread's: the strip names the main conversation.
   await select('c')
-  expect(el.querySelector('.activity-strip')).toBeNull()
+  expect(el.querySelector('.activity-thread')!.textContent).toContain('Done in main conversation')
+  expect(el.querySelector('.activity-thread .state-dot')!.getAttribute('data-state')).toBe('completed')
 })
 
 it('opens search anywhere and reveals matches in another session, its thread, or tool output', async () => {
@@ -350,4 +354,77 @@ it("finds a thread's anchor in the main conversation from the thread panel", asy
   expect(find.getAttribute('aria-label')).toBe('Find in main session')
   await act(async () => find.click())
   expect(el.querySelector('.log .anchored[data-thread="t1"]')!.className).toContain('revealed')
+})
+
+it("marks, badges and chimes a turn that finishes where the user isn't looking", async () => {
+  const session = (id: string, createdAt: number): object => ({ id, title: id, cwd: '/project', agentId: 'claude', createdAt })
+  const global = { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, externalEditor: '', mcpServers: [] }
+  let emit: (event: object) => void = () => {}
+  const setBadge = vi.fn()
+  window.gloss = {
+    history: async () => [],
+    settings: { get: async () => ({ global, projects: {}, error: null, path: '/settings.json' }) },
+    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
+    projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
+    sessions: {
+      list: async () => [session('a', 2), session('b', 1)],
+      refresh: async () => {},
+      open: async (id: string) => ({
+        session: session(id, id === 'a' ? 2 : 1), toolCalls: [], plans: [], turn: null, messages: [], threads: [],
+        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], permissions: null, accepts: { image: false, file: false }, steering: false },
+        queue: { items: [], paused: false }
+      })
+    },
+    git: { status: async () => null, pullRequest: async () => null },
+    setBadge,
+    onEvent: (handler: (event: object) => void) => { emit = handler; return () => {} }
+  } as unknown as typeof window.gloss
+  const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+  const chime = vi.mocked(playChime)
+  chime.mockClear()
+  const el = document.createElement('div')
+  document.body.replaceChildren(el)
+  root = createRoot(el)
+  await act(async () => root!.render(<App />))
+  const end = (event: object): Promise<void> => act(async () => emit({ type: 'turnEnd', threadId: null, stopReason: 'end_turn', ...event }))
+  const lead = (title: string): string | undefined =>
+    [...el.querySelectorAll<HTMLElement>('.session-row')].find((r) => r.title === title)!.querySelector('.row-lead > span')?.className
+  const badge = (): unknown => setBadge.mock.lastCall?.[0]
+  expect(badge()).toEqual({ state: null, unseen: 0 })
+  await act(async () => emit({ type: 'turnStart', sessionId: 'b', threadId: null }))
+  expect(badge()).toEqual({ state: 'working', unseen: 0 })
+
+  // The open session, in front: the user sees it finish.
+  await end({ sessionId: 'a' })
+  expect(chime).not.toHaveBeenCalled()
+  // Cancelled, or a queued message follows: no chime either.
+  await end({ sessionId: 'b', stopReason: 'cancelled' })
+  await end({ sessionId: 'b', continues: true })
+  expect(chime).not.toHaveBeenCalled()
+  // Another session, or the open one while Gloss is in the background.
+  await end({ sessionId: 'b' })
+  expect(chime).toHaveBeenCalledTimes(1)
+  expect(lead('b')).toBe('done-dot')
+  expect(badge()).toEqual({ state: 'completed', unseen: 1 })
+  // Finished wins over working, and failed over finished.
+  await act(async () => emit({ type: 'turnStart', sessionId: 'a', threadId: null }))
+  expect(badge()).toEqual({ state: 'completed', unseen: 1 })
+  focused.mockReturnValue(false)
+  await end({ sessionId: 'a', error: 'boom' })
+  expect(chime).toHaveBeenCalledTimes(2)
+  expect(lead('a')).toBe('failed-dot')
+  expect(badge()).toEqual({ state: 'failed', unseen: 2 })
+  // Coming back to Gloss sees the open session; opening the other sees it too.
+  focused.mockReturnValue(true)
+  await act(async () => void window.dispatchEvent(new Event('focus')))
+  expect(lead('a')).toBeUndefined()
+  expect(badge()).toEqual({ state: 'completed', unseen: 1 })
+  await act(async () => [...el.querySelectorAll<HTMLElement>('.session-row')].find((r) => r.title === 'b')!.click())
+  expect(lead('b')).toBeUndefined()
+  expect(badge()).toEqual({ state: null, unseen: 0 })
+
+  await act(async () => emit({ type: 'settings', state: { global: { ...global, turnEndSound: false }, projects: {}, error: null, path: '/settings.json' } }))
+  await end({ sessionId: 'b' })
+  expect(chime).toHaveBeenCalledTimes(2)
+  focused.mockRestore()
 })
