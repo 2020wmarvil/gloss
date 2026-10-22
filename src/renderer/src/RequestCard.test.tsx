@@ -46,7 +46,7 @@ describe('approval', () => {
     expect(document.querySelector('.request-title')?.textContent).toBe('Approve? Run the tests')
     expect(document.querySelector('.request-command')?.textContent).toBe('npm test')
     const buttons = [...document.querySelectorAll('.request-actions button')]
-    expect(buttons.map((b) => b.textContent)).toEqual(['Allow', 'Always allow', 'Reject'])
+    expect(buttons.map((b) => b.textContent)).toEqual(['1Allow', '2Always allow', '3Reject'])
     expect(buttons[0].classList.contains('primary')).toBe(true)
     expect(buttons[1].getAttribute('title')).toMatch(/remember/)
     await click(buttons[2])
@@ -126,5 +126,106 @@ describe('question', () => {
     expect(submit.disabled).toBe(false)
     await click(submit)
     expect(answer).toHaveBeenCalledWith('s1', 'r1', { kind: 'question', action: 'accept', content: { name: 'Ada' } })
+  })
+})
+
+describe('keyboard', () => {
+  function key(target: Element | null, init: KeyboardEventInit): void {
+    act(() => {
+      ;(target as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }))
+    })
+  }
+  const options = [
+    { id: 'allow', name: 'Yes', kind: 'allow_once' },
+    { id: 'always', name: 'Yes, always', kind: 'allow_always' },
+    { id: 'deny', name: 'No', kind: 'reject_once' }
+  ]
+  const approval: UserRequest = { ...base, kind: 'permission', title: 'Edit', toolCallId: 't', options }
+
+  it('focuses a new card and answers an approval with number keys, Enter and Esc', () => {
+    const answer = mount(approval)
+    const card = document.querySelector('.request')!
+    expect(document.activeElement).toBe(card)
+    key(card, { key: '2' })
+    expect(answer).toHaveBeenLastCalledWith('s1', 'r1', { kind: 'permission', optionId: 'always' })
+  })
+
+  it.each([
+    ['Enter', 'allow'],
+    ['Escape', 'deny']
+  ])('%s picks %s', (k, optionId) => {
+    const answer = mount(approval)
+    key(document.querySelector('.request'), { key: k })
+    expect(answer).toHaveBeenCalledWith('s1', 'r1', { kind: 'permission', optionId })
+  })
+
+  it("doesn't take the caret from text being written elsewhere", () => {
+    const editor = document.createElement('textarea')
+    editor.value = 'half a sentence'
+    document.body.appendChild(editor)
+    editor.focus()
+    window.gloss = { requests: { answer: vi.fn() } } as unknown as GlossApi
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    root = createRoot(el)
+    act(() => root!.render(<RequestCard request={approval} />))
+    expect(document.activeElement).toBe(editor)
+    editor.remove()
+  })
+
+  it.each([
+    ['takes focus from an empty editor (its placeholder is not text)', '', true],
+    ['leaves focus in an editor with text in it', 'half a sentence', false]
+  ])('%s', (_name, typed, takes) => {
+    const editor = document.createElement('div')
+    editor.tabIndex = 0
+    // jsdom doesn't implement contenteditable.
+    Object.defineProperty(editor, 'isContentEditable', { value: true })
+    editor.innerHTML = `<span class="cm-placeholder">${typed ? '' : 'Message the agent'}</span>${typed}`
+    document.body.replaceChildren(editor)
+    editor.focus()
+    window.gloss = { requests: { answer: vi.fn() } } as unknown as GlossApi
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    root = createRoot(el)
+    act(() => root!.render(<RequestCard request={approval} />))
+    expect(document.activeElement).toBe(takes ? document.querySelector('.request') : editor)
+  })
+
+  it('picks choices with number keys in the focused choice, submits with Enter and declines with Esc', async () => {
+    const fields = questionFields({
+      type: 'object',
+      properties: {
+        db: { type: 'string', title: 'Database', enum: ['Postgres', 'SQLite'] },
+        extras: { type: 'array', title: 'Extras', items: { enum: ['Cache', 'Search'] } }
+      }
+    })
+    const answer = mount({ ...base, kind: 'question', message: 'Pick', fields })
+    const form = document.querySelector('form')!
+    expect(document.activeElement).toBe(form)
+    // Number keys work in the first choice until another one is focused.
+    expect([...document.querySelectorAll('.request-field')[0].querySelectorAll('.request-key')].map((k) => k.textContent)).toEqual(['1', '2'])
+    key(form, { key: '2' })
+    const extras = document.querySelectorAll('.request-field')[1]
+    act(() => extras.querySelector<HTMLInputElement>('input')!.focus())
+    key(document.activeElement, { key: '1' })
+    key(document.activeElement, { key: '2' })
+    key(document.activeElement, { key: '1' })
+    key(document.activeElement, { key: 'Enter' })
+    expect(answer).toHaveBeenLastCalledWith('s1', 'r1', { kind: 'question', action: 'accept', content: { db: 'SQLite', extras: ['Search'] } })
+    // Keys wait while an answer is being sent.
+    await act(async () => {})
+    key(form, { key: 'Escape' })
+    expect(answer).toHaveBeenLastCalledWith('s1', 'r1', { kind: 'question', action: 'decline' })
+  })
+
+  it('leaves digits to a text box', () => {
+    const fields = questionFields({ type: 'object', properties: { pick: { type: 'string', enum: ['a', 'b'] }, pick_custom: { type: 'string', title: 'Other' } } })
+    const answer = mount({ ...base, kind: 'question', message: 'Pick', fields })
+    const other = document.querySelector<HTMLInputElement>('.request-option.other input')!
+    act(() => other.focus())
+    key(other, { key: '1' })
+    expect(document.querySelector<HTMLInputElement>('input[type="radio"]')!.checked).toBe(false)
+    expect(answer).not.toHaveBeenCalled()
   })
 })

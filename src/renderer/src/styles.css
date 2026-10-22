@@ -5555,3 +5555,33 @@ button.review-changes {
   margin-top: 4px;
   padding-top: 4px;
 }
+
+/* A card with focus answers to keys (number keys, Enter, Esc): it shows them. */
+.request:focus-within {
+  border-color: var(--line-strong);
+}
+
+.request:focus {
+  outline: none;
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1), 0 0 0 3px var(--focus);
+}
+
+.request-key {
+  display: none;
+  height: 16px;
+  padding: 0 4px;
+  font-size: var(--t-11);
+}
+
+.request:focus-within .request-key {
+  display: inline-flex;
+}
+
+.request-actions .request-key {
+  margin: 0 2px;
+}
+
+.request-option .request-key {
+  margin-left: auto;
+  align-self: center;
+}
