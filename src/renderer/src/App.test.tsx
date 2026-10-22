@@ -52,7 +52,7 @@ it("starts sessions with the default agent or one from the menu, and lists every
   await act(async () => el.querySelectorAll<HTMLButtonElement>('.agent-star')[0].click())
   expect(update).toHaveBeenCalledWith({ global: { defaultAgent: 'claude' } })
   expect(el.querySelector('.agent-star.on')!.getAttribute('aria-label')).toContain('Claude Code')
-  expect(el.querySelector('.new-session')!.textContent).toContain('Claude Code')
+  expect(el.querySelector('.new-session')!.getAttribute('title')).toContain('Claude Code')
 
   const claudeRow = [...el.querySelectorAll<HTMLButtonElement>('.session-row.agent')].find((b) => b.textContent!.includes('claude external'))!
   await act(async () => claudeRow.click())

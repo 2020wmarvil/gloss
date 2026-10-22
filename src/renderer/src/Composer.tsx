@@ -404,7 +404,7 @@ export function Composer({
             </Popover>
           )}
           <button
-            className="primary send"
+            className={mode === 'queue' ? 'secondary send' : 'primary send'}
             onClick={() => submit()}
             disabled={empty}
             title={mode === 'steer' ? 'Send into the running turn now' : mode === 'queue' ? 'Sent when the running turn ends' : undefined}
@@ -451,7 +451,12 @@ export function QueuedRow(props: {
               if (props.onOpen && e.key === 'Enter') props.onOpen()
             }}
           >
-            {props.label}
+            {props.label ?? (
+              <span className="queued-state">
+                <span className="state-dot" data-state="queued" aria-hidden />
+                Queued
+              </span>
+            )}
             {item.text}
             {files > 0 && <span className="muted"> (+{files === 1 ? '1 attachment' : `${files} attachments`})</span>}
           </span>

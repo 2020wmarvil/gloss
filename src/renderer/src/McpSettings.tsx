@@ -75,21 +75,19 @@ export function McpSettings({ servers, onSave, hasLegacy }: Props): React.JSX.El
   const imports = (preview?.entries ?? []).flatMap((e) => selected.has(e.id) && e.server ? [{ ...e.server, name: names[e.id] ?? e.name }] : [])
   const importProblem = mcpError([...servers, ...imports])
   return <div className="mcp-settings">
-    <h3>MCP servers</h3>
-    <p className="setting-desc">Shared across agents in all projects. Changes apply on the next turn or resume.</p>
-    <p className="setting-desc">Every listed server is included. Agent-owned servers may also load independently. Codex and OpenCode do not support SSE.</p>
+    <p className="lede">Shared across agents in all projects. Changes apply on the next turn or resume. Every listed server is included; agent-owned servers may also load independently. Codex and OpenCode do not support SSE.</p>
     <div className="mcp-actions">
-      <button disabled={busy} onClick={() => edit(-1)}>Add server</button>
-      <button disabled={busy} onClick={() => void discover('claude')}>Import from Claude</button>
-      <button disabled={busy} onClick={() => void discover('codex')}>Import from Codex</button>
-      {hasLegacy && <button disabled={busy} onClick={() => void discover('gloss')}>Import old project servers</button>}
+      <button className="secondary" disabled={busy} onClick={() => edit(-1)}>Add server</button>
+      <button className="secondary" disabled={busy} onClick={() => void discover('claude')}>Import from Claude</button>
+      <button className="secondary" disabled={busy} onClick={() => void discover('codex')}>Import from Codex</button>
+      {hasLegacy && <button className="secondary" disabled={busy} onClick={() => void discover('gloss')}>Import old project servers</button>}
     </div>
     {servers.length === 0 && <p className="muted">No shared MCP servers yet.</p>}
-    <ul className="mcp-server-list">{servers.map((server, index) => <li key={server.name}>
+    {servers.length > 0 && <ul className="mcp-server-list settings-card">{servers.map((server, index) => <li key={server.name}>
       <div><strong>{server.name}</strong><span className="muted">{'type' in server ? server.type.toUpperCase() : 'stdio'}</span><p className="mono">{describe(server)}</p></div>
-      <button disabled={busy} onClick={() => edit(index)} aria-label={`Edit ${server.name}`}>Edit</button>
-      <button disabled={busy} onClick={() => void save(servers.filter((_, i) => i !== index), 'Server removed from Gloss. Native agent settings are unchanged.')} aria-label={`Remove ${server.name}`}>Remove</button>
-    </li>)}</ul>
+      <button className="ghost sm" disabled={busy} onClick={() => edit(index)} aria-label={`Edit ${server.name}`}>Edit</button>
+      <button className="ghost sm" disabled={busy} onClick={() => void save(servers.filter((_, i) => i !== index), 'Server removed from Gloss. Native agent settings are unchanged.')} aria-label={`Remove ${server.name}`}>Remove</button>
+    </li>)}</ul>}
     {editor && <form className="mcp-editor" onSubmit={(e) => { e.preventDefault(); saveEditor() }}>
       <h4>{editor.index < 0 ? 'Add server' : 'Edit server'}</h4>
       <label>Name<input required value={editor.draft.name} disabled={busy} onChange={(e) => field('name', e.target.value)} autoFocus /></label>
@@ -102,7 +100,7 @@ export function McpSettings({ servers, onSave, hasLegacy }: Props): React.JSX.El
         <label>URL<input required type="url" value={editor.draft.url} disabled={busy} onChange={(e) => field('url', e.target.value)} placeholder="http://127.0.0.1:8080/mcp" /></label>
         <label>Headers (JSON object)<textarea rows={3} value={editor.draft.headers} disabled={busy} onChange={(e) => field('headers', e.target.value)} /></label>
       </>}
-      <div className="mcp-actions"><button type="submit" disabled={busy}>Save server</button><button type="button" disabled={busy} onClick={() => { setEditor(null); reset() }}>Cancel</button></div>
+      <div className="mcp-actions"><button className="primary" type="submit" disabled={busy}>Save server</button><button className="ghost" type="button" disabled={busy} onClick={() => { setEditor(null); reset() }}>Cancel</button></div>
     </form>}
     {preview && <div className="mcp-import-preview">
       <h4>Review import</h4>
@@ -118,7 +116,7 @@ export function McpSettings({ servers, onSave, hasLegacy }: Props): React.JSX.El
         {entry.server && 'type' in entry.server && entry.server.type === 'sse' && <p className="settings-problem">SSE is unsupported by Codex.</p>}
       </div>)}
       {imports.length > 0 && importProblem && <p className="settings-problem">{importProblem}</p>}
-      <div className="mcp-actions"><button disabled={busy || imports.length === 0 || !!importProblem} onClick={() => void save([...servers, ...imports], `Imported ${imports.length} server${imports.length === 1 ? '' : 's'}.`)}>Import selected ({imports.length})</button><button disabled={busy} onClick={() => { setPreview(null); reset() }}>Cancel import</button></div>
+      <div className="mcp-actions"><button className="primary" disabled={busy || imports.length === 0 || !!importProblem} onClick={() => void save([...servers, ...imports], `Imported ${imports.length} server${imports.length === 1 ? '' : 's'}.`)}>Import selected ({imports.length})</button><button className="ghost" disabled={busy} onClick={() => { setPreview(null); reset() }}>Cancel import</button></div>
     </div>}
     {busy && <p role="status">Working...</p>}
     {status && <p role="status">{status}</p>}

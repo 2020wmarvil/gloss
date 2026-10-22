@@ -26,7 +26,7 @@ export function TitleBar(): React.JSX.Element {
   return (
     <header className="title-bar">
       <div className="title-brand">
-        <Wordmark size={17} />
+        <Wordmark size={19} />
       </div>
     </header>
   )

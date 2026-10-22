@@ -16,7 +16,7 @@ export function kindOf(t: Thread): ThreadKind {
   return t.finding?.severity ?? 'you'
 }
 
-export const KIND_NAMES: Record<ThreadKind, string> = { bug: 'bug', suggestion: 'suggestion', nit: 'nit', you: 'yours' }
+export const KIND_NAMES: Record<ThreadKind, string> = { bug: 'Bug', suggestion: 'Suggestion', nit: 'Nit', you: 'Yours' }
 
 /** The finding's title, or the start of the user's first message, or the lines. */
 export function titleOf(t: LineThread, messages: Message[]): string {

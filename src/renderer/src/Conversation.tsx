@@ -1,5 +1,7 @@
 // The main thread: messages and tool calls with threadId == null.
 import { useRef } from 'react'
+import { Clock } from 'lucide-react'
+import { folderName } from '@shared/paths'
 import type { GitStatus, PullRequest } from '@shared/ipc'
 import type { Attachment, Message, MessageQueue, SessionLive, Thread, TurnOutcome } from '@shared/types'
 import type { OpenSession, Panel } from './App'
@@ -122,7 +124,7 @@ export function Conversation(props: Props): React.JSX.Element {
       <Log
         className="log"
         items={logItems(open, notices, null)}
-        empty={<p className="muted">Send a message to start.</p>}
+        empty={<h2 className="new-hint">What should {agentName} do in {folderName(session.cwd)}?</h2>}
         renderAgent={renderAgent}
         reveal={props.reveal}
       />
@@ -191,19 +193,24 @@ function ActivityStrip(props: {
   if (thread === null && queued === 0) return null
   return (
     <div className="activity-strip" role="status">
-      {thread !== null && (
-        <button className="activity-thread" onClick={() => props.onOpenThread(thread.id)} title="Open the thread">
-          <span className="state-dot" data-state={thread.state ?? undefined} aria-hidden />
-          <span className="activity-name">
-            {STRIP_VERB[thread.state ?? 'unknown']} “{thread.name}”
-          </span>
-        </button>
-      )}
-      {queued > 0 && (
-        <button className="activity-queued" onClick={props.onOpenQueue} title="Show the queue (Ctrl+Shift+Q)">
-          {queued} queued
-        </button>
-      )}
+      <div className="activity-card">
+        {thread !== null ? (
+          <button className="activity-thread" onClick={() => props.onOpenThread(thread.id)} title="Open the thread">
+            <span className="state-dot" data-state={thread.state ?? undefined} aria-hidden />
+            <span className="activity-name">
+              {STRIP_VERB[thread.state ?? 'unknown']} “{thread.name}”
+            </span>
+          </button>
+        ) : (
+          <span className="activity-thread" />
+        )}
+        {queued > 0 && (
+          <button className="ghost sm activity-queued" onClick={props.onOpenQueue} title="Show the queue (Ctrl+Shift+Q)">
+            <Clock />
+            {queued} queued
+          </button>
+        )}
+      </div>
     </div>
   )
 }

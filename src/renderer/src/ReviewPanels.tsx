@@ -82,8 +82,11 @@ export function ReviewThreadList(props: {
           title="Kinds of thread shown"
           label={
             <>
-              <ListFilter />
-              {kinds.size === KINDS.length ? 'All kinds' : kinds.size === 0 ? 'No kinds' : KINDS.filter((k) => kinds.has(k)).map((k) => KIND_NAMES[k]).join(', ')}
+              <ListFilter
+                aria-label={`Kinds shown: ${kinds.size === KINDS.length ? 'all' : kinds.size === 0 ? 'none' : KINDS.filter((k) => kinds.has(k)).map((k) => KIND_NAMES[k]).join(', ')}`}
+              />
+              {/* A dot while some kinds are hidden. */}
+              {kinds.size < KINDS.length && <span className="kind-menu-dot" aria-hidden />}
             </>
           }
         >
@@ -129,15 +132,20 @@ export function ReviewThreadList(props: {
         const queued = props.queue.items.filter((q) => q.threadId === t.id).length
         return (
           <div key={t.id} className="review-thread-group">
-            {header && <div className="review-file-label mono">{header}</div>}
+            {header && (
+              <div className="review-file-label" title={header}>
+                <span className="diff-file-dir">{header.slice(0, header.lastIndexOf('/') + 1)}</span>
+                {header.slice(header.lastIndexOf('/') + 1)}
+              </div>
+            )}
             <button className={`review-thread-row${t.resolvedAt !== undefined ? ' resolved' : ''}`} onClick={() => props.onOpenThread(t.id)}>
               <span className={`review-thread-lines kind-${t.resolvedAt !== undefined ? 'resolved' : kindOf(t)}`}>
                 <i aria-hidden />
-                {line === end ? `L${line}` : `L${line}–${end}`}
               </span>
               <span className="review-thread-body">
                 <span className="review-thread-title">{titleOf(t, open.messages)}</span>
                 <span className="thread-meta">
+                  <span className="review-thread-range">{line === end ? `L${line}` : `L${line}–${end}`}</span>
                   <span>{KIND_NAMES[kindOf(t)]}</span>
                   <span>
                     {replies} {replies === 1 ? 'reply' : 'replies'}

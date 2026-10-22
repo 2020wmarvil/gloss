@@ -21,7 +21,8 @@ const MD = [
 
 function anchors(marks: Mark[] = []): MessageAnchors {
   return {
-    replyCount: () => 0,
+    // The first item has replies, so its count chip is UI text after "First item".
+    replyCount: (i) => (i === 0 ? 7 : 0),
     activeIndex: null,
     runningIndex: null,
     onOpenItem: () => {},
@@ -94,12 +95,12 @@ describe('rangeToSource', () => {
   })
 
   it('snaps a boundary inside UI text to the nearest message text', () => {
-    // "Reply" is the first item's button label, after "First item".
-    expect(mapped(select('Reply', 'Second')).slice).toBe('Second')
+    // "7" is the first item's reply count, after "First item".
+    expect(mapped(select('7', 'Second')).slice).toBe('Second')
   })
 
   it('returns null for a selection with no message text', () => {
-    expect(rangeToSource(root, select('Reply', 'Reply'), MD)).toBeNull()
+    expect(rangeToSource(root, select('7', '7'), MD)).toBeNull()
   })
 })
 
@@ -148,6 +149,6 @@ describe('marks', () => {
     const start = MD.indexOf('First')
     render([{ start, end: start + 5, threadId: null }])
     expect(root.querySelector('.anchored.pending')?.textContent).toBe('First')
-    expect(root.querySelector('.anchor-chip')).toBeNull()
+    expect(root.querySelector('.anchor-chip:not(.item-count)')).toBeNull()
   })
 })

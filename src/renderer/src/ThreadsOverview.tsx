@@ -6,7 +6,7 @@ import type { OpenSession } from './App'
 import { QueuedRow } from './Composer'
 import { errorText } from './errors'
 import { ago } from './Sidebar'
-import { MessageSquare, PanelRight } from 'lucide-react'
+import { Locate, MessageSquare, PanelRight } from 'lucide-react'
 
 export type ThreadSummary = {
   thread: Thread
@@ -30,6 +30,22 @@ export function threadSummaries(open: OpenSession): ThreadSummary[] {
 }
 
 /**
+ * Where a thread hangs: the start of the message it replies to, as plain text, "…" when
+ * there is more ("All 14 tests pass. Four changes worth making…").
+ */
+export function messageStart(text: string, length = 60): string {
+  const lines = text
+    .split('\n')
+    // Markdown markers aren't part of what the reader sees.
+    .map((l) => l.replace(/^\s*(#+|[-*+>]|\d+[.)])\s+/, '').replace(/[*_`]+/g, '').trim())
+    .filter(Boolean)
+  const line = lines[0] ?? ''
+  if (line.length <= length) return lines.length > 1 ? `${line.replace(/[\s.,;:]+$/, '')}…` : line
+  const space = line.lastIndexOf(' ', length)
+  return `${line.slice(0, space > 0 ? space : length).replace(/[\s.,;:]+$/, '')}…`
+}
+
+/**
  * The collapsed side panel: a threads button with the count and a running dot. `label`
  * says what the count is, when it isn't just threads.
  */
@@ -43,10 +59,10 @@ export function SideRail(props: { count: number; running: boolean; label?: strin
         title={`${what} (Ctrl+Shift+T)`}
         aria-label={`Show ${what}`}
       >
-        <MessageSquare size={18} />
-        {props.count > 0 && <span className="rail-count">{props.count}</span>}
-        {props.running && <span className="running-dot" aria-label="Running" />}
+        <MessageSquare />
+        {props.count > 0 && <span className="count rail-count">{props.count}</span>}
       </button>
+      {props.running && <span className="running-dot" aria-label="Running" />}
     </div>
   )
 }
@@ -66,6 +82,8 @@ type Props = {
   /** A thread's name, from the start of what it replies to. */
   name(thread: Thread): string
   onOpenThread(threadId: string): void
+  /** Scrolls the main conversation to the thread's anchor; absent where there is none to show. */
+  onFindInMain?(thread: Thread): void
   /** Scrolls to a sent message and highlights it, opening its thread. */
   onReveal(message: Message): void
   /** Focuses the main conversation's composer, for its queued messages. */
@@ -81,6 +99,10 @@ type Props = {
 export function ThreadsOverview(props: Props): React.JSX.Element {
   const { onCollapse, queue } = props
   const summaries = threadSummaries(props.open)
+  const anchorText = (thread: Thread): string => {
+    const message = props.open.messages.find((m) => m.id === thread.anchorMessageId)
+    return message ? messageStart(message.text) : ''
+  }
   const [error, setError] = useState<string | null>(null)
 
   async function queueAction(action: () => Promise<void>): Promise<boolean> {
@@ -131,27 +153,36 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
             const running = props.runningThread === thread.id
             const queued = queue.items.filter((q) => q.threadId === thread.id).length
             return (
-              <button key={thread.id} className="thread-row" onClick={() => props.onOpenThread(thread.id)}>
-                <span className="thread-quote">
-                  {thread.anchor.kind === 'selection' ? `“${thread.anchor.text}”` : thread.anchor.text}
-                </span>
-                <span className="thread-meta">
-                  <span>
-                    {replies} {replies === 1 ? 'reply' : 'replies'}
-                  </span>
-                  <span title={new Date(lastActivity).toLocaleString()}>
-                    {ago(lastActivity) === 'now' ? 'just now' : `${ago(lastActivity)} ago`}
-                  </span>
-                  {running && (
-                    <span className="thread-working">
-                      <span className="running-dot" aria-hidden />
-                      working
+              <div key={thread.id} className="thread-row">
+                <button className="thread-open" onClick={() => props.onOpenThread(thread.id)}>
+                  <span className="thread-quote">{thread.anchor.text}</span>
+                  {anchorText(thread) && <span className="thread-where">in “{anchorText(thread)}”</span>}
+                  <span className="thread-meta">
+                    {running && (
+                      <span className="thread-working">
+                        <span className="running-dot" aria-hidden />
+                        Working
+                      </span>
+                    )}
+                    <span>
+                      {replies} {replies === 1 ? 'reply' : 'replies'}
                     </span>
-                  )}
-                  {queued > 0 && <span className="thread-queued">{queued > 1 ? `${queued} queued` : 'queued'}</span>}
-                  {queued > 0 && queue.paused && <span className="thread-paused">paused</span>}
-                </span>
-              </button>
+                    {queued > 0 && <span className="thread-queued">· {queued} queued</span>}
+                    {queued > 0 && queue.paused && <span className="thread-paused">paused</span>}
+                    {!running && (
+                      <span title={new Date(lastActivity).toLocaleString()}>
+                        · {ago(lastActivity) === 'now' ? 'just now' : `${ago(lastActivity)} ago`}
+                      </span>
+                    )}
+                  </span>
+                </button>
+                {props.onFindInMain && thread.anchorMessageId !== null && (
+                  <button className="ghost sm thread-find" onClick={() => props.onFindInMain?.(thread)} title="Show where it hangs in the main conversation">
+                    <Locate />
+                    Find in main
+                  </button>
+                )}
+              </div>
             )
           })}
         </div>
@@ -199,7 +230,7 @@ function QueueTimeline(
       {props.error && <p className="composer-error">{props.error}</p>}
       {queue.items.length > 0 && (
         <>
-          <div className="timeline-label">Queued · next at the bottom</div>
+          <div className="timeline-label" title="The next to run is at the bottom">Waiting</div>
           <ol aria-label="Queued messages">
             {[...queue.items].reverse().map((item) => {
               const thread = threadOf(item.threadId)
@@ -224,7 +255,7 @@ function QueueTimeline(
       <div ref={now} className="timeline-now" aria-hidden />
       {sent.length > 0 && (
         <>
-          <div className="timeline-label">Sent · newest first</div>
+          <div className="timeline-divider" title="Newest first">Sent</div>
           <ol aria-label="Sent messages">
             {sent.map((m) => (
               <li key={m.id} className={m === working ? 'sent-row working' : 'sent-row'}>

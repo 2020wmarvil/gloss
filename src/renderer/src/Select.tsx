@@ -13,6 +13,8 @@ export function Select(props: {
   ariaLabel?: string
   ariaDescribedBy?: string
   disabled?: boolean
+  /** A faint word before the value, inside the button ("In Everything"). */
+  label?: string
 }): React.JSX.Element {
   const { value, options, onChange } = props
   const [open, setOpen] = useState(false)
@@ -86,7 +88,10 @@ export function Select(props: {
           }
         }}
       >
-        <span className="select-value">{current?.label ?? value}</span>
+        <span className="select-value">
+          {props.label && <span className="select-label">{props.label} </span>}
+          {current?.label ?? value}
+        </span>
         <ChevronDown size={14} />
       </button>
       {open && (
@@ -108,6 +113,47 @@ export function Select(props: {
           ))}
         </ul>
       )}
+    </span>
+  )
+}
+
+/** A few options side by side in a well; the chosen one is raised. */
+export function Segmented(props: {
+  value: string
+  options: SelectOption[]
+  onChange(value: string): void
+  id?: string
+  ariaLabel?: string
+  ariaDescribedBy?: string
+}): React.JSX.Element {
+  const { value, options } = props
+  const pick = (i: number): void => {
+    const o = options[(i + options.length) % options.length]
+    if (o.value !== value) props.onChange(o.value)
+    document.getElementById(`${props.id ?? 'segmented'}-${o.value}`)?.focus()
+  }
+  return (
+    <span className="segmented" role="radiogroup" id={props.id} aria-label={props.ariaLabel} aria-describedby={props.ariaDescribedBy}>
+      {options.map((o, i) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          id={`${props.id ?? 'segmented'}-${o.value}`}
+          aria-checked={o.value === value}
+          tabIndex={o.value === value ? 0 : -1}
+          disabled={o.disabled}
+          onClick={() => pick(i)}
+          onKeyDown={(e) => {
+            const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
+            if (step === undefined) return
+            e.preventDefault()
+            pick(i + step)
+          }}
+        >
+          {o.label}
+        </button>
+      ))}
     </span>
   )
 }

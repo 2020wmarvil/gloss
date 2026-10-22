@@ -171,7 +171,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 **Order of the remaining work.** The visual-language PR also fixes the review's P1 problems on the existing screens (narrow windows, the activity strip, the failed-turn and deleted-session notices), labels the status line, and stops the whole page from scrolling. The rest comes in separate PRs:
 - **Target mocks:** the updated layout mocks, the last Phase 1 item, including the sheen and depth from "Live up to the name". Review stop after it.
-- **Screen pass:** Phase 2's pass bringing every screen in line with the approved mocks.
+- **Screen pass:** Phase 2's pass bringing every screen in line with the approved mocks. *Done: the frame and sheet with the depth tokens, and every screen in `target.html` in light and dark.*
 - **Failed-turn actions:** a failed turn offers what fixes it: Sign in when the agent needs authentication, Retry (resend the same prompt) otherwise.
 
 ## M13 - Multiple agents

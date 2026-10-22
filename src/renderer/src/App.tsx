@@ -51,6 +51,7 @@ import {
 } from './resize'
 import { modKey } from './shortcuts'
 import { applyTheme } from './theme'
+import { FolderOpen, Plus } from 'lucide-react'
 import { BrandMark, TitleBar } from './Brand'
 
 export type OpenSession = {
@@ -1082,220 +1083,234 @@ export function App(): React.JSX.Element {
           />
         </>
       )}
-      {showSettings && settings ? (
-        <SettingsScreen
-          state={settings}
-          projectPath={projectPath}
-          onUpdate={updateSettings}
-          onOpenFile={() => window.gloss.settings.openFile()}
-          onClose={closeSettings}
-        />
-      ) : open && isReview ? (
-        <ReviewView
-          obsidianVault={settings ? projectSettings(settings.projects, open.session.cwd).obsidianVault : undefined}
-          key={open.session.id}
-          open={open}
-          agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
-          diff={diffState}
-          locations={lineLocations}
-          sources={reviewSources.sources}
-          onReadSource={reviewSources.read}
-          panel={shownPanel}
-          runningThread={runningThread}
-          live={live}
-          git={git}
-          pr={pr}
-          queue={queue}
-          onResumeQueue={() => void window.gloss.queue.resume(open.session.id)}
-          onSetChoice={(kind, value) => window.gloss.sessions.setChoice(open.session.id, kind, value)}
-          onCommand={(text) => void send(text, [], null)}
-          onOpenThread={openThread}
-          onReplyLines={openLines}
-          creating={creating}
-          onNewReview={() => void newReview(open.session)}
-          onOpenFile={(path, how, line) => {
-            const id = open.session.id
-            window.gloss.sessions.openReviewFile(id, path, how, line).catch((err: unknown) => addNotice(id, null, errorText(err)))
-          }}
-          onSetRange={(range) => {
-            const id = open.session.id
-            window.gloss.sessions.setReviewRange(id, range.baseRef, range.headRef ?? null).then(
-              (diff) => {
-                if (openId.current === id) setReviewDiff({ sessionId: id, diff, error: null })
-              },
-              (err: unknown) => addNotice(id, null, errorText(err))
-            )
-          }}
-        />
-      ) : open ? (
-        <Conversation
-          obsidianVault={settings ? projectSettings(settings.projects, open.session.cwd).obsidianVault : undefined}
-          key={open.session.id}
-          open={open}
-          listItemReplies={settings?.global.listItemReplies ?? false}
-          agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
-          live={live}
-          history={sent}
-          git={git}
-          pr={pr}
-          runningThread={runningThread}
-          lastThread={lastThread}
-          notices={sessionNotices}
-          panel={shownPanel}
-          reveal={reveal}
-          queue={queue}
-          composerQueue={composerQueue(
-            open.session.id,
-            queue.items.filter((q) => q.threadId === null)
-          )}
-          onSend={(text, attachments) => void send(text, attachments, null)}
-          onSteer={(text, attachments) => void send(text, attachments, null, 'steer')}
-          onCancel={() => void window.gloss.cancel(open.session.id)}
-          onSetChoice={(kind, value) => window.gloss.sessions.setChoice(open.session.id, kind, value)}
-          onOpenItem={openItem}
-          onOpenSelection={openSelection}
-          onOpenThread={openThread}
-          onOpenQueue={showQueue}
-        />
-      ) : (
-        <main className="empty-state">
-          <BrandMark size={72} />
-          <span className="wordmark empty-wordmark">gloss</span>
-          {project ? (
-            <>
-              <p>{creating ? 'Starting the agent…' : `No session open in ${project.name}.`}</p>
-              {!creating && (
-                <button className="primary" onClick={() => void newSession()} disabled={!agent}>
-                  New session
-                </button>
-              )}
-              {!creating && <p className="muted">Or open one of the agent&apos;s sessions from the sidebar.</p>}
-            </>
-          ) : (
-            <>
-              <p>Open a project folder to start talking to an agent there.</p>
-              <button className="primary" onClick={() => void openProject()}>
-                Open project…
-              </button>
-            </>
-          )}
-        </main>
-      )}
-      {open && !showSettings && !sideShown && (
-        <SideRail
-          {...sideRailCount(open, isReview)}
-          running={runningThreadRow !== undefined}
-          onExpand={openSide}
-        />
-      )}
-      {open && !showSettings && sideShown && (
-        <>
-          <ResizeHandle
-            label="Resize side panel"
-            pane="after"
-            limits={threadLimit}
-            value={threadWidth}
-            onResize={setThreadPanelWidth}
-            onReset={() => setThreadPanelWidth(null)}
+      <div className="sheet">
+        {showSettings && settings ? (
+          <SettingsScreen
+            state={settings}
+            projectPath={projectPath}
+            onUpdate={updateSettings}
+            onOpenFile={() => window.gloss.settings.openFile()}
+            onClose={closeSettings}
           />
-          {isReview && general && !panel ? (
-            <GeneralPanel
-              width={threadWidth}
-              open={open}
-              notices={sessionNotices}
-              reveal={reveal}
-              live={live}
-              history={sent}
-              runningThread={runningThread}
-              queue={composerQueue(
-                open.session.id,
-                queue.items.filter((q) => q.threadId === null)
-              )}
-              onSend={(text, attachments) => void send(text, attachments, null)}
-              onSteer={(text, attachments) => void send(text, attachments, null, 'steer')}
-              onCancel={() => void window.gloss.cancel(open.session.id)}
-              onBack={() => setPanel(null)}
-              onClose={collapseSide}
-              onOpenThread={openThread}
+        ) : open && isReview ? (
+          <ReviewView
+            obsidianVault={settings ? projectSettings(settings.projects, open.session.cwd).obsidianVault : undefined}
+            key={open.session.id}
+            open={open}
+            agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
+            diff={diffState}
+            locations={lineLocations}
+            sources={reviewSources.sources}
+            onReadSource={reviewSources.read}
+            panel={shownPanel}
+            runningThread={runningThread}
+            live={live}
+            git={git}
+            pr={pr}
+            queue={queue}
+            onResumeQueue={() => void window.gloss.queue.resume(open.session.id)}
+            onSetChoice={(kind, value) => window.gloss.sessions.setChoice(open.session.id, kind, value)}
+            onCommand={(text) => void send(text, [], null)}
+            onOpenThread={openThread}
+            onReplyLines={openLines}
+            creating={creating}
+            onNewReview={() => void newReview(open.session)}
+            onOpenFile={(path, how, line) => {
+              const id = open.session.id
+              window.gloss.sessions.openReviewFile(id, path, how, line).catch((err: unknown) => addNotice(id, null, errorText(err)))
+            }}
+            onSetRange={(range) => {
+              const id = open.session.id
+              window.gloss.sessions.setReviewRange(id, range.baseRef, range.headRef ?? null).then(
+                (diff) => {
+                  if (openId.current === id) setReviewDiff({ sessionId: id, diff, error: null })
+                },
+                (err: unknown) => addNotice(id, null, errorText(err))
+              )
+            }}
+          />
+        ) : open ? (
+          <Conversation
+            obsidianVault={settings ? projectSettings(settings.projects, open.session.cwd).obsidianVault : undefined}
+            key={open.session.id}
+            open={open}
+            listItemReplies={settings?.global.listItemReplies ?? false}
+            agentName={agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId}
+            live={live}
+            history={sent}
+            git={git}
+            pr={pr}
+            runningThread={runningThread}
+            lastThread={lastThread}
+            notices={sessionNotices}
+            panel={shownPanel}
+            reveal={reveal}
+            queue={queue}
+            composerQueue={composerQueue(
+              open.session.id,
+              queue.items.filter((q) => q.threadId === null)
+            )}
+            onSend={(text, attachments) => void send(text, attachments, null)}
+            onSteer={(text, attachments) => void send(text, attachments, null, 'steer')}
+            onCancel={() => void window.gloss.cancel(open.session.id)}
+            onSetChoice={(kind, value) => window.gloss.sessions.setChoice(open.session.id, kind, value)}
+            onOpenItem={openItem}
+            onOpenSelection={openSelection}
+            onOpenThread={openThread}
+            onOpenQueue={showQueue}
+          />
+        ) : (
+          // The bead beside the wordmark, or beside the project's name, and one action.
+          <main className="empty-state">
+            {project ? (
+              <>
+                <div className="lockup project" title={project.path}>
+                  <BrandMark size={44} />
+                  <span>{project.name}</span>
+                </div>
+                <button
+                  className="primary lg"
+                  onClick={() => void newSession()}
+                  disabled={!agent || creating}
+                  title={agent ? `New session with ${agent.name} (Ctrl+N)` : undefined}
+                >
+                  {!creating && <Plus />}
+                  {creating ? 'Starting the agent…' : 'New session'}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="lockup" role="img" aria-label="Gloss">
+                  <BrandMark size={52} />
+                  <span aria-hidden="true">gloss</span>
+                </div>
+                <button className="primary lg" onClick={() => void openProject()}>
+                  <FolderOpen />
+                  Open a project folder…
+                </button>
+              </>
+            )}
+          </main>
+        )}
+        {open && !showSettings && !sideShown && (
+          <SideRail
+            {...sideRailCount(open, isReview)}
+            running={runningThreadRow !== undefined}
+            onExpand={openSide}
+          />
+        )}
+        {open && !showSettings && sideShown && (
+          <>
+            <ResizeHandle
+              label="Resize side panel"
+              pane="after"
+              limits={threadLimit}
+              value={threadWidth}
+              onResize={setThreadPanelWidth}
+              onReset={() => setThreadPanelWidth(null)}
             />
-          ) : panel ? (
-            <ThreadPanel
-              location={panel.threadId !== null ? lineLocations.get(panel.threadId) : undefined}
-              onResolve={(threadId, resolved) =>
-                void window.gloss.threads
-                  .resolve(open.session.id, threadId, resolved)
-                  .catch((err: unknown) => addNotice(open.session.id, threadId, errorText(err)))
-              }
-              width={threadWidth}
-              open={open}
-              panel={panel}
-              reveal={reveal}
-              backTo={sideTab}
-              runningThread={runningThread}
-              notices={sessionNotices}
-              live={live}
-              history={sent}
-              // A thread that doesn't exist yet has nothing queued.
-              queue={composerQueue(
-                open.session.id,
-                panel.threadId === null ? [] : queue.items.filter((q) => q.threadId === panel.threadId)
-              )}
-              onSend={(text, attachments) => void send(text, attachments, panel)}
-              onSteer={(text, attachments) => void send(text, attachments, panel, 'steer')}
-              onSendToMain={(text, attachments) => void send(text, attachments, null, 'send', panel.threadId)}
-              onCancel={() => void window.gloss.cancel(open.session.id)}
-              onBack={() => setPanel(null)}
-              onClose={collapseSide}
-              onCopyMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'copy')}
-              onSaveMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'save')}
-              // A review's conversation is in the General panel, which this panel replaces.
-              onFindInMain={
-                panel.anchorMessageId !== null && !isReview
-                  ? () => findInMain(panel)
-                  : undefined
-              }
-            />
-          ) : (
-            <ThreadsOverview
-              width={threadWidth}
-              open={open}
-              tab={sideTab}
-              onTab={setSideTab}
-              runningThread={runningThread}
-              queue={queue}
-              name={threadName}
-              onOpenThread={openThread}
-              onReveal={revealMessage}
-              onOpenMain={() => {
-                if (isReview) openGeneral()
-                focusComposer(true)
-              }}
-              onEditQueued={(id, text) => window.gloss.queue.edit(open.session.id, id, text)}
-              onRemoveQueued={(id) => window.gloss.queue.remove(open.session.id, id)}
-              onResumeQueue={() => window.gloss.queue.resume(open.session.id)}
-              onCollapse={collapseSide}
-              review={
-                isReview
-                  ? {
-                      count: open.threads.filter((t) => t.anchor.kind === 'line').length,
-                      content: (
-                        <ReviewThreadList
-                          open={open}
-                          diff={diffState.diff}
-                          locations={lineLocations}
-                          runningThread={runningThread}
-                          queue={queue}
-                          onOpenThread={openThread}
-                          onOpenGeneral={openGeneral}
-                        />
-                      )
-                    }
-                  : undefined
-              }
-            />
-          )}
-        </>
-      )}
+            {isReview && general && !panel ? (
+              <GeneralPanel
+                width={threadWidth}
+                open={open}
+                notices={sessionNotices}
+                reveal={reveal}
+                live={live}
+                history={sent}
+                runningThread={runningThread}
+                queue={composerQueue(
+                  open.session.id,
+                  queue.items.filter((q) => q.threadId === null)
+                )}
+                onSend={(text, attachments) => void send(text, attachments, null)}
+                onSteer={(text, attachments) => void send(text, attachments, null, 'steer')}
+                onCancel={() => void window.gloss.cancel(open.session.id)}
+                onBack={() => setPanel(null)}
+                onClose={collapseSide}
+                onOpenThread={openThread}
+              />
+            ) : panel ? (
+              <ThreadPanel
+                location={panel.threadId !== null ? lineLocations.get(panel.threadId) : undefined}
+                onResolve={(threadId, resolved) =>
+                  void window.gloss.threads
+                    .resolve(open.session.id, threadId, resolved)
+                    .catch((err: unknown) => addNotice(open.session.id, threadId, errorText(err)))
+                }
+                width={threadWidth}
+                open={open}
+                panel={panel}
+                reveal={reveal}
+                backTo={sideTab}
+                runningThread={runningThread}
+                notices={sessionNotices}
+                live={live}
+                history={sent}
+                // A thread that doesn't exist yet has nothing queued.
+                queue={composerQueue(
+                  open.session.id,
+                  panel.threadId === null ? [] : queue.items.filter((q) => q.threadId === panel.threadId)
+                )}
+                onSend={(text, attachments) => void send(text, attachments, panel)}
+                onSteer={(text, attachments) => void send(text, attachments, panel, 'steer')}
+                onSendToMain={(text, attachments) => void send(text, attachments, null, 'send', panel.threadId)}
+                onCancel={() => void window.gloss.cancel(open.session.id)}
+                onBack={() => setPanel(null)}
+                onClose={collapseSide}
+                onCopyMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'copy')}
+                onSaveMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'save')}
+                // A review's conversation is in the General panel, which this panel replaces.
+                onFindInMain={
+                  panel.anchorMessageId !== null && !isReview
+                    ? () => findInMain(panel)
+                    : undefined
+                }
+              />
+            ) : (
+              <ThreadsOverview
+                width={threadWidth}
+                open={open}
+                tab={sideTab}
+                onTab={setSideTab}
+                runningThread={runningThread}
+                queue={queue}
+                name={threadName}
+                onOpenThread={openThread}
+                onFindInMain={
+                  isReview ? undefined : (t) => findInMain({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id })
+                }
+                onReveal={revealMessage}
+                onOpenMain={() => {
+                  if (isReview) openGeneral()
+                  focusComposer(true)
+                }}
+                onEditQueued={(id, text) => window.gloss.queue.edit(open.session.id, id, text)}
+                onRemoveQueued={(id) => window.gloss.queue.remove(open.session.id, id)}
+                onResumeQueue={() => window.gloss.queue.resume(open.session.id)}
+                onCollapse={collapseSide}
+                review={
+                  isReview
+                    ? {
+                        count: open.threads.filter((t) => t.anchor.kind === 'line').length,
+                        content: (
+                          <ReviewThreadList
+                            open={open}
+                            diff={diffState.diff}
+                            locations={lineLocations}
+                            runningThread={runningThread}
+                            queue={queue}
+                            onOpenThread={openThread}
+                            onOpenGeneral={openGeneral}
+                          />
+                        )
+                      }
+                    : undefined
+                }
+              />
+            )}
+          </>
+        )}
+      </div>
       {fullScreenHint > 0 && <FullScreenHint key={fullScreenHint} />}
       {showSearch && <SearchDialog sessionId={sessionId ?? null} cwd={projectPath} onClose={() => setShowSearch(false)} onOpen={openSearchResult} />}
       {signIn && (

@@ -407,7 +407,10 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
           {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
         </button>
         <span className="diff-file-path" title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
-          {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+          {file.oldPath && `${file.oldPath} → `}
+          {/* The folder dimmed, so the file's name stands out. */}
+          <span className="diff-file-dir">{file.path.slice(0, file.path.lastIndexOf('/') + 1)}</span>
+          {file.path.slice(file.path.lastIndexOf('/') + 1)}
         </span>
         {file.status === 'added' && <span className="diff-chip">new</span>}
         {file.status === 'deleted' && <span className="diff-chip">deleted</span>}

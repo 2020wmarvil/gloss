@@ -248,7 +248,9 @@ function PlanChecklist({ plan }: { plan: Plan }): React.JSX.Element {
       <ul>
         {plan.entries.map((e, i) => (
           <li key={i} className={`plan-entry ${e.status}`}>
-            <span className="plan-box" aria-hidden />
+            <span className="plan-box" aria-hidden>
+              {e.status === 'completed' && <Check />}
+            </span>
             <span className="plan-text">{e.content}</span>
             <span className="sr-only">({PLAN_STATUS[e.status] ?? e.status})</span>
           </li>

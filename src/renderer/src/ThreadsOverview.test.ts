@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Message, Thread } from '@shared/types'
 import type { OpenSession } from './App'
-import { threadSummaries } from './ThreadsOverview'
+import { messageStart, threadSummaries } from './ThreadsOverview'
 
 const thread = (id: string, createdAt: number): Thread => ({
   id,
@@ -48,5 +48,14 @@ describe('threadSummaries', () => {
       ['new', 1, 20],
       ['legacy', 1, 25]
     ])
+  })
+})
+
+describe('messageStart', () => {
+  it('is the first line as plain text, with … when there is more', () => {
+    expect(messageStart('All 14 tests pass.')).toBe('All 14 tests pass.')
+    expect(messageStart('All 14 tests pass. Four changes worth making:\n\n1. **Sweep**')).toBe('All 14 tests pass. Four changes worth making…')
+    expect(messageStart('## **Test results:** `npm test` fails')).toBe('Test results: npm test fails')
+    expect(messageStart('one two three four', 10)).toBe('one two…')
   })
 })

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import type { SessionOrder } from '@shared/settings'
 import type { AgentInfo, AgentSession, Project, Session } from '@shared/types'
-import { ChevronDown, CircleAlert, Ellipsis, GitCompare, Info, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
+import { ChevronDown, ChevronsUpDown, CircleAlert, Ellipsis, GitCompare, Info, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
 
 type Props = {
   agents: AgentInfo[]
@@ -121,6 +121,7 @@ export function Sidebar(props: Props): React.JSX.Element {
   }, [switcherOpen, agentMenuOpen, menuFor])
 
   const agentName = (id: string): string => props.agents.find((a) => a.id === id)?.name ?? id
+  const defaultName = agentName(props.defaultAgent)
   const sessions = project ? props.sessions.filter((s) => sameFolder(s.cwd, project.path)) : []
   const isRunningIn = (p: Project): boolean =>
     props.sessions.some((s) => s.id in running && sameFolder(s.cwd, p.path))
@@ -229,6 +230,7 @@ export function Sidebar(props: Props): React.JSX.Element {
         <div className="switcher">
           <button
             className="switch-button"
+            title={project?.path}
             aria-haspopup="menu"
             aria-expanded={switcherOpen}
             onClick={(e) => {
@@ -240,9 +242,9 @@ export function Sidebar(props: Props): React.JSX.Element {
           >
             <span className="switch-names">
               <b>{project?.name ?? 'No project'}</b>
-              {project && <span className="mono">{project.path}</span>}
+              <span className="switch-where">{project ? project.where : 'Open a folder to start'}</span>
             </span>
-            <ChevronDown className="caret" />
+            <ChevronsUpDown className="caret" />
           </button>
           {switcherOpen && (
             <div className="menu project-menu" role="menu">
@@ -259,7 +261,9 @@ export function Sidebar(props: Props): React.JSX.Element {
                         <span className="running-dot" aria-label="Running" />
                       )}
                     </b>
-                    <span className="mono">{p.path}</span>
+                    <span className="project-where" title={p.path}>
+                      {p.where}
+                    </span>
                   </button>
                   <button
                     className="project-delete"
@@ -291,13 +295,19 @@ export function Sidebar(props: Props): React.JSX.Element {
 
       {project ? (
         <div className="new-session-split">
-          <button className="new-session" onClick={() => props.onNew()} disabled={props.creating || props.agents.find((a) => a.id === props.defaultAgent)?.available === false} title="New session (Ctrl+N)">
+          <button
+            className="secondary new-session"
+            onClick={() => props.onNew()}
+            disabled={props.creating || props.agents.find((a) => a.id === props.defaultAgent)?.available === false}
+            title={`New session with ${defaultName} (Ctrl+N)`}
+          >
             {!props.creating && <Plus />}
             <span className="new-session-label">{props.creating ? 'Starting agent…' : 'New session'}</span>
-            {!props.creating && <span className="new-session-agent">{agentName(props.defaultAgent)}</span>}
+            {/* The agent's first word ("Claude" for Claude Code) keeps the button on one line. */}
+            {!props.creating && <span className="new-session-agent">{defaultName.split(' ')[0]}</span>}
           </button>
           <button
-            className="new-session-agents"
+            className="secondary new-session-agents"
             aria-label="New session with another agent"
             aria-haspopup="menu"
             aria-expanded={agentMenuOpen}
@@ -336,13 +346,14 @@ export function Sidebar(props: Props): React.JSX.Element {
           )}
         </div>
       ) : (
-        <button className="new-session" onClick={props.onOpenProject}>
+        <button className="secondary new-session" onClick={props.onOpenProject}>
+          <Plus />
           Open project…
         </button>
       )}
       {project && (
         <button
-          className="review-changes"
+          className="ghost review-changes"
           onClick={props.onReview}
           disabled={props.creating || props.agents.find((a) => a.id === props.defaultAgent)?.available === false}
           title="Review this branch: its pull request's changes, else everything since it left the default branch, committed or not"
@@ -381,7 +392,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                       </span>
                       <span className="session-title">
                         {row.agent.title}
-                        <small className="session-agent">{agentName(row.agent.agentId)} · not opened in Gloss</small>
+                        <small className="session-agent">{agentName(row.agent.agentId)}</small>
                       </span>
                       <span className="when">
                         {props.importing === row.agent.acpSessionId ? 'Opening…' : row.at ? ago(row.at) : ''}
@@ -398,23 +409,25 @@ export function Sidebar(props: Props): React.JSX.Element {
         )}
       </div>
 
-      <button className="settings-button" onClick={props.onSearch} title={`${modKey()}+Shift+F`}>
-        <Search />
-        Search conversations
-      </button>
-      <button
-        className={props.settingsOpen ? 'settings-button on' : 'settings-button'}
-        onClick={props.onSettings}
-        title="Settings (Ctrl+,)"
-      >
-        <Settings />
-        Settings
-        {props.settingsError && (
-          <span className="settings-alert" title="settings.json has a problem">
-            !
-          </span>
-        )}
-      </button>
+      <div className="sidebar-foot">
+        <button className="ghost settings-button" onClick={props.onSearch} title={`Search conversations (${modKey()}+Shift+F)`}>
+          <Search />
+          Search
+        </button>
+        <button
+          className={props.settingsOpen ? 'ghost settings-button on' : 'ghost settings-button'}
+          onClick={props.onSettings}
+          title="Settings (Ctrl+,)"
+        >
+          <Settings />
+          Settings
+          {props.settingsError && (
+            <span className="settings-alert" title="settings.json has a problem">
+              !
+            </span>
+          )}
+        </button>
+      </div>
 
       {confirmDelete && (
         <div className="dialog-backdrop">
@@ -431,7 +444,7 @@ export function Sidebar(props: Props): React.JSX.Element {
               touched. It can&apos;t be undone.
             </p>
             <div className="dialog-actions">
-              <button onClick={() => setConfirmDelete(null)} autoFocus>
+              <button className="ghost" onClick={() => setConfirmDelete(null)} autoFocus>
                 Cancel
               </button>
               <button
