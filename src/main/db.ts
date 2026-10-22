@@ -176,12 +176,16 @@ const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   },
   // The session's permission mode, and Gloss's auto-approval for agents without a bypass mode (SPEC → Permission modes).
   // Checks the schema: tests rewind databases to older versions without dropping later columns.
-  (db) => {
-    const columns = db.prepare('PRAGMA table_info(sessions)').all()
-    if (!columns.some((c) => c.name === 'mode')) db.exec('ALTER TABLE sessions ADD COLUMN mode TEXT')
-    if (!columns.some((c) => c.name === 'auto_approve')) db.exec('ALTER TABLE sessions ADD COLUMN auto_approve INTEGER')
-  }
+  addPermissionColumns,
+  // Version 15 was also used by the worktree WIP branch, so databases it opened skipped the one above.
+  addPermissionColumns
 ]
+
+function addPermissionColumns(db: DatabaseSync): void {
+  const columns = db.prepare('PRAGMA table_info(sessions)').all()
+  if (!columns.some((c) => c.name === 'mode')) db.exec('ALTER TABLE sessions ADD COLUMN mode TEXT')
+  if (!columns.some((c) => c.name === 'auto_approve')) db.exec('ALTER TABLE sessions ADD COLUMN auto_approve INTEGER')
+}
 
 type Row = Record<string, unknown>
 
