@@ -14,7 +14,7 @@ The agent still sees one linear conversation. Threads are just how Gloss shows i
 
 **Claude Code, Codex and OpenCode support.** Reply to any top-level list item, or to any text you select (prose or code), in an agent's answer as its own thread, in a side panel, while the main conversation stays short. Also: sessions in a project folder, streamed markdown replies, tool-call rows, cancel, persistence across restarts with the agent resuming where it left off, in-app sign-in, and CI. See [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
-**No permission prompts.** Gloss runs the agent in its bypass-permissions mode and approves any permission request it still gets. The agent can edit any file and run any command it decides to, in the session's folder and beyond, without asking. Only use it where you're comfortable with that.
+**No permission prompts by default.** New sessions start in the agent's bypass-permissions mode (or, for an agent without one, Gloss approves its permission requests). The agent can then edit any file and run any command it decides to, in the session's folder and beyond, without asking. Only use it where you're comfortable with that. Pick another mode per session in the status line (Claude Code's Manual asks before each edit and command), or change the default with the **Permission mode** setting. Questions the agent asks, and approvals in modes that ask, appear in the conversation where it is working.
 
 ## Requirements
 

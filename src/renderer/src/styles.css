@@ -5360,3 +5360,198 @@ button.review-changes {
 .notice-action { padding: 4px 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
 .notice-action:disabled { opacity: 0.6; cursor: wait; }
 .notice-action-error { color: var(--failed); font-size: var(--t-13); }
+
+/* Questions and approvals (SPEC → Questions and approvals): a card at the end of the
+   asking thread's log, edged in the waiting color, with the agent's choices. */
+.request {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn-fill);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1);
+  padding: 12px 14px;
+  font-size: var(--t-14);
+}
+
+.request-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.request-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--warn);
+}
+
+.request-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.request-label {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.request-message {
+  min-width: 0;
+  flex: 1;
+}
+
+.request-message > :first-child {
+  margin-top: 0;
+}
+
+.request-message > :last-child {
+  margin-bottom: 0;
+}
+
+.request-command {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--t-12);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.request-details {
+  max-height: 320px;
+  overflow: auto;
+}
+
+.request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.request-error {
+  margin: 0;
+  color: var(--state-failed);
+  font-size: var(--t-13);
+}
+
+.request-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.request-field-head {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.request-field-title {
+  font-size: var(--t-12);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.request-field-desc {
+  color: var(--ink);
+}
+
+.request-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.request-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+
+.request-option:hover {
+  border-color: var(--line-strong);
+}
+
+.request-option.on {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.request-option input[type='radio'],
+.request-option input[type='checkbox'] {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
+.request-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.request-option.other {
+  align-items: center;
+  cursor: text;
+}
+
+.request-other-label {
+  flex: none;
+  color: var(--muted);
+}
+
+.request-option.other input,
+.request-text {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.waiting-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn-fill);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+
+.state-dot[data-state='waiting'] {
+  background: var(--warn-fill);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.status-item.waiting {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.option-list + .option-list {
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  padding-top: 4px;
+}

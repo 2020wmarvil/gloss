@@ -67,7 +67,7 @@ it('goes back and forward through the sessions and settings visited with the mou
   const session = (id: string): object => ({ id, title: id, cwd: '/project', agentId: 'claude', createdAt: id === 'a' ? 2 : 1 })
   const opened = vi.fn(async (id: string) => ({
     session: session(id), messages: [], toolCalls: [], plans: [], threads: [], turn: null,
-    live: { attached: false, model: null, effort: null, commands: [], usage: null, rateLimits: [], permissions: null, accepts: { image: false, file: false }, steering: false },
+    live: { attached: false, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
     queue: { items: [], paused: false }
   }))
   window.gloss = {
@@ -136,7 +136,7 @@ it('shows where the agent works and what waits, jumps there, and lists the queue
         ],
         threads: [thread('late', 'Second thread', 20), thread('t1', 'Make forward and backward buttons work in the app', 10)],
         turn: { threadId: 't1' },
-        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], permissions: null, accepts: { image: false, file: false }, steering: false },
+        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [{ id: 'q1', threadId: 't1', text: 'then this', attachments: [] }, { id: 'q2', threadId: null, text: 'main next', attachments: [] }], paused: false }
       })
     },
@@ -234,7 +234,7 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
       refresh: async () => {},
       open: async (id: string) => ({
         session: session(id, { a: 3, b: 2, c: 1 }[id]!), toolCalls: [], plans: [], turn: null, ...views[id],
-        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], permissions: null, accepts: { image: false, file: false }, steering: false },
+        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })
     },
@@ -285,7 +285,7 @@ it('opens search anywhere and reveals matches in another session, its thread, or
     ],
     toolCalls: id === 'a' ? [] : [{ id: 'tool', sessionId: id, messageSeq: 2, threadId: 't', title: 'Read cache', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'cache tool output' } }] }],
     plans: [], threads: id === 'a' ? [] : [thread], turn: null,
-    live: { attached: false, model: null, effort: null, commands: [], usage: null, rateLimits: [], permissions: null, accepts: { image: false, file: false }, steering: false },
+    live: { attached: false, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
     queue: { items: [], paused: false }
   }))
   const search = vi.fn(async () => ({ results: [
@@ -337,7 +337,7 @@ it("finds a thread's anchor in the main conversation from the thread panel", asy
         messages: [{ id: 'm', sessionId: 's', seq: 1, role: 'agent', text: 'Hello world', threadId: null }],
         threads: [{ id: 't1', sessionId: 's', anchorMessageId: 'm', anchor: { kind: 'selection', start: 6, end: 11, text: 'world' }, createdAt: 1 }],
         turn: null,
-        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], permissions: null, accepts: { image: false, file: false }, steering: false },
+        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })
     },
@@ -358,7 +358,7 @@ it("finds a thread's anchor in the main conversation from the thread panel", asy
 
 it("marks, badges and chimes a turn that finishes where the user isn't looking", async () => {
   const session = (id: string, createdAt: number): object => ({ id, title: id, cwd: '/project', agentId: 'claude', createdAt })
-  const global = { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, externalEditor: '', mcpServers: [] }
+  const global = { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }
   let emit: (event: object) => void = () => {}
   const setBadge = vi.fn()
   window.gloss = {
@@ -371,7 +371,7 @@ it("marks, badges and chimes a turn that finishes where the user isn't looking",
       refresh: async () => {},
       open: async (id: string) => ({
         session: session(id, id === 'a' ? 2 : 1), toolCalls: [], plans: [], turn: null, messages: [], threads: [],
-        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], permissions: null, accepts: { image: false, file: false }, steering: false },
+        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })
     },
@@ -423,7 +423,7 @@ it("marks, badges and chimes a turn that finishes where the user isn't looking",
   expect(lead('b')).toBeUndefined()
   expect(badge()).toEqual({ state: null, unseen: 0 })
 
-  await act(async () => emit({ type: 'settings', state: { global: { ...global, turnEndSound: false }, projects: {}, error: null, path: '/settings.json' } }))
+  await act(async () => emit({ type: 'settings', state: { global: { ...global, turnEndSound: false, permissionMode: 'bypass' as const }, projects: {}, error: null, path: '/settings.json' } }))
   await end({ sessionId: 'b' })
   expect(chime).toHaveBeenCalledTimes(2)
   focused.mockRestore()
@@ -437,14 +437,14 @@ it('keeps background completions and syncs from taking focus or closing settings
   const retry = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
   window.gloss = {
     history: async () => [],
-    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, turnEndSound: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, turnEndSound: false, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
       list: async () => [session('a'), session('b')], refresh: async () => {},
       open: async (id: string) => ({
         session: session(id), messages: [], toolCalls: [], plans: [], threads: [], turn: null,
-        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], permissions: null, accepts: { image: false, file: false }, steering: false },
+        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })
     },

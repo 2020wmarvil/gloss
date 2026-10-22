@@ -287,7 +287,7 @@ function Field(props: { field: SettingField; value: unknown; onChange(value: unk
           id={id}
           ariaLabel={field.label}
           ariaDescribedBy={`${id}-description`}
-          value={String(value)}
+          value={String(value ?? field.options?.[0]?.value)}
           options={(field.options ?? []).map((o) => ({ value: String(o.value), label: o.label }))}
           onChange={props.onChange}
         />

@@ -32,6 +32,8 @@ const api: GlossApi = {
     rename: (id, title) => ipcRenderer.invoke(IPC.sessionsRename, id, title),
     delete: (id) => ipcRenderer.invoke(IPC.sessionsDelete, id),
     setChoice: (id, kind, value) => ipcRenderer.invoke(IPC.sessionsSetChoice, id, kind, value),
+    setMode: (id, modeId) => ipcRenderer.invoke(IPC.sessionsSetMode, id, modeId),
+    setAutoApprove: (id, on) => ipcRenderer.invoke(IPC.sessionsSetAutoApprove, id, on),
     copyMarkdown: (id, threadId) => ipcRenderer.invoke(IPC.sessionsCopyMarkdown, id, threadId),
     saveMarkdown: (id, threadId) => ipcRenderer.invoke(IPC.sessionsSaveMarkdown, id, threadId),
     openFolder: (id) => ipcRenderer.invoke(IPC.sessionsOpenFolder, id),
@@ -54,6 +56,9 @@ const api: GlossApi = {
   retry: (sessionId, messageId) => ipcRenderer.invoke(IPC.retry, sessionId, messageId),
   cancel: (sessionId) => ipcRenderer.invoke(IPC.cancel, sessionId),
   setBadge: (badge) => ipcRenderer.send(IPC.setBadge, badge),
+  requests: {
+    answer: (sessionId, requestId, answer) => ipcRenderer.invoke(IPC.requestsAnswer, sessionId, requestId, answer)
+  },
   queue: {
     edit: (sessionId, id, text) => ipcRenderer.invoke(IPC.queueEdit, sessionId, id, text),
     remove: (sessionId, id) => ipcRenderer.invoke(IPC.queueRemove, sessionId, id),

@@ -173,6 +173,13 @@ const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   // Retain migration 14 for databases that ran the removed handoff feature.
   (db) => {
     if (!db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'handoff')) db.exec('ALTER TABLE sessions ADD COLUMN handoff TEXT')
+  },
+  // The session's permission mode, and Gloss's auto-approval for agents without a bypass mode (SPEC → Permission modes).
+  // Checks the schema: tests rewind databases to older versions without dropping later columns.
+  (db) => {
+    const columns = db.prepare('PRAGMA table_info(sessions)').all()
+    if (!columns.some((c) => c.name === 'mode')) db.exec('ALTER TABLE sessions ADD COLUMN mode TEXT')
+    if (!columns.some((c) => c.name === 'auto_approve')) db.exec('ALTER TABLE sessions ADD COLUMN auto_approve INTEGER')
   }
 ]
 
@@ -190,6 +197,8 @@ function toSession(r: Row): Session {
     activeAt: r.active_at != null ? Number(r.active_at) : Number(r.created_at),
     ...(r.model != null ? { model: r.model as string } : {}),
     ...(r.effort != null ? { effort: r.effort as string } : {}),
+    ...(r.mode != null ? { mode: r.mode as string } : {}),
+    ...(r.auto_approve != null ? { autoApprove: Number(r.auto_approve) === 1 } : {}),
     ...(r.synced_at != null ? { syncedAt: r.synced_at as string } : {}),
     ...(r.review_base != null
       ? {
@@ -354,7 +363,7 @@ export class Store {
   /** `syncedAt: null` forgets it. */
   updateSession(
     id: string,
-    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model' | 'effort' | 'review'>> & { syncedAt?: string | null }
+    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model' | 'effort' | 'mode' | 'autoApprove' | 'review'>> & { syncedAt?: string | null }
   ): Session {
     if (patch.acpSessionId !== undefined) {
       this.db
@@ -372,6 +381,12 @@ export class Store {
     }
     if (patch.effort !== undefined) {
       this.db.prepare('UPDATE sessions SET effort = ? WHERE id = ?').run(patch.effort, id)
+    }
+    if (patch.mode !== undefined) {
+      this.db.prepare('UPDATE sessions SET mode = ? WHERE id = ?').run(patch.mode, id)
+    }
+    if (patch.autoApprove !== undefined) {
+      this.db.prepare('UPDATE sessions SET auto_approve = ? WHERE id = ?').run(patch.autoApprove ? 1 : 0, id)
     }
     if (patch.syncedAt !== undefined) {
       this.db.prepare('UPDATE sessions SET synced_at = ? WHERE id = ?').run(patch.syncedAt, id)

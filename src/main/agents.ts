@@ -12,7 +12,7 @@ export type AgentConfig = {
   privateDiagnostics?: boolean
   /**
    * The agent's session mode that skips permission prompts, if it has one.
-   * Gloss switches every session to it (SPEC → Permissions).
+   * Sessions start in it by default (SPEC → Permission modes).
    */
   bypassModeId?: string
   /**

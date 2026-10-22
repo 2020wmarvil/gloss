@@ -7,7 +7,7 @@ import { itemSource, listItemSpans } from './anchors'
 import { KIND_NAMES, kindOf } from './reviewThreads'
 import { Composer, type ComposerQueue } from './Composer'
 import { ExportMenu } from './ExportMenu'
-import { Log, logItems, type Notice, type Reveal } from './Log'
+import { Log, logItems, TurnStatus, type Notice, type Reveal } from './Log'
 import { Markdown } from './Markdown'
 import { ArrowLeft, Locate, PanelRight } from 'lucide-react'
 
@@ -79,7 +79,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
           {props.backTo === 'queue' ? 'Queue' : 'All threads'}
         </button>
         {threadId === null && <h2 className="thread-label">New thread</h2>}
-        {runningHere && <span className="status"><span className="running-dot" aria-hidden="true" />Working</span>}
+        {runningHere && <TurnStatus open={open} threadId={threadId} />}
         {props.onFindInMain && (
           <button className="header-button icon find-in-main" onClick={props.onFindInMain} title="Find in main session" aria-label="Find in main session">
             <Locate />
@@ -155,7 +155,7 @@ function LineThreadPanel(
           {anchor.side === 'old' ? ' (old)' : ''}
         </span>
         {threadId === null && <h2 className="thread-label">New thread</h2>}
-        {props.runningHere && <span className="status"><span className="running-dot" aria-hidden="true" />Working</span>}
+        {props.runningHere && <TurnStatus open={open} threadId={threadId} />}
         {thread && props.onResolve && (
           <button className="resolve" onClick={() => props.onResolve?.(thread.id, !resolved)}>
             {resolved ? 'Reopen' : 'Resolve'}

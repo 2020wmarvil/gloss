@@ -12,7 +12,7 @@ import { Store } from './db'
 import { SessionManager } from './sessions'
 import type { GlossEvent } from '../shared/ipc'
 
-const defaults = { defaultAgent: 'claude', theme: 'system' as const, sessionOrder: 'created' as const, listItemReplies: false, turnEndSound: true, externalEditor: '', mcpServers: [] }
+const defaults = { defaultAgent: 'claude', theme: 'system' as const, sessionOrder: 'created' as const, listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }
 const profile: AgentProfile = { id: 'custom:test', name: 'Test agent', command: process.execPath, args: [resolve('src/main/fixtures/profile-agent.mjs'), '{instructions}'], env: { GLOSS_PROFILE_DATA: 'GLOSS_TEST_DATA', GLOSS_TEST_SECRET: 'GLOSS_PROFILE_SECRET' } }
 let dir: string
 beforeEach(() => {

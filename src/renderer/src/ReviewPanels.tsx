@@ -6,7 +6,7 @@ import type { Attachment, Message, MessageQueue, SessionLive } from '@shared/typ
 import { truncate } from '@shared/wire'
 import type { OpenSession } from './App'
 import { Composer, type ComposerQueue } from './Composer'
-import { Log, logItems, type Notice, type Reveal } from './Log'
+import { Log, logItems, TurnStatus, type Notice, type Reveal } from './Log'
 import { Markdown } from './Markdown'
 import { inDiffOrder, KIND_NAMES, kindOf, shownLine, titleOf, type ThreadKind } from './reviewThreads'
 import { ago } from './Sidebar'
@@ -233,7 +233,7 @@ export function GeneralPanel(props: {
           All threads
         </button>
         <h2 className="thread-label">General conversation</h2>
-        {runningHere && <span className="status"><span className="running-dot" aria-hidden="true" />Working</span>}
+        {runningHere && <TurnStatus open={open} threadId={null} />}
         <button className="close" onClick={props.onClose} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
           <PanelRight />
         </button>

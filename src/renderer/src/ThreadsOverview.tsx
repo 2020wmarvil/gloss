@@ -151,6 +151,7 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
           )}
           {summaries.map(({ thread, replies, lastActivity }) => {
             const running = props.runningThread === thread.id
+            const waiting = props.open.requests?.some((r) => r.threadId === thread.id) ?? false
             const queued = queue.items.filter((q) => q.threadId === thread.id).length
             return (
               <div key={thread.id} className="thread-row">
@@ -160,8 +161,8 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
                   <span className="thread-meta">
                     {running && (
                       <span className="thread-working">
-                        <span className="running-dot" aria-hidden />
-                        Working
+                        <span className={waiting ? 'waiting-dot' : 'running-dot'} aria-hidden />
+                        {waiting ? 'Waiting for you' : 'Working'}
                       </span>
                     )}
                     <span>

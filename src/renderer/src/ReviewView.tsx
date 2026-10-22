@@ -463,6 +463,7 @@ export function ReviewView(props: Props): React.JSX.Element {
         git={props.git}
         pr={props.pr}
         running={props.runningThread !== undefined}
+        waiting={open.requests?.length}
         queue={props.queue}
         onResumeQueue={props.onResumeQueue}
         onSetChoice={props.onSetChoice}

@@ -30,7 +30,7 @@ const edit = async (input: HTMLInputElement | HTMLTextAreaElement, text: string)
 
 it('has an MCP servers section that needs no open project', async () => {
   const { el } = await mount()
-  const state: SettingsState = { path: '/settings.json', error: null, projects: {}, global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, externalEditor: '', mcpServers: [] } }
+  const state: SettingsState = { path: '/settings.json', error: null, projects: {}, global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] } }
   const update = vi.fn(async () => {})
   await act(async () => root!.render(<SettingsScreen state={state} projects={[]} projectPath={null} onUpdate={update} onClose={() => {}} onOpenFile={async () => null} />))
   const section = (name: string): Element => [...el.querySelectorAll('section')].find((s) => s.querySelector('h2')?.textContent === name)!
@@ -116,7 +116,7 @@ it('edits the vault for the open project with a normalized path lookup', async (
   const { el } = await mount()
   const state: SettingsState = { path: '/settings.json', error: null,
     projects: { 'C:/Work/Project/': { obsidianVault: 'Old notes' } },
-    global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, externalEditor: '', mcpServers: [] } }
+    global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] } }
   const update = vi.fn(async () => {})
   await act(async () => root!.render(<SettingsScreen state={state} projects={[{ path: 'c:/work/project', name: 'project', where: 'c:/work' }]} projectPath="c:/work/project" onUpdate={update} onClose={() => {}} onOpenFile={async () => null} />))
   await click(button(el, 'project'))

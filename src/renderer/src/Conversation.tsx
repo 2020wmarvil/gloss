@@ -164,6 +164,7 @@ export function Conversation(props: Props): React.JSX.Element {
         git={props.git}
         pr={props.pr}
         running={running}
+        waiting={open.requests?.length}
         queue={props.queue}
         queueShownAbove
         onResumeQueue={() => void props.composerQueue.onResume()}
@@ -179,10 +180,11 @@ export function Conversation(props: Props): React.JSX.Element {
  * The strip's thread (id null: the main conversation), and the state of its latest turn
  * (null: Gloss didn't see it end).
  */
-export type StripThread = { id: string | null; name: string; state: 'working' | TurnOutcome | null }
+export type StripThread = { id: string | null; name: string; state: 'working' | 'waiting' | TurnOutcome | null }
 
 const STRIP_VERB = {
   working: 'Working in',
+  waiting: 'Waiting for you in',
   completed: 'Done in',
   cancelled: 'Cancelled in',
   failed: 'Failed in',

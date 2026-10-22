@@ -11,7 +11,7 @@ afterEach(() => { act(() => root?.unmount()) })
 const projects = ['gloss', 'website', 'notes'].map((name) => ({ name, path: `C:/projects/${name}`, where: 'C:/projects' }))
 const state: SettingsState = {
   path: 'C:/data/settings.json', error: null,
-  global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, externalEditor: '', mcpServers: [] },
+  global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] },
   projects: { 'C:/projects/website': { obsidianVault: 'Website notes' } }
 }
 

@@ -22,6 +22,8 @@ type Props = {
   running: Record<string, string | null>
   /** Sessions whose last turn finished or failed while the user wasn't looking. */
   unseen: Record<string, 'completed' | 'failed'>
+  /** Sessions whose agent is waiting on the user (a question or an approval). */
+  waiting?: Record<string, unknown[]>
   /** The agents' sessions in the project that Gloss has no record of; null while loading. */
   agentSessions: ListedAgentSession[] | null
   /** Newest first, or most recent activity first (the `sessionOrder` setting). */
@@ -70,13 +72,17 @@ export function ago(time: number, now = Date.now()): string {
 /** Marks review sessions and the button that starts one. */
 const reviewIcon = <GitCompare className="review-icon" />
 
-/** The collapsed sidebar: a button that expands it, with a running dot while a session runs. */
-export function SidebarRail(props: { running: boolean; onExpand(): void }): React.JSX.Element {
+/** The collapsed sidebar: a button that expands it, with a running dot while a session runs (amber while one waits on the user). */
+export function SidebarRail(props: { running: boolean; waiting?: boolean; onExpand(): void }): React.JSX.Element {
   return (
     <div className="side-rail sidebar-rail">
       <button className="rail-button" onClick={props.onExpand} title="Show sidebar" aria-label="Show sidebar">
         <PanelLeft />
-        {props.running && <span className="running-dot" aria-label="Running" />}
+        {props.waiting ? (
+          <span className="waiting-dot" aria-label="Waiting for you" />
+        ) : (
+          props.running && <span className="running-dot" aria-label="Running" />
+        )}
       </button>
     </div>
   )
@@ -172,7 +178,9 @@ export function Sidebar(props: Props): React.JSX.Element {
       >
         {/* One lead slot: running, else an unseen failure or finish, else the review icon. One trail slot: the time, and … on hover. */}
         <span className="row-lead">
-          {s.id in running ? (
+          {(props.waiting?.[s.id]?.length ?? 0) > 0 ? (
+            <span className="waiting-dot" aria-label="Waiting for you" title="Waiting for you" />
+          ) : s.id in running ? (
             <span className="running-dot" aria-label="Running" />
           ) : props.unseen[s.id] === 'failed' ? (
             <span className="failed-dot" aria-label="The last turn failed" title="The last turn failed" />
