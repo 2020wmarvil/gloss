@@ -3803,21 +3803,12 @@ button.thread-find {
   background: currentColor;
 }
 
-/* A raised surface by the selection, lit like a menu; Reply is its one primary action. */
-.selection-popover {
-  position: fixed;
-  z-index: 10;
+/* The context menu on a selection, each action with its key. */
+.selection-menu button {
   display: flex;
-  gap: 4px;
-  padding: 4px;
-  background: var(--raised) var(--sheen);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge);
-}
-
-.selection-popover svg {
-  width: 14px;
-  height: 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
 }
 
 .selection-quote {

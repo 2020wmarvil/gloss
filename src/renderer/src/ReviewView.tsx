@@ -13,7 +13,9 @@ import { inDiffOrder, isLineThread, kindOf, titleOf } from './reviewThreads'
 import { StatusLine } from './StatusLine'
 import { threadSummaries } from './ThreadsOverview'
 import { modKey } from './shortcuts'
-import { ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronUp, Columns2, Copy, MessageSquare, MessageSquareOff, PanelLeft, Reply, RotateCcw, Rows2 } from 'lucide-react'
+import { useRightButtonLines, type LineBounds } from './lineSelect'
+import { copySelection, SelectionContextMenu, type MenuItem } from './SelectionMenu'
+import { ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronUp, Columns2, MessageSquare, MessageSquareOff, PanelLeft, RotateCcw, Rows2 } from 'lucide-react'
 
 export type DiffState = { diff: ReviewDiff | null; error: string | null }
 
@@ -467,7 +469,7 @@ export function ReviewView(props: Props): React.JSX.Element {
         onCommand={props.onCommand}
       />
       {diff.diff && (
-        <DiffSelectionPopover
+        <DiffSelectionMenu
           scope={scroller}
           diff={diff.diff}
           sources={sources}
@@ -480,13 +482,12 @@ export function ReviewView(props: Props): React.JSX.Element {
   )
 }
 
-type Selected = { anchor: LineAnchor; top: number; left: number; bottom: number }
-
 /**
- * "Reply to selection" for code selected in the diff (SPEC → Review sessions → Line
- * anchors), and a menu on right-clicking it that also opens its lines in the editor.
+ * The context menu for code selected in the diff (SPEC → Review sessions → Line anchors):
+ * right-clicking the selection, or right-clicking (and dragging over) lines of code to
+ * select them, opens it.
  */
-function DiffSelectionPopover(props: {
+function DiffSelectionMenu(props: {
   scope: React.RefObject<HTMLDivElement | null>
   diff: ReviewDiff
   sources: Sources
@@ -495,13 +496,11 @@ function DiffSelectionPopover(props: {
   onOpenFile(path: string, how: 'editor', line: number): void
 }): React.JSX.Element | null {
   const { scope, diff, sources, layout, onReply, onOpenFile } = props
-  const [current, setCurrent] = useState<Selected | null>(null)
-  /** The context menu on a selection: its lines, and where it opened. */
+  /** The menu on a selection: its lines, and where it opened. */
   const [menu, setMenu] = useState<{ anchor: LineAnchor; x: number; y: number } | null>(null)
-  const frame = useRef(0)
 
   /** The lines the selection anchors to; `side` overrides the side it started on. */
-  const selected = useCallback((sideOf?: Side): Selected | null => {
+  const selected = useCallback((sideOf?: Side): LineAnchor | null => {
     const s = window.getSelection()
     if (!s || s.isCollapsed || s.rangeCount === 0) return null
     const range = s.getRangeAt(0)
@@ -530,84 +529,39 @@ function DiffSelectionPopover(props: {
     if (numbers.size !== end - start + 1) return null
     const lines = linesOf(file, side, start, end, sources[file.path])
     if (!lines) return null
-    const rect = range.getBoundingClientRect()
-    return { anchor: { kind: 'line', file: file.path, side, start, end, text, lines }, top: rect.top, left: rect.left, bottom: rect.bottom }
+    return { kind: 'line', file: file.path, side, start, end, text, lines }
   }, [scope, diff, sources, layout])
-  const compute = useCallback(() => setCurrent(selected()), [selected])
 
-  useEffect(() => {
-    const schedule = (): void => {
-      cancelAnimationFrame(frame.current)
-      frame.current = requestAnimationFrame(compute)
-    }
-    document.addEventListener('selectionchange', schedule)
-    document.addEventListener('scroll', schedule, true)
-    window.addEventListener('resize', schedule)
-    return () => {
-      cancelAnimationFrame(frame.current)
-      document.removeEventListener('selectionchange', schedule)
-      document.removeEventListener('scroll', schedule, true)
-      window.removeEventListener('resize', schedule)
-    }
-  }, [compute])
-
-  // Right-clicking the selection opens the menu on it; right-clicking a line of code
-  // outside it selects that line first.
-  useEffect(() => {
-    const onMenu = (e: MouseEvent): void => {
-      const s = window.getSelection()
-      if (!s) return
-      const inside =
-        current !== null &&
-        s.rangeCount > 0 &&
-        [...s.getRangeAt(0).getClientRects()].some(
-          (r) => e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom
-        )
-      if (inside) {
-        e.preventDefault()
-        setMenu({ anchor: current.anchor, x: e.clientX, y: e.clientY })
-        return
+  /** A line of code is its cell's text; a drag stays in its file, and in split view on its side. */
+  const lineAt = useCallback(
+    (x: number, y: number, first: LineBounds | null): LineBounds | null => {
+      const cell = document.elementFromPoint(x, y)?.closest<HTMLElement>('.code[data-line]')
+      if (!cell || !scope.current?.contains(cell)) return null
+      if (first) {
+        if (first.el.closest('.diff-body') !== cell.closest('.diff-body')) return null
+        if (layout === 'split' && first.el.dataset.side !== cell.dataset.side) return null
       }
-      const cell = (e.target as HTMLElement).closest<HTMLElement>('.code[data-line]')
-      if (!cell || !scope.current?.contains(cell)) return
-      const range = document.createRange()
-      range.selectNodeContents(cell.querySelector('.w') ?? cell)
-      s.removeAllRanges()
-      s.addRange(range)
-      // A blank line has nothing to quote.
-      const line = selected(cell.dataset.side as Side)
-      if (!line) return s.removeAllRanges()
-      e.preventDefault()
-      setCurrent(line)
-      setMenu({ anchor: line.anchor, x: e.clientX, y: e.clientY })
-    }
-    document.addEventListener('contextmenu', onMenu)
-    return () => document.removeEventListener('contextmenu', onMenu)
-  }, [current, scope, selected])
+      const text = cell.querySelector('.w') ?? cell
+      return { start: { node: text, offset: 0 }, end: { node: text, offset: text.childNodes.length }, el: cell }
+    },
+    [scope, layout]
+  )
 
-  // Clicks elsewhere, scrolling and Escape close the menu.
-  useEffect(() => {
-    if (!menu) return
-    const close = (): void => setMenu(null)
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') close()
+  useRightButtonLines({
+    scope,
+    lineAt,
+    onMenu: (x, y, first) => {
+      // Lines selected with the right button are on the side they were selected on.
+      const anchor = selected(first && layout === 'split' ? (first.el.dataset.side as Side) : undefined)
+      if (anchor) setMenu({ anchor, x, y })
+      // A blank line has nothing to quote.
+      else if (first) window.getSelection()?.removeAllRanges()
     }
-    window.addEventListener('mousedown', close)
-    window.addEventListener('blur', close)
-    window.addEventListener('wheel', close)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('mousedown', close)
-      window.removeEventListener('blur', close)
-      window.removeEventListener('wheel', close)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [menu])
+  })
 
   const reply = useCallback(
     (anchor: LineAnchor) => {
       window.getSelection()?.removeAllRanges()
-      setCurrent(null)
       setMenu(null)
       onReply(anchor)
     },
@@ -617,59 +571,25 @@ function DiffSelectionPopover(props: {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement | null
-      if (!current || e.ctrlKey || e.metaKey || e.altKey || target?.isContentEditable || target?.matches?.('input, textarea')) return
-      if (e.key === 'r' || e.key === 'R') {
-        e.preventDefault()
-        reply(current.anchor)
-      }
+      if (e.ctrlKey || e.metaKey || e.altKey || target?.isContentEditable || target?.matches?.('input, textarea')) return
+      if (e.key !== 'r' && e.key !== 'R') return
+      const anchor = selected()
+      if (!anchor) return
+      e.preventDefault()
+      reply(anchor)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [current, reply])
+  }, [selected, reply])
 
-  if (menu) {
-    const file = diff.files.find((f) => f.path === menu.anchor.file)
-    return (
-      <div
-        className="menu file-menu"
-        role="menu"
-        style={{ left: menu.x, top: menu.y }}
-        onMouseDown={(e) => {
-          // Keep the selection while choosing.
-          e.preventDefault()
-          e.stopPropagation()
-        }}
-      >
-        <button role="menuitem" onClick={() => reply(menu.anchor)}>
-          Reply to selection
-        </button>
-        {file && file.status !== 'deleted' && (
-          <button
-            role="menuitem"
-            onClick={() => {
-              setMenu(null)
-              onOpenFile(file.path, 'editor', newLineOf(file, menu.anchor.side, menu.anchor.start))
-            }}
-          >
-            Open in external editor
-          </button>
-        )}
-      </div>
-    )
-  }
-  if (!current) return null
-  const top = current.top - 42 >= 8 ? current.top - 42 : current.bottom + 8
-  const left = Math.max(8, Math.min(current.left, window.innerWidth - 238))
-  return (
-    <div className="selection-popover" role="toolbar" aria-label="Selection" style={{ top, left }} onMouseDown={(e) => e.preventDefault()}>
-      <button className="primary sm go" onClick={() => reply(current.anchor)} title="Reply to selection (R)" aria-keyshortcuts="R">
-        <Reply />
-        Reply to selection
-      </button>
-      <button className="ghost sm copy" onClick={() => document.execCommand('copy')} title="Copy (Ctrl+C)">
-        <Copy />
-        Copy
-      </button>
-    </div>
-  )
+  const close = useCallback(() => setMenu(null), [])
+  if (!menu) return null
+  const file = diff.files.find((f) => f.path === menu.anchor.file)
+  const items: MenuItem[] = [
+    { label: 'Reply to selection', keys: 'R', run: () => reply(menu.anchor) },
+    { label: 'Copy', keys: `${modKey()}+C`, run: copySelection }
+  ]
+  if (file && file.status !== 'deleted')
+    items.push({ label: 'Open in external editor', run: () => onOpenFile(file.path, 'editor', newLineOf(file, menu.anchor.side, menu.anchor.start)) })
+  return <SelectionContextMenu x={menu.x} y={menu.y} items={items} onClose={close} />
 }
