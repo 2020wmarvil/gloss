@@ -16,10 +16,12 @@ import { editorArgs, launchEditor } from './openFile'
 import { fileLink } from '../shared/fileLink'
 import { runInTerminal } from './terminal'
 import { UsageSource } from './usage'
-import { projectSettings } from '../shared/settings'
+import { DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
 import { previewMcpImport } from './mcp-import'
 import { OpenCodeSupport } from './opencode'
+import { AgentProfileSupport } from './agentProfiles'
+import { profileError, type AgentProfile } from '../shared/agentProfiles'
 import iconIco from '../../build/icon.ico?asset'
 import iconPng from '../../build/icons/256x256.png?asset'
 
@@ -29,6 +31,26 @@ let sessions: SessionManager | undefined
 let settings: SettingsFile | undefined
 let openCode: OpenCodeSupport
 let openCodeRestartPending = false
+let profileSupport: AgentProfileSupport
+const appliedProfiles = new Map<string, AgentProfile>()
+const pendingProfiles = new Set<string>()
+let applyingProfiles = false
+
+async function applyProfileChanges(): Promise<void> {
+  if (applyingProfiles) return
+  applyingProfiles = true
+  try {
+    for (const id of pendingProfiles) {
+      if (!sessions || !await sessions.restartIdleAgent(id, true)) continue
+      const profile = settings?.state().global.agentProfiles?.find((p) => p.id === id)
+      if (profile) appliedProfiles.set(id, profile)
+      else appliedProfiles.delete(id)
+      pendingProfiles.delete(id)
+    }
+  } finally {
+    applyingProfiles = false
+  }
+}
 const usage = new UsageSource()
 
 function isExternalUrl(url: string): boolean {
@@ -140,6 +162,7 @@ function emit(event: GlossEvent): void {
   if (event.type === 'turnEnd' && openCodeRestartPending) {
     void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
   }
+  if (event.type === 'turnEnd' && pendingProfiles.size) void applyProfileChanges()
 }
 
 /** Shown notifications, kept so their click handlers survive garbage collection. */
@@ -283,9 +306,19 @@ async function pickFolder(): Promise<string | null> {
 function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void {
   ipcMain.handle(IPC.agentsList, async () => {
     const status = await openCode.check(settingsFile.state().global.opencodeExecutable)
-    return listAgents().map((agent) => agent.id === 'opencode'
+    const builtins = listAgents().map((agent) => agent.id === 'opencode'
       ? { ...agent, available: status.available, setupMessage: status.error ?? undefined }
       : agent)
+    const profiles = settingsFile.state().global.agentProfiles ?? []
+    const missing = new Set(manager.listSessions().map((s) => s.agentId).filter((id) => id.startsWith('custom:') && !profiles.some((p) => p.id === id)))
+    const defaultId = settingsFile.state().global.defaultAgent
+    if (defaultId.startsWith('custom:') && !profiles.some((p) => p.id === defaultId)) missing.add(defaultId)
+    return [...builtins, ...profiles.map((p) => ({ id: p.id, name: p.name })), ...[...missing].map((id) => ({ id, name: id, available: false, setupMessage: 'Restore this profile with the same ID in Settings > Agents to resume its conversations.' }))]
+  })
+  ipcMain.handle(IPC.agentsTestProfile, (_e, profile: unknown) => {
+    const error = profileError(profile)
+    if (error) throw new Error(error)
+    return profileSupport.check(profile as AgentProfile)
   })
   ipcMain.handle(IPC.agentsTestOpenCode, (_e, executable: unknown) => openCode.check(str(executable, 'executable'), true))
   ipcMain.handle(IPC.projectsList, () => manager.listProjects())
@@ -457,10 +490,11 @@ app.whenReady().then(() => {
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
   const dataDir = app.getPath('userData')
   openCode = new OpenCodeSupport(dataDir)
+  profileSupport = new AgentProfileSupport(dataDir)
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, externalEditor: '', mcpServers: [] },
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [] },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
       // Fires nativeTheme's 'updated', which recolors the window controls.
@@ -469,10 +503,17 @@ app.whenReady().then(() => {
         openCodeRestartPending = true
         void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
       }
+      for (const p of [...(next.global.agentProfiles ?? []), ...(previous.global.agentProfiles ?? [])]) {
+        const nextProfile = next.global.agentProfiles?.find((entry) => entry.id === p.id)
+        if (JSON.stringify(nextProfile) !== JSON.stringify(appliedProfiles.get(p.id))) pendingProfiles.add(p.id)
+      }
+      void applyProfileChanges()
     }
   })
   settings = settingsFile
   settingsFile.load()
+  for (const profile of settingsFile.state().global.agentProfiles ?? []) appliedProfiles.set(profile.id, profile)
+  pendingProfiles.clear()
   nativeTheme.themeSource = settingsFile.state().global.theme
   settingsFile.watch()
   sessions = new SessionManager({
@@ -480,7 +521,11 @@ app.whenReady().then(() => {
     emit,
     getAgentConfig: (id) => id === 'opencode'
       ? openCode.config(settingsFile.state().global.opencodeExecutable)
-      : getAgentConfig(id),
+      : id.startsWith('custom:') ? (() => {
+        const profile = appliedProfiles.get(id)
+        if (!profile) throw new Error('This agent profile was removed. Restore it with the same ID in Settings > Agents to resume this conversation.')
+        return profileSupport.config(profile)
+      })() : getAgentConfig(id),
     mcpServers: () => settingsFile.state().global.mcpServers,
     agentEnv: (config) => agentEnv(config),
     connect: (config, env, handlers) => AgentConnection.start(config, env, handlers),

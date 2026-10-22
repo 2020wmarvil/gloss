@@ -1,43 +1,40 @@
 # Milestones
 
-Build in order. Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
+Build in order, from M14 through M22 (Shipping). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1–M5 built the design in `SPEC.md`. These milestones add settings, make Gloss a daily driver, let you queue and steer, take threads further, add search and code review sessions, converge on a long-term interface, add a second agent, and ship it; then future work (sub-agent threads, visual feedback, agent questions and permission modes). Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1 through M13 and failed-turn actions are done. The remaining milestones add open source agents and local models, questions and permission modes, visual feedback, remote and mobile access, shared skills and plugins, worktrees, sub-agent threads, and performance improvements before shipping. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
-## Failed-turn actions (after M12)
-**Implemented, awaiting review.** Also includes non-interrupting background completion and history refresh, and a smaller, plain taskbar status dot matching the in-app state dots.
-A failed turn offers what fixes it, instead of only saying it failed.
+## M14: Open source agents and local models
 
-- **Sign in** when the turn failed because the agent needs authentication (ACP `auth_required`): opens the sign-in flow, then resends the prompt.
-- **Retry** otherwise: resends the same prompt, in the same thread, with the same attachments.
-- The actions sit on the failed-turn notice in the thread where the turn ran.
+**Implemented, awaiting review.** Guided OpenCode setup and custom ACP profiles are available, with connection tests, environment references, instruction-file delivery, capability diagnostics and removed-profile recovery. Agents without resume support preserve history and require a new conversation. Windows tests passed, including real OpenCode transport and a local Ollama tool call and file edit at 64K context. Linux runtime validation remains open. See `docs/ACP-PROFILES.md` and `docs/OPENCODE.md`.
 
-**Done when:** a turn that fails on an expired login can be fixed and resent from its notice, and any other failed turn can be retried with one click.
+Let users bring an ACP-compatible coding agent and run it with either a hosted model or a model served on their own computer. These are separate choices: the agent handles files, tools and the coding loop; the model supplies its responses. An open source agent can use a proprietary hosted model, and running an agent process locally does not mean its model runs locally. Update `SPEC.md` and design setup and connection diagnostics before implementation.
 
-## M14 — Shipping
-- **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
-- **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
-- **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
-- README: how to install, and how to cut a release.
-- Installers ship unsigned for now (Windows SmartScreen will warn: "More info → Run anyway").
+- **Compatibility spike first:** evaluate OpenCode as the initial supported open source agent. Its documented `opencode acp` command speaks ACP over stdio, and its provider configuration supports local model servers. Verify the current release, license, Windows/Linux launch behavior, instruction injection, permissions, model selection, tool events, cancellation, session listing and resume before committing to the integration. Record supported features and gaps; choose another ACP agent if the basic Gloss flow cannot work reliably.
+- **Bring your own ACP agent:** add global agent profiles with a stable ID, display name, executable, argument array and environment-variable references, plus a Test connection action. Keep Claude Code and Codex available. Launch directly without composing a shell command; report missing executables, incompatible protocol versions, failed initialization and process exits clearly. Keep credentials in the agent's native credential store or referenced environment variables, and redact them from diagnostics. Removing a profile retains its conversations and allows restoring the profile to resume them.
+- **One documented integration:** provide a guided profile for the selected open source agent using a user-installed executable. Explain installation and configuration with official links, show the detected version, and verify a connection before offering it for new sessions. Persist the profile used by each session and retain the chosen working directory. M19 will extend this to worktrees. Do not silently switch an existing session to another agent or model provider.
+- **Local inference path:** document and validate one complete setup, initially the selected agent connected to a user-managed Ollama server with a tool-capable local model. Gloss speaks ACP to the agent; the agent connects to the model server. Keep model/provider configuration in the agent's supported configuration unless it exposes that choice through ACP. Explain each component in setup and distinguish a loopback endpoint from a LAN or hosted endpoint. A server such as Ollama or LM Studio is not itself a coding agent and cannot be added as an ACP executable.
+- **Capabilities and instructions:** offer attachments, model switching, session discovery/resume, steering, plans, usage and permission controls only where supported. Show unavailable usage or cost as unknown. Verify that Gloss's thread-routing instructions reach the agent without modifying the user's project instruction files. Preserve display history when resume is unavailable and require an explicit new-session action instead of claiming the agent retained context. Use the current permission behavior initially; M15 will add questions, permission modes and approval prompts across agents.
+- **Failures and local expectations:** distinguish an unavailable model server, a missing model, authentication failure, insufficient memory and unsupported tool calling where the agent exposes those errors. Explain that speed, memory requirements and coding quality depend on the model and hardware. A local model does not guarantee an offline workflow: tools, MCP servers and other integrations may still access the network. Do not silently fall back to a hosted provider.
+- **Scope:** connect to existing agents and model servers. Automatic agent installation, model downloads, starting/managing inference servers, GPU setup, training, a built-in coding-agent loop and support for every OpenAI-compatible endpoint are later work. Other custom ACP agents can be added, but only the tested integration is presented as supported.
+- Verify with fake ACP agents and Windows/Linux smoke checks: profile persistence, launch failures and redacted diagnostics, capability differences, instruction delivery, thread routing, file edits, cancellation, restart/resume and removed-profile recovery. Run the documented local setup with hosted credentials removed and external networking disabled after installation and model download; confirm a prompt, tool call and file edit complete without a hosted fallback. Record the tested agent/server/model versions and hardware.
 
-**Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place.
+**Done when:** a user can add the supported open source agent, complete a coding task through Gloss using a local model without hosted credentials, discuss the result in threads, and restart and resume where supported. Custom ACP profiles survive restart, unsupported features are clearly identified, existing Claude Code and Codex sessions still work, and a stopped local server produces an actionable error.
 
-## M15 — Sub-agent threads (future)
-An opt-in alternative to view-only threads: a thread runs its own agent session instead of being tagged into the main one. Changes the core idea in `SPEC.md` (update it in this milestone).
+Initial references (re-check during implementation): [OpenCode ACP support](https://opencode.ai/docs/acp/) and [provider configuration](https://opencode.ai/docs/providers/).
 
-- **Thread mode setting** (M6 settings, global with a per-project override): `view-only` (default, today's behavior), `fresh` or `fork`.
-  - **fresh:** a new agent session that starts with only the anchor text (plus the user's message). Cheap.
-  - **fork:** `session/fork` of the main session at the moment the thread is created, so the sub-agent has the full context. Costs about as much as the main session.
-  Both exist so they can be compared in practice. Each thread shows its mode.
-- Each sub-agent thread has its own ACP session (stored on the Thread), resumed like any session. Turns in different sessions can run at the same time; Send is disabled per session, not everywhere. No file locking: as with several CLI sessions side by side, the user keeps their edits apart.
-- **Resolve:** a sub-agent thread can be resolved. The sub-agent is asked for a compact summary of its conclusions, which is sent to the main session (shown in the main thread as the thread's result). A resolved thread is marked as such.
-- **Cost is visible:** each sub-agent thread's context and cost appear in the status line when it is open, and in the threads overview.
-- If the mode is `fork` and the agent does not advertise `session/fork` (it is optional in ACP), creating the thread fails with a visible error. No silent fallback.
+## M15: Questions and permission modes (future)
+Let the agent ask the user things, and let the user choose how much it may do without asking. Replaces SPEC → Permissions ("no approval UI"); update it in this milestone.
 
-**Done when:** with either mode on, a thread runs as its own agent, can run while the main thread works, and resolving it brings its summary into the main session.
+- **Agent questions:** advertise ACP's `clientCapabilities.elicitation.form` and answer `elicitation/create` requests with a question dialog built from the request's JSON Schema: single and multiple choice, free text, and the agent's "other" answer where it allows one, plus Decline and Cancel. With form support the Claude adapter turns on Claude Code's AskUserQuestion tool (disabled today because Gloss doesn't advertise it) and sends its questions this way; MCP servers' elicitations arrive the same way. The question shows in the thread whose turn asked it. URL elicitations (open a link, wait for `session/complete_elicitation`) are optional.
+- **Permission modes:** a per-session mode picker from the agent's `modes` (Claude Code: Manual, Accept edits, Plan, Auto, Bypass permissions), set with `session/set_mode` and kept in sync from `current_mode_update`. It replaces the status line's "bypass" item. A default mode in settings (global, with a per-project override) replaces always entering `bypassModeId`; bypass stays the default.
+- **Approval prompts:** in a mode where the agent asks, `session/request_permission` shows an approval prompt (the tool call's title and what it will run or change, with the agent's options: allow once, allow always, reject) in the thread of the running turn, instead of being auto-approved. Auto-approval remains for agents without a bypass mode only if the user picks it.
+- **Waiting on the user:** a turn waiting on a question or an approval is still running (queued messages wait), shows "Waiting for you" in the status line and sidebar, and sends an OS notification when Gloss isn't focused. Cancel answers it with `cancelled`.
+- Agent-agnostic: everything comes from ACP modes, permission options and elicitation schemas. Verify first: the SDK's elicitation request and response shapes (`CreateElicitationRequest`/`CreateElicitationResponse`), and how the Claude adapter maps AskUserQuestion (several questions per request, multi-select, the custom answer).
 
-## M16 — Visual feedback (experimental, future)
+**Done when:** Claude Code can ask a multiple-choice question mid-turn and gets the answer from a Gloss dialog, and a session switched to Manual asks before each edit or command and continues or stops based on the answer.
+
+## M16: Visual feedback (experimental, future)
 Point at things visually to give the agent feedback. Expect to iterate on this continuously based on use; the first version is deliberately small.
 
 **First version: capture, then annotate**
@@ -63,31 +60,20 @@ Point at things visually to give the agent feedback. Expect to iterate on this c
 - Automatic marks: segment the capture and number regions so you only pick the ones you mean.
 - An MCP tool so the agent can ask you for a screenshot of something.
 
-## M17: Questions and permission modes (future)
-Let the agent ask the user things, and let the user choose how much it may do without asking. Replaces SPEC → Permissions ("no approval UI"); update it in this milestone.
-
-- **Agent questions:** advertise ACP's `clientCapabilities.elicitation.form` and answer `elicitation/create` requests with a question dialog built from the request's JSON Schema: single and multiple choice, free text, and the agent's "other" answer where it allows one, plus Decline and Cancel. With form support the Claude adapter turns on Claude Code's AskUserQuestion tool (disabled today because Gloss doesn't advertise it) and sends its questions this way; MCP servers' elicitations arrive the same way. The question shows in the thread whose turn asked it. URL elicitations (open a link, wait for `session/complete_elicitation`) are optional.
-- **Permission modes:** a per-session mode picker from the agent's `modes` (Claude Code: Manual, Accept edits, Plan, Auto, Bypass permissions), set with `session/set_mode` and kept in sync from `current_mode_update`. It replaces the status line's "bypass" item. A default mode in settings (global, with a per-project override) replaces always entering `bypassModeId`; bypass stays the default.
-- **Approval prompts:** in a mode where the agent asks, `session/request_permission` shows an approval prompt (the tool call's title and what it will run or change, with the agent's options: allow once, allow always, reject) in the thread of the running turn, instead of being auto-approved. Auto-approval remains for agents without a bypass mode only if the user picks it.
-- **Waiting on the user:** a turn waiting on a question or an approval is still running (queued messages wait), shows "Waiting for you" in the status line and sidebar, and sends an OS notification when Gloss isn't focused. Cancel answers it with `cancelled`.
-- Agent-agnostic: everything comes from ACP modes, permission options and elicitation schemas. Verify first: the SDK's elicitation request and response shapes (`CreateElicitationRequest`/`CreateElicitationResponse`), and how the Claude adapter maps AskUserQuestion (several questions per request, multi-select, the custom answer).
-
-**Done when:** Claude Code can ask a multiple-choice question mid-turn and gets the answer from a Gloss dialog, and a session switched to Manual asks before each edit or command and continues or stops based on the answer.
-
-## M18: Remote and mobile (future)
+## M17: Remote and mobile (future)
 Drive Gloss from a phone while the desktop app runs the agents. The desktop stays the only place agents, ACP and the database live; the phone is another client of the main process. Adds a section to `SPEC.md` (update it in this milestone).
 
 - **Bridge in the main process:** off by default, turned on in Settings. Serves the same API the preload exposes (requests and the event stream) over an authenticated WebSocket, plus a mobile web client. No new agent-facing logic: the phone's calls go through `SessionManager` like the renderer's, so a turn started on the phone shows live on the desktop and the reverse.
 - **Pairing:** Settings shows a QR code with the address and a one-time pairing secret; scanning it gives the phone a long-lived device token. Paired devices are listed with their last use and can be revoked. Every request needs a valid token. The bridge gives full control of agents that run commands without asking, so treat it as remote code execution: TLS only, and nothing listens until the user turns it on.
 - **Reachability:** start with the local network. For away from home, document a private network (Tailscale or similar) rather than building a relay; a hosted relay is a later option, not part of this milestone.
 - **Mobile client:** a phone layout of the session list, conversation and composer, with threads opened full screen. Covers the daily loop: read the log, open and reply in threads, send, queue, steer, cancel, resume a paused queue, see the status line (context, plan limits). Desktop-only features (settings, review sessions, visual feedback) can stay desktop-only. Agent output is untrusted here too: the same sanitized markdown rendering, and no `file://` or local-path links.
-- **Waiting on you:** with M17, questions and approval prompts can be answered from the phone; a turn that ends or needs an answer can notify the phone (web push from the PWA) when the desktop isn't focused.
+- **Waiting on you:** with M15, questions and approval prompts can be answered from the phone; a turn that ends or needs an answer can notify the phone (web push from the PWA) when the desktop isn't focused.
 - **Desktop asleep or closed:** the phone shows "Gloss is offline" and reconnects on its own; nothing is queued on the phone while offline.
 - Verify first: serving the client from the main process without loosening the renderer's security settings, TLS on a LAN address (self-signed certificate pinned at pairing, or the private network's certificates), and web push on iOS (needs an installed PWA).
 
 **Done when:** you can pair a phone by scanning a QR code, see the same sessions as the desktop, start and steer a turn in a thread from the phone while watching it stream on both, and a revoked phone can no longer connect.
 
-## M19: Shared skills and plugin marketplaces (future)
+## M18: Shared skills and plugin marketplaces (future)
 Build on M13's global MCP settings and reviewed one-time imports. Start with shared skills, then add plugin discovery, marketplace search and installation. Update `SPEC.md` and design the library, search results and import/install previews before implementation.
 
 - **Global skill library:** one Gloss-managed library available to Claude Code and Codex across projects. List skills with their description, source and agent compatibility, with Add, Edit and Remove actions. Verify how each installed agent discovers skills and refreshes them before choosing the storage and delivery mechanism.
@@ -100,7 +86,7 @@ Build on M13's global MCP settings and reviewed one-time imports. Start with sha
 
 **Done when:** a user can review and import a skill once, use it with both agents where compatible, search a supported marketplace, and install and remove a selected plugin from Gloss. Plugin previews identify what can be shared and what stays agent-specific. Imports leave original agent files unchanged, installations use the reviewed destination, and shared skills and installed-plugin records survive restart.
 
-## M20: Git worktrees (future)
+## M19: Git worktrees (future)
 Run independent coding tasks in separate checkouts while keeping their sessions together under one project. Worktrees are optional per session; conversation threads stay in their session's checkout. Update `SPEC.md` and design the creation, project grouping and cleanup flows before implementation.
 
 - **Project identity and session folder:** separate the shared project identity from each session's working directory. Discover related checkouts through Git's common directory and worktree metadata, including worktrees created outside Gloss. Non-Git folders keep their existing behavior. Migrate existing sessions and project settings without losing history, threads or overrides; resolve conflicting settings explicitly when existing projects become one group.
@@ -113,23 +99,21 @@ Run independent coding tasks in separate checkouts while keeping their sessions 
 
 **Done when:** you can start two sessions for one repository in different worktrees, make independent edits, find both under one project, restart Gloss and resume each in the correct checkout, review each checkout's changes, and explicitly remove a clean, idle worktree without deleting its conversation or branch. Existing externally created worktrees are usable through the same flow.
 
-## M21: Open source agents and local models (future)
-Let users bring an ACP-compatible coding agent and run it with either a hosted model or a model served on their own computer. These are separate choices: the agent handles files, tools and the coding loop; the model supplies its responses. An open source agent can use a proprietary hosted model, and running an agent process locally does not mean its model runs locally. Update `SPEC.md` and design setup and connection diagnostics before implementation.
+## M20: Sub-agent threads (future)
+An opt-in alternative to view-only threads: a thread runs its own agent session instead of being tagged into the main one. Changes the core idea in `SPEC.md` (update it in this milestone).
 
-- **Compatibility spike first:** evaluate OpenCode as the initial supported open source agent. Its documented `opencode acp` command speaks ACP over stdio, and its provider configuration supports local model servers. Verify the current release, license, Windows/Linux launch behavior, instruction injection, permissions, model selection, tool events, cancellation, session listing and resume before committing to the integration. Record supported features and gaps; choose another ACP agent if the basic Gloss flow cannot work reliably.
-- **Bring your own ACP agent:** add global agent profiles with a stable ID, display name, executable, argument array and environment-variable references, plus a Test connection action. Keep Claude Code and Codex available. Launch directly without composing a shell command; report missing executables, incompatible protocol versions, failed initialization and process exits clearly. Keep credentials in the agent's native credential store or referenced environment variables, and redact them from diagnostics. Removing a profile retains its conversations and allows restoring the profile to resume them.
-- **One documented integration:** provide a guided profile for the selected open source agent using a user-installed executable. Explain installation and configuration with official links, show the detected version, and verify a connection before offering it for new sessions. Persist the profile used by each session and retain the chosen working directory, including M20 worktrees. Do not silently switch an existing session to another agent or model provider.
-- **Local inference path:** document and validate one complete setup, initially the selected agent connected to a user-managed Ollama server with a tool-capable local model. Gloss speaks ACP to the agent; the agent connects to the model server. Keep model/provider configuration in the agent's supported configuration unless it exposes that choice through ACP. Explain each component in setup and distinguish a loopback endpoint from a LAN or hosted endpoint. A server such as Ollama or LM Studio is not itself a coding agent and cannot be added as an ACP executable.
-- **Capabilities and instructions:** offer attachments, model switching, session discovery/resume, steering, plans, usage and permission controls only where supported. Show unavailable usage or cost as unknown. Verify that Gloss's thread-routing instructions reach the agent without modifying the user's project instruction files. Preserve display history when resume is unavailable and require an explicit new-session action instead of claiming the agent retained context. Integrate permission handling with M17.
-- **Failures and local expectations:** distinguish an unavailable model server, a missing model, authentication failure, insufficient memory and unsupported tool calling where the agent exposes those errors. Explain that speed, memory requirements and coding quality depend on the model and hardware. A local model does not guarantee an offline workflow: tools, MCP servers and other integrations may still access the network. Do not silently fall back to a hosted provider.
-- **Scope:** connect to existing agents and model servers. Automatic agent installation, model downloads, starting/managing inference servers, GPU setup, training, a built-in coding-agent loop and support for every OpenAI-compatible endpoint are later work. Other custom ACP agents can be added, but only the tested integration is presented as supported.
-- Verify with fake ACP agents and Windows/Linux smoke checks: profile persistence, launch failures and redacted diagnostics, capability differences, instruction delivery, thread routing, file edits, cancellation, restart/resume and removed-profile recovery. Run the documented local setup with hosted credentials removed and external networking disabled after installation and model download; confirm a prompt, tool call and file edit complete without a hosted fallback. Record the tested agent/server/model versions and hardware.
+- **Thread mode setting** (M6 settings, global with a per-project override): `view-only` (default, today's behavior), `fresh` or `fork`.
+  - **fresh:** a new agent session that starts with only the anchor text (plus the user's message). Cheap.
+  - **fork:** `session/fork` of the main session at the moment the thread is created, so the sub-agent has the full context. Costs about as much as the main session.
+  Both exist so they can be compared in practice. Each thread shows its mode.
+- Each sub-agent thread has its own ACP session (stored on the Thread), resumed like any session. Turns in different sessions can run at the same time; Send is disabled per session, not everywhere. No file locking: as with several CLI sessions side by side, the user keeps their edits apart.
+- **Resolve:** a sub-agent thread can be resolved. The sub-agent is asked for a compact summary of its conclusions, which is sent to the main session (shown in the main thread as the thread's result). A resolved thread is marked as such.
+- **Cost is visible:** each sub-agent thread's context and cost appear in the status line when it is open, and in the threads overview.
+- If the mode is `fork` and the agent does not advertise `session/fork` (it is optional in ACP), creating the thread fails with a visible error. No silent fallback.
 
-**Done when:** a user can add the supported open source agent, complete a coding task through Gloss using a local model without hosted credentials, discuss the result in threads, and restart and resume where supported. Custom ACP profiles survive restart, unsupported features are clearly identified, existing Claude Code and Codex sessions still work, and a stopped local server produces an actionable error.
+**Done when:** with either mode on, a thread runs as its own agent, can run while the main thread works, and resolving it brings its summary into the main session.
 
-Initial references (re-check during implementation): [OpenCode ACP support](https://opencode.ai/docs/acp/) and [provider configuration](https://opencode.ai/docs/providers/).
-
-## M22: Performance (future)
+## M21: Performance (future)
 Measure first, then fix what the numbers show. Gloss has had no performance work so far; keep the app's behavior unchanged, and don't optimize anything the measurements don't point at.
 
 - **Benchmarks you can rerun:** a script that seeds a scratch user data folder (`--user-data-dir`) with large sessions (hundreds of turns, long code-heavy answers, many tool calls and diffs, dozens of threads) and drives the built app over CDP. It records: cold start to first paint and to an interactive sidebar, opening a large session, the frame time and main-process CPU while a fake agent streams a long answer at realistic chunk rates, switching sessions, opening a thread, search latency, and memory after an hour of use. Results go to a JSON file so a later run can be compared.
@@ -143,20 +127,29 @@ Measure first, then fix what the numbers show. Gloss has had no performance work
 
 **Done when:** the benchmark runs from one command, each fixed hotspot shows a measured improvement and has a deterministic test that would catch it coming back, streaming a long answer into a large session stays smooth (no long tasks over 50 ms in the renderer), and the numbers are recorded for the next comparison.
 
+## M22: Shipping
+- **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
+- **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
+- **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
+- README: how to install, and how to cut a release.
+- Installers ship unsigned for now (Windows SmartScreen will warn: "More info → Run anyway").
+
+**Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place.
+
 ## Future work (after the milestones)
 Ideas worth building once the milestones are done. Not scheduled; first item first.
 
 1. **Checkpoints and undo per turn:** snapshot the working tree before each turn (in a hidden shadow repo or `git stash create`-style refs, not your history) to undo a turn's changes and see exactly what a turn changed. A safety net for bypass mode; pairs with review sessions ("review what turn 12 changed").
-2. **Hover to explain:** hover a term, function or code span in an agent message for a short explanation from a throwaway sub-agent (M15's `fresh` mode), without spending main-session context or opening a thread.
+2. **Hover to explain:** hover a term, function or code span in an agent message for a short explanation from a throwaway sub-agent (M20's `fresh` mode), without spending main-session context or opening a thread.
 
 ## Design passes needed
-- **M15:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
+- **M14:** agent profiles and connection testing, guided open source/local-model setup, capability indicators, and actionable launch or model-server errors.
+- **M15:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.
 - **M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.
-- **M17:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.
-- **M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.
-- **M19:** the global skill library, skill import preview and conflict resolution, marketplace search and source management, and plugin compatibility, installation and removal.
-- **M20:** the checkout picker and new-worktree form, project grouping with branch indicators, missing-checkout recovery, and explicit cleanup with affected sessions visible.
-- **M21:** agent profiles and connection testing, guided open source/local-model setup, capability indicators, and actionable launch or model-server errors.
+- **M17:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.
+- **M18:** the global skill library, skill import preview and conflict resolution, marketplace search and source management, and plugin compatibility, installation and removal.
+- **M19:** the checkout picker and new-worktree form, project grouping with branch indicators, missing-checkout recovery, and explicit cleanup with affected sessions visible.
+- **M20:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
@@ -220,7 +213,7 @@ A home for Gloss's settings, editable by hand (and by agents) as well as in the 
 - **Settings screen** (from the sidebar, or `Ctrl+,`): global and current-project sections, the file's path, and "Open in editor". Saving from the screen writes the file, keeping unknown keys.
 - Validated and owned by the main process; the renderer reads and writes through the IPC API.
 - Move the dev model (Haiku) toggle into it.
-- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M14: updates). No section appears before its feature exists.
+- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M22: updates). No section appears before its feature exists.
 
 **Done when:** a setting changed in the screen shows up in the file, a change made in an editor (or by an agent) shows up in the app without a restart, and a broken edit is reported without losing the previous settings.
 
@@ -325,7 +318,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
 - **Dark mode**, following the system setting, built on the dark tokens. *A Theme setting (System, Light, Dark) and a provisional dark palette landed early; M12 replaces the palette with the designed dark tokens.* *Done: the dark tokens, applied in the screen pass.*
 - Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected. *Done.*
-- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M14 installers. *Done.*
+- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M22 installers. *Done.*
 - Polish: empty, loading and error states; window title. *Done.*
 
 **Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
@@ -350,3 +343,13 @@ Remaining work for M13, in separate PRs:
 **Codex support is done when:** a new Codex session works end to end, including sign-in, threads, model selection and resume (or a lost-context notice if resume is unavailable).
 
 **M13 is done when:** global MCP configuration works across agents, with reviewed one-time imports from native agent settings.
+
+## ~~Failed-turn actions (after M12)~~
+**Done.** Also includes non-interrupting background completion and history refresh, and a smaller, plain taskbar status dot matching the in-app state dots.
+A failed turn offers what fixes it, instead of only saying it failed.
+
+- **Sign in** when the turn failed because the agent needs authentication (ACP `auth_required`): opens the sign-in flow, then resends the prompt.
+- **Retry** otherwise: resends the same prompt, in the same thread, with the same attachments.
+- The actions sit on the failed-turn notice in the thread where the turn ran.
+
+**Done when:** a turn that fails on an expired login can be fixed and resent from its notice, and any other failed turn can be retried with one click.

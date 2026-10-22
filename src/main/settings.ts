@@ -4,6 +4,7 @@
 import { type FSWatcher, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { mcpError } from '../shared/mcp'
+import { PROFILE_ID, profilesError } from '../shared/agentProfiles'
 import type { SettingsPatch, SettingsState } from '../shared/ipc'
 import {
   type GlobalSettings,
@@ -18,6 +19,20 @@ type Raw = Record<string, unknown>
 
 /** What a new or saved file's `$schema` points at; editors resolve it next to the file. */
 const SCHEMA_REF = `./${SCHEMA_FILE}`
+
+const profileSchema = {
+  type: 'array', items: {
+    type: 'object', required: ['id', 'name', 'command', 'args', 'env'],
+    properties: {
+      id: { type: 'string', pattern: '^custom:[a-z0-9][a-z0-9-]{0,63}$' },
+      name: { type: 'string', minLength: 1 }, command: { type: 'string', minLength: 1 },
+      args: { type: 'array', items: { type: 'string' } },
+      env: { type: 'object', propertyNames: { pattern: '^[A-Za-z_][A-Za-z0-9_]*$' }, additionalProperties: { type: 'string', pattern: '^[A-Za-z_][A-Za-z0-9_]*$' } },
+      instructionsEnv: { type: 'string', pattern: '^[A-Za-z_][A-Za-z0-9_]*$' }
+    },
+    anyOf: [{ required: ['instructionsEnv'] }, { properties: { args: { contains: { type: 'string', pattern: '\\{instructions\\}' } } } }]
+  }
+}
 
 const pairsSchema = { type: 'array', items: { type: 'object', required: ['name', 'value'], properties: { name: { type: 'string', minLength: 1 }, value: { type: 'string' } } } }
 const mcpSchema = {
@@ -44,6 +59,8 @@ function fields(scope: SettingField['scope']): SettingField[] {
 /** Why `value` isn't valid for `field`, or null if it is. */
 function checkValue(field: SettingField, value: unknown): string | null {
   switch (field.type) {
+    case 'profiles': return profilesError(value)
+    case 'agent': return typeof value === 'string' && (['claude', 'codex', 'opencode'].includes(value) || PROFILE_ID.test(value)) ? null : 'expected a built-in agent or custom profile ID'
     case 'mcp': return mcpError(value)
     case 'boolean':
       return typeof value === 'boolean' ? null : `expected true or false, got ${JSON.stringify(value)}`
@@ -115,8 +132,8 @@ export function settingsSchema(defaults: GlobalSettings): object {
       fields(scope).map((f) => [
         f.key,
         {
-          ...(f.type === 'mcp' ? mcpSchema : { type: f.type === 'enum' ? 'string' : f.type }),
-          ...(f.options ? { enum: f.options.map((o) => o.value) } : {}),
+          ...(f.type === 'mcp' ? mcpSchema : f.type === 'profiles' ? profileSchema : f.type === 'agent' ? { type: 'string', pattern: '^(claude|codex|opencode|custom:[a-z0-9][a-z0-9-]{0,63})$' } : { type: f.type === 'enum' ? 'string' : f.type }),
+          ...(f.options && f.type !== 'agent' ? { enum: f.options.map((o) => o.value) } : {}),
           description: f.description,
           default: defaultsFor?.[f.key]
         }

@@ -857,20 +857,23 @@ describe('SessionManager', () => {
     expect(events.some((e) => e.type === 'notice')).toBe(false)
   })
 
-  it('starts a new agent session with a notice when the agent cannot load', async () => {
+  it('preserves history and requires a new conversation when the agent cannot load', async () => {
     state.loadSession = false
     const session = await manager.createSession('/w', 'fake')
     await manager.send(session.id, 'first', null)
     await manager.dispose()
 
     manager = makeManager()
-    await manager.send(session.id, 'second', null)
+    expect(await manager.send(session.id, 'second', null)).toMatchObject({ error: expect.stringContaining('Create a new conversation') })
 
     const view = manager.openSession(session.id)
     expect(state.loads).toEqual([])
-    expect(view.session.acpSessionId).not.toBe(session.acpSessionId)
-    expect(events).toContainEqual(expect.objectContaining({ type: 'notice', sessionId: session.id }))
-    expect(view.messages.map((m) => m.text)).toEqual(['first', 'Hello world', 'second', 'Hello world'])
+    expect(view.session.acpSessionId).toBe(session.acpSessionId)
+    expect(state.prompts).toEqual(['first'])
+    expect(view.messages.map((m) => m.text)).toEqual(['first', 'Hello world', 'second'])
+    expect(state.sessions.size).toBe(1)
+    const fresh = await manager.createSession('/w', 'fake')
+    expect(await manager.send(fresh.id, 'fresh', null)).toMatchObject({ stopReason: 'end_turn' })
   })
 
   it('offers sign-in on a failed turn and retries only when requested', async () => {
@@ -1130,16 +1133,16 @@ describe('SessionManager', () => {
       await expect(manager.send(sessionId, 'hi', 'no-such-thread')).rejects.toThrow(/Unknown thread/)
     })
 
-    it('shows notices in the thread whose turn produced them', async () => {
+    it('reports unsupported resume in the thread whose turn failed', async () => {
       state.loadSession = false
       const { sessionId, reviewId } = await reviewed()
       const thread = manager.createThread(sessionId, reviewId, { kind: 'listItem', path: [0], text: 'Cache' })
       await manager.dispose()
       manager = makeManager()
-      // The agent cannot resume, so the "lost context" notice comes from this thread's turn.
+      // No replacement session or prompt is created without the user's explicit action.
       await manager.send(sessionId, 'fix it', thread.id)
       expect(events).toContainEqual(
-        expect.objectContaining({ type: 'notice', sessionId, threadId: thread.id })
+        expect.objectContaining({ type: 'turnEnd', sessionId, threadId: thread.id, error: expect.stringContaining('cannot resume') })
       )
     })
   })

@@ -8,6 +8,8 @@ export type AgentConfig = {
   env?: Record<string, string>
   /** Bound initialization for external executables. */
   startupTimeoutMs?: number
+  /** External profiles never expose arbitrary process or protocol diagnostics. */
+  privateDiagnostics?: boolean
   /**
    * The agent's session mode that skips permission prompts, if it has one.
    * Gloss switches every session to it (SPEC → Permissions).

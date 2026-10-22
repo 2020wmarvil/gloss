@@ -6,7 +6,8 @@ const api: GlossApi = {
   search: (request) => ipcRenderer.invoke(IPC.search, request),
   agents: {
     list: () => ipcRenderer.invoke(IPC.agentsList),
-    testOpenCode: (executable) => ipcRenderer.invoke(IPC.agentsTestOpenCode, executable)
+    testOpenCode: (executable) => ipcRenderer.invoke(IPC.agentsTestOpenCode, executable),
+    testProfile: (profile) => ipcRenderer.invoke(IPC.agentsTestProfile, profile)
   },
   projects: {
     list: () => ipcRenderer.invoke(IPC.projectsList),
