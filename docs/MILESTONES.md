@@ -180,9 +180,9 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 
 Remaining work for M13, in separate PRs:
 
-Global shared MCP configuration is implemented for review: validated settings and schema, a global server list with Add/Edit/Remove and one-time imports from Claude and Codex, capability checks, and server lists on new/load. Changes apply before the next prompt or idle resume.
+- **Gloss-managed MCP servers:** a global list of MCP servers passed through ACP's `mcpServers` in `session/new` and `session/load`, so agents share tools. Only transports the selected agent advertises are allowed. *Done: validated settings and schema, a global server list with Add/Edit/Remove and one-time imports from Claude and Codex, capability checks, and server lists on new/load. Changes apply before the next prompt or idle resume.*
 
-- **Gloss-managed MCP servers:** a global list of MCP servers passed through ACP's `mcpServers` in `session/new` and `session/load`, so agents share tools. Only transports the selected agent advertises are allowed.
+*M13 done: checked live in the built app with a scratch data folder. Codex signed in from an empty `CODEX_HOME` through the browser, and one stdio MCP server from the global list was called by both a Claude (Haiku) and a Codex session.*
 
 **Codex support is done when:** a new Codex session works end to end, including sign-in, threads, model selection and resume (or a lost-context notice if resume is unavailable).
 
