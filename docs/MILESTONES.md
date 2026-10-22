@@ -4,33 +4,14 @@ Build in order. Stop at the end of each milestone, show what works and how to tr
 
 M1–M5 built the design in `SPEC.md`. These milestones add settings, make Gloss a daily driver, let you queue and steer, take threads further, add search and code review sessions, converge on a long-term interface, add a second agent, and ship it; then future work (sub-agent threads, visual feedback, agent questions and permission modes). Same rules: in order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
-## M12 — UX review
-Converge on a clean, sleek, long-term interface now that every surface exists. Two phases, with a review stop between them.
+## Failed-turn actions (after M12)
+A failed turn offers what fixes it, instead of only saying it failed.
 
-**Phase 1: review and target design** (designer-led)
-- Inventory every screen and state as screenshots: empty app, project and session list (including imported sessions), streaming turn, tool details, status line, queued and steering messages, thread panel (new, active, running), selection popover and markers, threads overview, plan, search, review sessions (diff viewer, line threads, general conversation), settings, sign-in, notifications, errors and notices.
-- List what is inconsistent, cluttered or unclear.
-  *Done (with the inventory above): `docs/ux-review/README.md`, screenshots in `docs/ux-review/screens/`.*
-- **Brand identity:** a logo and wordmark for Gloss, an app icon (with the sizes and formats Windows, macOS and Linux need), a brand color, typography, and the overall visual style (the "margin note" idea is a natural starting point). *Done: a glossy bead in a Sunset gradient, lowercase `gloss` wordmark; see `docs/BRAND.md`.*
-- **Live up to the name:** the interface should feel glossy, with sheen and depth, not flat panels. The window stays opaque: sheen and depth come from the styles (light catching the top edges of panes, layered elevation), defined in the target mocks. *A translucent window (Electron's `backgroundMaterial` Mica and Acrylic on Windows 11) was tried in a live demo and rejected: Mica was too faint to notice and Acrylic looked muddy over other windows.*
-- Define a small design system: color, type scale, spacing, radii, elevation and motion tokens for light and dark, an icon set, and the core components (buttons, chips and badges, inputs, panels, list rows, popovers).
-  *Done and implemented early (the visual-language items of the review): `docs/mocks/design-system.html`; the stylesheet is built on its tokens.*
-- Updated mocks in `docs/mocks/` for the target interface. These replace the M1-era mocks as the reference.
-  *Done: `docs/mocks/target.html`, with the sheen and depth from `docs/mocks/depth.html` (option C).*
+- **Sign in** when the turn failed because the agent needs authentication (ACP `auth_required`): opens the sign-in flow, then resends the prompt.
+- **Retry** otherwise: resends the same prompt, in the same thread, with the same attachments.
+- The actions sit on the failed-turn notice in the thread where the turn ran.
 
-**Phase 2: implementation**
-- Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
-- **Dark mode**, following the system setting, built on the dark tokens. *A Theme setting (System, Light, Dark) and a provisional dark palette landed early; M12 replaces the palette with the designed dark tokens.*
-- Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected.
-- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M14 installers.
-- Polish: empty, loading and error states; window title.
-
-**Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
-
-**Order of the remaining work.** The visual-language PR also fixes the review's P1 problems on the existing screens (narrow windows, the activity strip, the failed-turn and deleted-session notices), labels the status line, and stops the whole page from scrolling. The rest comes in separate PRs:
-- **Target mocks:** the updated layout mocks, the last Phase 1 item, including the sheen and depth from "Live up to the name". Review stop after it.
-- **Screen pass:** Phase 2's pass bringing every screen in line with the approved mocks. *Done: the frame and sheet with the depth tokens, and every screen in `target.html` in light and dark.*
-- **Failed-turn actions:** a failed turn offers what fixes it: Sign in when the agent needs authentication, Retry (resend the same prompt) otherwise.
+**Done when:** a turn that fails on an expired login can be fixed and resent from its notice, and any other failed turn can be retried with one click.
 
 ## M14 — Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
@@ -324,6 +305,36 @@ A session type for checking an agent's work: the main view is the branch's diff,
 Build in two PRs: the diff viewer with line threads and the general conversation, then the first pass, outdated threads and resolve.
 
 **Done when:** "Review changes" opens a review whose agent first pass lands as line threads, you can discuss lines in threads and the whole change in the general conversation, the agent's fixes appear in the diff, and threads follow their lines or are marked outdated.
+
+## ~~M12 — UX review~~
+Converge on a clean, sleek, long-term interface now that every surface exists. Two phases, with a review stop between them.
+
+**Phase 1: review and target design** (designer-led)
+- Inventory every screen and state as screenshots: empty app, project and session list (including imported sessions), streaming turn, tool details, status line, queued and steering messages, thread panel (new, active, running), selection popover and markers, threads overview, plan, search, review sessions (diff viewer, line threads, general conversation), settings, sign-in, notifications, errors and notices.
+- List what is inconsistent, cluttered or unclear.
+  *Done (with the inventory above): `docs/ux-review/README.md`, screenshots in `docs/ux-review/screens/`.*
+- **Brand identity:** a logo and wordmark for Gloss, an app icon (with the sizes and formats Windows, macOS and Linux need), a brand color, typography, and the overall visual style (the "margin note" idea is a natural starting point). *Done: a glossy bead in a Sunset gradient, lowercase `gloss` wordmark; see `docs/BRAND.md`.*
+- **Live up to the name:** the interface should feel glossy, with sheen and depth, not flat panels. The window stays opaque: sheen and depth come from the styles (light catching the top edges of panes, layered elevation), defined in the target mocks. *A translucent window (Electron's `backgroundMaterial` Mica and Acrylic on Windows 11) was tried in a live demo and rejected: Mica was too faint to notice and Acrylic looked muddy over other windows.*
+- Define a small design system: color, type scale, spacing, radii, elevation and motion tokens for light and dark, an icon set, and the core components (buttons, chips and badges, inputs, panels, list rows, popovers).
+  *Done and implemented early (the visual-language items of the review): `docs/mocks/design-system.html`; the stylesheet is built on its tokens.*
+- Updated mocks in `docs/mocks/` for the target interface. These replace the M1-era mocks as the reference.
+  *Done: `docs/mocks/target.html`, with the sheen and depth from `docs/mocks/depth.html` (option C).*
+
+**Phase 2: implementation**
+- Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
+- **Dark mode**, following the system setting, built on the dark tokens. *A Theme setting (System, Light, Dark) and a provisional dark palette landed early; M12 replaces the palette with the designed dark tokens.* *Done: the dark tokens, applied in the screen pass.*
+- Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected. *Done.*
+- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M14 installers. *Done.*
+- Polish: empty, loading and error states; window title. *Done.*
+
+**Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
+
+**Order of the remaining work.** The visual-language PR also fixes the review's P1 problems on the existing screens (narrow windows, the activity strip, the failed-turn and deleted-session notices), labels the status line, and stops the whole page from scrolling. The rest comes in separate PRs:
+- **Target mocks:** the updated layout mocks, the last Phase 1 item, including the sheen and depth from "Live up to the name". Review stop after it.
+- **Screen pass:** Phase 2's pass bringing every screen in line with the approved mocks. *Done: the frame and sheet with the depth tokens, and every screen in `target.html` in light and dark.*
+- **Failed-turn actions:** moved to their own milestone, right after M12.
+
+*M12 done.*
 
 ## ~~M13 - Multiple agents~~
 
