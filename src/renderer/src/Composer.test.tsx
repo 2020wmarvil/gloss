@@ -350,7 +350,7 @@ describe('screen capture', () => {
     expect(start).toHaveBeenCalledTimes(1)
     expect(document.querySelector('[role="dialog"] h2')?.textContent).toBe('Annotate')
     expect(document.querySelector('.annotate-head .muted')?.textContent).toBe('Region · 40 × 30')
-    expect(document.querySelector('.annotate-text pre')?.textContent).toBe('Just the screenshot, without pins.')
+    expect(document.querySelector('.annotate-pins-head')?.textContent).toContain('Pins')
     await act(async () => {
       document.querySelector<HTMLButtonElement>('.annotate-foot button.ghost')!.click()
     })

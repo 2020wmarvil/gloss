@@ -5766,7 +5766,7 @@ button.review-changes {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 14px 6px;
+  padding: 8px 8px 4px 14px;
   font-size: var(--t-13);
   font-weight: 600;
 }
@@ -5844,43 +5844,12 @@ button.review-changes {
   line-height: 1.5;
 }
 
-.annotate-text {
-  border-top: 1px solid var(--line);
-  padding: 10px 14px 12px;
-  background: var(--bg);
-}
-
-.annotate-text-head {
-  margin-bottom: 6px;
-  font-size: var(--t-11);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
-.annotate-text pre {
-  margin: 0;
-  max-height: 120px;
-  overflow: auto;
-  font: 400 var(--t-12) / 1.5 var(--font-mono);
-  color: var(--ink-2);
-  white-space: pre-wrap;
-}
-
 .annotate-foot {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 14px 0 18px;
   border-top: 1px solid var(--line);
-}
-
-.annotate-note {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--t-12);
 }
 
 .annotate-foot button.primary kbd {

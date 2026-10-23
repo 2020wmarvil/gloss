@@ -3,11 +3,10 @@
 // The right column shows exactly the text that goes with the image.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Crop, Eye, Highlighter, MapPin, MoveUpRight, PanelRight, Pencil, Redo2, Square, Trash2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { Crop, Highlighter, MapPin, MoveUpRight, PanelRight, PanelRightClose, Pencil, Redo2, Square, Trash2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { ResizeHandle, useStoredWidth } from './resize'
 import type { Capture } from '@shared/capture'
 import type { Attachment, Pin } from '@shared/types'
-import { pinList } from '@shared/wire'
 import {
   flatten,
   isTiny,
@@ -336,7 +335,6 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
   }
 
 
-  const text = pinList([{ kind: 'image', name: '', mimeType: '', data: '', pins: marks.pins }]) || 'Just the screenshot, without pins.'
 
   return createPortal(
     <div className="dialog-backdrop">
@@ -409,15 +407,14 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
             <Crop size={14} />
             Retake
           </button>
-          <button
-            className="icon-button"
-            title={pinsShown ? 'Hide pins' : 'Show pins'}
-            aria-label={pinsShown ? 'Hide pins' : 'Show pins'}
-            aria-pressed={pinsShown}
-            onClick={() => setPinsShown(!pinsShown)}
-          >
-            <PanelRight />
-          </button>
+          {/* The pins panel hides from its own header; this brings it back. */}
+          {!pinsShown && (
+            <button className="ghost sm" title="Show pins" onClick={() => setPinsShown(true)}>
+              <PanelRight size={14} />
+              Pins
+              <span className="count">{marks.pins.length}</span>
+            </button>
+          )}
           <button className="icon-button" title="Cancel (Esc)" aria-label="Cancel" onClick={onCancel}>
             <X />
           </button>
@@ -458,6 +455,10 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
         <aside className="annotate-pins" style={pinsWidth === null ? undefined : { flexBasis: pinsWidth }}>
           <div className="annotate-pins-head">
             Pins <span className="count">{marks.pins.length}</span>
+            <span className="grow" />
+            <button className="icon-button" title="Hide pins" aria-label="Hide pins" onClick={() => setPinsShown(false)}>
+              <PanelRightClose />
+            </button>
           </div>
           <div ref={notes} className="annotate-pin-list">
             {marks.pins.length === 0 ? (
@@ -488,18 +489,10 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
               ))
             )}
           </div>
-          <div className="annotate-text">
-            <div className="annotate-text-head">Sent with the image</div>
-            <pre>{text}</pre>
-          </div>
         </aside>
         )}
         </div>
         <footer className="annotate-foot">
-          <span className="muted annotate-note">
-            <Eye size={14} />
-            The agent gets this image and the text beside it, nothing else.
-          </span>
           {error && <span className="dialog-error">{error}</span>}
           <span className="grow" />
           <button className="ghost" onClick={onCancel}>
