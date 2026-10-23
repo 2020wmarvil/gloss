@@ -76,7 +76,7 @@ describe('Store', () => {
     } finally { store.close() }
     const migrated = new DatabaseSync(path)
     try {
-      expect(migrated.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 16 })
+      expect(migrated.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 17 })
       expect(migrated.prepare('PRAGMA foreign_key_check').all()).toEqual([])
       if (branch === 'dev') expect(migrated.prepare('SELECT handoff FROM sessions').get()).toMatchObject({ handoff: 'existing handoff' })
     } finally { migrated.close() }
@@ -114,6 +114,9 @@ describe('Store', () => {
       const sha = 'a'.repeat(40)
       expect(store.updateSession('r', { review: { baseRef: sha, headRef: 'HEAD' } }).review).toEqual({ baseRef: sha, headRef: 'HEAD' })
       expect(store.updateSession('r', { review: { baseRef: sha } }).review).toEqual({ baseRef: sha })
+      store.insertSession({ id: 'd', agentId: 'claude', acpSessionId: 'b', cwd: '/w', title: 'Review', createdAt: 1, review: { baseRef: sha }, draft: true })
+      expect(store.getSession('d')?.draft).toBe(true)
+      expect(store.updateSession('d', { draft: false }).draft).toBeUndefined()
     } finally {
       store.close()
     }

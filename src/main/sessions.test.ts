@@ -2401,9 +2401,10 @@ describe('SessionManager', () => {
       })
     }
 
-    /** Starts a review and waits for its first pass to end. */
+    /** Opens a review, runs it and waits for the review to end. */
     async function startReview(): Promise<Session> {
       const session = await manager.createReview('/repo', 'fake')
+      await manager.runReview(session.id)
       await vi.waitFor(() => expect(events.some((e) => e.type === 'turnEnd' && e.sessionId === session.id)).toBe(true))
       return session
     }
@@ -2421,8 +2422,9 @@ describe('SessionManager', () => {
     it('starts a new review of a given range', async () => {
       const sha = 'b'.repeat(40)
       const session = await manager.createReview('/repo', 'fake', { baseRef: sha, headRef: 'HEAD' })
-      await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
       expect(session).toMatchObject({ title: 'Review: feature', review: { baseRef: sha, headRef: 'HEAD' } })
+      await manager.runReview(session.id)
+      await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
       expect(state.prompts[0]).toContain(`\`git diff ${sha} commit789\``)
       expect(state.prompts[0]).not.toContain('pull request')
     })
@@ -2430,10 +2432,63 @@ describe('SessionManager', () => {
     it('reviews against the default branch without an open pull request', async () => {
       pr = { ...OPEN_PR, state: 'merged' }
       const session = await manager.createReview('/repo', 'fake')
-      await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
       expect(session).toMatchObject({ title: 'Review: feature', review: { baseRef: 'origin/trunk' } })
       expect(session.review?.headRef).toBeUndefined()
+      await manager.runReview(session.id)
+      await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
       expect(state.prompts[0]).not.toContain('pull request')
+    })
+
+    it('opens a draft with nothing sent, listed once a message is sent with the range', async () => {
+      const session = await manager.createReview('/repo', 'fake')
+      expect(session.draft).toBe(true)
+      // The agent session exists, so the status line works, but nothing is sent or listed.
+      expect(state.sessions.has(session.acpSessionId)).toBe(true)
+      expect(manager.listSessions()).toEqual([])
+      await new Promise((r) => setTimeout(r, 20))
+      expect(state.prompts).toEqual([])
+
+      await manager.send(session.id, 'What changed?', null)
+      expect(state.prompts[0]).toBe(
+        '[The diff under review is now `git diff base123` (it includes uncommitted changes) plus new files from `git ls-files --others --exclude-standard`.]\nWhat changed?'
+      )
+      expect(store.getSession(session.id)?.draft).toBeUndefined()
+      expect(manager.listSessions().map((s) => s.id)).toEqual([session.id])
+      expect(events.some((e) => e.type === 'session' && e.session.id === session.id && !e.session.draft)).toBe(true)
+      // Told once.
+      await manager.send(session.id, 'And?', null)
+      expect(state.prompts[1]).toBe('And?')
+    })
+
+    it('lists a draft when a line thread is replied to', async () => {
+      const session = await manager.createReview('/repo', 'fake')
+      const thread = manager.createThread(session.id, null, lineAnchor)
+      await manager.send(session.id, 'Why?', thread.id)
+      expect(state.prompts[0]).toMatch(/^\[The diff under review is now .*\]\n\[re: src\/a\.ts:10 "const a = 1"\]\nWhy\?$/)
+      expect(manager.listSessions().map((s) => s.id)).toEqual([session.id])
+    })
+
+    it('keeps one draft per project: shows it again, or replaces it with a new one', async () => {
+      state.canClose = true
+      const draft = await manager.createReview('/repo', 'fake')
+      expect((await manager.createReview('/repo', 'fake')).id).toBe(draft.id)
+
+      const sha = 'c'.repeat(40)
+      const fresh = await manager.createReview('/repo', 'fake', { baseRef: sha })
+      expect(fresh.id).not.toBe(draft.id)
+      expect(store.getSession(draft.id)).toBeUndefined()
+      expect(events).toContainEqual({ type: 'sessionDeleted', sessionId: draft.id })
+      expect(state.closes).toContain(draft.acpSessionId)
+      expect((await manager.createReview('/repo', 'fake')).id).toBe(fresh.id)
+    })
+
+    it('drops drafts left from the last run, keeping reviews something was sent in', async () => {
+      const draft = await manager.createReview('/other', 'fake')
+      const used = await startReview()
+      await manager.dispose()
+      manager = reviewManager()
+      expect(store.getSession(draft.id)).toBeUndefined()
+      expect(store.getSession(used.id)).toBeDefined()
     })
 
     it('offers merge bases and commits, and tells the agent once when the range changes', async () => {
@@ -2465,13 +2520,16 @@ describe('SessionManager', () => {
       expect(state.prompts[2]).toBe('And again')
     })
 
-    it('starts with the first pass, with the review instructions, and opens a thread per finding on the diff', async () => {
+    it('runs a review with the review instructions, and opens a thread per finding on the diff', async () => {
       const session = await startReview()
       expect(session).toMatchObject({ title: 'Review: #7 Add constants', titleSet: true, review: { baseRef: 'origin/main' } })
       expect(state.prompts).toHaveLength(1)
+      // The prompt names the diff, so no range note goes before it.
       expect(isFirstPass(state.prompts[0])).toBe(true)
       expect(state.prompts[0]).toContain('git diff base123')
+      expect(state.prompts[0]).toContain('pull request #7')
       expect((state.metas[0].meta as { instructions: string }).instructions).toContain(REVIEW_INSTRUCTIONS)
+      expect(REVIEW_INSTRUCTIONS).toContain('```gloss-findings')
 
       const threads = store.listThreads(session.id)
       expect(threads).toHaveLength(1)

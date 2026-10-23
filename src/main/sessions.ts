@@ -192,7 +192,10 @@ export class SessionManager {
   private readonly agents = new Map<string, AgentSlot>()
   private disposed = false
 
-  constructor(private readonly deps: SessionManagerDeps) {}
+  constructor(private readonly deps: SessionManagerDeps) {
+    // Draft reviews from the last run: nothing was sent in them, and their agent sessions are gone.
+    for (const s of deps.store.listSessions()) if (s.draft) deps.store.deleteSession(s.id)
+  }
 
   private now(): number {
     return this.deps.now?.() ?? Date.now()
@@ -412,8 +415,9 @@ export class SessionManager {
 
   // Sessions
 
+  /** The session list: draft reviews aren't in it. */
   listSessions(): Session[] {
-    return this.deps.store.listSessions()
+    return this.deps.store.listSessions().filter((s) => !s.draft)
   }
 
   /** What the user sent, in every session, newest first and each once (SPEC → Composer → History). */
@@ -421,7 +425,7 @@ export class SessionManager {
     return this.deps.store.messageHistory()
   }
 
-  /** `review`: a review session (SPEC → Review sessions), with its title. */
+  /** `review`: a review session (SPEC → Review sessions), with its title. It starts as a draft. */
   async createSession(cwd: string, agentId: string, review?: ReviewRange & { title: string }): Promise<Session> {
     const servers = this.mcpServers(cwd)
     let conn!: AgentConnection
@@ -439,7 +443,9 @@ export class SessionManager {
       cwd,
       title: review?.title ?? folderName(cwd),
       // The agent would title a review after the first pass's prompt.
-      ...(review ? { titleSet: true as const, review: { baseRef: review.baseRef, ...(review.headRef ? { headRef: review.headRef } : {}) } } : {}),
+      ...(review
+        ? { titleSet: true as const, review: { baseRef: review.baseRef, ...(review.headRef ? { headRef: review.headRef } : {}) }, draft: true as const }
+        : {}),
       createdAt: this.now()
     }
     this.deps.store.insertSession(session)
@@ -455,13 +461,16 @@ export class SessionManager {
   }
 
   /**
-   * Starts a review of the project's branch (SPEC → Review sessions) and sends the first
-   * pass. Without a `range` it compares the working tree with the merge base of the
-   * branch's open pull request's base, else of the default branch; **New review** passes
-   * the range of the review it replaces. Resolves once the session exists; the first
-   * pass runs on.
+   * Opens a review of the project's branch (SPEC → Review sessions): a draft, listed once
+   * something is sent in it. Without a `range` it shows the project's draft again if it
+   * has one, else compares the working tree with the merge base of the branch's open pull
+   * request's base, else of the default branch; **New review** passes the range of the
+   * review it replaces. A project keeps one draft: a new one replaces it.
    */
   async createReview(cwd: string, agentId: string, range?: ReviewRange): Promise<Session> {
+    const drafts = (): Session[] => this.deps.store.listSessions().filter((s) => s.draft && samePath(s.cwd, cwd))
+    const kept = range === undefined ? drafts().find((s) => s.agentId === agentId) : undefined
+    if (kept) return kept
     const found = await this.git.pullRequest(cwd)
     const pr = found && (found.state === 'open' || found.state === 'draft') && found.baseRef ? found : null
     const prBase = pr && (await this.git.pullRequestBase(cwd, pr.baseRef, range === undefined))
@@ -470,15 +479,51 @@ export class SessionManager {
     const headRef = range?.headRef
     const diff = await this.git.readDiff(cwd, baseRef, headRef ?? null)
     const branch = await this.git.currentBranch(cwd)
-    // It reviews the pull request only while it compares the working tree with the PR's base.
-    const ofPr = pr && baseRef === prBase && headRef === undefined ? pr : null
+    const ofPr = pr && reviewsPr({ baseRef, headRef }, prBase) ? pr : null
     const title = ofPr ? `Review: #${ofPr.number} ${ofPr.title}` : `Review: ${branch ?? folderName(cwd)}`
     const session = await this.createSession(cwd, agentId, { baseRef, ...(headRef ? { headRef } : {}), title })
-    // Turn errors arrive as turnEnd events.
-    this.send(session.id, firstPassPrompt(diff, ofPr?.number), null).catch((err: unknown) =>
-      this.notice(session.id, null, `Couldn't start the first pass: ${errorMessage(err)}`)
-    )
+    for (const old of drafts()) if (old.id !== session.id) await this.discardDraft(old.id)
+    // Whatever is sent first, the agent learns what is under review.
+    this.runtime(session.id).rangeNote = rangeNote(diff)
     return session
+  }
+
+  /**
+   * **Run review** (SPEC → Review sessions → Run review): asks the agent for a summary
+   * and its findings, in the general conversation. Resolves once it is sent or queued;
+   * the turn runs on.
+   */
+  async runReview(sessionId: string): Promise<void> {
+    const { session, review } = this.reviewOf(sessionId)
+    const diff = await this.git.readDiff(session.cwd, review.baseRef, review.headRef ?? null)
+    const found = await this.git.pullRequest(session.cwd).catch(() => null)
+    const pr = found && (found.state === 'open' || found.state === 'draft') && found.baseRef ? found : null
+    const prBase = pr && (await this.git.pullRequestBase(session.cwd, pr.baseRef, false))
+    const ofPr = pr && reviewsPr(review, prBase) ? pr : null
+    // The prompt names the diff itself.
+    this.runtime(sessionId).rangeNote = undefined
+    // Turn errors arrive as turnEnd events.
+    this.send(sessionId, firstPassPrompt(diff, ofPr?.number), null).catch((err: unknown) =>
+      this.notice(sessionId, null, `Couldn't start the review: ${errorMessage(err)}`)
+    )
+  }
+
+  /** Drops a draft review: its row, and its agent session (which has no transcript yet). */
+  private async discardDraft(sessionId: string): Promise<void> {
+    const session = this.session(sessionId)
+    const conn = this.runtime(sessionId).attachedTo
+    this.withdrawRequests(sessionId)
+    this.deps.store.deleteSession(sessionId)
+    this.runtimes.delete(sessionId)
+    this.byAcpId.delete(session.acpSessionId)
+    this.deps.emit({ type: 'sessionDeleted', sessionId })
+    if (conn?.canCloseSessions) await conn.closeSession(session.acpSessionId).catch(() => {})
+  }
+
+  /** The first message in a draft review lists it. */
+  private listDraft(sessionId: string): void {
+    if (!this.deps.store.getSession(sessionId)?.draft) return
+    this.deps.emit({ type: 'session', session: this.deps.store.updateSession(sessionId, { draft: false }) })
   }
 
   /** A review session's range. */
@@ -1565,6 +1610,7 @@ export class SessionManager {
     this.deps.store.insertMessage(message)
     this.told(sessionId, wire)
     this.deps.emit({ type: 'message', message })
+    this.listDraft(sessionId)
     if (retitle) {
       session = this.deps.store.updateSession(sessionId, { title: titleFrom(text) })
       this.deps.emit({ type: 'session', session })
@@ -2188,6 +2234,11 @@ function toolStatus(cached: ToolCall, replayed: Pick<ToolCall, 'status'>): strin
 
 function folderName(cwd: string): string {
   return cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd
+}
+
+/** A review is of the open pull request while it compares the working tree with the PR's base (`prBase`). */
+function reviewsPr(range: ReviewRange, prBase: string | null): boolean {
+  return prBase !== null && range.baseRef === prBase && range.headRef === undefined
 }
 
 function projectAt(path: string): Project {

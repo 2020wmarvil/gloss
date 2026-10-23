@@ -53,7 +53,7 @@ type Props = {
   empty: ReactNode
   renderAgent(message: Message): ReactNode
   reveal?: Reveal | null
-  /** A user message to show as a status line instead (a review's first pass), or null. */
+  /** A user message to show as a status line instead (a review Gloss asked for), or null. */
   systemLine?(message: Message): string | null
   /** Makes annotated screenshots' pins anchors (SPEC → Visual feedback). */
   pins?: PinAnchors
