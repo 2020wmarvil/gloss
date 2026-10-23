@@ -4,6 +4,7 @@ import type { Message, Plan, ToolCall } from '@shared/types'
 import type { OpenSession } from './App'
 import { Markdown } from './Markdown'
 import { RequestCard } from './RequestCard'
+import { CaptureFigure, type PinAnchors } from './CaptureFigure'
 import type { UserRequest } from '@shared/requests'
 import { hasDetails, ToolDetails } from './ToolDetails'
 import { Brain, Check, ChevronDown, ChevronRight, CircleAlert, FilePen, FileText, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
@@ -54,10 +55,12 @@ type Props = {
   reveal?: Reveal | null
   /** A user message to show as a status line instead (a review's first pass), or null. */
   systemLine?(message: Message): string | null
+  /** Makes annotated screenshots' pins anchors (SPEC → Visual feedback). */
+  pins?: PinAnchors
 }
 
 /** A scrolling log that sticks to the bottom while new output arrives. */
-export function Log({ items, className, empty, renderAgent, reveal, systemLine }: Props): React.JSX.Element {
+export function Log({ items, className, empty, renderAgent, reveal, systemLine, pins }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
   useLayoutEffect(() => {
@@ -71,7 +74,7 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
     if (!message) return
     const target =
       (reveal.threadId && message.querySelector<HTMLElement>(`[data-thread="${CSS.escape(reveal.threadId)}"]`)) ||
-      (reveal.threadId !== undefined && message.querySelector<HTMLElement>('.anchor-item.active')) ||
+      (reveal.threadId !== undefined && message.querySelector<HTMLElement>('.anchor-item.active, .pin-target.active')) ||
       message
     stickToBottom.current = false
     target.scrollIntoView?.({ block: 'center' })
@@ -106,7 +109,7 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
               return item.message.role === 'user' ? (
                 <div
                   key={item.message.id}
-                  className={item.message.steered ? 'you steered' : 'you'}
+                  className={['you', item.message.steered && 'steered', item.message.attachments?.some((a) => a.kind === 'image' && a.pins) && 'has-capture'].filter(Boolean).join(' ')}
                   data-message-id={item.message.id}
                 >
                   {item.message.steered && (
@@ -114,9 +117,9 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
                       steered
                     </span>
                   )}
-                  {item.message.attachments && item.message.attachments.length > 0 && (
+                  {item.message.attachments?.some((a) => a.kind !== 'image' || !a.pins) && (
                     <ul className="attachments sent">
-                      {item.message.attachments.map((a, i) => (
+                      {item.message.attachments.map((a, i) => a.kind === 'image' && a.pins ? null : (
                         <li key={i} className="attachment" title={a.kind === 'file' ? (a.path ?? a.name) : a.name}>
                           {a.kind === 'image' ? (
                             <img src={`data:${a.mimeType};base64,${a.data}`} alt={a.name} />
@@ -128,6 +131,9 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine }
                     </ul>
                   )}
                   <Markdown text={item.message.text} breaks />
+                  {item.message.attachments?.map((a, i) =>
+                    a.kind === 'image' && a.pins ? <CaptureFigure key={i} message={item.message} image={a} index={i} anchors={pins} /> : null
+                  )}
                 </div>
               ) : (
                 <div key={item.message.id} className="agent" data-message-id={item.message.id}>

@@ -7,6 +7,7 @@ import type { Attachment, Message, MessageQueue, SessionLive, Thread, TurnOutcom
 import type { OpenSession, Panel } from './App'
 import type { ListItemSpan } from './anchors'
 import { Composer, type ComposerQueue } from './Composer'
+import { pinAnchorsFor } from './CaptureFigure'
 
 import { Log, logItems, type Notice, type Reveal } from './Log'
 import { Markdown } from './Markdown'
@@ -43,6 +44,8 @@ type Props = {
   onSetChoice(kind: 'model' | 'effort', value: string): Promise<void>
   onOpenItem(message: Message, span: ListItemSpan): void
   onOpenSelection(message: Message, selection: SourceSelection): void
+  /** Opens the thread on a pin of an annotated screenshot (SPEC → Visual feedback). */
+  onOpenPin(message: Message, image: number, pin: number): void
   onOpenThread(threadId: string): void
   /** Focuses the main composer. */
   onOpenMain(): void
@@ -129,6 +132,7 @@ export function Conversation(props: Props): React.JSX.Element {
         empty={<h2 className="new-hint">What should {agentName} do in {folderName(session.cwd)}?</h2>}
         renderAgent={renderAgent}
         reveal={props.reveal}
+        pins={pinAnchorsFor(open, panel, runningThread, props.onOpenPin)}
       />
       <ActivityStrip
         thread={props.lastThread}

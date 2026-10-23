@@ -22,13 +22,13 @@ import type {
 } from '@shared/types'
 import { lineLabel, type LineAnchor } from '@shared/review'
 import type { UserRequest } from '@shared/requests'
-import { truncate } from '@shared/wire'
+import { pinAnchor, truncate } from '@shared/wire'
 import type { ListItemSpan } from './anchors'
 import { GeneralPanel, ReviewThreadList } from './ReviewPanels'
 import { locations as threadLocations } from './reviewThreads'
 import { useReviewSources } from './reviewSources'
 import { hideFileList, ReviewView, type DiffState } from './ReviewView'
-import { FOCUS_COMPOSER, FOCUS_MAIN_COMPOSER, type ComposerQueue } from './Composer'
+import { CAPTURE, CaptureShortcut, FOCUS_COMPOSER, FOCUS_MAIN_COMPOSER, type ComposerQueue } from './Composer'
 import { errorText } from './errors'
 import { Conversation, type StripThread } from './Conversation'
 import type { Notice, Reveal } from './Log'
@@ -466,6 +466,10 @@ export function App(): React.JSX.Element {
         case 'fullScreen':
           setFullScreenHint((n) => n + 1)
           break
+        case 'captureShortcut':
+          // The capture shortcut, in Gloss or another app: the composer used last takes the capture.
+          window.dispatchEvent(new Event(CAPTURE))
+          break
         case 'sessionDeleted':
           panels.current.delete(event.sessionId)
           setSessions((list) => list.filter((s) => s.id !== event.sessionId))
@@ -811,6 +815,20 @@ export function App(): React.JSX.Element {
     )
   }
 
+  /** Opens the thread on a pin of an annotated screenshot, or a new one (SPEC → Visual feedback). */
+  function openPin(message: Message, image: number, pin: number): void {
+    if (!open) return
+    const existing = open.threads.find(
+      (t) => t.anchorMessageId === message.id && t.anchor.kind === 'pin' && t.anchor.image === image && t.anchor.pin === pin
+    )
+    if (existing) return showPanel({ anchorMessageId: message.id, anchor: existing.anchor, threadId: existing.id })
+    try {
+      showPanel({ anchorMessageId: message.id, anchor: pinAnchor(message.attachments ?? [], image, pin), threadId: null })
+    } catch {
+      // Not a pin of this message: nothing to open.
+    }
+  }
+
   function openThread(threadId: string): void {
     const t = open?.threads.find((x) => x.id === threadId)
     if (t) showPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id })
@@ -1105,6 +1123,7 @@ export function App(): React.JSX.Element {
   })
 
   return (
+    <CaptureShortcut.Provider value={settings?.global.captureShortcut ?? ''}>
     <div className="app">
       <TitleBar />
       {sidebarWidth === null ? (
@@ -1237,6 +1256,7 @@ export function App(): React.JSX.Element {
             onSetChoice={(kind, value) => window.gloss.sessions.setChoice(open.session.id, kind, value)}
             onOpenItem={openItem}
             onOpenSelection={openSelection}
+            onOpenPin={openPin}
             onOpenThread={openThread}
             onOpenMain={() => focusComposer(true)}
             onOpenQueue={showQueue}
@@ -1339,6 +1359,7 @@ export function App(): React.JSX.Element {
                 onCancel={() => void window.gloss.cancel(open.session.id)}
                 onBack={() => setPanel(null)}
                 onClose={collapseSide}
+                onOpenPin={openPin}
                 onCopyMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'copy')}
                 onSaveMarkdown={(threadId) => exportMarkdown(open.session.id, threadId, 'save')}
                 // A review's conversation is in the General panel, which this panel replaces.
@@ -1403,5 +1424,6 @@ export function App(): React.JSX.Element {
         />
       )}
     </div>
+    </CaptureShortcut.Provider>
   )
 }

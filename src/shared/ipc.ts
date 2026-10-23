@@ -134,6 +134,8 @@ export type GlossEvent =
   | { type: 'authRequired'; agentId: string; agentName: string; methods: AuthMethodInfo[] }
   | { type: 'authResolved'; agentId: string }
   | { type: 'settings'; state: SettingsState }
+  /** The global capture shortcut was pressed (SPEC → Visual feedback). */
+  | { type: 'captureShortcut' }
 
 export type GlossApi = {
   /** Opens an absolute local Markdown file link in the editor, or reveals it without an editor. */
@@ -262,6 +264,17 @@ export type GlossApi = {
     /** Opens settings.json in the system's editor for JSON. Resolves to an error message, or null. */
     openFile(): Promise<string | null>
   }
+  capture: {
+    /**
+     * Freezes the display under the cursor and opens the region overlay (SPEC → Visual feedback).
+     * Resolves to what the user picked, or null if they cancelled.
+     */
+    start(): Promise<import('./capture').Capture | null>
+    /** The capture shortcut registered now (normalized), or null, and why not. */
+    shortcutStatus(): Promise<{ shortcut: string | null; error: string | null }>
+    /** Lets the settings screen record a new shortcut without the current one taking the keys. */
+    pauseShortcut(paused: boolean): Promise<void>
+  }
   /** Subscribe to main-process events. Returns an unsubscribe function. */
   onEvent(listener: (event: GlossEvent) => void): () => void
 }
@@ -323,5 +336,8 @@ export const IPC = {
   settingsGet: 'gloss:settings:get',
   settingsUpdate: 'gloss:settings:update',
   settingsOpenFile: 'gloss:settings:openFile',
+  captureStart: 'gloss:capture:start',
+  captureShortcutStatus: 'gloss:capture:shortcutStatus',
+  capturePauseShortcut: 'gloss:capture:pauseShortcut',
   event: 'gloss:event'
 } as const

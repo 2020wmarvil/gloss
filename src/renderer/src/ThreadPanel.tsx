@@ -1,6 +1,6 @@
 // The side panel's thread view: anchor quote, the thread's messages, composer.
 import { lineLabel, type LineAnchor, type Location } from '@shared/review'
-import type { Attachment, SessionLive, Thread } from '@shared/types'
+import type { Attachment, Message, SessionLive, Thread } from '@shared/types'
 import { threadTag } from '@shared/wire'
 import type { OpenSession, Panel } from './App'
 import { itemSource, listItemSpans } from './anchors'
@@ -9,6 +9,7 @@ import { Composer, type ComposerQueue } from './Composer'
 import { ExportMenu } from './ExportMenu'
 import { Log, logItems, TurnStatus, type Notice, type Reveal } from './Log'
 import { Markdown } from './Markdown'
+import { PinCrop, pinAnchorsFor } from './CaptureFigure'
 import { ArrowLeft, Locate, PanelRight } from 'lucide-react'
 
 type Props = {
@@ -37,6 +38,8 @@ type Props = {
   onBack(): void
   /** Collapses the side panel. */
   onClose(): void
+  /** Opens the thread on a pin of an annotated screenshot in this thread's messages. */
+  onOpenPin(message: Message, image: number, pin: number): void
   onCopyMarkdown(threadId: string): void
   onSaveMarkdown(threadId: string): void
   /** Scrolls the main conversation to the thread's anchor; absent when it isn't shown there. */
@@ -66,6 +69,8 @@ export function ThreadPanel(props: Props): React.JSX.Element {
     if (span) quote = itemSource(anchorMessage.text, span)
   }
   const isSelection = panel.anchor.kind === 'selection'
+  const pin = panel.anchor.kind === 'pin' ? panel.anchor : null
+  const pinImage = pin ? anchorMessage?.attachments?.[pin.image] : undefined
 
   return (
     <aside
@@ -96,25 +101,41 @@ export function ThreadPanel(props: Props): React.JSX.Element {
           <PanelRight />
         </button>
       </header>
-      <blockquote className="anchor-quote" title={`Sent to the agent as ${threadTag(panel.anchor)} …`}>
-        {isSelection ? <p className="selection-quote">{quote}</p> : <Markdown text={quote} />}
+      <blockquote className={pin ? 'anchor-quote pin-quote' : 'anchor-quote'} title={`Sent to the agent as ${threadTag(panel.anchor)} …`}>
+        {pin ? (
+          <>
+            {pinImage?.kind === 'image' && <PinCrop image={pinImage} pin={pin.pin} />}
+            <span className="pin-quote-text">
+              <b>
+                <span className="pin-number">{pin.pin}</span>
+                {pin.note || 'No note'}
+              </b>
+              <span className="muted">Pin {pin.pin} in your screenshot</span>
+            </span>
+          </>
+        ) : isSelection ? (
+          <p className="selection-quote">{quote}</p>
+        ) : (
+          <Markdown text={quote} />
+        )}
       </blockquote>
       <Log
         className="thread-log"
         items={panel.threadId === null ? [] : logItems(open, notices, panel.threadId)}
         empty={
           <p className="muted empty">
-            No replies yet. Your first message starts a thread on this {isSelection ? 'selection' : 'item'}.
+            No replies yet. Your first message starts a thread on this {pin ? 'pin' : isSelection ? 'selection' : 'item'}.
           </p>
         }
         renderAgent={(m) => <Markdown text={m.text} />}
         reveal={props.reveal}
+        pins={pinAnchorsFor(open, panel, runningThread, props.onOpenPin)}
       />
       <Composer
         key={`${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
         draftKey={`${open.session.id}:${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
         className="thread-composer"
-        placeholder="Reply in thread"
+        placeholder={pin ? `Reply about pin ${pin.pin}` : 'Reply in thread'}
         running={running}
         autoFocus
         primary

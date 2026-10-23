@@ -1,0 +1,68 @@
+@font-face {
+  font-family: 'Inter Gloss';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url('../../../../node_modules/@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2-variations');
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  user-select: none;
+}
+
+canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+#overlay {
+  cursor: crosshair;
+}
+
+/* What the overlay takes, at the top, until a drag starts. */
+.hint {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(20, 19, 18, 0.82);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  color: #efeee9;
+  font: 500 12px/1 'Inter Gloss', system-ui, 'Segoe UI', sans-serif;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.hint[hidden] {
+  display: none;
+}
+
+.hint.gone {
+  opacity: 0;
+}
+
+.hint kbd {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  margin-right: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  font: inherit;
+}

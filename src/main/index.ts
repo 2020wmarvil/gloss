@@ -1,8 +1,8 @@
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell } from 'electron'
 import { IPC, type AppBadge, type GlossEvent } from '../shared/ipc'
-import type { Anchor, Attachment } from '../shared/types'
+import type { Anchor, Attachment, Pin } from '../shared/types'
 import type { AnswerValue, RequestAnswer } from '../shared/requests'
 import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, listAgents } from './agents'
@@ -16,8 +16,10 @@ import { patchArg, SettingsFile } from './settings'
 import { editorArgs, launchEditor } from './openFile'
 import { fileLink } from '../shared/fileLink'
 import { runInTerminal } from './terminal'
+import { registerCaptureIpc, startCapture } from './capture'
+import { normalizeShortcut, shortcutLabel } from '../shared/shortcut'
 import { UsageSource } from './usage'
-import { DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
+import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
 import { previewMcpImport } from './mcp-import'
 import { OpenCodeSupport } from './opencode'
@@ -128,11 +130,16 @@ function createWindow(): void {
     if (isExternalUrl(url)) void shell.openExternal(url)
   })
 
+  loadPage(win, 'index.html')
+}
+
+/** Loads one of the renderer's pages: from the dev server in development, else from the build. */
+function loadPage(win: BrowserWindow, page: 'index.html' | 'capture.html'): void {
   const devUrl = process.env.ELECTRON_RENDERER_URL
   if (!app.isPackaged && devUrl) {
-    void win.loadURL(devUrl)
+    void win.loadURL(new URL(page, devUrl.endsWith('/') ? devUrl : `${devUrl}/`).href)
   } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'))
+    void win.loadFile(join(__dirname, '../renderer', page))
   }
 }
 
@@ -165,6 +172,35 @@ function emit(event: GlossEvent): void {
     void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
   }
   if (event.type === 'turnEnd' && pendingProfiles.size) void applyProfileChanges()
+}
+
+/** The capture shortcut (SPEC → Visual feedback): the setting, what is registered now, and why it isn't. */
+const capture = { setting: '', registered: null as string | null, error: null as string | null, paused: false }
+
+/**
+ * Registers the setting's capture shortcut in place of the last one. It is the only one, and works
+ * whether Gloss or another app is in front: the renderer starts a capture for the composer used
+ * last. Empty turns it off. Another app holding the keys leaves none registered, with the reason
+ * kept for the settings screen. While the settings screen records a new one it is paused, or the
+ * keys would start a capture instead of reaching it.
+ */
+function setCaptureShortcut(accelerator: string | undefined): void {
+  if (capture.registered) globalShortcut.unregister(capture.registered)
+  capture.registered = null
+  capture.error = null
+  capture.setting = (accelerator ?? '').trim()
+  if (!capture.setting || capture.paused) return
+  const keys = normalizeShortcut(capture.setting)
+  if (!keys) {
+    capture.error = `${capture.setting} isn't a key combination Gloss can use.`
+    return
+  }
+  try {
+    if (globalShortcut.register(keys, () => emit({ type: 'captureShortcut' }))) capture.registered = keys
+    else capture.error = `Another app is already using ${shortcutLabel(keys, process.platform === 'darwin')}.`
+  } catch {
+    capture.error = `${capture.setting} isn't a key combination Gloss can use.`
+  }
 }
 
 /** Shown notifications, kept so their click handlers survive garbage collection. */
@@ -269,6 +305,10 @@ function anchorArg(value: unknown): Anchor {
   ) {
     return { kind: 'line', file: a.file, side: a.side, start: a.start, end: a.end, text: a.text, lines: a.lines as string[] }
   }
+  // The manager rebuilds a pin's anchor from its message; only which pin counts.
+  if (a.kind === 'pin' && Number.isInteger(a.image) && Number.isInteger(a.pin)) {
+    return { kind: 'pin', image: a.image as number, pin: a.pin as number, note: '', text: a.text }
+  }
   throw new Error('Invalid anchor')
 }
 
@@ -289,7 +329,8 @@ function attachmentsArg(value: unknown): Attachment[] {
       typeof a.data === 'string' &&
       a.data.length <= (MAX_IMAGE_BYTES * 4) / 3 + 4
     ) {
-      return { kind: 'image', name: a.name, mimeType: a.mimeType, data: a.data }
+      const pins = pinsArg(a.pins)
+      return { kind: 'image', name: a.name, mimeType: a.mimeType, data: a.data, ...(pins ? { pins } : {}) }
     }
     if (a.kind === 'file' && typeof a.text === 'string') {
       if (a.text.length > MAX_FILE_CHARS) throw new Error(`${a.name} is too large to attach.`)
@@ -303,6 +344,23 @@ function attachmentsArg(value: unknown): Attachment[] {
     }
     throw new Error(`Invalid attachment ${a.name}`)
   })
+}
+
+const MAX_PINS = 99
+const MAX_PIN_NOTE = 2000
+
+/** An annotated screenshot's pins (SPEC → Visual feedback), or undefined for none. */
+function pinsArg(value: unknown): Pin[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length > MAX_PINS) throw new Error('Invalid pins')
+  const pins = value.map((v: unknown): Pin => {
+    const p = v as Partial<Record<string, unknown>> | null
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || typeof p.note !== 'string' || p.note.length > MAX_PIN_NOTE) {
+      throw new Error('Invalid pin')
+    }
+    return { x: p.x as number, y: p.y as number, note: p.note }
+  })
+  return pins.length > 0 ? pins : undefined
 }
 
 /** A folder path: an empty one would make the agent list every project's sessions. */
@@ -396,6 +454,29 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   })
   ipcMain.handle(IPC.search, (_e, request: SearchRequest) => store!.search(request))
   ipcMain.handle(IPC.history, () => manager.messageHistory())
+  registerCaptureIpc()
+  ipcMain.handle(IPC.captureShortcutStatus, () => ({ shortcut: capture.registered, error: capture.error }))
+  ipcMain.handle(IPC.capturePauseShortcut, (e, paused: unknown) => {
+    if (e.sender !== mainWindow?.webContents) return
+    capture.paused = paused === true
+    setCaptureShortcut(capture.setting)
+  })
+  ipcMain.handle(IPC.captureStart, (e) => {
+    if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can start a capture.')
+    return startCapture({
+      preload: join(__dirname, '../preload/capture.js'),
+      load: (overlay) => loadPage(overlay, 'capture.html'),
+      // Started from another app (the global shortcut), the canvas needs Gloss in front. An
+      // overlay has the focus now, so Windows lets Gloss take it.
+      onPicked: () => {
+        const win = mainWindow
+        if (!win || win.isDestroyed()) return
+        if (win.isMinimized()) win.restore()
+        win.show()
+        win.focus()
+      }
+    })
+  })
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
     manager.createSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
   )
@@ -556,11 +637,12 @@ app.whenReady().then(() => {
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [] },
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [], captureShortcut: DEFAULT_CAPTURE_SHORTCUT },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
       // Fires nativeTheme's 'updated', which recolors the window controls.
       if (next.global.theme !== previous.global.theme) nativeTheme.themeSource = next.global.theme
+      if (next.global.captureShortcut !== previous.global.captureShortcut) setCaptureShortcut(next.global.captureShortcut)
       if (next.global.opencodeExecutable !== previous.global.opencodeExecutable) {
         openCodeRestartPending = true
         void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
@@ -577,6 +659,7 @@ app.whenReady().then(() => {
   for (const profile of settingsFile.state().global.agentProfiles ?? []) appliedProfiles.set(profile.id, profile)
   pendingProfiles.clear()
   nativeTheme.themeSource = settingsFile.state().global.theme
+  setCaptureShortcut(settingsFile.state().global.captureShortcut)
   settingsFile.watch()
   sessions = new SessionManager({
     store,
@@ -609,6 +692,8 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+app.on('will-quit', () => globalShortcut.unregisterAll())
 
 app.on('before-quit', () => {
   settings?.close()

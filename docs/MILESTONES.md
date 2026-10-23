@@ -37,7 +37,10 @@ Let the agent ask the user things, and let the user choose how much it may do wi
 
 **Done when:** Claude Code can ask a multiple-choice question mid-turn and gets the answer from a Gloss dialog, and a session switched to Manual asks before each edit or command and continues or stops based on the answer.
 
-## M16: Visual feedback (experimental, future)
+## M16: Visual feedback (experimental)
+
+**Implemented, awaiting review.** **Capture the screen** in the composer's Attach menu, `Ctrl+Shift+S`, or a global shortcut from any app (`Ctrl+Shift+PrtSc` by default, a setting) open a ShareX-style region overlay on every display (drag a region, click a window, Space for the display under the cursor; window hover on Windows only), then an annotation canvas filling the window, with zoom and pan, numbered pins and notes, pen, highlighter, box and arrow. The flattened image goes to the composer (Edit reopens it); its pin list is sent after the message text, and each pin opens its own thread from the sent message. One overlay instead of a palette of modes. Verified live in the built app on Haiku 5.5: the agent named every pin's element, a pin thread answered about its pin, and pins and the thread survived a restart and resync. See `docs/mocks/visual-feedback.html` and SPEC → Visual feedback.
+
 Point at things visually to give the agent feedback. Expect to iterate on this continuously based on use; the first version is deliberately small.
 
 **First version: capture, then annotate**
@@ -55,6 +58,9 @@ Point at things visually to give the agent feedback. Expect to iterate on this c
 - Voice narration while drawing, sent with a timeline aligning what was said with what was drawn.
 - Element picking for web apps: select a DOM element in a running page and send its selector, styles and source location (stagewise / React Grab style), not just pixels.
 - Annotating Gloss's own content (messages, diffs) as images.
+- Annotating an image pasted, dropped or picked into the composer, not only a capture.
+- Window hover on macOS (`CGWindowListCopyWindowInfo`) and Linux X11 (`_NET_CLIENT_LIST_STACKING`), once they can be tested there; Wayland doesn't let apps see other windows.
+- A region across two displays.
 - A blank canvas for sketching mockups and diagrams.
 - Several images in one message: before and after, or a sequence of steps.
 - Short screen recordings for interactions and animations.
@@ -148,7 +154,7 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 ## Design passes needed
 - **M14:** agent profiles and connection testing, guided open source/local-model setup, capability indicators, and actionable launch or model-server errors.
 - **M15:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.
-- **M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.
+- ~~**M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.~~ Done: `docs/mocks/visual-feedback.html`.
 - **M17:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.
 - **M18:** the global skill library, skill import preview and conflict resolution, marketplace search and source management, and plugin compatibility, installation and removal.
 - **M19:** the checkout picker and new-worktree form, project grouping with branch indicators, missing-checkout recovery, and explicit cleanup with affected sessions visible.

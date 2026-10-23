@@ -10,10 +10,22 @@ export default defineConfig({
       externalizeDeps: { exclude: ['@agentclientprotocol/sdk'] }
     }
   },
-  preload: {},
+  // The region overlay (SPEC → Visual feedback) is its own page with its own preload.
+  preload: {
+    build: {
+      rollupOptions: {
+        input: { index: resolve('src/preload/index.ts'), capture: resolve('src/preload/capture.ts') }
+      }
+    }
+  },
   renderer: {
     resolve: {
       alias: { '@shared': resolve('src/shared') }
+    },
+    build: {
+      rollupOptions: {
+        input: { index: resolve('src/renderer/index.html'), capture: resolve('src/renderer/capture.html') }
+      }
     },
     plugins: [react()]
   }

@@ -1,0 +1,1034 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock – Gloss visual feedback (M16)</title>
+<style>
+/* Inter from the app's own dependency, so this page works offline from the repo. */
+@font-face { font-family: 'Inter Gloss'; font-weight: 100 900; src: url('../../node_modules/@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2-variations'); }
+
+/* ================= Tokens: styles.css's, plus the depth tokens (C · Gloss) ================= */
+:root {
+  --font-ui: 'Inter Gloss', system-ui, 'Segoe UI', sans-serif;
+  --font-mono: 'Cascadia Mono', ui-monospace, Consolas, monospace;
+  --t-11: 11px; --t-12: 12px; --t-13: 13px; --t-14: 14px; --t-15: 15px; --t-17: 17px; --t-20: 20px; --t-24: 24px;
+  --r-xs: 4px; --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-pill: 999px;
+  --control: 32px; --control-sm: 26px; --control-lg: 40px;
+  --bg: #f7f6f2; --title-bar: #ebeae4; --surface: #ffffff; --raised: #ffffff; --sunken: #efeee9;
+  --ink: #1c1b18; --ink-2: #3a3833; --muted: #5f5c55; --faint: #8a867d;
+  --line: #e3e1da; --line-soft: #eeece6; --line-strong: #d3d0c6;
+  --hover: rgba(28, 27, 24, .05); --pressed: rgba(28, 27, 24, .09); --selected: rgba(28, 27, 24, .07);
+  --shadow-2: 0 1px 2px rgba(28, 27, 24, .06), 0 8px 24px rgba(28, 27, 24, .12);
+  --shadow-3: 0 2px 6px rgba(28, 27, 24, .08), 0 18px 48px rgba(28, 27, 24, .18);
+  --scrim: rgba(28, 27, 24, .35);
+  --brand: linear-gradient(120deg, #ff3da6, #ff9f3d); --on-brand: #17040e;
+  --accent: #c2147a; --accent-tint: #fae5f0; --accent-mark: #f3c6dd; --you-fill: linear-gradient(135deg, #fce8f2, #fdeee0); --you-sheen: linear-gradient(to bottom, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 70%); --you-ring: rgba(194, 20, 122, .1); --focus: rgba(194, 20, 122, .35);
+  --working: #2c55c9; --working-tint: #e8eefb;
+  --done: #2e7d32; --done-tint: #e7f5e9;
+  --queued: #9a5b00; --queued-tint: #fbf0dc;
+  --paused: #7a4fc4; --paused-tint: #f0eafb;
+  --failed: #c4361c; --failed-tint: #fbe9e4; --failed-line: #edc6bb;
+  --merged: #7a4fc4;
+  --code-ink: #2b2a26;
+  --diff-add: #e9f5ea; --diff-add-gutter: #d5edd7; --diff-del: #fbecea; --diff-del-gutter: #f5d7d3; --diff-hunk: #f1f0eb;
+  /* Depth (C · Gloss): the frame behind the sheet, light on top edges, short lifts, pressed wells. */
+  --frame: #ebeae4;
+  --edge: rgba(255, 255, 255, .9);
+  --lift-1: 0 1px 2px rgba(28, 27, 24, .07);
+  --lift-2: 0 1px 2px rgba(28, 27, 24, .06), 0 4px 14px -4px rgba(28, 27, 24, .12);
+  --lift-pane: 0 0 0 1px rgba(28, 27, 24, .07), 0 2px 4px rgba(28, 27, 24, .04), 0 12px 32px -8px rgba(28, 27, 24, .14);
+  --sink: inset 0 1px 2px rgba(28, 27, 24, .07);
+  --sheen: linear-gradient(to bottom, rgba(255, 255, 255, .7), rgba(255, 255, 255, 0) 220px);
+  --gloss: linear-gradient(to bottom, rgba(255, 255, 255, .42), rgba(255, 255, 255, .08) 50%, rgba(255, 255, 255, 0) 51%);
+  --brand-glow: 0 1px 2px rgba(194, 20, 122, .25), 0 4px 12px -3px rgba(255, 61, 166, .45);
+}
+:root[data-theme='dark'] {
+  --bg: #141312; --title-bar: #0c0b0a; --surface: #1c1b19; --raised: #262522; --sunken: #0f0e0d;
+  --ink: #efeee9; --ink-2: #d4d1c8; --muted: #a39f96; --faint: #7d796f;
+  --line: #2c2a27; --line-soft: #242220; --line-strong: #3e3b36;
+  --hover: rgba(255, 255, 255, .05); --pressed: rgba(255, 255, 255, .09); --selected: rgba(255, 255, 255, .07);
+  --shadow-2: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .45);
+  --shadow-3: 0 2px 6px rgba(0, 0, 0, .5), 0 18px 48px rgba(0, 0, 0, .6);
+  --scrim: rgba(0, 0, 0, .55);
+  --accent: #ff5c9e; --accent-tint: #3a1a2c; --accent-mark: #5a2440; --you-fill: linear-gradient(135deg, #3a1a2c, #3a2419); --you-sheen: linear-gradient(to bottom, rgba(255, 255, 255, .05), rgba(255, 255, 255, 0) 70%); --you-ring: rgba(255, 92, 158, .14); --focus: rgba(255, 92, 158, .4);
+  --working: #7c9cf0; --working-tint: #1f2740;
+  --done: #6cc070; --done-tint: #1b2a1d;
+  --queued: #f0b04a; --queued-tint: #33280f;
+  --paused: #b394f0; --paused-tint: #2a2240;
+  --failed: #f07a5f; --failed-tint: #3a1d16; --failed-line: #5c2a1f;
+  --merged: #b394f0;
+  --code-ink: #e9e6de;
+  --diff-add: #182a1b; --diff-add-gutter: #1f3a23; --diff-del: #2f1c1a; --diff-del-gutter: #45231f; --diff-hunk: #1a1917;
+  --frame: #0c0b0a;
+  --edge: rgba(255, 255, 255, .08);
+  --lift-1: 0 1px 2px rgba(0, 0, 0, .5);
+  --lift-2: 0 1px 2px rgba(0, 0, 0, .5), 0 4px 14px -4px rgba(0, 0, 0, .6);
+  --lift-pane: 0 0 0 1px rgba(255, 255, 255, .05), 0 2px 4px rgba(0, 0, 0, .3), 0 12px 32px -8px rgba(0, 0, 0, .7);
+  --sink: inset 0 1px 2px rgba(0, 0, 0, .5);
+  --sheen: linear-gradient(to bottom, rgba(255, 255, 255, .035), rgba(255, 255, 255, 0) 220px);
+  --gloss: linear-gradient(to bottom, rgba(255, 255, 255, .38), rgba(255, 255, 255, .06) 50%, rgba(255, 255, 255, 0) 51%);
+  --brand-glow: 0 1px 2px rgba(0, 0, 0, .5), 0 4px 14px -3px rgba(255, 61, 166, .35);
+}
+
+/* ================= Page around the mock ================= */
+* { box-sizing: border-box; }
+body { margin: 0; background: #8f8b84; color: var(--ink); font: 400 var(--t-14)/1.5 var(--font-ui); }
+:root[data-theme='dark'] body { background: #3a3835; }
+.top { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 24px; background: #fff; color: #1c1b18; border-bottom: 1px solid #ddd; font-size: 13px; }
+.top h1 { margin: 0 8px 0 0; font-size: 16px; font-weight: 600; }
+.top .grow { flex: 1; }
+.pick { display: inline-flex; flex-wrap: wrap; padding: 2px; border-radius: 8px; background: #efeee9; gap: 2px; }
+.pick button { height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: #5f5c55; font: 500 12px var(--font-ui); cursor: pointer; }
+.pick button[aria-pressed='true'] { background: #fff; color: #1c1b18; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.notes { width: 1280px; margin: 16px auto 0; color: #fff; font-size: 13px; line-height: 1.6; }
+.notes b { font-weight: 600; }
+.notes ul { margin: 4px 0 0; padding-left: 18px; }
+.stage { padding: 14px 24px 60px; display: grid; place-items: center; }
+
+/* ================= Components ================= */
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.s12 { width: 12px; height: 12px; } svg.i.s14 { width: 14px; height: 14px; } svg.i.s20 { width: 20px; height: 20px; }
+.btn { height: var(--control); padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: var(--r-md); font: 500 var(--t-13)/1 var(--font-ui); color: var(--ink); background: transparent; cursor: pointer; white-space: nowrap; }
+.btn.primary { background: var(--gloss), var(--brand); color: var(--on-brand); font-weight: 600; box-shadow: inset 0 1px 0 rgba(255,255,255,.55), inset 0 -1px 0 rgba(120,10,60,.18), var(--brand-glow); }
+.btn.secondary { background: linear-gradient(to bottom, var(--surface), var(--bg)); box-shadow: inset 0 0 0 1px var(--line-strong), inset 0 1px 0 var(--edge), var(--lift-1); }
+:root[data-theme='dark'] .btn.secondary { background: linear-gradient(to bottom, var(--raised), var(--surface)); }
+.btn.ghost { color: var(--ink-2); }
+.btn.ghost:hover, .btn.ghost.hl { background: var(--hover); }
+.btn.danger { background: var(--failed); color: #fff; }
+.btn:disabled { background: var(--sunken); color: var(--faint); box-shadow: var(--sink); cursor: default; }
+.btn.sm { height: var(--control-sm); padding: 0 9px; font-size: var(--t-12); }
+.btn.lg { height: var(--control-lg); padding: 0 18px; font-size: var(--t-14); }
+.icon-btn { width: var(--control); height: var(--control); display: inline-grid; place-items: center; border: 0; border-radius: var(--r-md); background: transparent; color: var(--muted); cursor: pointer; flex: none; }
+.icon-btn:hover { background: var(--hover); color: var(--ink); }
+.icon-btn.on { background: var(--selected); color: var(--ink); }
+.icon-btn.sm { width: var(--control-sm); height: var(--control-sm); }
+.field { white-space: nowrap; height: var(--control); display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md); color: var(--ink); font-size: var(--t-13); box-shadow: var(--sink); }
+.field.focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+.field .ph { color: var(--faint); }
+.field .grow { flex: 1; min-width: 0; }
+.select { justify-content: space-between; cursor: pointer; box-shadow: inset 0 1px 0 var(--edge), var(--lift-1); background: linear-gradient(to bottom, var(--surface), var(--bg)); }
+:root[data-theme='dark'] .select { background: linear-gradient(to bottom, var(--raised), var(--surface)); }
+.select .i { color: var(--muted); }
+.switch { width: 34px; height: 20px; border-radius: var(--r-pill); background: var(--line-strong); position: relative; flex: none; border: 0; box-shadow: var(--sink); }
+.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.switch.on { background: var(--ink); }
+.switch.on::after { transform: translateX(14px); }
+:root[data-theme='dark'] .switch.on::after { background: var(--bg); }
+.segmented { display: inline-flex; padding: 2px; border-radius: var(--r-md); background: var(--sunken); gap: 2px; box-shadow: var(--sink); }
+.segmented button { height: 26px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--muted); font: 500 var(--t-13)/1 var(--font-ui); display: inline-flex; align-items: center; gap: 6px; }
+.segmented button.on { background: var(--surface); color: var(--ink); box-shadow: inset 0 1px 0 var(--edge), var(--lift-1); }
+:root[data-theme='dark'] .segmented button.on { background: var(--raised); }
+.count { display: inline-flex; align-items: center; height: 18px; min-width: 18px; padding: 0 6px; justify-content: center; border-radius: var(--r-pill); background: var(--sunken); color: var(--muted); font: 600 var(--t-11)/1 var(--font-ui); font-variant-numeric: tabular-nums; box-shadow: var(--sink); }
+.state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-12); font-weight: 500; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.ring { width: 8px; height: 8px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--faint); flex: none; }
+.s-working { color: var(--working) !important; } .s-done { color: var(--done) !important; } .s-queued { color: var(--queued) !important; } .s-paused { color: var(--paused) !important; } .s-failed { color: var(--failed) !important; }
+.tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: var(--r-xs); font: 600 var(--t-11)/1 var(--font-ui); letter-spacing: .02em; }
+.tag.bug { background: var(--failed-tint); color: var(--failed); } .tag.suggestion { background: var(--working-tint); color: var(--working); }
+.tag.nit { background: var(--sunken); color: var(--muted); } .tag.yours { background: var(--paused-tint); color: var(--paused); }
+kbd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: var(--r-xs); background: linear-gradient(to bottom, var(--surface), var(--bg)); box-shadow: inset 0 0 0 1px var(--line-strong), 0 1px 0 var(--line-strong); font: 500 var(--t-11)/1 var(--font-ui); color: var(--muted); }
+.menu { position: absolute; z-index: 30; min-width: 220px; background: var(--raised); background-image: var(--sheen); border-radius: var(--r-lg); box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge); padding: 6px; font-size: var(--t-13); }
+.menu .sec { padding: 8px 10px 4px; font-size: var(--t-11); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.menu .it { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: var(--r-sm); }
+.menu .it.hl { background: var(--hover); }
+.menu .it .i { color: var(--muted); }
+.menu .it .grow { flex: 1; min-width: 0; }
+.menu .it .d { color: var(--muted); font-size: var(--t-12); }
+.menu .sep { height: 1px; background: var(--line); margin: 6px 4px; }
+code.inl { font: .87em var(--font-mono); background: var(--sunken); padding: 1px 5px; border-radius: 4px; box-shadow: var(--sink); }
+.mono { font-family: var(--font-mono); }
+.code { background: var(--sunken); border-radius: var(--r-md); font: 400 var(--t-13)/1.55 var(--font-mono); color: var(--code-ink); box-shadow: var(--sink); position: relative; }
+.code pre { margin: 0; padding: 10px 12px; overflow: hidden; }
+.code .k { color: #cf2273; } .code .n { color: #2c55c9; } .code .c { color: var(--faint); }
+:root[data-theme='dark'] .code .k { color: #ff7ab3; } :root[data-theme='dark'] .code .n { color: #8fb0ff; }
+.anchor { background: var(--accent-tint); border-bottom: 2px solid var(--accent); border-radius: 2px; }
+.reply-count { display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 5px; margin-left: 3px; border-radius: var(--r-xs); background: var(--accent-tint); color: var(--accent); font: 600 var(--t-11)/1 var(--font-ui); vertical-align: 1px; white-space: nowrap; }
+.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+
+/* ================= The window ================= */
+.win { width: 1280px; height: 800px; display: grid; grid-template-rows: 40px minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); border-radius: 8px; overflow: hidden; background: var(--frame); box-shadow: 0 30px 80px rgba(0,0,0,.35), 0 0 0 1px rgba(0,0,0,.25); position: relative; }
+.tbar { display: flex; align-items: center; gap: 8px; padding: 0 14px; background: var(--frame); }
+.tbar .wm { font: 600 19px/1 var(--font-ui); letter-spacing: -.02em; }
+.tbar .grow { flex: 1; }
+.tbar .wc { width: 46px; height: 40px; display: grid; place-items: center; color: var(--ink-2); }
+.tbar .wc .i { width: 14px; height: 14px; }
+.body { display: flex; min-height: 0; position: relative; }
+
+/* Sidebar: part of the frame */
+.side { flex: 0 0 240px; padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.switcher { display: flex; align-items: center; gap: 4px; }
+.switch-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 10px; border-radius: var(--r-md); background: linear-gradient(to bottom, var(--surface), var(--bg)); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); }
+:root[data-theme='dark'] .switch-btn { background: linear-gradient(to bottom, var(--raised), var(--surface)); }
+.switch-btn .names { flex: 1; min-width: 0; line-height: 1.3; }
+.switch-btn b { display: block; font-size: var(--t-13); font-weight: 600; }
+.switch-btn .p { display: block; font-size: var(--t-12); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.split { display: flex; }
+.split .btn:first-child { flex: 1; justify-content: flex-start; border-radius: var(--r-md) 0 0 var(--r-md); }
+.split .btn:last-child { width: 30px; padding: 0; justify-content: center; border-radius: 0 var(--r-md) var(--r-md) 0; margin-left: 1px; }
+.split .ag { color: var(--muted); font-weight: 400; margin-left: auto; }
+.side .label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); padding: 8px 10px 2px; }
+.side .rows { display: flex; flex-direction: column; gap: 1px; }
+.side .grow { flex: 1; }
+.side .foot { display: flex; flex-direction: column; gap: 1px; }
+.side .foot .btn { justify-content: flex-start; color: var(--ink-2); }
+.side .foot .btn .k { margin-left: auto; display: flex; gap: 3px; }
+.lrow { display: grid; grid-template-columns: 16px 1fr auto; gap: 10px; align-items: center; padding: 7px 8px 7px 10px; border-radius: var(--r-md); position: relative; }
+.lrow.hov { background: var(--hover); }
+.lrow.cur { background: var(--surface); box-shadow: inset 0 1px 0 var(--edge), var(--lift-1), 0 0 0 1px var(--line); }
+:root[data-theme='dark'] .lrow.cur { background: var(--raised); }
+.lrow.cur::before { content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 2px; background: var(--accent); }
+.lrow .lead { display: grid; place-items: center; color: var(--faint); }
+.lrow .tt { font-size: var(--t-13); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lrow .sub { font-size: var(--t-12); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lrow .trail { color: var(--faint); font-size: var(--t-12); font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 4px; }
+.lrow.ext .tt { color: var(--muted); font-weight: 400; }
+.rail-l { flex: 0 0 48px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; }
+
+/* The sheet: everything right of the sidebar, laid on the frame */
+.sheet { flex: 1; min-width: 0; display: flex; overflow: hidden; border-top-left-radius: var(--r-lg); background: var(--bg); box-shadow: var(--lift-pane), inset 0 1px 0 var(--edge); position: relative; }
+.sheet.full { border-top-left-radius: 0; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; background-image: var(--sheen); position: relative; }
+.head { height: 56px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 24px; border-bottom: 1px solid var(--line); }
+.head .tt { font-weight: 600; font-size: var(--t-17); white-space: nowrap; }
+.head .ag { color: var(--muted); font-size: var(--t-13); white-space: nowrap; }
+.head .grow { flex: 1; }
+.log { flex: 1; overflow: hidden; padding: 20px 0 8px; position: relative; }
+.col { max-width: 760px; margin: 0 auto; padding: 0 32px; display: flex; flex-direction: column; gap: 14px; font-size: var(--t-15); line-height: 1.6; }
+.col p { margin: 0; }
+.you { align-self: flex-end; max-width: 75%; background: var(--you-sheen), var(--you-fill); border-radius: var(--r-lg) var(--r-lg) 8px var(--r-lg); padding: 10px 14px; box-shadow: 0 0 0 1px var(--you-ring), var(--lift-1); }
+.tools { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 1px 0 var(--edge), var(--lift-1); }
+.trow { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px 0 12px; font-size: var(--t-13); }
+.trow + .trow { border-top: 1px solid var(--line); }
+.trow .i { color: var(--faint); }
+.trow .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trow .title code { font: 400 var(--t-12)/1 var(--font-mono); color: var(--ink-2); }
+.trow .dur { color: var(--faint); font-size: var(--t-12); }
+.plan { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 1px 0 var(--edge), var(--lift-1); padding: 10px 14px; font-size: var(--t-14); }
+.plan .ph { display: flex; justify-content: space-between; font-size: var(--t-12); color: var(--muted); margin-bottom: 6px; }
+.plan .ph b { color: var(--ink); font-size: var(--t-13); }
+.plan .st { display: flex; gap: 10px; align-items: center; padding: 3px 0; }
+.plan .st.done { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line-strong); }
+.box { width: 14px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1.5px var(--line-strong); flex: none; display: grid; place-items: center; }
+.box.done { background: var(--done); box-shadow: none; color: #fff; }
+.box.run { box-shadow: inset 0 0 0 1.5px var(--working); }
+.box.run::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--working); }
+/* List-item replies (fix 24): the list stays a list; Reply sits in the item's margin on hover. */
+.col ol { margin: 0; padding-left: 26px; display: flex; flex-direction: column; gap: 10px; }
+.col li { position: relative; padding-left: 2px; }
+.col li .reply { position: absolute; left: -30px; top: 1px; width: 24px; height: 24px; display: none; place-items: center; border-radius: var(--r-sm); color: var(--muted); }
+.col li.hov::marker { color: transparent; }
+.col li.hov { background: var(--hover-soft, rgba(0,0,0,.02)); border-radius: var(--r-sm); box-shadow: -8px 0 0 var(--hover-soft, rgba(0,0,0,.02)), 8px 0 0 var(--hover-soft, rgba(0,0,0,.02)); }
+.col li.hov .reply { display: inline-grid; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); color: var(--ink-2); }
+.strip { max-width: 760px; width: 100%; margin: 0 auto 8px; padding: 0 32px; }
+.strip > div { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 6px 0 12px; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); font-size: var(--t-13); }
+.strip .grow { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.composer-wrap { max-width: 760px; width: 100%; margin: 0 auto; padding: 0 32px; }
+.composer { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 7px; display: flex; align-items: center; gap: 6px; box-shadow: inset 0 1px 0 var(--edge), var(--lift-2); }
+.composer.focus { border-color: var(--line-strong); box-shadow: inset 0 1px 0 var(--edge), var(--lift-2), 0 0 0 3px var(--focus); }
+.composer .ed { flex: 1; min-width: 0; padding: 0 4px; color: var(--faint); font-size: var(--t-14); }
+.composer .ed.typed { color: var(--ink); }
+.status { max-width: 760px; width: 100%; margin: 0 auto; display: flex; align-items: center; gap: 12px; padding: 6px 26px 10px; font-size: var(--t-12); color: var(--muted); }
+/* The agent's items wrap onto a hidden second row: what doesn't fit disappears, right to left. */
+.status .agent { flex: 1; min-width: 0; height: 24px; overflow: hidden; display: flex; flex-wrap: wrap; gap: 0 2px; }
+.status .right { flex: none; display: flex; align-items: center; gap: 2px; }
+.status .sb.shrink { max-width: 180px; overflow: hidden; }
+.status .sb.shrink .tx { overflow: hidden; text-overflow: ellipsis; }
+.status .sb { flex-shrink: 0; white-space: nowrap; height: 24px; padding: 0 6px; border-radius: var(--r-sm); display: inline-flex; align-items: center; gap: 5px; }
+.status .sb .lb { color: var(--faint); }
+.status .grow { flex: 1; }
+.meter { width: 30px; height: 4px; border-radius: 2px; background: var(--line-strong); overflow: hidden; box-shadow: var(--sink); }
+.meter i { display: block; height: 100%; width: 12%; background: var(--ink-2); }
+.note-failed { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-md); background: var(--failed-tint); box-shadow: inset 0 0 0 1px var(--failed-line); font-size: var(--t-14); }
+.note-failed .i { color: var(--failed); margin-top: 3px; }
+.note-failed .t b { display: block; font-weight: 600; }
+.note-failed .t span { color: var(--ink-2); font-size: var(--t-13); }
+.note-failed .acts { display: flex; gap: 6px; margin-top: 10px; }
+
+/* Side panel and rail */
+.panel { flex: 0 0 400px; display: flex; flex-direction: column; background: var(--surface); background-image: var(--sheen); border-left: 1px solid var(--line); min-height: 0; position: relative; }
+.panel .ph { height: 56px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--line); }
+.panel .ph .grow { flex: 1; }
+.panel .ph .back { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px; border-radius: var(--r-sm); color: var(--ink-2); font-size: var(--t-13); font-weight: 500; }
+.panel .quote { margin: 14px 18px 4px; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--accent-tint); border-radius: 0 var(--r-sm) var(--r-sm) 0; font-size: var(--t-13); }
+.panel .msgs { flex: 1; padding: 10px 18px; font-size: var(--t-14); display: flex; flex-direction: column; gap: 12px; line-height: 1.55; overflow: hidden; }
+.panel .msgs p { margin: 0; }
+.panel .msgs .you { max-width: 88%; }
+.panel .composer { margin: 0 14px 14px; }
+.queued { border: 1px dashed var(--line-strong); border-radius: var(--r-md); padding: 6px 6px 6px 10px; display: flex; gap: 8px; align-items: center; font-size: 13px; background: var(--bg); }
+.queued .grow { flex: 1; min-width: 0; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rail { flex: 0 0 48px; display: flex; flex-direction: column; align-items: center; padding-top: 12px; gap: 4px; border-left: 1px solid var(--line); background: var(--bg); }
+.rail .rb { position: relative; }
+.rail .badge { position: absolute; right: -2px; top: -2px; }
+.trows { padding: 8px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.thr { padding: 10px 10px 10px 12px; border-radius: var(--r-md); display: flex; flex-direction: column; gap: 4px; }
+.thr.hov { background: var(--hover); }
+.thr .q { font-size: var(--t-14); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.thr .q::before { content: ''; display: inline-block; width: 3px; height: 13px; border-radius: 2px; background: var(--accent); margin-right: 8px; vertical-align: -1px; }
+.thr .ctx { font-size: var(--t-12); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thr .meta { display: flex; gap: 10px; align-items: center; font-size: var(--t-12); color: var(--muted); }
+.qgroup { padding: 10px 18px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.qrow { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: start; padding: 8px 10px; margin: 0 8px; border-radius: var(--r-md); font-size: var(--t-13); }
+.qrow .w { font-size: var(--t-12); color: var(--faint); }
+.qrow .tx { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qrow .dot { margin-top: 6px; }
+.qrow.run { background: var(--working-tint); }
+.qdiv { display: flex; align-items: center; gap: 8px; margin: 8px 18px; font-size: var(--t-12); color: var(--faint); }
+.qdiv::before, .qdiv::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+/* Empty states (fix 30) */
+.empty { flex: 1; display: grid; place-items: center; padding: 24px; }
+.empty .in { width: 440px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; }
+/* The bead beside the wordmark, its diameter a little larger than the type (docs/BRAND.md). */
+.lockup { display: flex; align-items: center; gap: 12px; }
+.lockup span { font: 600 44px/1 var(--font-ui); letter-spacing: -.02em; }
+.lockup.project { gap: 10px; max-width: 100%; }
+.lockup.project span { font-size: 36px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 4px; }
+.empty h2 { margin: 6px 0 0; font-size: var(--t-24); font-weight: 600; letter-spacing: -.02em; }
+.empty p { margin: 0; color: var(--muted); font-size: var(--t-14); }
+.empty .card { width: 100%; text-align: left; margin-top: 14px; background: var(--surface); border-radius: var(--r-lg); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); padding: 6px; }
+.empty .card .cap { padding: 8px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.hint-new { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; }
+.hint-new .in { display: inline-flex; flex-direction: column; align-items: center; gap: 10px; max-width: 520px; }
+.hint-new h3 { margin: 0; font-size: var(--t-20); font-weight: 600; letter-spacing: -.01em; }
+.hint-new p { margin: 0; color: var(--muted); font-size: var(--t-14); }
+.hint-new .tips { display: flex; gap: 8px; margin-top: 4px; }
+.tip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); font-size: var(--t-13); color: var(--ink-2); }
+
+/* Dialogs */
+.scrim { position: absolute; inset: 0; z-index: 40; background: var(--scrim); display: flex; justify-content: center; }
+.dialog { background: var(--raised); background-image: var(--sheen); border-radius: var(--r-lg); box-shadow: var(--shadow-3), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge); }
+.signin { width: 460px; align-self: center; padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+.signin h3 { margin: 0; font-size: var(--t-17); font-weight: 600; }
+.signin p { margin: 0; color: var(--muted); font-size: var(--t-13); }
+.opt { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); }
+.opt.hl { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--focus); }
+.opt .grow { flex: 1; }
+.opt b { display: block; font-size: var(--t-14); font-weight: 600; }
+.opt span { font-size: var(--t-12); color: var(--muted); }
+.opt .i { margin-top: 2px; color: var(--muted); }
+.search { width: 760px; margin-top: 32px; align-self: flex-start; display: flex; flex-direction: column; max-height: 680px; }
+.search .sh { padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--line); }
+.search .sh .row { display: flex; gap: 8px; align-items: center; }
+.search .res { overflow: hidden; padding: 6px; }
+.sgroup { padding: 10px 10px 4px; display: flex; align-items: baseline; gap: 8px; }
+.sgroup b { font-size: var(--t-13); font-weight: 600; }
+.sgroup span { font-size: var(--t-12); color: var(--faint); }
+.sres { display: grid; grid-template-columns: 18px 1fr; gap: 10px; padding: 8px 10px; border-radius: var(--r-md); }
+.sres.hl { background: var(--hover); box-shadow: inset 0 0 0 1px var(--line); }
+.sres .i { color: var(--faint); margin-top: 2px; }
+.sres .where { font-size: var(--t-12); color: var(--muted); }
+.sres .snip { font-size: var(--t-14); line-height: 1.5; }
+mark { background: var(--accent-tint); color: inherit; border-radius: 3px; padding: 0 1px; box-shadow: inset 0 -2px 0 var(--accent-mark); }
+.search .sf { padding: 8px 14px; border-top: 1px solid var(--line); display: flex; gap: 14px; font-size: var(--t-12); color: var(--muted); align-items: center; }
+
+/* Settings (fix 31) */
+.settings { flex: 1; display: flex; min-width: 0; background-image: var(--sheen); }
+.snav { flex: 0 0 210px; padding: 20px 12px; display: flex; flex-direction: column; gap: 1px; border-right: 1px solid var(--line); }
+.snav .t { font-size: var(--t-17); font-weight: 600; padding: 0 10px 12px; }
+.snav .it { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: var(--r-md); font-size: var(--t-13); color: var(--ink-2); position: relative; }
+.snav .it.cur { background: var(--surface); box-shadow: inset 0 1px 0 var(--edge), var(--lift-1), 0 0 0 1px var(--line); color: var(--ink); font-weight: 500; }
+:root[data-theme='dark'] .snav .it.cur { background: var(--raised); }
+.snav .it.cur::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--accent); }
+.snav .it .i { color: var(--muted); }
+.snav .sub { padding: 14px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.scontent { flex: 1; min-width: 0; overflow: hidden; padding: 20px 40px; }
+.scontent .top2 { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; font-size: var(--t-12); color: var(--muted); }
+.scontent .top2 .grow { flex: 1; }
+.scontent h2 { margin: 0 0 4px; font-size: var(--t-20); font-weight: 600; letter-spacing: -.01em; }
+.scontent .lede { margin: 0 0 14px; color: var(--muted); font-size: var(--t-13); }
+.sgrp { background: var(--surface); border-radius: var(--r-lg); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); margin-bottom: 22px; }
+.srow { display: flex; gap: 24px; align-items: center; padding: 14px 18px; }
+.srow + .srow { border-top: 1px solid var(--line); }
+.srow .l { flex: 1; min-width: 0; }
+.srow .l b { display: block; font-size: var(--t-14); font-weight: 500; }
+.srow .l span { font-size: var(--t-13); color: var(--muted); }
+.sgh { font-size: var(--t-13); font-weight: 600; margin: 0 0 8px 2px; color: var(--ink-2); }
+
+/* Review (fixes 25, 26) */
+.rhead { flex: none; padding: 12px 20px 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.rhead .r1 { display: flex; align-items: center; gap: 10px; }
+.rhead .r1 .tt { font-weight: 600; font-size: var(--t-17); }
+.rhead .r2 { display: flex; align-items: center; gap: 6px; font-size: var(--t-12); color: var(--muted); }
+.rhead .r2 .grow { flex: 1; }
+.rpick { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: var(--r-sm); background: linear-gradient(to bottom, var(--surface), var(--bg)); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); color: var(--ink-2); font-size: var(--t-12); }
+:root[data-theme='dark'] .rpick { background: linear-gradient(to bottom, var(--raised), var(--surface)); }
+.rpick .lb { color: var(--faint); }
+.add { color: var(--done); } .del { color: var(--failed); }
+.tools-r { display: inline-flex; gap: 2px; align-items: center; }
+.vsep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+.diff { flex: 1; overflow: hidden; font: 400 var(--t-12)/20px var(--font-mono); }
+.fhead { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px 0 14px; background: var(--surface); border-bottom: 1px solid var(--line); box-shadow: inset 0 1px 0 var(--edge); font: 500 var(--t-13)/1 var(--font-ui); }
+.fhead .dir { color: var(--faint); font-weight: 400; }
+.fhead .grow { flex: 1; }
+.fhead .pill { font-size: var(--t-11); color: var(--muted); padding: 2px 6px; border-radius: var(--r-xs); background: var(--sunken); }
+.hunk { display: flex; align-items: center; height: 26px; padding: 0 0 0 14px; background: var(--diff-hunk); color: var(--muted); border-bottom: 1px solid var(--line-soft); }
+.hunk .grow { flex: 1; }
+/* The app's expander (DiffView): two stacked half-height buttons for 10 more lines up or
+   down, and one beside them for the whole gap. */
+.xp { flex: none; display: inline-flex; height: 26px; border: 1px solid var(--line-strong); background: var(--surface); box-shadow: inset 0 1px 0 var(--edge); }
+.xp .pair { display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+.xp .pair span { flex: 1; width: 28px; display: grid; place-items: center; color: var(--muted); }
+.xp .pair span:first-child { border-bottom: 1px solid var(--line); }
+.xp .pair .i { width: 13px; height: 13px; }
+.xp .all { width: 32px; display: grid; place-items: center; color: var(--muted); }
+.dl { display: grid; grid-template-columns: 44px 16px 1fr 44px 16px 1fr; }
+.dl > span { white-space: pre; overflow: hidden; padding-right: 8px; }
+.dl .n { text-align: right; padding-right: 8px; color: var(--faint); }
+.dl .m { color: var(--faint); }
+.dl .a { background: var(--diff-add); } .dl .ag { background: var(--diff-add-gutter); }
+.dl .d { background: var(--diff-del); } .dl .dg { background: var(--diff-del-gutter); }
+.dl .e { background: var(--sunken); opacity: .55; }
+.gm { position: relative; }
+.gm::after { content: ''; position: absolute; left: 4px; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--failed); }
+.gm.sugg::after { background: var(--working); }
+.fcard-row { display: grid; grid-template-columns: 1fr 1fr; }
+.fcard { grid-column: 2; margin: 2px 12px 8px 60px; padding: 10px 12px; font: 400 var(--t-13)/1.5 var(--font-ui); border-left: 3px solid var(--failed); background: var(--surface); border-radius: 0 var(--r-sm) var(--r-sm) 0; box-shadow: inset 0 0 0 1px var(--line); }
+.fcard .t { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.fcard .t .grow { flex: 1; }
+.fcard .b { color: var(--ink-2); margin-top: 4px; }
+.fcard .m { color: var(--faint); font-size: var(--t-12); margin-top: 6px; }
+.band { flex: none; border-top: 1px solid var(--line); background: var(--surface); }
+.band .status { max-width: none; padding: 4px 14px; }
+.gcard { margin: 12px; padding: 12px 14px; border-radius: var(--r-md); background: var(--bg); box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge), var(--lift-1); }
+.gcard .t { display: flex; gap: 8px; align-items: center; font-weight: 600; font-size: var(--t-13); }
+.gcard p { margin: 4px 0 0; color: var(--ink-2); font-size: var(--t-13); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.filters { display: flex; gap: 6px; align-items: center; padding: 0 12px 8px; }
+.filters .grow { flex: 1; }
+.fgrp { padding: 10px 14px 2px; font-size: var(--t-12); font-weight: 600; color: var(--ink-2); }
+.fgrp .dir { color: var(--faint); font-weight: 400; }
+.rrow { display: grid; grid-template-columns: 10px 1fr; gap: 10px; padding: 8px 10px; margin: 0 6px; border-radius: var(--r-md); font-size: var(--t-13); }
+.rrow.cur { background: var(--hover); }
+.rrow .dot { margin-top: 6px; }
+.rrow .meta { font-size: var(--t-12); color: var(--muted); display: flex; gap: 8px; }
+.rrow .ln { color: var(--faint); font-variant-numeric: tabular-nums; }
+
+/* ================= M16: visual feedback ================= */
+.notes kbd { color: #1c1b18; background: #f7f6f2; box-shadow: inset 0 0 0 1px #d3d0c6, 0 1px 0 #d3d0c6; }
+
+/* The capture button sits beside Attach; disabled when the agent can't take images. */
+.composer .icon-btn.cap-on { background: var(--hover); color: var(--ink); }
+.composer .icon-btn:disabled { opacity: .4; cursor: default; background: transparent; }
+.tip-pop { position: absolute; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 10px; border-radius: var(--r-md); background: var(--raised); box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--edge); font-size: var(--t-12); color: var(--ink-2); white-space: nowrap; }
+.tip-pop.off { color: var(--muted); }
+.composer.stack { flex-direction: column; align-items: stretch; gap: 8px; }
+.composer.stack .crow { display: flex; align-items: center; gap: 6px; }
+
+/* A capture in the composer: the flattened image, its pin count, and Edit. */
+.capchip { position: relative; display: inline-flex; align-self: flex-start; border-radius: var(--r-sm); box-shadow: inset 0 0 0 1px var(--line); background: var(--sunken); cursor: pointer; }
+.capchip img { display: block; height: 72px; border-radius: var(--r-sm); }
+.capchip .pinpill { position: absolute; left: 4px; bottom: 4px; display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 6px 0 4px; border-radius: var(--r-pill); background: #e0157f; color: #fff; font: 600 var(--t-11)/1 var(--font-ui); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.capchip .pinpill .i { width: 11px; height: 11px; }
+.capchip .x { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: var(--r-xs); background: rgba(255,255,255,.85); color: #3a3833; }
+.capchip .edit { position: absolute; inset: 0; display: none; place-items: center; border-radius: var(--r-sm); background: rgba(28,27,24,.45); color: #fff; font: 500 var(--t-12)/1 var(--font-ui); }
+.capchip:hover .edit { display: grid; }
+.capchip .edit span { display: inline-flex; gap: 5px; align-items: center; }
+
+/* ---- The region overlay: a frozen copy of one display, ShareX-style ---- */
+.monitor { width: 1280px; height: 800px; position: relative; box-shadow: 0 30px 80px rgba(0,0,0,.35), 0 0 0 1px rgba(0,0,0,.4); cursor: crosshair; user-select: none; }
+.monitor canvas { position: absolute; inset: 0; display: block; }
+.hintpill { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; align-items: center; padding: 7px 14px; border-radius: var(--r-pill); background: rgba(20, 19, 18, .82); color: #efeee9; font: 500 12px/1 var(--font-ui); pointer-events: none; transition: opacity .3s; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
+.hintpill kbd { background: rgba(255,255,255,.12); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); color: #efeee9; height: 18px; }
+.hintpill.gone { opacity: 0; }
+
+/* ---- The annotation dialog ---- */
+.ann { width: 1200px; height: 716px; align-self: center; display: grid; grid-template-rows: 52px minmax(0, 1fr) 58px; grid-template-columns: minmax(0, 1fr) 300px; overflow: hidden; }
+.ann .ah { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 18px; border-bottom: 1px solid var(--line); }
+.ann .ah b { font-size: var(--t-15); font-weight: 600; }
+.ann .ah .meta { font-size: var(--t-12); color: var(--muted); }
+.ann .ah .grow { flex: 1; }
+.tbx { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: var(--r-md); background: var(--sunken); box-shadow: var(--sink); }
+.tbx .icon-btn { width: 30px; height: 28px; border-radius: var(--r-sm); position: relative; }
+.tbx .icon-btn.on { background: var(--surface); color: var(--ink); box-shadow: inset 0 1px 0 var(--edge), var(--lift-1); }
+:root[data-theme='dark'] .tbx .icon-btn.on { background: var(--raised); }
+.tbx .icon-btn:disabled { opacity: .35; cursor: default; }
+.tbx .icon-btn:disabled:hover { background: transparent; }
+.tbx .vsep { height: 16px; }
+.sw { width: 26px; height: 28px; display: grid; place-items: center; border: 0; background: transparent; border-radius: var(--r-sm); cursor: pointer; }
+.sw i { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(128,128,128,.55); }
+.sw.on i { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--ink-2); }
+.astage { grid-column: 1; grid-row: 2; display: grid; place-items: center; padding: 20px; background-color: var(--sunken); background-image: linear-gradient(45deg, var(--line-soft) 25%, transparent 25%, transparent 75%, var(--line-soft) 75%), linear-gradient(45deg, var(--line-soft) 25%, transparent 25%, transparent 75%, var(--line-soft) 75%); background-size: 16px 16px; background-position: 0 0, 8px 8px; box-shadow: var(--sink); min-height: 0; }
+.astage canvas { display: block; box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-2); cursor: crosshair; }
+.astage canvas.pin-tool { cursor: copy; }
+.astage canvas.grab { cursor: grabbing; }
+.apins { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
+.apins .aph { display: flex; align-items: center; gap: 8px; padding: 12px 14px 6px; font-size: var(--t-13); font-weight: 600; }
+.alist { flex: 1; overflow: auto; padding: 4px 8px; display: flex; flex-direction: column; gap: 2px; }
+.prow { display: grid; grid-template-columns: 22px 1fr 24px; gap: 8px; align-items: start; padding: 6px; border-radius: var(--r-md); }
+.prow.hl { background: var(--hover); }
+.pnum { width: 22px; height: 22px; border-radius: 50%; background: #e0157f; color: #fff; display: grid; place-items: center; font: 700 11px/1 var(--font-ui); box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgba(0,0,0,.3); flex: none; }
+.prow textarea { width: 100%; min-height: 32px; resize: none; padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); font: 400 var(--t-13)/1.4 var(--font-ui); box-shadow: var(--sink); field-sizing: content; }
+.prow textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+.aempty { margin: 6px 8px; padding: 12px; border-radius: var(--r-md); border: 1px dashed var(--line-strong); color: var(--muted); font-size: var(--t-13); line-height: 1.5; }
+.asend { border-top: 1px solid var(--line); padding: 10px 14px 12px; background: var(--bg); }
+.asend .cap { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin-bottom: 6px; }
+.asend pre { margin: 0; max-height: 120px; overflow: auto; font: 400 var(--t-12)/1.5 var(--font-mono); color: var(--ink-2); white-space: pre-wrap; }
+.ann .af { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 14px 0 18px; border-top: 1px solid var(--line); }
+.ann .af .hint { font-size: var(--t-12); color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.ann .af .grow { flex: 1; }
+.btn.primary kbd { background: rgba(255,255,255,.35); box-shadow: none; color: var(--on-brand); height: 18px; }
+
+/* ---- A sent capture: pins are anchors ---- */
+.you.has-cap { max-width: 520px; display: flex; flex-direction: column; gap: 10px; }
+.capfig { position: relative; margin: 0; border-radius: var(--r-md); overflow: visible; }
+.capfig img { display: block; border-radius: var(--r-md); box-shadow: 0 0 0 1px var(--you-ring), var(--lift-1); cursor: zoom-in; }
+.pinhit { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; border: 0; padding: 0; background: transparent; cursor: pointer; }
+.pinhit:hover, .pinhit.cur { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--accent); }
+.pinhit .reply-count { position: absolute; left: calc(100% + 4px); top: 50%; transform: translateY(-50%); margin: 0; box-shadow: 0 0 0 1px var(--surface), var(--lift-1); }
+.pinhit .ptip { display: none; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); white-space: nowrap; padding: 4px 8px; border-radius: var(--r-sm); background: var(--raised); box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line); font: 500 var(--t-12)/1.2 var(--font-ui); color: var(--ink-2); }
+.pinhit:hover .ptip { display: block; }
+.pinnotes { list-style: none; margin: 0; padding: 0 !important; display: flex; flex-direction: column; gap: 4px !important; font-size: var(--t-14); }
+.pinnotes li { display: flex; gap: 8px; align-items: flex-start; padding: 2px 4px; margin: 0 -4px; border-radius: var(--r-sm); cursor: pointer; }
+.pinnotes li:hover { background: rgba(255,255,255,.45); }
+:root[data-theme='dark'] .pinnotes li:hover { background: rgba(255,255,255,.05); }
+.pinnotes .pnum { width: 18px; height: 18px; font-size: 10px; margin-top: 2px; box-shadow: none; }
+.pinnotes .nt { flex: 1; }
+.pinnotes .nt.empty { color: var(--muted); font-style: italic; }
+.pinref { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #e0157f; color: #fff; font: 700 10px/1 var(--font-ui); vertical-align: 1px; margin-right: 4px; cursor: pointer; }
+.pinref:hover { box-shadow: 0 0 0 3px var(--focus); }
+.pinquote { margin: 14px 18px 4px; display: flex; gap: 10px; align-items: center; padding: 8px; border-left: 3px solid var(--accent); background: var(--accent-tint); border-radius: 0 var(--r-sm) var(--r-sm) 0; font-size: var(--t-13); }
+.pinquote img { width: 120px; height: 72px; object-fit: cover; border-radius: var(--r-xs); box-shadow: 0 0 0 1px var(--line); flex: none; }
+.pinquote .pt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pinquote .pt b { display: flex; align-items: center; gap: 6px; }
+.pinquote .pt b .pnum { color: #fff; width: 18px; height: 18px; font-size: 10px; box-shadow: none; }
+.sent-log { overflow: auto !important; }
+.pinquote .pt span { color: var(--muted); font-size: var(--t-12); }
+.thr .q .pnum { display: inline-grid; width: 16px; height: 16px; font-size: 9px; vertical-align: 1px; margin-right: 4px; box-shadow: none; }
+.lightbox { position: absolute; inset: 0; z-index: 45; background: rgba(12, 11, 10, .82); display: grid; place-items: center; }
+.lightbox .capfig img { cursor: default; box-shadow: var(--shadow-3); }
+.lightbox .lbx { position: absolute; top: 12px; right: 12px; color: #fff; }
+.lightbox .lbx:hover { background: rgba(255,255,255,.12); color: #fff; }
+.lightbox .lbcap { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; color: rgba(255,255,255,.7); font-size: var(--t-12); }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Gloss visual feedback (M16)</h1>
+  <div class="pick" id="screenPick"></div>
+  <span class="grow"></span>
+  <div class="pick" id="themePick"><button data-v="light" aria-pressed="true">Light</button><button data-v="dark">Dark</button></div>
+</div>
+<div class="notes" id="notes"></div>
+<div class="stage" id="stage"></div>
+
+<script>
+// Icons from lucide 1.60.0 (ISC license, https://lucide.dev).
+const ICONS = {"panel-left":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M9 3v18\" />","panel-right":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M15 3v18\" />","chevron-down":"<path d=\"m6 9 6 6 6-6\" />","chevron-up":"<path d=\"m18 15-6-6-6 6\" />","chevron-right":"<path d=\"m9 18 6-6-6-6\" />","chevrons-up-down":"<path d=\"m7 15 5 5 5-5\" /> <path d=\"m7 9 5-5 5 5\" />","plus":"<path d=\"M5 12h14\" /> <path d=\"M12 5v14\" />","x":"<path d=\"M18 6 6 18\" /> <path d=\"m6 6 12 12\" />","minus":"<path d=\"M5 12h14\" />","search":"<path d=\"m21 21-4.34-4.34\" /> <circle cx=\"11\" cy=\"11\" r=\"8\" />","settings":"<path d=\"M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915\" /> <circle cx=\"12\" cy=\"12\" r=\"3\" />","message-square":"<path d=\"M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z\" />","git-compare":"<circle cx=\"18\" cy=\"18\" r=\"3\" /> <circle cx=\"6\" cy=\"6\" r=\"3\" /> <path d=\"M13 6h3a2 2 0 0 1 2 2v7\" /> <path d=\"M11 18H8a2 2 0 0 1-2-2V9\" />","ellipsis":"<circle cx=\"12\" cy=\"12\" r=\"1\" /> <circle cx=\"19\" cy=\"12\" r=\"1\" /> <circle cx=\"5\" cy=\"12\" r=\"1\" />","check":"<path d=\"M20 6 9 17l-5-5\" />","copy":"<rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\" /> <path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\" />","share":"<path d=\"M12 2v13\" /> <path d=\"m16 6-4-4-4 4\" /> <path d=\"M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8\" />","file-text":"<path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> <path d=\"M10 9H8\" /> <path d=\"M16 13H8\" /> <path d=\"M16 17H8\" />","terminal":"<path d=\"M12 19h8\" /> <path d=\"m4 17 6-6-6-6\" />","paperclip":"<path d=\"m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551\" />","arrow-up":"<path d=\"m5 12 7-7 7 7\" /> <path d=\"M12 19V5\" />","arrow-left":"<path d=\"m12 19-7-7 7-7\" /> <path d=\"M19 12H5\" />","square":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" />","git-branch":"<path d=\"M15 6a9 9 0 0 0-9 9V3\" /> <circle cx=\"18\" cy=\"6\" r=\"3\" /> <circle cx=\"6\" cy=\"18\" r=\"3\" />","git-pull-request":"<circle cx=\"18\" cy=\"18\" r=\"3\" /> <circle cx=\"6\" cy=\"6\" r=\"3\" /> <path d=\"M13 6h3a2 2 0 0 1 2 2v7\" /> <line x1=\"6\" x2=\"6\" y1=\"9\" y2=\"21\" />","corner-down-right":"<path d=\"m15 10 5 5-5 5\" /> <path d=\"M4 4v7a4 4 0 0 0 4 4h12\" />","cpu":"<path d=\"M12 20v2\" /> <path d=\"M12 2v2\" /> <path d=\"M17 20v2\" /> <path d=\"M17 2v2\" /> <path d=\"M2 12h2\" /> <path d=\"M2 17h2\" /> <path d=\"M2 7h2\" /> <path d=\"M20 12h2\" /> <path d=\"M20 17h2\" /> <path d=\"M20 7h2\" /> <path d=\"M7 20v2\" /> <path d=\"M7 2v2\" /> <rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"2\" /> <rect x=\"8\" y=\"8\" width=\"8\" height=\"8\" rx=\"1\" />","sliders-horizontal":"<path d=\"M10 5H3\" /> <path d=\"M12 19H3\" /> <path d=\"M14 3v4\" /> <path d=\"M16 17v4\" /> <path d=\"M21 12h-9\" /> <path d=\"M21 19h-5\" /> <path d=\"M21 5h-7\" /> <path d=\"M8 10v4\" /> <path d=\"M8 12H3\" />","shield-check":"<path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\" /> <path d=\"m9 12 2 2 4-4\" />","puzzle":"<path d=\"M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z\" />","pencil":"<path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\" /> <path d=\"m15 5 4 4\" />","trash-2":"<path d=\"M10 11v6\" /> <path d=\"M14 11v6\" /> <path d=\"M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6\" /> <path d=\"M3 6h18\" /> <path d=\"M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\" />","folder":"<path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\" />","folder-open":"<path d=\"m6 14 1.5-2.900A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\" />","external-link":"<path d=\"M15 3h6v6\" /> <path d=\"M10 14 21 3\" /> <path d=\"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6\" />","circle-alert":"<circle cx=\"12\" cy=\"12\" r=\"10\" /> <line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\" /> <line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\" />","rotate-ccw":"<path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\" /> <path d=\"M3 3v5h5\" />","log-in":"<path d=\"m10 17 5-5-5-5\" /> <path d=\"M15 12H3\" /> <path d=\"M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4\" />","clock":"<circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"M12 6v6l4 2\" />","reply":"<path d=\"M20 18v-2a4 4 0 0 0-4-4H4\" /> <path d=\"m9 17-5-5 5-5\" />","locate":"<line x1=\"2\" x2=\"5\" y1=\"12\" y2=\"12\" /> <line x1=\"19\" x2=\"22\" y1=\"12\" y2=\"12\" /> <line x1=\"12\" x2=\"12\" y1=\"2\" y2=\"5\" /> <line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\" /> <circle cx=\"12\" cy=\"12\" r=\"7\" />","user":"<path d=\"M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2\" /> <circle cx=\"12\" cy=\"7\" r=\"4\" />","bot":"<path d=\"M12 8V4H8\" /> <rect width=\"16\" height=\"12\" x=\"4\" y=\"8\" rx=\"2\" /> <path d=\"M2 14h2\" /> <path d=\"M20 14h2\" /> <path d=\"M15 13v2\" /> <path d=\"M9 13v2\" />","palette":"<path d=\"M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z\" /> <circle cx=\"13.5\" cy=\"6.5\" r=\".5\" fill=\"currentColor\" /> <circle cx=\"17.5\" cy=\"10.5\" r=\".5\" fill=\"currentColor\" /> <circle cx=\"6.5\" cy=\"12.5\" r=\".5\" fill=\"currentColor\" /> <circle cx=\"8.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\" />","server":"<rect width=\"20\" height=\"8\" x=\"2\" y=\"2\" rx=\"2\" ry=\"2\" /> <rect width=\"20\" height=\"8\" x=\"2\" y=\"14\" rx=\"2\" ry=\"2\" /> <line x1=\"6\" x2=\"6.01\" y1=\"6\" y2=\"6\" /> <line x1=\"6\" x2=\"6.01\" y1=\"18\" y2=\"18\" />","keyboard":"<path d=\"M10 8h.01\" /> <path d=\"M12 12h.01\" /> <path d=\"M14 8h.01\" /> <path d=\"M16 12h.01\" /> <path d=\"M18 8h.01\" /> <path d=\"M6 8h.01\" /> <path d=\"M7 16h10\" /> <path d=\"M8 12h.01\" /> <rect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\" />","sliders-vertical":"<path d=\"M10 8h4\" /> <path d=\"M12 21v-9\" /> <path d=\"M12 8V3\" /> <path d=\"M17 16h4\" /> <path d=\"M19 12V3\" /> <path d=\"M19 21v-5\" /> <path d=\"M3 14h4\" /> <path d=\"M5 10V3\" /> <path d=\"M5 21v-7\" />","list-filter":"<path d=\"M2 5h20\" /> <path d=\"M6 12h12\" /> <path d=\"M9 19h6\" />","columns-2":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M12 3v18\" />","rows-2":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M3 12h18\" />","list-tree":"<path d=\"M8 5h13\" /> <path d=\"M13 12h8\" /> <path d=\"M13 19h8\" /> <path d=\"M3 10a2 2 0 0 0 2 2h3\" /> <path d=\"M3 5v12a2 2 0 0 0 2 2h3\" />","fold-vertical":"<path d=\"M12 22v-6\" /> <path d=\"M12 8V2\" /> <path d=\"M4 12H2\" /> <path d=\"M10 12H8\" /> <path d=\"M16 12h-2\" /> <path d=\"M22 12h-2\" /> <path d=\"m15 19-3-3-3 3\" /> <path d=\"m15 5-3 3-3-3\" />","sparkles":"<path d=\"M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z\" />","mouse-pointer-click":"<path d=\"M14 4.1 12 6\" /> <path d=\"m5.1 8-2.9-.8\" /> <path d=\"m6 12-1.9 2\" /> <path d=\"M7.2 2.2 8 5.1\" /> <path d=\"M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z\" />","text-select":"<path d=\"M14 21h1\" /> <path d=\"M14 3h1\" /> <path d=\"M19 3a2 2 0 0 1 2 2\" /> <path d=\"M21 14v1\" /> <path d=\"M21 19a2 2 0 0 1-2 2\" /> <path d=\"M21 9v1\" /> <path d=\"M3 14v1\" /> <path d=\"M3 9v1\" /> <path d=\"M5 21a2 2 0 0 1-2-2\" /> <path d=\"M5 3a2 2 0 0 0-2 2\" /> <path d=\"M7 12h10\" /> <path d=\"M7 16h6\" /> <path d=\"M7 8h8\" /> <path d=\"M9 21h1\" /> <path d=\"M9 3h1\" />","star":"<path d=\"M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z\" />","scan":"<path d=\"M3 7V5a2 2 0 0 1 2-2h2\" /> <path d=\"M17 3h2a2 2 0 0 1 2 2v2\" /> <path d=\"M21 17v2a2 2 0 0 1-2 2h-2\" /> <path d=\"M7 21H5a2 2 0 0 1-2-2v-2\" />","map-pin":"<path d=\"M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0\" /> <circle cx=\"12\" cy=\"10\" r=\"3\" />","highlighter":"<path d=\"m9 11-6 6v3h9l3-3\" /> <path d=\"m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4\" />","move-up-right":"<path d=\"M13 5H19V11\" /> <path d=\"M19 5L5 19\" />","undo-2":"<path d=\"M9 14 4 9l5-5\" /> <path d=\"M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11\" />","redo-2":"<path d=\"m15 14 5-5-5-5\" /> <path d=\"M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13\" />","image":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\" /> <circle cx=\"9\" cy=\"9\" r=\"2\" /> <path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\" />","crop":"<path d=\"M6 2v14a2 2 0 0 0 2 2h14\" /> <path d=\"M18 22V8a2 2 0 0 0-2-2H2\" />","app-window":"<rect x=\"2\" y=\"4\" width=\"20\" height=\"16\" rx=\"2\" /> <path d=\"M10 4v4\" /> <path d=\"M2 8h20\" /> <path d=\"M6 4v4\" />","monitor":"<rect width=\"20\" height=\"14\" x=\"2\" y=\"3\" rx=\"2\" /> <line x1=\"8\" x2=\"16\" y1=\"21\" y2=\"21\" /> <line x1=\"12\" x2=\"12\" y1=\"17\" y2=\"21\" />","ban":"<circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"M4.929 4.929 19.07 19.071\" />","eye":"<path d=\"M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0\" /> <circle cx=\"12\" cy=\"12\" r=\"3\" />"};
+const ic = (n, cls = '') => ICONS[n] ? `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>` : ''
+
+const BEAD = (s) => `<svg width="${s}" height="${s}" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="bf${s}" gradientUnits="userSpaceOnUse" x1="10" y1="10" x2="54" y2="54"><stop offset="0" stop-color="#FF3DA6"/><stop offset="1" stop-color="#FF9F3D"/></linearGradient><radialGradient id="bh${s}" cx=".36" cy=".3" r=".78"><stop offset="0" stop-color="#fff" stop-opacity=".28"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".42"/></radialGradient></defs><circle cx="32" cy="32" r="26" fill="url(#bf${s})"/><circle cx="32" cy="32" r="26" fill="url(#bh${s})"/><path d="M17 26a16 16 0 0 1 12-12" stroke="#fff" stroke-opacity=".75" stroke-width="4" stroke-linecap="round" fill="none"/></svg>`
+
+const titleBar = () => `<div class="tbar">${BEAD(22)}<span class="wm">gloss</span><span class="grow"></span><span class="wc">${ic('minus')}</span><span class="wc">${ic('square')}</span><span class="wc">${ic('x')}</span></div>`
+
+/* ---------------- Shared parts ---------------- */
+const ROWS = {
+  cache: { lead: '<span class="dot s-working"></span>', tt: 'Cache and stats module', sub: 'Claude Code', trail: '<span class="count">2</span>' },
+  review: { lead: ic('git-compare'), tt: 'Review: namespaced keys', sub: 'Claude Code · 4 open', trail: '5m' },
+  evict: { lead: '', tt: 'Eviction policy options', sub: 'Codex', trail: '2h' },
+  failed: { lead: '<span class="dot s-failed"></span>', tt: 'Release notes draft', sub: 'Claude Code', trail: '3h' },
+  ext: { lead: '<span class="ring"></span>', tt: 'Understand cache.js', sub: 'Claude Code', trail: '1d', ext: true },
+  ext2: { lead: '<span class="ring"></span>', tt: 'Why is the LRU test flaky?', sub: 'Claude Code', trail: '3d', ext: true },
+}
+function row(key, cur, hov) {
+  const r = ROWS[key]
+  const trail = hov ? `<button class="icon-btn sm" style="width:22px;height:22px">${ic('ellipsis')}</button>` : r.trail
+  return `<div class="lrow${cur ? ' cur' : ''}${hov ? ' hov' : ''}${r.ext ? ' ext' : ''}"><span class="lead">${r.lead}</span><div style="min-width:0"><div class="tt">${r.tt}</div><div class="sub">${r.sub}</div></div><span class="trail">${trail}</span></div>`
+}
+function sidebar({ project = true, cur = 'cache', rows = ['cache', 'review', 'failed', 'evict', 'ext', 'ext2'], hov = null, settings = false } = {}) {
+  if (!project) {
+    return `<nav class="side">
+      <div class="switcher"><div class="switch-btn"><div class="names"><b>No project</b><span class="p">Open a folder to start</span></div>${ic('chevron-down')}</div><button class="icon-btn" title="Hide sidebar (Ctrl+B)">${ic('panel-left')}</button></div>
+      <span class="grow"></span>${foot(settings)}</nav>`
+  }
+  return `<nav class="side">
+    <div class="switcher"><div class="switch-btn" title="C:\\Users\\you\\Desktop\\cachekit"><div class="names"><b>cachekit</b><span class="p">~\\Desktop</span></div>${ic('chevrons-up-down')}</div><button class="icon-btn" title="Hide sidebar">${ic('panel-left')}</button></div>
+    <div class="split"><button class="btn secondary">${ic('plus')}New session<span class="ag">Claude</span></button><button class="btn secondary" title="New session with another agent">${ic('chevron-down')}</button></div>
+    <button class="btn ghost" style="justify-content:flex-start">${ic('git-compare')}Review changes</button>
+    <div class="label">Sessions</div>
+    <div class="rows">${rows.map((k) => row(k, k === cur, k === hov)).join('')}</div>
+    <span class="grow"></span>${foot(settings)}</nav>`
+}
+const foot = (settings) => `<div class="foot"><button class="btn ghost" title="Search conversations (Ctrl+Shift+F)">${ic('search')}Search</button><button class="btn ghost${settings ? ' hl' : ''}">${ic('settings')}Settings</button></div>`
+
+const statusLine = ({ branch = 'main', limit = true } = {}) => `<div class="status"><span class="agent">
+  <span class="sb" title="Context: 4% of 1M tokens"><span class="lb">Context</span><span class="meter"><i></i></span>4%</span>
+  <span class="sb">$0.18</span>
+  ${limit ? '<span class="sb"><span class="lb">5h limit</span>OK</span>' : ''}
+  <span class="sb">${ic('cpu', 's14')}Opus 5.5${ic('chevron-down', 's12')}</span>
+  <span class="sb">${ic('sliders-horizontal', 's14')}Medium${ic('chevron-down', 's12')}</span>
+  <span class="sb" title="Auto-approve">${ic('shield-check', 's14')}</span>
+  <span class="sb" title="Extensions">${ic('puzzle', 's14')}</span>
+  </span><span class="right"><span class="sb shrink" title="Open the folder">${ic('folder', 's14')}<span class="tx">cachekit</span></span>
+  <span class="sb shrink">${ic('git-branch', 's14')}<span class="tx">${branch}</span></span>
+  <span class="sb"><span class="dot s-done" style="width:6px;height:6px"></span>#31 open</span>
+  <span class="sb" title="Open Obsidian vault “cachekit notes”">${OBSIDIAN}</span></span></div>`
+
+// Obsidian's mark, simplified (the app uses the real logo).
+const OBSIDIAN = '<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 2.2 4.6 10.4a2 2 0 0 0 .1 1.9l3.6 6.4a2 2 0 0 0 1 .9l5.3 2.1a1.5 1.5 0 0 0 1.9-.8l3.1-6.7a2 2 0 0 0-.1-1.8L15.3 4a2 2 0 0 0-.9-.8L10.3 1.4a1.5 1.5 0 0 0-1.8.8z" fill="#7f6df2"/></svg>'
+
+const composer = ({ text = '', ph = 'Message the agent', btn = 'send', focus = false } = {}) => {
+  const b = {
+    send: `<button class="btn primary">${ic('arrow-up')}Send</button>`,
+    sendOff: `<button class="btn" disabled>${ic('arrow-up')}Send</button>`,
+    steer: `<button class="btn ghost">${ic('square')}Stop</button><button class="btn primary">${ic('corner-down-right')}Steer</button>`,
+    queue: `<button class="btn secondary">${ic('clock')}Queue</button>`,
+    threadQueue: `<button class="icon-btn sm">${ic('ellipsis')}</button><button class="btn secondary">${ic('clock')}Queue</button>`,
+    threadSteer: `<button class="icon-btn sm">${ic('ellipsis')}</button><button class="btn ghost">${ic('square')}Stop</button><button class="btn primary">${ic('corner-down-right')}Steer</button>`,
+  }[btn]
+  return `<div class="composer${focus ? ' focus' : ''}"><button class="icon-btn sm" title="Attach">${ic('paperclip')}</button><span class="ed${text ? ' typed' : ''}">${text || ph}</span>${b}</div>`
+}
+const rail = (count, running) => `<div class="rail"><span class="rb"><button class="icon-btn" title="Threads (Ctrl+Shift+T)">${ic('message-square')}</button>${count ? `<span class="count badge" style="background:var(--surface);box-shadow:inset 0 0 0 1px var(--line)">${count}</span>` : ''}</span>${running ? '<span class="dot s-working" style="width:6px;height:6px"></span>' : ''}</div>`
+
+const TOOLS = `<div class="tools">
+  <div class="trow">${ic('file-text')}<span class="title">Read <code>src/cache.js</code></span>${ic('check', 's14')}</div>
+  <div class="trow">${ic('terminal')}<span class="title"><code>node --test</code></span><span class="dur">0.9s</span>${ic('check', 's14')}</div>
+</div>`.replaceAll(ic('check', 's14'), `<span class="s-done" style="display:inline-grid">${ic('check', 's14')}</span>`)
+
+const PLAN = `<div class="plan"><div class="ph"><b>Plan</b><span>2 of 4 done</span></div>
+  <div class="st done"><span class="box done">${ic('check', 's12')}</span>Read the cache and stats modules</div>
+  <div class="st done"><span class="box done">${ic('check', 's12')}</span>Run the test suite</div>
+  <div class="st"><span class="box run"></span>Write up improvements</div>
+  <div class="st"><span class="box"></span>Check the eviction tests</div></div>`
+
+const ANSWER = (hov) => `<p>All 14 tests pass. Four changes worth making:</p>
+  <ol>
+    <li><b>Sweep expired entries on write.</b> <code class="inl">get</code> only removes an entry when someone asks for it. In <code class="inl">set</code>, <span class="anchor">walk the Map and delete entries</span><span class="reply-count">${ic('message-square', 's12')}6</span> whose time has passed.</li>
+    <li class="${hov ? 'hov' : ''}"><span class="reply" title="Reply in a thread">${ic('reply', 's14')}</span><b>Count hits and misses</b> in one <code class="inl">stats</code> object, so callers can read the hit rate without wrapping <code class="inl">get</code>.<span class="reply-count">${ic('message-square', 's12')}2</span></li>
+    <li><b>Cap the key length.</b> Namespaced keys can grow without bound; reject keys over 256 characters in <code class="inl">set</code>.</li>
+  </ol>`
+
+const mainHead = (title, right = '') => `<div class="head"><span class="tt">${title}</span><span class="ag">Claude Code</span><span class="grow"></span>${right}</div>`
+
+/* ================= State shared by the screens ================= */
+const PIN = '#e0157f'
+const S = {
+  capture: null,   // { canvas, w, h, source }: what was captured
+  shapes: [], pins: [], past: [], future: [],
+  tool: 'pin', color: '#e5372b',
+  flat: null,      // the flattened canvas sent to the agent
+  sentPins: [],    // the pins as sent: { n, x, y, note }
+  openPin: 2, seeded: true, lightbox: false,
+}
+const COLORS = ['#e5372b', '#f5b700', '#2c7be5', '#2e9e4f', '#1c1b18']
+const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+const pinR = (w, h) => Math.max(11, Math.min(22, Math.round(Math.min(w, h) * 0.025)))
+
+/* ================= The fake desktop (one display), drawn to a canvas so the magnifier has pixels ================= */
+const DW = 1280, DH = 800
+const B = { x: 40, y: 40, w: 760, h: 600 }     // browser with the app under work
+const G = { x: 830, y: 96, w: 420, h: 560 }    // Gloss itself: it doesn't hide while capturing
+const T = { x: 900, y: 560, w: 340, h: 180 }   // a terminal over Gloss
+const TB = { x: 0, y: 760, w: DW, h: 40 }      // the taskbar
+const WINDOWS = [ // top to bottom, like the OS's z-order
+  { name: 'Windows PowerShell', r: T }, { name: 'Taskbar', r: TB }, { name: 'gloss', r: G }, { name: 'cachekit dashboard – Chrome', r: B },
+]
+const FILTER = { x: 620, y: 166, w: 72, h: 30 }, EXPORT = { x: 700, y: 171, w: 80, h: 30 }
+const LEGEND = { x: 676, y: 352, w: 92, h: 50 }
+const DEFAULT_CROP = { x: 52, y: 152, w: 740, h: 482 }
+const DEFAULT_PINS = [
+  { x: LEGEND.x - 52, y: LEGEND.y - 152, note: 'The legend covers the last bar' },
+  { x: 742 - 52, y: 214 - 152, note: 'Export sits lower than Filter' },
+  { x: 420 - 52, y: 280 - 152, note: 'This number is lower than the other two' },
+]
+const F = (w, s) => `${w} ${s}px "Inter Gloss", system-ui, "Segoe UI", sans-serif`
+const desk = document.createElement('canvas')
+desk.width = DW; desk.height = DH
+function rr(c, x, y, w, h, r, fill, stroke) { c.beginPath(); c.roundRect(x, y, w, h, r); if (fill) { c.fillStyle = fill; c.fill() } if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1; c.stroke() } }
+function txt(c, s, x, y, font, color, align = 'left') { c.font = font; c.fillStyle = color; c.textAlign = align; c.fillText(s, x, y) }
+function drawDesk() {
+  const c = desk.getContext('2d')
+  const g = c.createLinearGradient(0, 0, DW, DH); g.addColorStop(0, '#24324d'); g.addColorStop(1, '#6b4f7a')
+  c.fillStyle = g; c.fillRect(0, 0, DW, DH)
+  // Browser
+  c.save(); c.shadowColor = 'rgba(0,0,0,.45)'; c.shadowBlur = 30; c.shadowOffsetY = 10; rr(c, B.x, B.y, B.w, B.h, 8, '#dfe3e8'); c.restore()
+  rr(c, B.x + 70, B.y + 6, 220, 28, 7, '#fff'); txt(c, 'cachekit dashboard', B.x + 84, B.y + 25, F(500, 12), '#333')
+  for (let i = 0; i < 3; i++) rr(c, B.x + 12 + i * 18, B.y + 14, 11, 11, 6, ['#ff5f57', '#febc2e', '#28c840'][i])
+  rr(c, B.x, B.y + 34, B.w, 36, 0, '#fff'); rr(c, B.x + 86, B.y + 40, B.w - 110, 24, 12, '#eef0f3'); txt(c, 'localhost:5173/dashboard', B.x + 102, B.y + 56, F(400, 12), '#555')
+  c.fillStyle = '#fff'; c.fillRect(B.x, 110, B.w, 40); c.fillStyle = '#e3e5ea'; c.fillRect(B.x, 149, B.w, 1)
+  txt(c, 'cachekit', 64, 136, F(700, 16), '#1d2433'); ['Overview', 'Keys', 'Settings'].forEach((t, i) => txt(c, t, 170 + i * 82, 135, F(500, 13), i ? '#6b7280' : '#2c55c9'))
+  c.fillStyle = '#f4f5f7'; c.fillRect(B.x, 150, B.w, B.y + B.h - 150)
+  txt(c, 'Overview', 64, 190, F(650, 20), '#1d2433')
+  rr(c, FILTER.x, FILTER.y, FILTER.w, FILTER.h, 6, '#fff', '#cfd4dc'); txt(c, 'Filter', FILTER.x + 36, FILTER.y + 20, F(500, 13), '#1d2433', 'center')
+  rr(c, EXPORT.x, EXPORT.y, EXPORT.w, EXPORT.h, 6, '#2c55c9'); txt(c, 'Export', EXPORT.x + 40, EXPORT.y + 20, F(600, 13), '#fff', 'center')
+  const cards = [['Hit rate', '92.4%', 64, 0], ['Entries', '1,204', 304, 10], ['Evictions / h', '38', 544, 0]]
+  for (const [l, v, x, dy] of cards) { rr(c, x, 214, x === 544 ? 236 : 228, 84, 8, '#fff', '#e3e5ea'); txt(c, l, x + 16, 240, F(500, 12), '#6b7280'); txt(c, v, x + 16, 278 + dy, F(700, 26), '#1d2433') }
+  rr(c, 64, 314, 716, 310, 8, '#fff', '#e3e5ea'); txt(c, 'Hits per hour', 84, 342, F(600, 14), '#1d2433')
+  const hs = [120, 150, 135, 190, 170, 210, 160, 230, 200, 185, 240, 220]
+  hs.forEach((h, i) => { rr(c, 90 + i * 56, 600 - h, 34, h, 3, i % 2 ? '#7c9cf0' : '#2c55c9') })
+  c.fillStyle = '#e3e5ea'; c.fillRect(84, 600, 680, 1)
+  rr(c, LEGEND.x, LEGEND.y, LEGEND.w, LEGEND.h, 6, 'rgba(255,255,255,.96)', '#cfd4dc')
+  rr(c, LEGEND.x + 10, LEGEND.y + 12, 10, 10, 2, '#2c55c9'); txt(c, 'Hits', LEGEND.x + 28, LEGEND.y + 21, F(500, 12), '#1d2433')
+  rr(c, LEGEND.x + 10, LEGEND.y + 30, 10, 10, 2, '#7c9cf0'); txt(c, 'Misses', LEGEND.x + 28, LEGEND.y + 39, F(500, 12), '#1d2433')
+  // Gloss
+  c.save(); c.shadowColor = 'rgba(0,0,0,.45)'; c.shadowBlur = 30; c.shadowOffsetY = 10; rr(c, G.x, G.y, G.w, G.h, 8, '#ebeae4'); c.restore()
+  const bg = c.createLinearGradient(G.x + 12, G.y + 8, G.x + 28, G.y + 24); bg.addColorStop(0, '#ff3da6'); bg.addColorStop(1, '#ff9f3d')
+  c.beginPath(); c.arc(G.x + 20, G.y + 17, 8, 0, Math.PI * 2); c.fillStyle = bg; c.fill(); txt(c, 'gloss', G.x + 34, G.y + 23, F(600, 15), '#1c1b18')
+  for (let i = 0; i < 5; i++) rr(c, G.x + 10, G.y + 50 + i * 38, 100, 30, 6, i === 0 ? '#fff' : 'transparent')
+  for (let i = 0; i < 5; i++) { rr(c, G.x + 18, G.y + 58 + i * 38, 70, 6, 3, '#c9c6bd'); rr(c, G.x + 18, G.y + 70 + i * 38, 48, 5, 3, '#dcd9d0') }
+  rr(c, G.x + 120, G.y + 34, G.w - 120, G.h - 34, 10, '#f7f6f2')
+  rr(c, G.x + 250, G.y + 60, 150, 34, 10, '#fbe7ee'); rr(c, G.x + 262, G.y + 74, 110, 6, 3, '#e3b3c8')
+  for (let i = 0; i < 7; i++) rr(c, G.x + 140, G.y + 116 + i * 20, [240, 220, 250, 180, 230, 200, 120][i], 7, 3, '#d8d5cc')
+  rr(c, G.x + 140, G.y + G.h - 64, G.w - 160, 40, 10, '#fff', '#e3e1da')
+  // Terminal
+  c.save(); c.shadowColor = 'rgba(0,0,0,.5)'; c.shadowBlur = 24; c.shadowOffsetY = 8; rr(c, T.x, T.y, T.w, T.h, 8, '#0c0c0c'); c.restore()
+  rr(c, T.x, T.y, T.w, 30, 8, '#202020'); c.fillStyle = '#202020'; c.fillRect(T.x, T.y + 20, T.w, 10); txt(c, 'Windows PowerShell', T.x + 14, T.y + 20, F(500, 12), '#ddd')
+  const lines = ['PS C:\\cachekit> npm run dev', '', '  VITE v7.1.3  ready in 412 ms', '', '  ➜  Local:   http://localhost:5173/', '  ➜  press h + enter to show help']
+  lines.forEach((l, i) => txt(c, l, T.x + 12, T.y + 52 + i * 18, '12px "Cascadia Mono", Consolas, monospace', i === 0 ? '#e6e6e6' : '#9ad09a'))
+  // Taskbar
+  c.fillStyle = 'rgba(28,28,32,.94)'; c.fillRect(TB.x, TB.y, TB.w, TB.h)
+  ;['#2c7be5', '#e0157f', '#f5b700', '#2e9e4f', '#888'].forEach((col, i) => rr(c, 570 + i * 32, TB.y + 9, 22, 22, 5, col))
+  txt(c, '10:42', DW - 20, TB.y + 25, F(500, 12), '#eee', 'right')
+}
+function crop(r) { const k = document.createElement('canvas'); k.width = r.w; k.height = r.h; k.getContext('2d').drawImage(desk, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h); return k }
+
+/* ================= Annotation drawing (also used to flatten) ================= */
+function drawShape(c, s, r) {
+  c.save(); c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = s.color; c.lineWidth = Math.max(3, Math.round(r * .26))
+  if (s.type === 'pen' || s.type === 'hl') {
+    if (s.type === 'hl') { c.globalCompositeOperation = 'multiply'; c.globalAlpha = .4; c.lineWidth = r * 1.5; c.lineCap = 'butt' }
+    c.beginPath(); s.pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.stroke()
+  } else if (s.type === 'box') {
+    c.strokeRect(Math.min(s.x1, s.x2), Math.min(s.y1, s.y2), Math.abs(s.x2 - s.x1), Math.abs(s.y2 - s.y1))
+  } else if (s.type === 'arrow') {
+    const a = Math.atan2(s.y2 - s.y1, s.x2 - s.x1), h = r * 1.2
+    c.beginPath(); c.moveTo(s.x1, s.y1); c.lineTo(s.x2, s.y2); c.stroke()
+    c.beginPath(); c.moveTo(s.x2, s.y2); c.lineTo(s.x2 - h * Math.cos(a - .45), s.y2 - h * Math.sin(a - .45)); c.moveTo(s.x2, s.y2); c.lineTo(s.x2 - h * Math.cos(a + .45), s.y2 - h * Math.sin(a + .45)); c.stroke()
+  }
+  c.restore()
+}
+function drawPin(c, p, n, r, hl) {
+  c.save()
+  if (hl) { c.beginPath(); c.arc(p.x, p.y, r + 6, 0, Math.PI * 2); c.fillStyle = 'rgba(224,21,127,.25)'; c.fill() }
+  c.shadowColor = 'rgba(0,0,0,.4)'; c.shadowBlur = 4; c.shadowOffsetY = 1
+  c.beginPath(); c.arc(p.x, p.y, r, 0, Math.PI * 2); c.fillStyle = PIN; c.fill()
+  c.shadowColor = 'transparent'; c.lineWidth = Math.max(2, r * .16); c.strokeStyle = '#fff'; c.stroke()
+  c.fillStyle = '#fff'; c.font = F(700, Math.round(r * 1.05)); c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(n), p.x, p.y + 1)
+  c.restore()
+}
+function flatten(src, shapes, pins, hlIndex = -1) {
+  const k = document.createElement('canvas'); k.width = src.width; k.height = src.height
+  const c = k.getContext('2d'), r = pinR(k.width, k.height)
+  c.drawImage(src, 0, 0); shapes.forEach((s) => drawShape(c, s, r)); pins.forEach((p, i) => drawPin(c, p, i + 1, r, i === hlIndex))
+  return k
+}
+const pinText = (pins) => pins.length ? `Screenshot with ${pins.length} numbered pin${pins.length > 1 ? 's' : ''}:\n` + pins.map((p, i) => `${i + 1}: ${p.note.trim() || '(no note)'}`).join('\n') : 'Screenshot, no pins.'
+function useDefault() {
+  if (S.capture) return
+  S.capture = { canvas: crop(DEFAULT_CROP), w: DEFAULT_CROP.w, h: DEFAULT_CROP.h, source: 'Region' }
+  S.pins = DEFAULT_PINS.map((p) => ({ ...p })); S.shapes = []
+  S.shapes.push({ type: 'box', color: '#e5372b', x1: 556, y1: 10, x2: 736, y2: 56 })
+}
+function finish() {
+  S.flat = flatten(S.capture.canvas, S.shapes, S.pins)
+  S.sentPins = S.pins.map((p, i) => ({ ...p, n: i + 1 }))
+}
+
+/* ================= Screens ================= */
+const session = (composerHtml, extra = '') => `${sidebar()}<div class="sheet"><div class="main">${mainHead('Dashboard polish')}
+  <div class="log"><div class="col">
+    <div class="you">Start the dev server and open the dashboard.</div>
+    <div class="tools"><div class="trow">${ic('terminal')}<span class="title"><code>npm run dev</code></span><span class="dur">running</span></div></div>
+    <p>The dev server is up at <code class="inl">localhost:5173</code>. The dashboard renders with the overview cards and the hourly chart.</p>
+  </div></div>
+  <div class="composer-wrap" style="position:relative">${composerHtml}${extra}</div>${statusLine()}
+</div>${rail(0)}</div>`
+// Capture lives in the Attach menu (the paperclip), not beside it: no extra width in the composer.
+const capBtn = () => ''
+const attachMenu = (off) => `<div class="menu" style="left:36px;bottom:52px;min-width:280px"><div class="it">${ic('paperclip')}<span class="grow">Attachments</span></div><div class="it${off ? '' : ' hl'}" id="capBtn" style="${off ? 'color:var(--faint)' : 'cursor:pointer'}">${ic('scan')}<span class="grow">Screen capture${off ? '<br><span class=d>OpenCode (qwen3-coder) doesn\x27t accept images.</span>' : ''}</span></div></div>`
+const composerLine = (cap, text = '', btn = `<button class="btn primary">${ic('arrow-up')}Send</button>`) => `<div class="composer"><button class="icon-btn sm" title="Attach">${ic('paperclip')}</button>${cap}<span class="ed${text ? ' typed' : ''}">${text || 'Message the agent'}</span>${btn}</div>`
+
+const SCREENS = [
+  {
+    id: 'entry', name: '1 · Entry point',
+    notes: `<b>Capture starts from the composer.</b> The paperclip opens the Attach menu: <b>Attachments</b> and <b>Screen capture</b> (Lucide <i>scan</i>; its tooltip names the shortcut), so capture costs no width in the composer. The one <b>capture shortcut</b> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>PrtSc</kbd> by default, recorded in settings) does the same from Gloss or any app. It freezes every display and opens the region overlay. No palette of modes: like ShareX, the overlay handles a region, a window and the whole display. The capture goes to the composer used last. Gloss stays on screen and is part of the capture. <b>Click Screen capture to try it.</b>`,
+    render: () => session(composerLine(capBtn()), attachMenu(false)),
+    mount: () => { document.getElementById('capBtn').onclick = () => show('region') },
+  },
+  {
+    id: 'off', name: '1b · No image support',
+    notes: `<b>An agent that doesn't take images.</b> When the session's agent doesn't advertise <code class="inl">promptCapabilities.image</code>, the menu's Capture item is disabled and says why; the shortcut does nothing. It updates if the session's agent or model changes what it advertises.`,
+    render: () => session(composerLine(capBtn()), attachMenu(true)).replace('Claude Code</span>', 'OpenCode</span>'),
+  },
+  {
+    id: 'region', name: '2 · Region capture', bare: true,
+    notes: `<b>The region overlay, as in ShareX</b> (its defaults, from <code class="inl">RegionCaptureOptions.cs</code>). A frozen copy of the display, dimmed 20% except the active area, which gets a 1px accent outline with black marching ants.
+      <ul>
+        <li><b>Hover</b> highlights the window under the cursor; <b>click</b> captures it. Over the desktop, a click takes the whole display.</li>
+        <li><b>Drag</b> draws a region; releasing captures it (Quick capture). The size shows at its corner, with a crosshair at its center. Hold <kbd>Shift</kbd> for a square.</li>
+        <li><b>Magnifier</b>: 15 × 15 pixels at 10× beside the cursor, with the center pixel outlined and <i>X, Y</i> below it.</li>
+        <li><kbd>Space</kbd> captures the whole display. <b>Right-click</b> drops the region being drawn, or cancels when there's none; <kbd>Esc</kbd> cancels. Arrow keys nudge the cursor 1px (<kbd>Shift</kbd>: 10px) in the app.</li>
+        <li>Gloss addition: a hint pill that fades once you start dragging. ShareX's controls detection (buttons inside a window) and its annotation toolbar are left out; windows only.</li>
+      </ul>`,
+    render: () => `<div class="monitor" id="mon"><canvas id="deskc" width="${DW}" height="${DH}"></canvas><canvas id="ov" width="${DW}" height="${DH}"></canvas>
+      <div class="hintpill" id="hint"><span>Drag a region</span><span>Click a window</span><span><kbd>Space</kbd> whole display</span><span><kbd>Esc</kbd> cancel</span></div></div>`,
+    mount: mountRegion,
+  },
+  {
+    id: 'annotate', name: '3 · Annotate',
+    notes: `<b>The annotation canvas</b>, a dialog over the session. Tools: <b>Pin</b> <kbd>N</kbd>, <b>Pen</b> <kbd>F</kbd>, <b>Highlighter</b> <kbd>H</kbd>, <b>Box</b> <kbd>R</kbd>, <b>Arrow</b> <kbd>A</kbd> (ShareX's letters), five colors for drawings, undo <kbd>Ctrl</kbd>+<kbd>Z</kbd> / redo <kbd>Ctrl</kbd>+<kbd>Y</kbd>. Pins are always Gloss pink so they read as anchors, numbered in order; placing one focuses its note. Drag a pin to move it (Pin tool); deleting one renumbers the rest. The right column shows exactly the text that goes with the image. <b>Add to message</b> (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>) flattens it into the composer; <b>Retake</b> reopens the overlay. <b>Try it: place pins, draw, then add it.</b>`,
+    render: () => { useDefault(); return `${session(composerLine(capBtn()))}<div class="scrim"><div class="dialog ann">
+      <div class="ah"><b>Annotate</b><span class="meta">${S.capture.source} · ${S.capture.w} × ${S.capture.h}</span><span class="grow"></span>
+        <div class="tbx" id="tools">
+          ${[['pin', 'map-pin', 'Pin (N)'], ['pen', 'pencil', 'Pen (F)'], ['hl', 'highlighter', 'Highlighter (H)'], ['box', 'square', 'Box (R)'], ['arrow', 'move-up-right', 'Arrow (A)']].map(([t, i, n]) => `<button class="icon-btn" data-tool="${t}" title="${n}">${ic(i)}</button>`).join('')}
+          <span class="vsep"></span>${COLORS.map((c) => `<button class="sw" data-color="${c}" title="Drawing color"><i style="background:${c}"></i></button>`).join('')}
+          <span class="vsep"></span><button class="icon-btn" id="undo" title="Undo (Ctrl+Z)">${ic('undo-2')}</button><button class="icon-btn" id="redo" title="Redo (Ctrl+Y)">${ic('redo-2')}</button>
+        </div><span class="grow"></span>
+        <button class="btn ghost sm" id="retake">${ic('crop', 's14')}Retake</button><button class="icon-btn sm" id="annX" title="Cancel (Esc)">${ic('x')}</button></div>
+      <div class="astage" id="astage"><canvas id="ann"></canvas></div>
+      <aside class="apins"><div class="aph">Pins <span class="count" id="pcount">0</span></div><div class="alist" id="alist"></div>
+        <div class="asend"><div class="cap">Sent with the image</div><pre id="atext"></pre></div></aside>
+      <div class="af"><span class="hint">${ic('eye', 's14')}The agent gets this image and the text beside it, nothing else.</span><span class="grow"></span>
+        <button class="btn ghost" id="annCancel">Cancel</button><button class="btn primary" id="annAdd">Add to message <kbd>Ctrl</kbd><kbd>Enter</kbd></button></div>
+    </div></div>` },
+    mount: mountAnnotate,
+  },
+  {
+    id: 'composer', name: '4 · In the composer',
+    notes: `<b>The capture is an attachment.</b> The flattened image with its pin count; hover shows <b>Edit</b>, which reopens the canvas with the pins and drawings still editable until the message is sent. The pin list travels with it as text, so the composer's text stays yours. Remove (×) drops it. <b>Click the chip to edit, Send to continue.</b>`,
+    render: () => { if (!S.flat) { useDefault(); finish() } return session(`<div class="composer stack">
+      <div><span class="capchip" id="chip" title="capture.png · ${S.flat.width} × ${S.flat.height} · ${S.sentPins.length} pins"><img src="${S.flat.toDataURL()}"><span class="pinpill">${ic('map-pin')}${S.sentPins.length}</span><span class="edit"><span>${ic('pencil', 's14')}Edit</span></span><span class="x">${ic('x', 's12')}</span></span></div>
+      <div class="crow"><button class="icon-btn sm" title="Attach">${ic('paperclip')}</button>${capBtn()}<span class="ed typed" style="flex:1;padding:0 4px">These look off on the dashboard. Can you fix them?</span><button class="btn primary" id="send">${ic('arrow-up')}Send</button></div></div>`) },
+    mount: () => {
+      document.getElementById('chip').onclick = (e) => { if (e.target.closest('.x')) return; S.flat = null; show('annotate') }
+      document.getElementById('send').onclick = () => show('sent')
+    },
+  },
+  {
+    id: 'sent', name: '5 · Pins as anchors',
+    notes: `<b>Pins are anchors.</b> The sent capture shows at a readable size in your message, with the notes listed under it. Clicking a pin on the image, its note, or a pin reference in the answer opens that pin's thread; pins with threads carry a reply count. The thread's quote is a crop around the pin plus its note, and its first prompt names the pin ("About pin 2 in the screenshot"). Clicking the image enlarges it, pins still clickable. In the threads overview a pin thread's row shows the pin number and note. <b>Click pins 1–3.</b>`,
+    render: renderSent,
+    mount: mountSent,
+  },
+]
+
+/* ---------------- Region overlay ---------------- */
+let raf = 0
+function mountRegion() {
+  document.getElementById('deskc').getContext('2d').drawImage(desk, 0, 0)
+  const ov = document.getElementById('ov'), c = ov.getContext('2d'), hint = document.getElementById('hint')
+  const st = { x: DW / 2, y: DH / 2, down: null, drag: false, shift: false, ant: 0 }
+  const hover = () => WINDOWS.find((w) => st.x >= w.r.x && st.x < w.r.x + w.r.w && st.y >= w.r.y && st.y < w.r.y + w.r.h) ?? { name: 'Display', r: { x: 0, y: 0, w: DW, h: DH } }
+  const selRect = () => {
+    let w = Math.abs(st.x - st.down.x) + 1, h = Math.abs(st.y - st.down.y) + 1
+    if (st.shift) { w = h = Math.max(w, h) }
+    return { x: st.x < st.down.x ? st.down.x - w + 1 : st.down.x, y: st.y < st.down.y ? st.down.y - h + 1 : st.down.y, w, h }
+  }
+  const label = (s, x, y) => { c.font = F(500, 12); const w = c.measureText(s).width + 14; c.fillStyle = 'rgba(20,19,18,.82)'; c.beginPath(); c.roundRect(x, y, w, 22, 5); c.fill(); c.fillStyle = '#fff'; c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(s, x + 7, y + 11.5); return w }
+  function frame() {
+    st.ant = (st.ant + .5) % 10
+    const a = st.drag ? selRect() : hover().r
+    c.clearRect(0, 0, DW, DH)
+    c.fillStyle = 'rgba(0,0,0,.2)'; c.beginPath(); c.rect(0, 0, DW, DH); c.rect(a.x, a.y, a.w, a.h); c.fill('evenodd')
+    c.save(); c.translate(.5, .5); c.lineWidth = 1
+    c.strokeStyle = '#ff3da6'; c.strokeRect(a.x, a.y, a.w - 1, a.h - 1)
+    c.strokeStyle = 'rgba(0,0,0,.9)'; c.setLineDash([5, 5]); c.lineDashOffset = -st.ant; c.strokeRect(a.x, a.y, a.w - 1, a.h - 1); c.restore()
+    if (st.drag) {
+      const cx = Math.floor(a.x + a.w / 2), cy = Math.floor(a.y + a.h / 2)
+      c.fillStyle = '#000'; c.fillRect(cx - 5, cy - 1, 11, 3); c.fillRect(cx - 1, cy - 5, 3, 11); c.fillStyle = '#ff3da6'; c.fillRect(cx - 4, cy, 9, 1); c.fillRect(cx, cy - 4, 1, 9)
+      label(`${a.w} × ${a.h}`, a.x, a.y >= 28 ? a.y - 28 : a.y + 6)
+    }
+    // Magnifier: 15 × 15 px at 10×, beside the cursor, flipped at the edges.
+    const M = 150, off = 24
+    let mx = st.x + off, my = st.y + off
+    if (mx + M > DW) mx = st.x - off - M
+    if (my + M + 30 > DH) my = st.y - off - M - 30
+    c.save(); c.beginPath(); c.arc(mx + M / 2, my + M / 2, M / 2, 0, Math.PI * 2); c.clip()
+    c.imageSmoothingEnabled = false; c.fillStyle = '#000'; c.fillRect(mx, my, M, M); c.drawImage(desk, st.x - 7, st.y - 7, 15, 15, mx, my, M, M)
+    c.strokeStyle = 'rgba(0,0,0,.18)'; c.lineWidth = 1; c.beginPath()
+    for (let i = 1; i < 15; i++) { c.moveTo(mx + i * 10 + .5, my); c.lineTo(mx + i * 10 + .5, my + M); c.moveTo(mx, my + i * 10 + .5); c.lineTo(mx + M, my + i * 10 + .5) }
+    c.stroke(); c.strokeStyle = '#000'; c.strokeRect(mx + 70 + .5, my + 70 + .5, 10, 10); c.strokeStyle = '#fff'; c.strokeRect(mx + 71 + .5, my + 71 + .5, 8, 8); c.restore()
+    c.beginPath(); c.arc(mx + M / 2, my + M / 2, M / 2, 0, Math.PI * 2); c.lineWidth = 2; c.strokeStyle = 'rgba(255,255,255,.85)'; c.stroke()
+    const s = `X: ${st.x}  Y: ${st.y}`; c.font = F(500, 12); label(s, mx + M / 2 - (c.measureText(s).width + 14) / 2, my + M + 6)
+    raf = requestAnimationFrame(frame)
+  }
+  const pos = (e) => { const b = ov.getBoundingClientRect(); st.x = Math.max(0, Math.min(DW - 1, Math.floor(e.clientX - b.left))); st.y = Math.max(0, Math.min(DH - 1, Math.floor(e.clientY - b.top))) }
+  ov.onmousemove = (e) => { pos(e); st.shift = e.shiftKey; if (st.down && !st.drag && Math.hypot(st.x - st.down.x, st.y - st.down.y) >= 3) { st.drag = true; hint.classList.add('gone') } }
+  ov.onmousedown = (e) => {
+    pos(e)
+    if (e.button === 0) { st.down = { x: st.x, y: st.y }; st.drag = false }
+    if (e.button === 2) { if (st.drag) { st.drag = false; st.down = null } else show('entry') }
+  }
+  ov.onmouseup = (e) => {
+    if (e.button !== 0 || !st.down) return
+    pos(e)
+    if (st.drag) { const r = selRect(); st.drag = false; st.down = null; if (r.w >= 5 && r.h >= 5) capture(r, 'Region'); return }
+    st.down = null; const w = hover(); capture(w.r, w.name === 'Display' ? 'Display' : `Window: ${w.name}`)
+  }
+  ov.oncontextmenu = (e) => e.preventDefault()
+  KEYS = (e) => {
+    st.shift = e.shiftKey
+    if (e.key === 'Escape') show('entry')
+    else if (e.key === ' ') { e.preventDefault(); capture({ x: 0, y: 0, w: DW, h: DH }, 'Display') }
+  }
+  frame()
+}
+function capture(r, source) {
+  const x = Math.max(0, r.x), y = Math.max(0, r.y), w = Math.min(DW, r.x + r.w) - x, h = Math.min(DH, r.y + r.h) - y
+  S.capture = { canvas: crop({ x, y, w, h }), w, h, source }
+  S.shapes = []; S.pins = []; S.past = []; S.future = []; S.flat = null; S.seeded = false
+  show('annotate')
+}
+
+/* ---------------- Annotation canvas ---------------- */
+function mountAnnotate() {
+  const cv = document.getElementById('ann'), stage = document.getElementById('astage'), cap = S.capture
+  cv.width = cap.w; cv.height = cap.h
+  const scale = Math.min(1, (stage.clientWidth - 40) / cap.w, (stage.clientHeight - 40) / cap.h)
+  cv.style.width = `${cap.w * scale}px`; cv.style.height = `${cap.h * scale}px`
+  const c = cv.getContext('2d'), r = pinR(cap.w, cap.h)
+  let hl = -1, live = null, dragPin = null
+  const snap = () => { S.past.push(JSON.stringify({ shapes: S.shapes, pins: S.pins })); S.future = [] }
+  const restore = (j) => { const o = JSON.parse(j); S.shapes = o.shapes; S.pins = o.pins }
+  const now = () => JSON.stringify({ shapes: S.shapes, pins: S.pins })
+  function paint() {
+    c.clearRect(0, 0, cv.width, cv.height); c.drawImage(cap.canvas, 0, 0)
+    S.shapes.forEach((s) => drawShape(c, s, r)); if (live) drawShape(c, live, r)
+    S.pins.forEach((p, i) => drawPin(c, p, i + 1, r, i === hl))
+    document.getElementById('undo').disabled = !S.past.length; document.getElementById('redo').disabled = !S.future.length
+  }
+  function list(focus = -1) {
+    document.getElementById('pcount').textContent = S.pins.length
+    const el = document.getElementById('alist')
+    el.innerHTML = S.pins.length ? S.pins.map((p, i) => `<div class="prow" data-i="${i}"><span class="pnum">${i + 1}</span><textarea rows="1" placeholder="What about it?">${esc(p.note)}</textarea><button class="icon-btn sm" title="Delete pin">${ic('trash-2', 's14')}</button></div>`).join('')
+      : `<div class="aempty">Choose <b>Pin</b> (<kbd>N</kbd>) and click the image. Each pin gets a number and a note, and the agent can refer to it by number.</div>`
+    el.querySelectorAll('.prow').forEach((row) => {
+      const i = +row.dataset.i
+      row.onmouseenter = () => { hl = i; row.classList.add('hl'); paint() }
+      row.onmouseleave = () => { hl = -1; row.classList.remove('hl'); paint() }
+      row.querySelector('textarea').oninput = (e) => { S.pins[i].note = e.target.value; text() }
+      row.querySelector('button').onclick = () => { snap(); S.pins.splice(i, 1); hl = -1; list(); paint() }
+    })
+    if (focus >= 0) el.querySelectorAll('textarea')[focus]?.focus()
+    text()
+  }
+  const text = () => { document.getElementById('atext').textContent = pinText(S.pins) }
+  function setTool(t) { S.tool = t; document.querySelectorAll('#tools [data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === t)); cv.classList.toggle('pin-tool', t === 'pin') }
+  function setColor(col) { S.color = col; document.querySelectorAll('#tools .sw').forEach((b) => b.classList.toggle('on', b.dataset.color === col)) }
+  const pt = (e) => { const b = cv.getBoundingClientRect(); return [(e.clientX - b.left) / scale, (e.clientY - b.top) / scale] }
+  const hitPin = (x, y) => { for (let i = S.pins.length - 1; i >= 0; i--) if (Math.hypot(S.pins[i].x - x, S.pins[i].y - y) <= r + 3) return i; return -1 }
+  cv.onpointerdown = (e) => {
+    cv.setPointerCapture(e.pointerId); const [x, y] = pt(e)
+    if (S.tool === 'pin') {
+      const i = hitPin(x, y)
+      if (i >= 0) { dragPin = { i, before: now(), dx: S.pins[i].x - x, dy: S.pins[i].y - y }; cv.classList.add('grab'); return }
+      snap(); S.pins.push({ x, y, note: '' }); paint(); list(S.pins.length - 1); return
+    }
+    live = S.tool === 'pen' || S.tool === 'hl' ? { type: S.tool, color: S.color, pts: [[x, y]] } : { type: S.tool, color: S.color, x1: x, y1: y, x2: x, y2: y }
+  }
+  cv.onpointermove = (e) => {
+    const [x, y] = pt(e)
+    if (dragPin) { S.pins[dragPin.i].x = x + dragPin.dx; S.pins[dragPin.i].y = y + dragPin.dy; paint(); return }
+    if (!live) return
+    if (live.pts) live.pts.push([x, y]); else { live.x2 = x; live.y2 = y }
+    paint()
+  }
+  cv.onpointerup = () => {
+    if (dragPin) { if (dragPin.before !== now()) { S.past.push(dragPin.before); S.future = [] } dragPin = null; cv.classList.remove('grab'); return }
+    if (!live) return
+    const tiny = live.pts ? live.pts.length < 2 : Math.hypot(live.x2 - live.x1, live.y2 - live.y1) < 4
+    if (!tiny) { snap(); S.shapes.push(live) }
+    live = null; paint()
+  }
+  const undo = () => { if (!S.past.length) return; S.future.push(now()); restore(S.past.pop()); list(); paint() }
+  const redo = () => { if (!S.future.length) return; S.past.push(now()); restore(S.future.pop()); list(); paint() }
+  const add = () => { finish(); show('composer') }
+  document.getElementById('undo').onclick = undo; document.getElementById('redo').onclick = redo
+  document.querySelectorAll('#tools [data-tool]').forEach((b) => { b.onclick = () => setTool(b.dataset.tool) })
+  document.querySelectorAll('#tools .sw').forEach((b) => { b.onclick = () => setColor(b.dataset.color) })
+  document.getElementById('retake').onclick = () => show('region')
+  document.getElementById('annX').onclick = document.getElementById('annCancel').onclick = () => show('entry')
+  document.getElementById('annAdd').onclick = add
+  KEYS = (e) => {
+    const mod = e.ctrlKey || e.metaKey, typing = e.target.tagName === 'TEXTAREA'
+    if (mod && e.key === 'Enter') { e.preventDefault(); add(); return }
+    if (mod && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); e.shiftKey ? redo() : undo(); return }
+    if (mod && e.key.toLowerCase() === 'y' && !typing) { e.preventDefault(); redo(); return }
+    if (e.key === 'Escape') { if (typing) e.target.blur(); else show('entry'); return }
+    if (typing || mod) return
+    const t = { n: 'pin', f: 'pen', h: 'hl', r: 'box', a: 'arrow' }[e.key.toLowerCase()]
+    if (t) setTool(t)
+  }
+  setTool(S.tool); setColor(S.color); list(); paint()
+}
+
+/* ---------------- Sent message ---------------- */
+const SEEDED_THREAD = `<div class="you">Can you line them up without changing the button height?</div>
+  <p>Yes. <code class="inl">.btn + .btn</code> adds <code class="inl">margin-top: 4px</code> (left over from when the buttons wrapped), which pushes Export down. I'll drop it and align the toolbar with <code class="inl">align-items: center</code>, so both keep their 30px height.</p>
+  <div class="tools"><div class="trow">${ic('pencil')}<span class="title">Edit <code>src/dashboard/Toolbar.css</code></span><span class="s-done" style="display:inline-grid">${ic('check', 's14')}</span></div></div>
+  <p>Done. Both buttons now sit on the same line at y = 166.</p>`
+function pinCrop(p) {
+  const w = 240, h = 144, k = document.createElement('canvas'); k.width = w; k.height = h
+  const x = Math.max(0, Math.min(S.flat.width - w, p.x - w / 2)), y = Math.max(0, Math.min(S.flat.height - h, p.y - h / 2))
+  k.getContext('2d').drawImage(S.flat, x, y, w, h, 0, 0, w, h); return k.toDataURL()
+}
+function figure(maxW, maxH, cls = '') {
+  const s = Math.min(1, maxW / S.flat.width, maxH / S.flat.height), r = pinR(S.flat.width, S.flat.height) * s
+  const counts = S.seeded ? { 2: 3 } : {}
+  return `<figure class="capfig ${cls}" style="width:${S.flat.width * s}px"><img src="${S.flat.toDataURL()}" width="${S.flat.width * s}" height="${S.flat.height * s}" alt="Screenshot with ${S.sentPins.length} pins">
+    ${S.sentPins.map((p) => `<button class="pinhit${p.n === S.openPin ? ' cur' : ''}" data-pin="${p.n}" style="left:${p.x * s}px;top:${p.y * s}px;width:${r * 2 + 4}px;height:${r * 2 + 4}px"><span class="ptip">Reply to pin ${p.n}</span>${counts[p.n] ? `<span class="reply-count">${ic('message-square', 's12')}${counts[p.n]}</span>` : ''}</button>`).join('')}</figure>`
+}
+function renderSent() {
+  if (!S.flat) { useDefault(); finish() }
+  if (!S.sentPins.some((p) => p.n === S.openPin)) S.openPin = S.sentPins[0]?.n ?? 0
+  const pins = S.sentPins, open = pins.find((p) => p.n === S.openPin)
+  const ref = (n) => `<span class="pinref" data-pin="${n}">${n}</span>`
+  const answer = S.seeded
+    ? `<p>Three fixes, one per pin:</p><ol>
+        <li>${ref(1)}The legend is absolutely positioned at the chart's top right, over the plot. I moved it above the plot area.</li>
+        <li>${ref(2)}<code class="inl">.btn + .btn</code> adds <code class="inl">margin-top: 4px</code>, so Export sits lower than Filter. Removed.</li>
+        <li>${ref(3)}The Entries value had its own <code class="inl">line-height: 1.6</code>; it now uses the card's.</li></ol>`
+    : `<p>Going through your pins:</p><ol>${pins.map((p) => `<li>${ref(p.n)}${esc(p.note.trim() || 'No note')}: found in <code class="inl">src/dashboard</code> and fixed.</li>`).join('')}</ol>`
+  return `${sidebar()}<div class="sheet"><div class="main">${mainHead('Dashboard polish')}
+    <div class="log sent-log"><div class="col">
+      <div class="you has-cap"><span>These look off on the dashboard. Can you fix them?</span>${figure(440, 290)}
+        <ol class="pinnotes">${pins.map((p) => `<li data-pin="${p.n}"><span class="pnum">${p.n}</span><span class="nt${p.note.trim() ? '' : ' empty'}">${esc(p.note.trim() || 'No note')}</span>${S.seeded && p.n === 2 ? `<span class="reply-count">${ic('message-square', 's12')}3</span>` : ''}</li>`).join('')}</ol></div>
+      <div class="tools"><div class="trow">${ic('pencil')}<span class="title">Edit <code>src/dashboard/Chart.tsx</code></span><span class="s-done" style="display:inline-grid">${ic('check', 's14')}</span></div><div class="trow">${ic('pencil')}<span class="title">Edit <code>src/dashboard/Toolbar.css</code></span><span class="s-done" style="display:inline-grid">${ic('check', 's14')}</span></div></div>
+      ${answer}
+    </div></div>
+    <div class="composer-wrap">${composerLine(capBtn())}</div>${statusLine()}
+  </div>
+  <aside class="panel"><div class="ph"><span class="back">${ic('arrow-left', 's14')}All threads</span><span class="grow"></span><button class="icon-btn sm" title="Find in main session">${ic('locate')}</button><button class="icon-btn sm" title="Hide panel">${ic('panel-right')}</button></div>
+    ${open ? `<div class="pinquote"><img src="${pinCrop(open)}" alt=""><div class="pt"><b><span class="pnum">${open.n}</span>${esc(open.note.trim() || 'No note')}</b><span>Pin ${open.n} in your screenshot</span></div></div>` : ''}
+    <div class="msgs">${S.seeded && open?.n === 2 ? SEEDED_THREAD : ''}</div>
+    ${composer({ btn: 'send', ph: open ? `Reply about pin ${open.n}` : 'Reply in thread' })}
+  </aside></div>${S.lightbox ? `<div class="lightbox" id="lb"><button class="icon-btn lbx" id="lbx">${ic('x')}</button>${figure(1160, 640)}<div class="lbcap">Click a pin to open its thread · Esc to close</div></div>` : ''}`
+}
+function mountSent() {
+  document.querySelectorAll('[data-pin]').forEach((el) => { el.onclick = (e) => { e.stopPropagation(); S.openPin = +el.dataset.pin; S.lightbox = false; show('sent') } })
+  document.querySelector('.col .capfig img').onclick = () => { S.lightbox = true; show('sent') }
+  const lb = document.getElementById('lb')
+  if (lb) { lb.onclick = (e) => { if (e.target === lb || e.target.closest('#lbx')) { S.lightbox = false; show('sent') } } }
+  KEYS = (e) => { if (e.key === 'Escape' && S.lightbox) { S.lightbox = false; show('sent') } }
+}
+
+/* ================= Page ================= */
+let KEYS = null
+const root = document.documentElement, stage = document.getElementById('stage'), screenPick = document.getElementById('screenPick')
+function show(id) {
+  cancelAnimationFrame(raf); KEYS = null
+  const s = SCREENS.find((x) => x.id === id) ?? SCREENS[0]
+  stage.innerHTML = s.bare ? s.render() : `<div class="win">${titleBar()}<div class="body">${s.render()}</div></div>`
+  document.getElementById('notes').innerHTML = s.notes
+  for (const b of screenPick.children) b.setAttribute('aria-pressed', String(b.dataset.v === s.id))
+  history.replaceState(null, '', `#${s.id}`)
+  s.mount?.()
+}
+document.addEventListener('keydown', (e) => {
+  if (KEYS) KEYS(e)
+  const mod = e.ctrlKey || e.metaKey
+  if (mod && e.shiftKey && e.key.toLowerCase() === 's' && ['entry', 'composer', 'sent'].includes(location.hash.slice(1))) { e.preventDefault(); show('region') }
+})
+document.addEventListener('keyup', (e) => { if (KEYS && e.key === 'Shift') KEYS(e) })
+screenPick.innerHTML = SCREENS.map((s) => `<button data-v="${s.id}">${s.name}</button>`).join('')
+screenPick.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) show(b.dataset.v) })
+const themePick = document.getElementById('themePick')
+themePick.addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return
+  root.dataset.theme = b.dataset.v
+  for (const x of themePick.children) x.setAttribute('aria-pressed', String(x === b))
+  show(location.hash.slice(1))
+})
+Promise.all([document.fonts.load(F(600, 14)), document.fonts.load(F(700, 14))]).catch(() => {}).finally(() => { drawDesk(); show(location.hash.slice(1)) })
+</script>
+</body>
+</html>

@@ -12,6 +12,7 @@ import { OpenCodeSettings } from './OpenCodeSettings'
 import { AgentProfileSettings } from './AgentProfileSettings'
 import { Segmented, Select, Switch } from './Select'
 import { EditorSetting } from './EditorSetting'
+import { ShortcutSetting } from './ShortcutSetting'
 import { ExternalLink, Folder, Keyboard, Palette, Server, SlidersVertical, Terminal } from 'lucide-react'
 
 export type SettingsSection = 'general' | 'appearance' | 'mcp' | 'agents' | 'project' | 'shortcuts'
@@ -271,6 +272,8 @@ function Field(props: { field: SettingField; value: unknown; onChange(value: unk
       </div>
       {field.key === 'externalEditor' ? (
         <EditorSetting id={id} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
+      ) : field.type === 'shortcut' ? (
+        <ShortcutSetting id={id} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'string' ? (
         <TextSetting id={id} field={field} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'enum' && SEGMENTED.has(field.key) ? (
