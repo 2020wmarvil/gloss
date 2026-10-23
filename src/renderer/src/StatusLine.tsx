@@ -44,10 +44,6 @@ export function formatTokens(n: number): string {
 
 const WINDOW_LABELS: Record<string, [short: string, long: string]> = {
   five_hour: ['5h limit', '5-hour limit'],
-  seven_day: ['Week limit', 'weekly limit'],
-  seven_day_opus: ['Opus week limit', 'weekly Opus limit'],
-  seven_day_sonnet: ['Sonnet week limit', 'weekly Sonnet limit'],
-  seven_day_overage_included: ['Week limit', 'weekly limit'],
   overage: ['Extra usage', 'extra usage']
 }
 
@@ -292,6 +288,7 @@ export function StatusLine(props: Props): React.JSX.Element {
   const [obsidianError, setObsidianError] = useState<string | null>(null)
   useEffect(() => setObsidianError(null), [session.id, props.obsidianVault])
   const usage = live.usage
+  const statusLimits = live.rateLimits.filter((limit) => !/^seven_day(?:_|$)/.test(limit.window))
   const pct = usage && usage.size > 0 ? Math.min(100, Math.round((usage.used / usage.size) * 100)) : null
   const { model, effort } = live
   const currentModel = model?.options.find((o) => o.value === model.current)
@@ -310,7 +307,7 @@ export function StatusLine(props: Props): React.JSX.Element {
       </span>
     )}
     {usage?.cost && <span className="status-item" title="What this session has cost so far">{formatCost(usage.cost)}</span>}
-    {live.rateLimits.map((l) => <RateLimitItem key={l.window} limit={l} />)}
+    {statusLimits.map((l) => <RateLimitItem key={l.window} limit={l} />)}
   </>
 
   return (
@@ -334,7 +331,7 @@ export function StatusLine(props: Props): React.JSX.Element {
           ))}
 
         {session.agentId === 'claude' || session.agentId === 'codex' ? (
-          <Popover key={session.id} label={pct !== null || usage?.cost || live.rateLimits.length ? usageLabel : <><Gauge className="status-icon" aria-hidden />Usage</>}
+          <Popover key={session.id} label={pct !== null || usage?.cost || statusLimits.length ? usageLabel : <><Gauge className="status-icon" aria-hidden />Usage</>}
             title="Usage details" className="status-item status-button usage-trigger">
             {() => <UsagePanel sessionId={session.id} context={usage} />}
           </Popover>
