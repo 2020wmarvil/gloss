@@ -85,9 +85,6 @@ export function isRangeNote(line: string): boolean {
 
 export const SEVERITIES: Severity[] = ['bug', 'suggestion', 'nit']
 
-/** Files with more changed lines than this start collapsed. */
-export const LARGE_FILE_LINES = 1000
-
 // Agent instructions and the first pass
 
 /** How the agent lists findings: Gloss opens a thread on each one's lines. */
