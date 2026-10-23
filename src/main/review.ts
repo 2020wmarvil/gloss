@@ -29,17 +29,25 @@ function gitOrNull(cwd: string, args: string[]): Promise<string | null> {
 }
 
 /**
- * The default branch: origin/HEAD's branch, else main, master, origin/main or origin/master
- * (a clone without origin/HEAD may have no local main). Null if none.
+ * The default branch: origin/HEAD's branch, else origin/main, origin/master, main or
+ * master. The remote's comes first: a local main that is never pulled (pull requests
+ * merged on GitHub) falls behind. A remote branch is fetched first when `fetch` is set.
+ * Null if none.
  */
-export async function defaultBranch(cwd: string): Promise<string | null> {
+export async function defaultBranch(cwd: string, fetch = false): Promise<string | null> {
+  const name = await findDefaultBranch(cwd)
+  if (fetch && name?.startsWith('origin/')) await gitOrNull(cwd, ['fetch', '--quiet', 'origin', name.slice('origin/'.length)])
+  return name
+}
+
+async function findDefaultBranch(cwd: string): Promise<string | null> {
   const remote = await gitOrNull(cwd, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'])
   if (remote?.trim()) return remote.trim()
   for (const [ref, name] of [
-    ['refs/heads/main', 'main'],
-    ['refs/heads/master', 'master'],
     ['refs/remotes/origin/main', 'origin/main'],
-    ['refs/remotes/origin/master', 'origin/master']
+    ['refs/remotes/origin/master', 'origin/master'],
+    ['refs/heads/main', 'main'],
+    ['refs/heads/master', 'master']
   ]) {
     if ((await gitOrNull(cwd, ['rev-parse', '--verify', '--quiet', ref])) !== null) return name
   }

@@ -73,7 +73,7 @@ export type SessionManagerDeps = {
 export type ReviewGit = {
   pullRequest(cwd: string): Promise<PullRequest | null>
   pullRequestBase(cwd: string, branch: string, fetch?: boolean): Promise<string | null>
-  defaultBranch(cwd: string): Promise<string | null>
+  defaultBranch(cwd: string, fetch?: boolean): Promise<string | null>
   currentBranch(cwd: string): Promise<string | null>
   mergeBase(cwd: string, ref: string): Promise<string | null>
   commits(cwd: string, since: string | null): Promise<ReviewCommit[]>
@@ -474,7 +474,7 @@ export class SessionManager {
     const found = await this.git.pullRequest(cwd)
     const pr = found && (found.state === 'open' || found.state === 'draft') && found.baseRef ? found : null
     const prBase = pr && (await this.git.pullRequestBase(cwd, pr.baseRef, range === undefined))
-    const baseRef = range?.baseRef ?? (prBase || (await this.git.defaultBranch(cwd)))
+    const baseRef = range?.baseRef ?? (prBase || (await this.git.defaultBranch(cwd, range === undefined)))
     if (!baseRef) throw new Error('A review needs a git repository with a default branch (origin/HEAD, main or master).')
     const headRef = range?.headRef
     const diff = await this.git.readDiff(cwd, baseRef, headRef ?? null)
