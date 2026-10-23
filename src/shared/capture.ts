@@ -15,6 +15,8 @@ export type CaptureFrame = {
   /** Display pixels per CSS pixel of the overlay. */
   scale: number
   windows: CaptureWindow[]
+  /** Where the cursor was, when it was on this display. */
+  cursor?: { x: number; y: number }
 }
 
 /** What the user picked in the overlay; null cancels. */
@@ -34,10 +36,13 @@ export type Capture = {
 export type CaptureOverlayApi = {
   frame(): Promise<CaptureFrame>
   done(choice: CaptureChoice): Promise<void>
+  /** The cursor came onto this overlay's display: it takes the keys. */
+  enter(): void
 }
 
 /** The overlay's channels. The main window's `capture.start` is in IPC (shared/ipc.ts), so the two preloads share no module. */
 export const CAPTURE_IPC = {
   frame: 'gloss:capture:frame',
-  done: 'gloss:capture:done'
+  done: 'gloss:capture:done',
+  enter: 'gloss:capture:enter'
 } as const

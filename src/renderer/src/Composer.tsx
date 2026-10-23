@@ -372,14 +372,29 @@ export function Composer({
         <div className="box-row">
           {canAttach && (
             <>
-              <button
-                className="attach"
-                aria-label="Attach files"
-                title={accepts.image && accepts.file ? 'Attach images or files' : accepts.image ? 'Attach images' : 'Attach files'}
-                onClick={() => fileInput.current?.click()}
-              >
-                <Paperclip />
-              </button>
+              {/* One button for everything a message can carry: files, and a screen capture. */}
+              <Popover className="attach" title="Attach" label={<Paperclip aria-label="Attach" />}>
+                {(close) => (
+                  <div className="menu-list attach-menu">
+                    <button onClick={() => (close(), fileInput.current?.click())}>
+                      <span className="menu-row">
+                        <Paperclip size={14} />
+                        {accepts.image && accepts.file ? 'Images or files…' : accepts.image ? 'Images…' : 'Files…'}
+                      </span>
+                    </button>
+                    <button disabled={!accepts.image} onClick={() => (close(), void capture())}>
+                      <span className="menu-row">
+                        <Scan size={14} />
+                        Capture the screen
+                        <kbd>Ctrl</kbd>
+                        <kbd>Shift</kbd>
+                        <kbd>S</kbd>
+                      </span>
+                      {!accepts.image && <span className="muted">This agent doesn&apos;t accept images.</span>}
+                    </button>
+                  </div>
+                )}
+              </Popover>
               <input
                 ref={fileInput}
                 type="file"
@@ -393,15 +408,6 @@ export function Composer({
               />
             </>
           )}
-          <button
-            className="attach capture-button"
-            aria-label="Capture and annotate"
-            title={accepts.image ? 'Capture and annotate (Ctrl+Shift+S)' : "This agent doesn't accept images"}
-            disabled={!accepts.image}
-            onClick={() => void capture()}
-          >
-            <Scan />
-          </button>
           <MarkdownEditor
             ref={ref}
             placeholder={placeholder}

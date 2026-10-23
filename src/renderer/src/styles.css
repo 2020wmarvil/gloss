@@ -5592,8 +5592,9 @@ button.review-changes {
 
 /* The annotation canvas: a large dialog with the capture, its pins' notes and what is sent. */
 .annotate {
-  width: min(1200px, 100%);
-  height: min(716px, 100%);
+  /* As large as the window allows: annotating needs room. */
+  width: 100%;
+  height: 100%;
   display: grid;
   grid-template-rows: 52px minmax(0, 1fr) 58px;
   grid-template-columns: minmax(0, 1fr) 300px;
@@ -5704,9 +5705,10 @@ button.review-changes {
   grid-column: 1;
   grid-row: 2;
   min-height: 0;
-  display: grid;
-  place-items: center;
+  min-width: 0;
+  display: flex;
   padding: 20px;
+  overflow: auto;
   background-color: var(--sunken);
   background-image:
     linear-gradient(45deg, var(--line-soft) 25%, transparent 25%, transparent 75%, var(--line-soft) 75%),
@@ -5714,10 +5716,17 @@ button.review-changes {
   background-size: 16px 16px;
   background-position: 0 0, 8px 8px;
   box-shadow: var(--sink);
-  overflow: hidden;
+}
+
+.annotate-stage.panning,
+.annotate-stage.panning canvas {
+  cursor: grab;
 }
 
 .annotate-stage canvas {
+  flex: none;
+  /* Centered while it fits; scrollable from its edges once zoomed past the stage. */
+  margin: auto;
   display: block;
   box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-2);
   cursor: crosshair;
@@ -5726,6 +5735,16 @@ button.review-changes {
 
 .annotate-stage canvas.pin-tool {
   cursor: copy;
+}
+
+.annotate-stage canvas.pixels {
+  image-rendering: pixelated;
+}
+
+.annotate-tools .annotate-zoom {
+  width: 48px;
+  font: 500 var(--t-12) / 1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
 }
 
 .annotate-pins {
@@ -5867,10 +5886,47 @@ button.review-changes {
   color: var(--on-brand);
 }
 
-/* The composer's Capture button sits beside Attach. */
-.attach:disabled {
-  opacity: 0.4;
+/* The composer's Attach menu opens upward from its left edge. */
+.box .popover-anchor:has(> .attach) {
+  margin-left: -6px;
+}
+
+.box .popover-anchor:has(> .attach) .attach {
+  margin-left: 0;
+}
+
+.box .popover-anchor:has(> .attach) .popover {
+  left: 0;
+  right: auto;
+  min-width: 280px;
+}
+
+.attach-menu .menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.attach-menu .menu-row svg {
+  color: var(--muted);
+}
+
+.attach-menu .menu-row kbd:first-of-type {
+  margin-left: auto;
+}
+
+.attach-menu button:disabled {
+  opacity: 1;
+  color: var(--faint);
+}
+
+.attach-menu button:disabled:hover {
   background: transparent;
+}
+
+.attach-menu .muted {
+  padding-left: 22px;
 }
 
 /* A capture in the composer: the flattened image, its pin count and, on hover, Edit. */

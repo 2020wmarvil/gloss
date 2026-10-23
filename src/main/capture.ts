@@ -1,49 +1,118 @@
-// Screen capture for visual feedback (SPEC → Visual feedback). Freezes the display under the
-// cursor and opens the region overlay over it: drag a region, click a window, or Space for the
-// whole display, as in ShareX. Gloss doesn't hide first, so it is part of the capture.
-import { BrowserWindow, desktopCapturer, ipcMain, screen, type NativeImage } from 'electron'
+// Screen capture for visual feedback (SPEC → Visual feedback). Freezes every display and opens
+// the region overlay over each: drag a region, click a window, or Space for the display under
+// the cursor, as in ShareX. A region stays on one display. Gloss doesn't hide first, so it is
+// part of the capture.
+import { BrowserWindow, desktopCapturer, ipcMain, screen, type Display, type NativeImage } from 'electron'
 import { CAPTURE_IPC, type Capture, type CaptureChoice, type CaptureFrame, type CaptureRect } from '../shared/capture'
-import { listWindows, windowsOn } from './windows'
+import { takeForeground } from './foreground'
+import { listWindows, windowsOn, type ScreenWindow } from './windows'
+
+type Overlay = { win: BrowserWindow; display: Display; image: NativeImage; frame: CaptureFrame }
 
 type Pending = {
-  overlay: BrowserWindow
-  image: NativeImage
-  frame: CaptureFrame
+  overlays: Overlay[]
+  onPicked?(): void
   resolve(capture: Capture | null): void
 }
 
 let pending: Pending | null = null
 
-export type OverlayLoader = (win: BrowserWindow) => void
+export type CaptureOptions = {
+  /** The overlay's preload script. */
+  preload: string
+  /** Loads the overlay's page into a window. */
+  load(win: BrowserWindow): void
+  /** Called once something is picked, while an overlay still has the focus (to bring Gloss forward). */
+  onPicked?(): void
+}
 
 /**
- * Captures the display under the cursor and lets the user pick what to keep. Resolves to the
- * picked part as a PNG, or null if they cancel. One at a time: a second call while the overlay
- * is open brings it back to the front and resolves to null.
+ * Captures every display and lets the user pick what to keep. Resolves to the picked part as a
+ * PNG, or null if they cancel. One at a time: a second call while the overlays are open brings
+ * the one under the cursor to the front and resolves to null.
  */
-export async function startCapture(preload: string, load: OverlayLoader): Promise<Capture | null> {
+export async function startCapture(options: CaptureOptions): Promise<Capture | null> {
   if (pending) {
-    pending.overlay.focus()
+    overlayUnderCursor(pending)?.win.focus()
     return null
   }
-  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
-  const size = {
-    width: Math.round(display.bounds.width * display.scaleFactor),
-    height: Math.round(display.bounds.height * display.scaleFactor)
-  }
-  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: size })
-  const source = sources.find((s) => s.display_id === String(display.id)) ?? (sources.length === 1 ? sources[0] : undefined)
-  if (!source || source.thumbnail.isEmpty()) throw new Error("Couldn't capture the screen.")
-  const image = source.thumbnail
-  const { width, height } = image.getSize()
+  const displays = screen.getAllDisplays()
+  const images = await grab(displays)
+  const shown = displays.filter((d) => images.has(d.id))
+  if (shown.length === 0) throw new Error("Couldn't capture the screen.")
+  const windows = await listWindows()
+  const cursor = screen.getCursorScreenPoint()
+  const active = screen.getDisplayNearestPoint(cursor)
 
+  const overlays = shown.map((display): Overlay => {
+    const image = images.get(display.id)!
+    const frame = frameOf(display, image, windows, display.id === active.id ? cursor : null)
+    return { win: overlayWindow(display, options.preload), display, image, frame }
+  })
+
+  return new Promise<Capture | null>((resolve) => {
+    pending = { overlays, onPicked: options.onPicked, resolve }
+    for (const o of overlays) {
+      o.win.once('ready-to-show', () => {
+        o.win.showInactive()
+        // A display scaled differently from the one the window started on can size it wrong.
+        o.win.setBounds(o.display.bounds)
+        // The cursor's display takes the keys first. Started from another app (the global
+        // shortcut), Windows won't hand Gloss the focus on its own.
+        if (o.display.id === active.id) {
+          o.win.focus()
+          if (!o.win.isFocused()) void takeForeground(o.win.getNativeWindowHandle())
+        }
+      })
+      o.win.on('closed', () => finish(null))
+      options.load(o.win)
+    }
+  })
+}
+
+/** Each display's picture, at its own pixels. desktopCapturer scales every screen to one size, so it is asked once per size. */
+async function grab(displays: Display[]): Promise<Map<number, NativeImage>> {
+  const bySize = new Map<string, Display[]>()
+  for (const d of displays) {
+    const size = physicalSize(d)
+    const key = `${size.width}x${size.height}`
+    bySize.set(key, [...(bySize.get(key) ?? []), d])
+  }
+  const images = new Map<number, NativeImage>()
+  for (const group of bySize.values()) {
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: physicalSize(group[0]) })
+    for (const d of group) {
+      // Some platforms leave display_id empty: with one display and one screen they match.
+      const source = sources.find((s) => s.display_id === String(d.id)) ?? (displays.length === 1 && sources.length === 1 ? sources[0] : undefined)
+      if (source && !source.thumbnail.isEmpty()) images.set(d.id, source.thumbnail)
+    }
+  }
+  return images
+}
+
+function physicalSize(d: Display): { width: number; height: number } {
+  return { width: Math.round(d.bounds.width * d.scaleFactor), height: Math.round(d.bounds.height * d.scaleFactor) }
+}
+
+/** What one overlay draws: its display's picture, the windows on it, and the cursor if it is there. */
+function frameOf(display: Display, image: NativeImage, windows: ScreenWindow[], cursor: Electron.Point | null): CaptureFrame {
+  const { width, height } = image.getSize()
   // Window frames come in physical screen pixels; the display's place among them too.
   const physical = process.platform === 'win32' ? screen.dipToScreenRect(null, display.bounds) : scaleRect(display.bounds, display.scaleFactor)
   const toImage = width / physical.width
-  const windows = windowsOn(await listWindows(), physical).map((w) => ({ title: w.title, rect: scaleRect(w.rect, toImage) }))
-  const frame: CaptureFrame = { png: new Uint8Array(image.toPNG()), width, height, scale: width / display.bounds.width, windows }
+  const scale = width / display.bounds.width
+  return {
+    png: new Uint8Array(image.toPNG()),
+    width,
+    height,
+    scale,
+    windows: windowsOn(windows, physical).map((w) => ({ title: w.title, rect: scaleRect(w.rect, toImage) })),
+    ...(cursor ? { cursor: { x: Math.round((cursor.x - display.bounds.x) * scale), y: Math.round((cursor.y - display.bounds.y) * scale) } } : {})
+  }
+}
 
-  const overlay = new BrowserWindow({
+function overlayWindow(display: Display, preload: string): BrowserWindow {
+  const win = new BrowserWindow({
     ...display.bounds,
     title: 'Gloss capture',
     frame: false,
@@ -61,29 +130,24 @@ export async function startCapture(preload: string, load: OverlayLoader): Promis
     webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true }
   })
   // Over the taskbar and other always-on-top windows, as ShareX's is.
-  overlay.setAlwaysOnTop(true, 'screen-saver')
-  overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  overlay.webContents.on('will-navigate', (event) => event.preventDefault())
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', (event) => event.preventDefault())
+  return win
+}
 
-  return new Promise<Capture | null>((resolve) => {
-    pending = { overlay, image, frame, resolve }
-    overlay.once('ready-to-show', () => {
-      overlay.show()
-      // A display scaled differently from the one the window started on can size it wrong.
-      overlay.setBounds(display.bounds)
-      overlay.focus()
-    })
-    overlay.on('closed', () => finish(null))
-    load(overlay)
-  })
+function overlayUnderCursor(p: Pending): Overlay | undefined {
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+  return p.overlays.find((o) => o.display.id === display.id) ?? p.overlays[0]
 }
 
 function finish(capture: Capture | null): void {
   const p = pending
   if (!p) return
   pending = null
+  if (capture) p.onPicked?.()
   p.resolve(capture)
-  if (!p.overlay.isDestroyed()) p.overlay.destroy()
+  for (const o of p.overlays) if (!o.win.isDestroyed()) o.win.destroy()
 }
 
 function scaleRect(r: { x: number; y: number; width: number; height: number }, k: number): CaptureRect {
@@ -108,20 +172,31 @@ export function sourceLabel(choice: NonNullable<CaptureChoice>): string {
   return 'Region'
 }
 
-/** The overlay's calls; only the open overlay may make them. */
+/** The overlays' calls; only an open overlay may make them. */
 export function registerCaptureIpc(): void {
+  const overlayOf = (sender: Electron.WebContents): Overlay | undefined => pending?.overlays.find((o) => o.win.webContents === sender)
   ipcMain.handle(CAPTURE_IPC.frame, (e) => {
-    if (!pending || e.sender !== pending.overlay.webContents) throw new Error('No capture is open.')
-    return pending.frame
+    const o = overlayOf(e.sender)
+    if (!o) throw new Error('No capture is open.')
+    return o.frame
+  })
+  // The cursor moved onto this display: it takes the keys.
+  ipcMain.on(CAPTURE_IPC.enter, (e) => {
+    const o = overlayOf(e.sender)
+    if (o && !o.win.isFocused()) o.win.focus()
   })
   ipcMain.handle(CAPTURE_IPC.done, (e, value: unknown) => {
-    if (!pending || e.sender !== pending.overlay.webContents) return
+    const from = overlayOf(e.sender)
+    if (!pending || !from) return
     const choice = value as CaptureChoice
     const kind = choice?.kind
-    const rect = choice && (kind === 'region' || kind === 'window' || kind === 'display') ? choiceRect(choice.rect, pending.frame.width, pending.frame.height) : null
-    if (!choice || !rect) return finish(null)
+    if (!choice || (kind !== 'region' && kind !== 'window' && kind !== 'display')) return finish(null)
+    // Space (or a click on the desktop) takes the whole display under the cursor, whichever overlay has the keys.
+    const o = kind === 'display' ? (overlayUnderCursor(pending) ?? from) : from
+    const rect = kind === 'display' ? { x: 0, y: 0, width: o.frame.width, height: o.frame.height } : choiceRect(choice.rect, o.frame.width, o.frame.height)
+    if (!rect) return finish(null)
     const title = typeof choice.title === 'string' ? choice.title.slice(0, 200) : undefined
-    const png = pending.image.crop(rect).toPNG()
-    finish({ data: png.toString('base64'), width: rect.width, height: rect.height, source: sourceLabel({ kind: kind!, rect, title }) })
+    const png = o.image.crop(rect).toPNG()
+    finish({ data: png.toString('base64'), width: rect.width, height: rect.height, source: sourceLabel({ kind, rect, title }) })
   })
 }

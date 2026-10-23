@@ -321,11 +321,20 @@ describe('automatic steering', () => {
 describe('screen capture', () => {
   afterEach(unmount)
 
-  it('is off, saying why, when the agent takes no images', () => {
-    mount('capture-off')
-    const button = document.querySelector<HTMLButtonElement>('button[aria-label="Capture and annotate"]')!
-    expect(button.disabled).toBe(true)
-    expect(button.title).toMatch(/doesn't accept images/)
+  /** The Attach menu's Capture item, after opening the menu. */
+  function captureItem(): HTMLButtonElement {
+    act(() => document.querySelector<HTMLButtonElement>('button[title="Attach"]')!.click())
+    return [...document.querySelectorAll<HTMLButtonElement>('.attach-menu button')].find((b) => b.textContent?.includes('Capture'))!
+  }
+
+  it('is in the Attach menu, off and saying why when the agent takes no images', () => {
+    mount('capture-off', { accepts: { image: false, file: true } })
+    const item = captureItem()
+    expect(item.disabled).toBe(true)
+    expect(item.textContent).toMatch(/doesn't accept images/)
+    unmount()
+    mount('capture-none')
+    expect(document.querySelector('button[title="Attach"]')).toBeNull()
   })
 
   it('opens the annotation canvas on the capture, and Ctrl+Shift+S goes to the composer used last', async () => {
@@ -334,8 +343,9 @@ describe('screen capture', () => {
     const start = vi.fn(async () => ({ data: 'iVBOR', width: 40, height: 30, source: 'Region' }))
     window.gloss = { capture: { start } } as unknown as typeof window.gloss
     const view = mount('capture-on', { accepts: { image: true, file: false } })
+    const item = captureItem()
     await act(async () => {
-      document.querySelector<HTMLButtonElement>('button[aria-label="Capture and annotate"]')!.click()
+      item.click()
     })
     expect(start).toHaveBeenCalledTimes(1)
     expect(document.querySelector('[role="dialog"] h2')?.textContent).toBe('Annotate')

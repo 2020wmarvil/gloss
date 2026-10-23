@@ -1,5 +1,5 @@
-// The region overlay (SPEC → Visual feedback), as ShareX's region capture: a frozen copy of the
-// display, dimmed except the area that would be captured. Hover highlights the window under the
+// The region overlay (SPEC → Visual feedback), as ShareX's region capture, one per display: a
+// frozen copy of the display, dimmed except the area that would be captured. Hover highlights the window under the
 // cursor and a click takes it; a drag takes a region (Shift: a square); Space takes the whole
 // display; right-click drops the region being drawn, or cancels; Esc cancels. A magnifier
 // beside the cursor shows the pixels around it, at 10×.
@@ -37,6 +37,8 @@ let dragging = false
 let square = false
 let ant = 0
 let finished = false
+/** The cursor is on this overlay's display: there is one overlay per display. */
+let inside = false
 
 function finish(choice: CaptureChoice): void {
   if (finished) return
@@ -73,8 +75,14 @@ function draw(): void {
   if (!frame || !source) return
   const { width, height } = frame
   ant = (ant + 0.5) % 10
-  const a = active().rect
   ctx.clearRect(0, 0, width, height)
+  if (!inside && !dragging) {
+    // The cursor is on another display: this one is all dimmed.
+    ctx.fillStyle = DIM
+    ctx.fillRect(0, 0, width, height)
+    return
+  }
+  const a = active().rect
   ctx.fillStyle = DIM
   ctx.beginPath()
   ctx.rect(0, 0, width, height)
@@ -163,8 +171,18 @@ function moveTo(clientX: number, clientY: number): void {
   }
 }
 
+canvas.addEventListener('pointerenter', () => {
+  inside = true
+  window.glossCapture.enter()
+})
+
+canvas.addEventListener('pointerleave', () => {
+  if (!dragging) inside = false
+})
+
 canvas.addEventListener('pointermove', (e) => {
   square = e.shiftKey
+  inside = true
   moveTo(e.clientX, e.clientY)
 })
 
@@ -207,7 +225,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === ' ') {
     e.preventDefault()
     finish({ rect: displayRect(), kind: 'display' })
-  } else if (e.key.startsWith('Arrow')) {
+  } else if (e.key.startsWith('Arrow') && inside) {
     // Nudges the cursor a pixel (Shift: 10), for exact edges.
     e.preventDefault()
     const step = e.shiftKey ? 10 : 1
@@ -230,10 +248,14 @@ async function start(): Promise<void> {
   }
   frameCanvas.getContext('2d')!.drawImage(bitmap, 0, 0)
   source = frameCanvas
-  cursor.x = Math.floor(frame.width / 2)
-  cursor.y = Math.floor(frame.height / 2)
-  if (frame.windows.length === 0) document.getElementById('hint-window')!.remove()
-  hint.hidden = false
+  // The hint shows on the display the cursor is on.
+  if (frame.cursor) {
+    cursor.x = Math.max(0, Math.min(frame.width - 1, frame.cursor.x))
+    cursor.y = Math.max(0, Math.min(frame.height - 1, frame.cursor.y))
+    inside = true
+    if (frame.windows.length === 0) document.getElementById('hint-window')!.remove()
+    hint.hidden = false
+  }
   loop()
 }
 

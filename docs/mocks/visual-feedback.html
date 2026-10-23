@@ -732,20 +732,22 @@ const session = (composerHtml, extra = '') => `${sidebar()}<div class="sheet"><d
   </div></div>
   <div class="composer-wrap" style="position:relative">${composerHtml}${extra}</div>${statusLine()}
 </div>${rail(0)}</div>`
-const capBtn = (state = '') => `<button class="icon-btn sm${state === 'hl' ? ' cap-on' : ''}" id="capBtn" title="Capture and annotate (Ctrl+Shift+S)"${state === 'off' ? ' disabled' : ''}>${ic('scan')}</button>`
+// Capture lives in the Attach menu (the paperclip), not beside it: no extra width in the composer.
+const capBtn = () => ''
+const attachMenu = (off) => `<div class="menu" style="left:36px;bottom:52px;min-width:280px"><div class="it">${ic('paperclip')}<span class="grow">Images or files…</span></div><div class="it${off ? '' : ' hl'}" id="capBtn" style="${off ? 'color:var(--faint)' : 'cursor:pointer'}">${ic('scan')}<span class="grow">Capture the screen${off ? '<br><span class=d>OpenCode (qwen3-coder) doesn\x27t accept images.</span>' : ''}</span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>S</kbd></div></div>`
 const composerLine = (cap, text = '', btn = `<button class="btn primary">${ic('arrow-up')}Send</button>`) => `<div class="composer"><button class="icon-btn sm" title="Attach">${ic('paperclip')}</button>${cap}<span class="ed${text ? ' typed' : ''}">${text || 'Message the agent'}</span>${btn}</div>`
 
 const SCREENS = [
   {
     id: 'entry', name: '1 · Entry point',
-    notes: `<b>Capture starts from the composer.</b> A Capture button beside Attach (Lucide <i>scan</i>), or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> while Gloss is focused, freezes the display Gloss is on and opens the region overlay. No palette of modes: like ShareX, the overlay handles a region, a window and the whole display. The capture goes to the composer it was started from (main or thread). Gloss stays on screen and is part of the capture. <b>Click the button (or press the shortcut) to try it.</b>`,
-    render: () => session(composerLine(capBtn('hl')), `<div class="tip-pop" style="left:44px;bottom:50px">${ic('scan', 's14')}Capture and annotate<kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>S</kbd></div>`),
+    notes: `<b>Capture starts from the composer.</b> The paperclip opens the Attach menu: <b>Images or files…</b> and <b>Capture the screen</b> (Lucide <i>scan</i>), so capture costs no width in the composer. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> inside Gloss, or the global <b>Capture shortcut</b> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>PrtSc</kbd> by default, a setting) from any app, does the same. It freezes every display and opens the region overlay. No palette of modes: like ShareX, the overlay handles a region, a window and the whole display. The capture goes to the composer used last. Gloss stays on screen and is part of the capture. <b>Click Capture the screen to try it.</b>`,
+    render: () => session(composerLine(capBtn()), attachMenu(false)),
     mount: () => { document.getElementById('capBtn').onclick = () => show('region') },
   },
   {
     id: 'off', name: '1b · No image support',
-    notes: `<b>An agent that doesn't take images.</b> When the session's agent doesn't advertise <code class="inl">promptCapabilities.image</code>, the button is disabled and its tooltip says why; the shortcut does nothing. It updates if the session's agent or model changes what it advertises.`,
-    render: () => session(composerLine(capBtn('off')), `<div class="tip-pop off" style="left:44px;bottom:50px">${ic('ban', 's14')}OpenCode (qwen3-coder) doesn't accept images</div>`).replace('Claude Code</span>', 'OpenCode</span>'),
+    notes: `<b>An agent that doesn't take images.</b> When the session's agent doesn't advertise <code class="inl">promptCapabilities.image</code>, the menu's Capture item is disabled and says why; the shortcuts do nothing. It updates if the session's agent or model changes what it advertises.`,
+    render: () => session(composerLine(capBtn()), attachMenu(true)).replace('Claude Code</span>', 'OpenCode</span>'),
   },
   {
     id: 'region', name: '2 · Region capture', bare: true,

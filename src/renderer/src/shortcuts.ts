@@ -22,6 +22,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: [['Mod', 'J']], action: 'Go to where the agent is working, or last worked' },
       { keys: [['Mod', 'Shift', 'Q']], action: 'Show the queue' },
       { keys: [['Mod', 'Shift', 'S']], action: 'Capture part of the screen and annotate it, for the composer used last' },
+      { keys: [['Ctrl', 'Shift', 'PrtSc']], action: 'The same from any app, while Gloss runs (Capture shortcut in settings)' },
       { keys: [['Mod', ',']], action: 'Open or close settings' },
       { keys: [['Alt', '←'], ['Mouse back']], action: 'Back to the previous session, thread or settings' },
       { keys: [['Alt', '→'], ['Mouse forward']], action: 'Forward again' },
@@ -54,7 +55,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
     shortcuts: [
       { keys: [['Drag']], action: 'Capture a region (hold Shift for a square)' },
       { keys: [['Click']], action: 'Capture the window under the cursor, or the whole display over the desktop' },
-      { keys: [['Space']], action: 'Capture the whole display' },
+      { keys: [['Space']], action: 'Capture the whole display under the cursor' },
       { keys: [['←'], ['→'], ['↑'], ['↓']], action: 'Nudge the cursor a pixel (with Shift, 10)' },
       { keys: [['Right-click']], action: 'Drop the region being drawn, or cancel' },
       { keys: [['Esc']], action: 'Cancel' }
@@ -69,6 +70,9 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: [['R']], action: 'Box' },
       { keys: [['A']], action: 'Arrow' },
       { keys: [['Mod', 'Z'], ['Mod', 'Y']], action: 'Undo, redo' },
+      { keys: [['Mod', 'Wheel'], ['+'], ['-']], action: 'Zoom in or out (at the cursor with the wheel)' },
+      { keys: [['0'], ['1']], action: 'Fit the window, actual size' },
+      { keys: [['Space', 'Drag'], ['Middle-drag']], action: 'Pan (the wheel scrolls too)' },
       { keys: [['Mod', 'Enter']], action: 'Add it to the message' },
       { keys: [['Esc']], action: 'Leave a note, or cancel' }
     ]

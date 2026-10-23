@@ -134,6 +134,8 @@ export type GlossEvent =
   | { type: 'authRequired'; agentId: string; agentName: string; methods: AuthMethodInfo[] }
   | { type: 'authResolved'; agentId: string }
   | { type: 'settings'; state: SettingsState }
+  /** The global capture shortcut was pressed (SPEC → Visual feedback). */
+  | { type: 'captureShortcut' }
 
 export type GlossApi = {
   /** Opens an absolute local Markdown file link in the editor, or reveals it without an editor. */

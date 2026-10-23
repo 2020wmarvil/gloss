@@ -1,6 +1,6 @@
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell } from 'electron'
 import { IPC, type AppBadge, type GlossEvent } from '../shared/ipc'
 import type { Anchor, Attachment, Pin } from '../shared/types'
 import type { AnswerValue, RequestAnswer } from '../shared/requests'
@@ -18,7 +18,7 @@ import { fileLink } from '../shared/fileLink'
 import { runInTerminal } from './terminal'
 import { registerCaptureIpc, startCapture } from './capture'
 import { UsageSource } from './usage'
-import { DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
+import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
 import { previewMcpImport } from './mcp-import'
 import { OpenCodeSupport } from './opencode'
@@ -171,6 +171,28 @@ function emit(event: GlossEvent): void {
     void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
   }
   if (event.type === 'turnEnd' && pendingProfiles.size) void applyProfileChanges()
+}
+
+/** The global capture shortcut registered now (SPEC → Visual feedback). */
+let captureShortcut: string | null = null
+
+/**
+ * Registers the setting's capture shortcut in place of the last one. It works while Gloss is in
+ * the background: the renderer starts a capture for the composer used last, as Ctrl+Shift+S
+ * does inside Gloss. Empty turns it off. Another app holding the keys, or an invalid
+ * accelerator, leaves none registered.
+ */
+function setCaptureShortcut(accelerator: string | undefined): void {
+  if (captureShortcut) globalShortcut.unregister(captureShortcut)
+  captureShortcut = null
+  const keys = (accelerator ?? '').trim()
+  if (!keys) return
+  try {
+    if (globalShortcut.register(keys, () => emit({ type: 'captureShortcut' }))) captureShortcut = keys
+    else console.warn(`The capture shortcut ${keys} is taken by another app.`)
+  } catch (err) {
+    console.warn(`The capture shortcut ${keys} isn't a valid key combination:`, err)
+  }
 }
 
 /** Shown notifications, kept so their click handlers survive garbage collection. */
@@ -427,7 +449,19 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   registerCaptureIpc()
   ipcMain.handle(IPC.captureStart, (e) => {
     if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can start a capture.')
-    return startCapture(join(__dirname, '../preload/capture.js'), (overlay) => loadPage(overlay, 'capture.html'))
+    return startCapture({
+      preload: join(__dirname, '../preload/capture.js'),
+      load: (overlay) => loadPage(overlay, 'capture.html'),
+      // Started from another app (the global shortcut), the canvas needs Gloss in front. An
+      // overlay has the focus now, so Windows lets Gloss take it.
+      onPicked: () => {
+        const win = mainWindow
+        if (!win || win.isDestroyed()) return
+        if (win.isMinimized()) win.restore()
+        win.show()
+        win.focus()
+      }
+    })
   })
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
     manager.createSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
@@ -589,11 +623,12 @@ app.whenReady().then(() => {
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [] },
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [], captureShortcut: DEFAULT_CAPTURE_SHORTCUT },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
       // Fires nativeTheme's 'updated', which recolors the window controls.
       if (next.global.theme !== previous.global.theme) nativeTheme.themeSource = next.global.theme
+      if (next.global.captureShortcut !== previous.global.captureShortcut) setCaptureShortcut(next.global.captureShortcut)
       if (next.global.opencodeExecutable !== previous.global.opencodeExecutable) {
         openCodeRestartPending = true
         void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
@@ -610,6 +645,7 @@ app.whenReady().then(() => {
   for (const profile of settingsFile.state().global.agentProfiles ?? []) appliedProfiles.set(profile.id, profile)
   pendingProfiles.clear()
   nativeTheme.themeSource = settingsFile.state().global.theme
+  setCaptureShortcut(settingsFile.state().global.captureShortcut)
   settingsFile.watch()
   sessions = new SessionManager({
     store,
@@ -642,6 +678,8 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+app.on('will-quit', () => globalShortcut.unregisterAll())
 
 app.on('before-quit', () => {
   settings?.close()

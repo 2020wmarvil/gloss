@@ -466,6 +466,10 @@ export function App(): React.JSX.Element {
         case 'fullScreen':
           setFullScreenHint((n) => n + 1)
           break
+        case 'captureShortcut':
+          // From another app: the composer used last takes the capture, as with Ctrl+Shift+S.
+          window.dispatchEvent(new Event(CAPTURE))
+          break
         case 'sessionDeleted':
           panels.current.delete(event.sessionId)
           setSessions((list) => list.filter((s) => s.id !== event.sessionId))

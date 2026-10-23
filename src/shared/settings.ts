@@ -22,6 +22,9 @@ export type PermissionModeSetting = 'bypass' | 'agent'
 
 export const DEFAULT_EXTERNAL_EDITOR = 'code -g {file}:{line}'
 
+/** Starts a capture from anywhere (SPEC → Visual feedback). Rarely taken by other apps, unlike Ctrl+Shift+S (Save As). */
+export const DEFAULT_CAPTURE_SHORTCUT = 'Ctrl+Shift+PrintScreen'
+
 /** Commands use each editor's CLI launcher, which must be installed on PATH. */
 export const EDITOR_PRESETS = [
   { label: 'Visual Studio Code', value: DEFAULT_EXTERNAL_EDITOR },
@@ -56,6 +59,8 @@ export type GlobalSettings = {
   externalEditor: string
   /** Tools made available to all agents in every project. */
   mcpServers: import('./mcp').McpServer[]
+  /** An Electron accelerator that starts a capture while Gloss isn't focused; empty turns it off. */
+  captureShortcut?: string
 }
 
 /** Settings for one project folder, under `projects` keyed by its path. */
@@ -187,6 +192,15 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     description:
       'Open file links and review files in your editor. Custom commands replace {file} with the path and {line} with the line number. Use a command on PATH or a full executable path.',
     placeholder: DEFAULT_EXTERNAL_EDITOR,
+  },
+  {
+    key: 'captureShortcut',
+    scope: 'global',
+    type: 'string',
+    label: 'Capture shortcut',
+    description:
+      'Captures part of the screen from any app, for the composer used last. Keys joined with +, e.g. Ctrl+Shift+PrintScreen. Empty turns it off; Ctrl+Shift+S still works inside Gloss.',
+    placeholder: 'Off'
   }
 ]
 
