@@ -2,7 +2,7 @@
 // threads on its lines. The general conversation lives in the side panel.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { GitStatus, PullRequest } from '@shared/ipc'
-import { expandable, gapsOf, LARGE_FILE_LINES, linesOf, newLineOf, type LineAnchor, type Location, type ReviewDiff, type ReviewRange, type ReviewRefs, type Side } from '@shared/review'
+import { expandable, gapsOf, linesOf, newLineOf, type LineAnchor, type Location, type ReviewDiff, type ReviewRange, type ReviewRefs, type Side } from '@shared/review'
 import type { MessageQueue, SessionLive } from '@shared/types'
 import type { OpenSession, Panel } from './App'
 import { DiffView, EMPTY_LINE, cardOpen, firstLine, REVEAL_LABEL, type Card, type Layout } from './DiffView'
@@ -104,7 +104,8 @@ export function ReviewView(props: Props): React.JSX.Element {
   const [tree, setTree] = useStored(TREE_KEY, 'shown', ['shown', 'hidden'])
   const [comments, setComments] = useStored('gloss.review.comments', 'shown', ['shown', 'hidden'])
   const [toggled, setToggled] = useState(() => new Set<string>())
-  const [toggledFiles, setToggledFiles] = useState(() => new Set<string>())
+  /** Files expanded: every file starts collapsed, so a large review opens fast. */
+  const [expandedFiles, setExpandedFiles] = useState(() => new Set<string>())
   const [expansions, setExpansions] = useState<Record<string, Expansion>>({})
   const [narrow, setNarrow] = useState(false)
   const [current, setCurrent] = useState<string | null>(null)
@@ -166,12 +167,9 @@ export function ReviewView(props: Props): React.JSX.Element {
     [sources, onReadSource]
   )
 
-  /** Whether a file is collapsed: large ones start collapsed, and a click flips it. */
-  const isCollapsed = (path: string, lines: number): boolean => toggledFiles.has(path) !== lines > LARGE_FILE_LINES
-  const allCollapsed = files.length > 0 && files.every((f) => isCollapsed(f.path, f.additions + f.deletions))
+  const allCollapsed = files.length > 0 && files.every((f) => !expandedFiles.has(f.path))
   /** Collapses every file, or expands every file when all are collapsed. */
-  const toggleAll = (): void =>
-    setToggledFiles(new Set(files.filter((f) => (f.additions + f.deletions > LARGE_FILE_LINES) === allCollapsed).map((f) => f.path)))
+  const toggleAll = (): void => setExpandedFiles(new Set(allCollapsed ? files.map((f) => f.path) : []))
 
   const summaries = new Map(threadSummaries(open).map((s) => [s.thread.id, s]))
   const ordered = inDiffOrder(open.threads, diff.diff, locations)
@@ -252,8 +250,15 @@ export function ReviewView(props: Props): React.JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   }, [setComments])
 
-  // Bring the open thread into view: its card, or its marker.
+  // A thread opened in a collapsed file expands it.
   const panelThread = panel?.threadId ?? null
+  const panelFile = panel?.anchor.kind === 'line' ? panel.anchor.file : null
+  useEffect(() => {
+    if (panelFile) setExpandedFiles((s) => (s.has(panelFile) ? s : new Set(s).add(panelFile)))
+  }, [panelThread, panelFile])
+  const panelFileShown = panelFile !== null && expandedFiles.has(panelFile)
+
+  // Bring the open thread into view: its card, or its marker.
   useEffect(() => {
     const el = scroller.current
     if (!el || !panelThread) return
@@ -264,7 +269,7 @@ export function ReviewView(props: Props): React.JSX.Element {
     const box = target.getBoundingClientRect()
     const view = el.getBoundingClientRect()
     if (box.top < view.top + 40 || box.bottom > view.bottom) target.scrollIntoView?.({ block: 'center' })
-  }, [panelThread, comments])
+  }, [panelThread, comments, panelFileShown])
 
   /** The file whose section is at the top of the diff, for the tree. */
   const track = (): void => {
@@ -402,11 +407,7 @@ export function ReviewView(props: Props): React.JSX.Element {
                     if (f.status !== 'deleted') setFileMenu({ path: f.path, x: e.clientX, y: e.clientY })
                   }}
                   onClick={() => {
-                    setToggledFiles((s) => {
-                      const next = new Set(s)
-                      next.delete(f.path)
-                      return next
-                    })
+                    setExpandedFiles((s) => (s.has(f.path) ? s : new Set(s).add(f.path)))
                     setCurrent(f.path)
                     requestAnimationFrame(() =>
                       scroller.current?.querySelector(`.diff-file[data-file="${CSS.escape(f.path)}"]`)?.scrollIntoView?.({ block: 'start' })
@@ -459,10 +460,10 @@ export function ReviewView(props: Props): React.JSX.Element {
               active={active}
               showComments={comments === 'shown'}
               toggled={toggled}
-              toggledFiles={toggledFiles}
+              expandedFiles={expandedFiles}
               sources={sources}
               expansions={shownExpansions}
-              onToggleFile={(path) => setToggledFiles((s) => toggle(s, path))}
+              onToggleFile={(path) => setExpandedFiles((s) => toggle(s, path))}
               onExpand={onExpand}
               onOpenFile={props.onOpenFile}
               onToggleCard={(id) => setToggled((s) => toggle(s, id))}

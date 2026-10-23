@@ -1,7 +1,7 @@
 // A review session's diff (SPEC → Review sessions → Diff view): every file stacked under
 // a sticky header, split or unified, with threads as cards under their lines.
 import { memo, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { expandable, gapsOf, languageOf, LARGE_FILE_LINES, type DiffFile, type DiffLine, type Location, type Side } from '@shared/review'
+import { expandable, gapsOf, languageOf, type DiffFile, type DiffLine, type Location, type Side } from '@shared/review'
 import { EXPAND_STEP, gapViews, NO_EXPANSION, type Expansion, type GapView } from './diffContext'
 import { codeColors, useHighlighting } from './highlight'
 import { Markdown } from './Markdown'
@@ -34,8 +34,8 @@ type Props = {
   showComments: boolean
   /** Cards collapsed to their marker (or, for resolved threads, expanded). */
   toggled: Set<string>
-  /** Files collapsed or expanded by hand (large ones start collapsed). */
-  toggledFiles: Set<string>
+  /** Files expanded; every file starts collapsed. */
+  expandedFiles: Set<string>
   /** Files as they are now, by path, once read for showing the lines around their hunks; null if they can't be. */
   sources: Record<string, string[] | null>
   /** The lines shown around each file's hunks, by path. */
@@ -74,7 +74,7 @@ export function DiffView(props: Props): React.JSX.Element {
           active={props.active?.file === f.path ? props.active : null}
           showComments={props.showComments}
           toggled={props.toggled}
-          collapsed={props.toggledFiles.has(f.path) !== f.additions + f.deletions > LARGE_FILE_LINES}
+          collapsed={!props.expandedFiles.has(f.path)}
           source={props.sources[f.path]}
           expansion={props.expansions[f.path] ?? NO_EXPANSION}
           onToggleFile={props.onToggleFile}
@@ -111,7 +111,7 @@ const STATE_NAMES: Record<DiffFile['state'], string> = {
   both: 'committed + uncommitted'
 }
 
-type FileProps = Omit<Props, 'files' | 'cards' | 'toggledFiles' | 'sources' | 'expansions'> & {
+type FileProps = Omit<Props, 'files' | 'cards' | 'expandedFiles' | 'sources' | 'expansions'> & {
   file: DiffFile
   cards: Card[]
   collapsed: boolean

@@ -135,11 +135,13 @@ describe('readReviewDiff', () => {
     writeFileSync(join(dir, 'new.ts'), 'new\n')
 
     expect(await defaultBranch(dir)).toBe('main')
-    // Without origin/HEAD or a local main, the remote's main.
+    // Without origin/HEAD, the remote's main comes before a local main, which may be stale.
     git('update-ref', 'refs/remotes/origin/main', 'main')
-    git('branch', '-q', '-m', 'main', 'old')
     expect(await defaultBranch(dir)).toBe('origin/main')
-    git('branch', '-q', '-m', 'old', 'main')
+    // origin/HEAD names it.
+    git('update-ref', 'refs/remotes/origin/trunk', 'main')
+    git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/trunk')
+    expect(await defaultBranch(dir)).toBe('origin/trunk')
     const diff = await readReviewDiff(dir, 'main', second)
     expect(diff).toMatchObject({ headRef: second, head: second, base: git('rev-parse', 'main').trim() })
     expect(diff.files.map((f) => [f.path, f.state, f.hunks[0].lines.map((l) => l.text)])).toEqual([['a.ts', 'committed', ['one', 'two']]])

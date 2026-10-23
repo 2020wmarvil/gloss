@@ -366,10 +366,10 @@ export function Sidebar(props: Props): React.JSX.Element {
           className="ghost review-changes"
           onClick={props.onReview}
           disabled={props.creating || props.agents.find((a) => a.id === props.defaultAgent)?.available === false}
-          title="Review this branch: its pull request's changes, else everything since it left the default branch, committed or not"
+          title="View this branch's changes: its pull request's, else everything since it left the default branch, committed or not"
         >
           {reviewIcon}
-          Review changes
+          View changes
         </button>
       )}
       {props.note && (
