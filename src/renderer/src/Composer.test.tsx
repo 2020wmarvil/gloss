@@ -324,7 +324,7 @@ describe('screen capture', () => {
   /** The Attach menu's Capture item, after opening the menu. */
   function captureItem(): HTMLButtonElement {
     act(() => document.querySelector<HTMLButtonElement>('button[title="Attach"]')!.click())
-    return [...document.querySelectorAll<HTMLButtonElement>('.attach-menu button')].find((b) => b.textContent?.includes('Capture'))!
+    return [...document.querySelectorAll<HTMLButtonElement>('.attach-menu button')].find((b) => b.textContent?.includes('Screen capture'))!
   }
 
   it('is in the Attach menu, off and saying why when the agent takes no images', () => {

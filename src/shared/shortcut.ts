@@ -103,10 +103,10 @@ export function heldModifiers(e: KeyPress): Modifier[] {
 export function shortcutFromKey(e: KeyPress): { accelerator: string } | { error: string } | null {
   if (/^(Control|Alt|Shift|Meta|OS)(Left|Right)?$/.test(e.code)) return null
   const key = keyOf(e.code)
-  if (!key) return { error: "That key can't be part of a shortcut." }
+  if (!key) return { error: "That key can't be used." }
   const mods = heldModifiers(e)
   if (!STANDALONE.test(key) && !mods.some((m) => m !== 'Shift')) {
-    return { error: 'Hold Ctrl, Alt or the Windows key with it, so it doesn’t take the key from typing.' }
+    return { error: 'Add Ctrl, Alt or Win.' }
   }
   return { accelerator: [...mods, key].join('+') }
 }

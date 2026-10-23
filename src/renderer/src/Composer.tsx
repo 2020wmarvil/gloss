@@ -384,17 +384,17 @@ export function Composer({
                     <button onClick={() => (close(), fileInput.current?.click())}>
                       <span className="menu-row">
                         <Paperclip size={14} />
-                        {accepts.image && accepts.file ? 'Images or files…' : accepts.image ? 'Images…' : 'Files…'}
+                        Attachments
                       </span>
                     </button>
                     <button
                       disabled={!accepts.image}
-                      title={accepts.image && captureKeys ? `Capture the screen (${shortcutLabel(captureKeys, /Mac/.test(navigator.userAgent))})` : undefined}
+                      title={accepts.image && captureKeys ? `Screen capture (${shortcutLabel(captureKeys, /Mac/.test(navigator.userAgent))})` : undefined}
                       onClick={() => (close(), void capture())}
                     >
                       <span className="menu-row">
                         <Scan size={14} />
-                        Capture the screen
+                        Screen capture
                       </span>
                       {!accepts.image && <span className="muted">This agent doesn&apos;t accept images.</span>}
                     </button>

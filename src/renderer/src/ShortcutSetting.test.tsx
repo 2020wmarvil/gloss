@@ -24,7 +24,7 @@ async function mount(value: string): Promise<HTMLButtonElement> {
   const el = document.createElement('div')
   document.body.replaceChildren(el)
   root = createRoot(el)
-  await act(async () => root.render(<ShortcutSetting id="s" value={value} defaultValue="Ctrl+Shift+PrintScreen" onChange={onChange} />))
+  await act(async () => root.render(<ShortcutSetting id="s" value={value} onChange={onChange} />))
   return document.getElementById('s') as HTMLButtonElement
 }
 
@@ -39,7 +39,7 @@ it('records a pressed combination, pausing the current shortcut meanwhile', asyn
   expect([...box.querySelectorAll('kbd')].map((k) => k.textContent)).toEqual(['Ctrl', 'Shift', 'PrtSc'])
   act(() => box.click())
   expect(pause).toHaveBeenLastCalledWith(true)
-  expect(box.textContent).toBe('Press the keys…')
+  expect(box.textContent).toBe('Press keys…')
   key(box, 'keydown', 'ControlLeft', { ctrlKey: true })
   key(box, 'keydown', 'AltLeft', { ctrlKey: true, altKey: true })
   expect([...box.querySelectorAll('kbd')].map((k) => k.textContent)).toEqual(['Ctrl', 'Alt'])
@@ -52,7 +52,7 @@ it('explains a key that would stop typing, and Esc cancels', async () => {
   const box = await mount('Ctrl+Alt+Shift+S')
   act(() => box.click())
   key(box, 'keydown', 'KeyS', { key: 's' })
-  expect(document.querySelector('.shortcut-note')?.textContent).toMatch(/Hold Ctrl, Alt or the Windows key/)
+  expect(document.querySelector('.shortcut-note')?.textContent).toBe('Add Ctrl, Alt or Win.')
   key(box, 'keydown', 'Escape', { key: 'Escape' })
   expect(onChange).not.toHaveBeenCalled()
   expect(pause).toHaveBeenLastCalledWith(false)
@@ -61,18 +61,17 @@ it('explains a key that would stop typing, and Esc cancels', async () => {
 
 it('takes PrintScreen from its keyup, which is all Windows sends', async () => {
   const box = await mount('')
-  expect(box.textContent).toBe('Off')
+  expect(box.textContent).toBe('None')
   act(() => box.click())
   key(box, 'keyup', 'PrintScreen', { ctrlKey: true, key: 'PrintScreen' })
   expect(onChange).toHaveBeenCalledWith('Ctrl+PrintScreen')
 })
 
-it('turns off and resets', async () => {
-  await mount('Ctrl+Alt+Shift+S')
-  const buttons = [...document.querySelectorAll<HTMLButtonElement>('.shortcut-row button.ghost')]
-  expect(buttons.map((b) => b.textContent)).toEqual(['Turn off', 'Reset'])
-  act(() => buttons[0].click())
+it('clears with Backspace while recording, and has no other buttons', async () => {
+  const box = await mount('Ctrl+Alt+Shift+S')
+  expect(document.querySelectorAll('.shortcut-setting button')).toHaveLength(1)
+  act(() => box.click())
+  key(box, 'keydown', 'Backspace', { key: 'Backspace' })
   expect(onChange).toHaveBeenLastCalledWith('')
-  act(() => buttons[1].click())
-  expect(onChange).toHaveBeenLastCalledWith('Ctrl+Shift+PrintScreen')
+  expect(pause).toHaveBeenLastCalledWith(false)
 })

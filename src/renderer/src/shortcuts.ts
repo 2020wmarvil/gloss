@@ -69,9 +69,9 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: [['R']], action: 'Box' },
       { keys: [['A']], action: 'Arrow' },
       { keys: [['Mod', 'Z'], ['Mod', 'Y']], action: 'Undo, redo' },
-      { keys: [['Mod', 'Wheel'], ['+'], ['-']], action: 'Zoom in or out (at the cursor with the wheel)' },
+      { keys: [['Wheel']], action: 'Zoom in or out at the cursor' },
       { keys: [['0'], ['1']], action: 'Fit the window, actual size' },
-      { keys: [['Space', 'Drag'], ['Middle-drag']], action: 'Pan (the wheel scrolls too)' },
+      { keys: [['Right-drag']], action: 'Pan' },
       { keys: [['Mod', 'Enter']], action: 'Add it to the message' },
       { keys: [['Esc']], action: 'Leave a note, or cancel' }
     ]

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import type { SettingsPatch, SettingsState } from '@shared/ipc'
 import type { Project } from '@shared/types'
 import { folderName, sameFolder } from '@shared/paths'
-import { DEFAULT_CAPTURE_SHORTCUT, SETTING_FIELDS, projectSettings, type ProjectSettings, type GlobalSettings, type SettingField } from '@shared/settings'
+import { SETTING_FIELDS, projectSettings, type ProjectSettings, type GlobalSettings, type SettingField } from '@shared/settings'
 import { errorText } from './errors'
 import { modKey, SHORTCUTS } from './shortcuts'
 import { McpSettings } from './McpSettings'
@@ -273,7 +273,7 @@ function Field(props: { field: SettingField; value: unknown; onChange(value: unk
       {field.key === 'externalEditor' ? (
         <EditorSetting id={id} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'shortcut' ? (
-        <ShortcutSetting id={id} value={typeof value === 'string' ? value : ''} defaultValue={DEFAULT_CAPTURE_SHORTCUT} onChange={props.onChange} />
+        <ShortcutSetting id={id} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'string' ? (
         <TextSetting id={id} field={field} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'enum' && SEGMENTED.has(field.key) ? (

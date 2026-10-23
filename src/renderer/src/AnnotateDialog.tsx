@@ -42,7 +42,7 @@ type Marks = { shapes: Shape[]; pins: Pin[] }
 
 const MIN_ZOOM = 0.05
 const MAX_ZOOM = 8
-/** One zoom step (buttons and keys). */
+/** One step of the − and + buttons. */
 const ZOOM_STEP = 1.25
 /** Space around the capture inside the stage. */
 const STAGE_PAD = 20
@@ -60,12 +60,10 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
   const [color, setColor] = useState(lastColor)
   const [lit, setLit] = useState(-1)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
-  /** The scale that fits the capture in the stage (never above 1), and the zoom picked (null: fit). */
-  const [fit, setFit] = useState(1)
-  const [zoom, setZoom] = useState<number | null>(null)
-  const scale = zoom ?? fit
-  /** Space is held: dragging pans instead of drawing. */
-  const [spaceDown, setSpaceDown] = useState(false)
+  /** The zoom: fitted to the stage when a capture opens, then only what the user picks. */
+  const [scale, setScale] = useState(1)
+  /** A right-button drag in progress, which pans. */
+  const [panning, setPanning] = useState(false)
   const pan = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
   /** A point of the capture to keep under the same spot of the screen after a zoom. */
   const zoomAnchor = useRef<{ ix: number; iy: number; cx: number; cy: number } | null>(null)
@@ -99,15 +97,16 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
     }
   }, [capture])
 
-  // Fitted to the stage until zoomed, never enlarged; refitted as the window resizes.
-  useLayoutEffect(() => {
+  /** The zoom that fits the capture in the stage as it is now, never enlarged. */
+  function fitScale(): number {
     const el = stage.current
-    if (!el) return
-    const measure = (): void => setFit(Math.min(1, (el.clientWidth - 2 * STAGE_PAD) / width, (el.clientHeight - 2 * STAGE_PAD) / height))
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-    return () => observer.disconnect()
+    if (!el) return 1
+    return Math.max(MIN_ZOOM, Math.min(1, (el.clientWidth - 2 * STAGE_PAD) / width, (el.clientHeight - 2 * STAGE_PAD) / height))
+  }
+
+  // A capture opens fitted to the stage. Resizing the window later keeps the zoom the user has.
+  useLayoutEffect(() => {
+    setScale(fitScale())
   }, [width, height])
 
   // After a zoom, scroll so the anchored point is where it was.
@@ -122,7 +121,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
   }, [scale])
 
   /** Zooms to `next`, keeping the point under (cx, cy) in place: the cursor, or the stage's center. */
-  function zoomTo(next: number | null, cx?: number, cy?: number): void {
+  function zoomTo(next: number, cx?: number, cy?: number): void {
     const el = stage.current
     const box = canvas.current?.getBoundingClientRect()
     if (el && box) {
@@ -131,15 +130,17 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
       const y = cy ?? view.top + view.height / 2
       zoomAnchor.current = { ix: clamp((x - box.left) / scale, width), iy: clamp((y - box.top) / scale, height), cx: x, cy: y }
     }
-    setZoom(next === null ? null : Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next)))
+    setScale(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next)))
   }
 
-  // Ctrl+wheel and trackpad pinches zoom at the cursor; the wheel alone scrolls. Not passive, to keep the page from zooming.
+  /** Between fit and actual size: the zoom button, and 0 and 1. */
+  const fitted = (): boolean => Math.abs(scale - fitScale()) < 0.005
+
+  // The wheel zooms at the cursor (scrollbars and a right-button drag move around). Not passive, so the stage doesn't scroll too.
   useEffect(() => {
     const el = stage.current
     if (!el) return
     const onWheel = (e: WheelEvent): void => {
-      if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
       zoomTo(scale * Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY)
     }
@@ -147,13 +148,14 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
     return () => el.removeEventListener('wheel', onWheel)
   })
 
-  /** Space+drag or the middle button pans the stage. */
+  /** A right-button drag pans the stage. */
   function onStagePointerDown(e: React.PointerEvent<HTMLDivElement>): void {
-    if (!spaceDown && e.button !== 1) return
+    if (e.button !== 2) return
     e.preventDefault()
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
     pan.current = { x: e.clientX, y: e.clientY, left: e.currentTarget.scrollLeft, top: e.currentTarget.scrollTop }
+    setPanning(true)
   }
 
   function onStagePointerMove(e: React.PointerEvent<HTMLDivElement>): void {
@@ -168,6 +170,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
     if (!pan.current) return
     e.stopPropagation()
     pan.current = null
+    setPanning(false)
   }
 
   function redraw(): void {
@@ -318,12 +321,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
       if (typing) root.current?.focus()
       else onCancel()
     } else if (!typing && !mod && !e.altKey) {
-      if (e.key === ' ') {
-        e.preventDefault()
-        setSpaceDown(true)
-      } else if (e.key === '+' || e.key === '=') zoomTo(scale * ZOOM_STEP)
-      else if (e.key === '-') zoomTo(scale / ZOOM_STEP)
-      else if (e.key === '0') zoomTo(null)
+      if (e.key === '0') zoomTo(fitScale())
       else if (e.key === '1') zoomTo(1)
       else {
         const t = TOOLS.find((x) => x.key === key)
@@ -332,9 +330,6 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
     }
   }
 
-  function onKeyUp(e: React.KeyboardEvent): void {
-    if (e.key === ' ') setSpaceDown(false)
-  }
 
   const text = pinList([{ kind: 'image', name: '', mimeType: '', data: '', pins: marks.pins }]) || 'Just the screenshot, without pins.'
 
@@ -348,7 +343,6 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
         aria-labelledby="annotate-title"
         tabIndex={-1}
         onKeyDown={onKeyDown}
-        onKeyUp={onKeyUp}
       >
         <header className="annotate-head">
           <h2 id="annotate-title">Annotate</h2>
@@ -390,18 +384,18 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
               <Redo2 />
             </button>
             <span className="annotate-sep" />
-            <button title="Zoom out (-)" aria-label="Zoom out" disabled={scale <= MIN_ZOOM} onClick={() => zoomTo(scale / ZOOM_STEP)}>
+            <button title="Zoom out" aria-label="Zoom out" disabled={scale <= MIN_ZOOM} onClick={() => zoomTo(scale / ZOOM_STEP)}>
               <ZoomOut />
             </button>
             <button
               className="annotate-zoom"
-              title={zoom === null ? 'Actual size (1)' : 'Fit (0)'}
-              aria-label={zoom === null ? 'Zoom to actual size' : 'Zoom to fit'}
-              onClick={() => zoomTo(zoom === null ? 1 : null)}
+              title={fitted() ? 'Actual size (1)' : 'Fit (0)'}
+              aria-label={fitted() ? 'Zoom to actual size' : 'Zoom to fit'}
+              onClick={() => zoomTo(fitted() ? 1 : fitScale())}
             >
-              {zoom === null ? 'Fit' : `${Math.round(scale * 100)}%`}
+              {`${Math.round(scale * 100)}%`}
             </button>
-            <button title="Zoom in (+)" aria-label="Zoom in" disabled={scale >= MAX_ZOOM} onClick={() => zoomTo(scale * ZOOM_STEP)}>
+            <button title="Zoom in" aria-label="Zoom in" disabled={scale >= MAX_ZOOM} onClick={() => zoomTo(scale * ZOOM_STEP)}>
               <ZoomIn />
             </button>
           </div>
@@ -416,11 +410,11 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
         </header>
         <div
           ref={stage}
-          className={`annotate-stage${spaceDown ? ' panning' : ''}`}
+          className={`annotate-stage${panning ? ' panning' : ''}`}
           onPointerDownCapture={onStagePointerDown}
           onPointerMoveCapture={onStagePointerMove}
           onPointerUpCapture={onStagePointerUp}
-          onMouseDown={(e) => e.button === 1 && e.preventDefault()}
+          onContextMenu={(e) => e.preventDefault()}
         >
           <canvas
             ref={canvas}

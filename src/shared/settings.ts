@@ -198,7 +198,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     scope: 'global',
     type: 'shortcut',
     label: 'Capture shortcut',
-    description: 'Captures part of the screen for the composer you used last, in Gloss or any other app.'
+    description: 'Captures part of the screen, from Gloss or any app. Click it and press the keys; Backspace clears it.'
   }
 ]
 
