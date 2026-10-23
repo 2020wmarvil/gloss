@@ -1,73 +1,8 @@
 # Milestones
 
-Build in order, from M14 through M22 (Shipping). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
+Build in order, from M17 through M23 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1 through M13 and failed-turn actions are done. The remaining milestones add open source agents and local models, questions and permission modes, visual feedback, remote and mobile access, shared skills and plugins, worktrees, sub-agent threads, and performance improvements before shipping. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
-
-## M14: Open source agents and local models
-
-**Implemented, awaiting review.** Guided OpenCode setup and custom ACP profiles are available, with connection tests, environment references, instruction-file delivery, capability diagnostics and removed-profile recovery. Agents without resume support preserve history and require a new conversation. Windows tests passed, including real OpenCode transport and a local Ollama tool call and file edit at 64K context. Linux runtime validation remains open. See `docs/ACP-PROFILES.md` and `docs/OPENCODE.md`.
-
-Let users bring an ACP-compatible coding agent and run it with either a hosted model or a model served on their own computer. These are separate choices: the agent handles files, tools and the coding loop; the model supplies its responses. An open source agent can use a proprietary hosted model, and running an agent process locally does not mean its model runs locally. Update `SPEC.md` and design setup and connection diagnostics before implementation.
-
-- **Compatibility spike first:** evaluate OpenCode as the initial supported open source agent. Its documented `opencode acp` command speaks ACP over stdio, and its provider configuration supports local model servers. Verify the current release, license, Windows/Linux launch behavior, instruction injection, permissions, model selection, tool events, cancellation, session listing and resume before committing to the integration. Record supported features and gaps; choose another ACP agent if the basic Gloss flow cannot work reliably.
-- **Bring your own ACP agent:** add global agent profiles with a stable ID, display name, executable, argument array and environment-variable references, plus a Test connection action. Keep Claude Code and Codex available. Launch directly without composing a shell command; report missing executables, incompatible protocol versions, failed initialization and process exits clearly. Keep credentials in the agent's native credential store or referenced environment variables, and redact them from diagnostics. Removing a profile retains its conversations and allows restoring the profile to resume them.
-- **One documented integration:** provide a guided profile for the selected open source agent using a user-installed executable. Explain installation and configuration with official links, show the detected version, and verify a connection before offering it for new sessions. Persist the profile used by each session and retain the chosen working directory. M19 will extend this to worktrees. Do not silently switch an existing session to another agent or model provider.
-- **Local inference path:** document and validate one complete setup, initially the selected agent connected to a user-managed Ollama server with a tool-capable local model. Gloss speaks ACP to the agent; the agent connects to the model server. Keep model/provider configuration in the agent's supported configuration unless it exposes that choice through ACP. Explain each component in setup and distinguish a loopback endpoint from a LAN or hosted endpoint. A server such as Ollama or LM Studio is not itself a coding agent and cannot be added as an ACP executable.
-- **Capabilities and instructions:** offer attachments, model switching, session discovery/resume, steering, plans, usage and permission controls only where supported. Show unavailable usage or cost as unknown. Verify that Gloss's thread-routing instructions reach the agent without modifying the user's project instruction files. Preserve display history when resume is unavailable and require an explicit new-session action instead of claiming the agent retained context. Use the current permission behavior initially; M15 will add questions, permission modes and approval prompts across agents.
-- **Failures and local expectations:** distinguish an unavailable model server, a missing model, authentication failure, insufficient memory and unsupported tool calling where the agent exposes those errors. Explain that speed, memory requirements and coding quality depend on the model and hardware. A local model does not guarantee an offline workflow: tools, MCP servers and other integrations may still access the network. Do not silently fall back to a hosted provider.
-- **Scope:** connect to existing agents and model servers. Automatic agent installation, model downloads, starting/managing inference servers, GPU setup, training, a built-in coding-agent loop and support for every OpenAI-compatible endpoint are later work. Other custom ACP agents can be added, but only the tested integration is presented as supported.
-- Verify with fake ACP agents and Windows/Linux smoke checks: profile persistence, launch failures and redacted diagnostics, capability differences, instruction delivery, thread routing, file edits, cancellation, restart/resume and removed-profile recovery. Run the documented local setup with hosted credentials removed and external networking disabled after installation and model download; confirm a prompt, tool call and file edit complete without a hosted fallback. Record the tested agent/server/model versions and hardware.
-
-**Done when:** a user can add the supported open source agent, complete a coding task through Gloss using a local model without hosted credentials, discuss the result in threads, and restart and resume where supported. Custom ACP profiles survive restart, unsupported features are clearly identified, existing Claude Code and Codex sessions still work, and a stopped local server produces an actionable error.
-
-Initial references (re-check during implementation): [OpenCode ACP support](https://opencode.ai/docs/acp/) and [provider configuration](https://opencode.ai/docs/providers/).
-
-## M15: Questions and permission modes
-
-**Implemented, awaiting review.** Form elicitations become question cards in the asking thread (Claude's AskUserQuestion included, in every mode); permission requests become approval cards unless the session is in a bypass mode or Gloss auto-approves; a per-session mode picker in the status line replaces the bypass item, with a `permissionMode` default (global, per-project override, bypass by default) and saved per-session modes. Waiting turns show "Waiting for you" in the status line, strip, sidebar and thread, and notify when Gloss isn't focused. URL elicitations are declined. Verified live on Haiku 5.5 through the Claude adapter (`src/main/claude.integration.test.ts`, opt in with `GLOSS_CLAUDE_LIVE=1`) and in the built app.
-
-Let the agent ask the user things, and let the user choose how much it may do without asking. Replaces SPEC → Permissions ("no approval UI"); update it in this milestone.
-
-- **Agent questions:** advertise ACP's `clientCapabilities.elicitation.form` and answer `elicitation/create` requests with a question dialog built from the request's JSON Schema: single and multiple choice, free text, and the agent's "other" answer where it allows one, plus Decline and Cancel. With form support the Claude adapter turns on Claude Code's AskUserQuestion tool (disabled today because Gloss doesn't advertise it) and sends its questions this way; MCP servers' elicitations arrive the same way. The question shows in the thread whose turn asked it. URL elicitations (open a link, wait for `session/complete_elicitation`) are optional.
-- **Permission modes:** a per-session mode picker from the agent's `modes` (Claude Code: Manual, Accept edits, Plan, Auto, Bypass permissions), set with `session/set_mode` and kept in sync from `current_mode_update`. It replaces the status line's "bypass" item. A default mode in settings (global, with a per-project override) replaces always entering `bypassModeId`; bypass stays the default.
-- **Approval prompts:** in a mode where the agent asks, `session/request_permission` shows an approval prompt (the tool call's title and what it will run or change, with the agent's options: allow once, allow always, reject) in the thread of the running turn, instead of being auto-approved. Auto-approval remains for agents without a bypass mode only if the user picks it.
-- **Waiting on the user:** a turn waiting on a question or an approval is still running (queued messages wait), shows "Waiting for you" in the status line and sidebar, and sends an OS notification when Gloss isn't focused. Cancel answers it with `cancelled`.
-- Agent-agnostic: everything comes from ACP modes, permission options and elicitation schemas. Verify first: the SDK's elicitation request and response shapes (`CreateElicitationRequest`/`CreateElicitationResponse`), and how the Claude adapter maps AskUserQuestion (several questions per request, multi-select, the custom answer).
-
-**Done when:** Claude Code can ask a multiple-choice question mid-turn and gets the answer from a Gloss dialog, and a session switched to Manual asks before each edit or command and continues or stops based on the answer.
-
-## M16: Visual feedback (experimental)
-
-**Implemented, awaiting review.** **Capture the screen** in the composer's Attach menu, `Ctrl+Shift+S`, or a global shortcut from any app (`Ctrl+Shift+PrtSc` by default, a setting) open a ShareX-style region overlay on every display (drag a region, click a window, Space for the display under the cursor; window hover on Windows only), then an annotation canvas filling the window, with zoom and pan, numbered pins and notes, pen, highlighter, box and arrow. The flattened image goes to the composer (Edit reopens it); its pin list is sent after the message text, and each pin opens its own thread from the sent message. One overlay instead of a palette of modes. Verified live in the built app on Haiku 5.5: the agent named every pin's element, a pin thread answered about its pin, and pins and the thread survived a restart and resync. See `docs/mocks/visual-feedback.html` and SPEC → Visual feedback.
-
-Point at things visually to give the agent feedback. Expect to iterate on this continuously based on use; the first version is deliberately small.
-
-**First version: capture, then annotate**
-- A palette (shortcut, or from the composer) captures a region, a window or the screen (Electron `desktopCapturer`), then opens it in a Gloss annotation canvas.
-- Tools: numbered **pins** with a short note each, pen, highlighter, box, arrow; undo.
-- Sent to the agent as the flattened image plus a numbered text list of the pins and notes ("1: …", "2: …"). Numbered marks follow Set-of-Mark prompting: models refer to labeled marks far more reliably than to free-form circles.
-- **Pins are anchors:** each pin can be opened into a thread, like list items, selections and diff lines.
-- Privacy: default to region or single-window capture, and always show exactly what will be sent before sending.
-- Needs M7 attachments (the agent must accept images).
-
-**Done when:** you can capture part of the screen, mark it up with pins and drawings, send it, get a response that refers to your marks, and discuss a single pin in its own thread.
-
-**Possible directions** (to try based on use, not commitments)
-- Live drawing over the screen (a transparent always-on-top overlay) instead of capture first.
-- Voice narration while drawing, sent with a timeline aligning what was said with what was drawn.
-- Element picking for web apps: select a DOM element in a running page and send its selector, styles and source location (stagewise / React Grab style), not just pixels.
-- Annotating Gloss's own content (messages, diffs) as images.
-- Annotating an image pasted, dropped or picked into the composer, not only a capture.
-- Window hover on macOS (`CGWindowListCopyWindowInfo`) and Linux X11 (`_NET_CLIENT_LIST_STACKING`), once they can be tested there; Wayland doesn't let apps see other windows.
-- A region across two displays.
-- A blank canvas for sketching mockups and diagrams.
-- Several images in one message: before and after, or a sequence of steps.
-- Short screen recordings for interactions and animations.
-- The agent annotates back: it returns a screenshot with its own numbered marks.
-- Verify loop: after a fix, re-capture the same region and compare with the original.
-- Automatic marks: segment the capture and number regions so you only pick the ones you mean.
-- An MCP tool so the agent can ask you for a screenshot of something.
+M1 through M16 and failed-turn actions are done. The remaining milestones add remote and mobile access, shared skills and plugins, worktrees, sub-agent threads, and performance improvements before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M17: Remote and mobile (future)
 Drive Gloss from a phone while the desktop app runs the agents. The desktop stays the only place agents, ACP and the database live; the phone is another client of the main process. Adds a section to `SPEC.md` (update it in this milestone).
@@ -145,6 +80,17 @@ Measure first, then fix what the numbers show. Gloss has had no performance work
 
 **Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place.
 
+## M23: Marketing
+Present Gloss to people who haven't used it. Comes after Shipping, so every link points at a release people can install.
+
+- **README:** lead with what Gloss is and why threads help, with visuals near the top: screenshots in light and dark, and short GIFs of the core features (replying to an item in a thread, steering a running turn, visual feedback pins). Install from the latest GitHub Release first; building from source moves lower. Trim the feature walkthrough to the highlights and link to the docs for the rest.
+- **Docs cleanup:** separate user-facing docs (setup, agents, OpenCode and local models, custom ACP profiles) from design and development notes (`SPEC.md`, `MILESTONES.md`, mocks, UX review). Remove stale status notes, check every link and command, and make sure each user doc says which agents and platforms it covers.
+- **Motion graphics demo reel:** a short video (about a minute) that shows the problem (a long linear session) and Gloss's answer (threads), then the other headline features. Uses the brand from `docs/BRAND.md`. Kept as source alongside its exported video, so it can be updated after UI changes.
+- **Repository presentation:** GitHub description, topics and a social preview image, so links to the repository look right when shared.
+- Capture visuals from the built app with a scratch data folder and demo projects, never from real sessions, and with Haiku as the model.
+
+**Done when:** someone landing on the repository understands what Gloss does from the README's first screen, can install it from the release link, find the docs for their agent, and watch the demo reel.
+
 ## Future work (after the milestones)
 Ideas worth building once the milestones are done. Not scheduled; first item first.
 
@@ -152,8 +98,8 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 2. **Hover to explain:** hover a term, function or code span in an agent message for a short explanation from a throwaway sub-agent (M20's `fresh` mode), without spending main-session context or opening a thread.
 
 ## Design passes needed
-- **M14:** agent profiles and connection testing, guided open source/local-model setup, capability indicators, and actionable launch or model-server errors.
-- **M15:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.
+- ~~**M14:** agent profiles and connection testing, guided open source/local-model setup, capability indicators, and actionable launch or model-server errors.~~ Done.
+- ~~**M15:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.~~ Done.
 - ~~**M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.~~ Done: `docs/mocks/visual-feedback.html`.
 - **M17:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.
 - **M18:** the global skill library, skill import preview and conflict resolution, marketplace search and source management, and plugin compatibility, installation and removal.
@@ -163,7 +109,6 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
 - Review sessions on other bases: staged changes only, a commit range, someone else's PR (M11 reviews the branch since the default branch, committed or not; keep the line anchor base-agnostic).
-- Polish the README and add visuals (screenshots, GIFs of threads and steering), and make a motion graphics demo reel.
 
 ---
 
@@ -362,3 +307,68 @@ A failed turn offers what fixes it, instead of only saying it failed.
 - The actions sit on the failed-turn notice in the thread where the turn ran.
 
 **Done when:** a turn that fails on an expired login can be fixed and resent from its notice, and any other failed turn can be retried with one click.
+
+## ~~M14 - Open source agents and local models~~
+
+**Done.** Guided OpenCode setup and custom ACP profiles are available, with connection tests, environment references, instruction-file delivery, capability diagnostics and removed-profile recovery. Agents without resume support preserve history and require a new conversation. Windows tests passed, including real OpenCode transport and a local Ollama tool call and file edit at 64K context. See `docs/ACP-PROFILES.md` and `docs/OPENCODE.md`.
+
+Let users bring an ACP-compatible coding agent and run it with either a hosted model or a model served on their own computer. These are separate choices: the agent handles files, tools and the coding loop; the model supplies its responses. An open source agent can use a proprietary hosted model, and running an agent process locally does not mean its model runs locally. Update `SPEC.md` and design setup and connection diagnostics before implementation.
+
+- **Compatibility spike first:** evaluate OpenCode as the initial supported open source agent. Its documented `opencode acp` command speaks ACP over stdio, and its provider configuration supports local model servers. Verify the current release, license, Windows launch behavior, instruction injection, permissions, model selection, tool events, cancellation, session listing and resume before committing to the integration. Record supported features and gaps; choose another ACP agent if the basic Gloss flow cannot work reliably.
+- **Bring your own ACP agent:** add global agent profiles with a stable ID, display name, executable, argument array and environment-variable references, plus a Test connection action. Keep Claude Code and Codex available. Launch directly without composing a shell command; report missing executables, incompatible protocol versions, failed initialization and process exits clearly. Keep credentials in the agent's native credential store or referenced environment variables, and redact them from diagnostics. Removing a profile retains its conversations and allows restoring the profile to resume them.
+- **One documented integration:** provide a guided profile for the selected open source agent using a user-installed executable. Explain installation and configuration with official links, show the detected version, and verify a connection before offering it for new sessions. Persist the profile used by each session and retain the chosen working directory. M19 will extend this to worktrees. Do not silently switch an existing session to another agent or model provider.
+- **Local inference path:** document and validate one complete setup, initially the selected agent connected to a user-managed Ollama server with a tool-capable local model. Gloss speaks ACP to the agent; the agent connects to the model server. Keep model/provider configuration in the agent's supported configuration unless it exposes that choice through ACP. Explain each component in setup and distinguish a loopback endpoint from a LAN or hosted endpoint. A server such as Ollama or LM Studio is not itself a coding agent and cannot be added as an ACP executable.
+- **Capabilities and instructions:** offer attachments, model switching, session discovery/resume, steering, plans, usage and permission controls only where supported. Show unavailable usage or cost as unknown. Verify that Gloss's thread-routing instructions reach the agent without modifying the user's project instruction files. Preserve display history when resume is unavailable and require an explicit new-session action instead of claiming the agent retained context. Use the current permission behavior initially; M15 will add questions, permission modes and approval prompts across agents.
+- **Failures and local expectations:** distinguish an unavailable model server, a missing model, authentication failure, insufficient memory and unsupported tool calling where the agent exposes those errors. Explain that speed, memory requirements and coding quality depend on the model and hardware. A local model does not guarantee an offline workflow: tools, MCP servers and other integrations may still access the network. Do not silently fall back to a hosted provider.
+- **Scope:** connect to existing agents and model servers. Automatic agent installation, model downloads, starting/managing inference servers, GPU setup, training, a built-in coding-agent loop and support for every OpenAI-compatible endpoint are later work. Other custom ACP agents can be added, but only the tested integration is presented as supported.
+- Verify with fake ACP agents and Windows smoke checks: profile persistence, launch failures and redacted diagnostics, capability differences, instruction delivery, thread routing, file edits, cancellation, restart/resume and removed-profile recovery. Run the documented local setup with hosted credentials removed and external networking disabled after installation and model download; confirm a prompt, tool call and file edit complete without a hosted fallback. Record the tested agent/server/model versions and hardware.
+
+**Done when:** a user can add the supported open source agent, complete a coding task through Gloss using a local model without hosted credentials, discuss the result in threads, and restart and resume where supported. Custom ACP profiles survive restart, unsupported features are clearly identified, existing Claude Code and Codex sessions still work, and a stopped local server produces an actionable error.
+
+Initial references (re-check during implementation): [OpenCode ACP support](https://opencode.ai/docs/acp/) and [provider configuration](https://opencode.ai/docs/providers/).
+
+## ~~M15 - Questions and permission modes~~
+
+**Done.** Form elicitations become question cards in the asking thread (Claude's AskUserQuestion included, in every mode); permission requests become approval cards unless the session is in a bypass mode or Gloss auto-approves; a per-session mode picker in the status line replaces the bypass item, with a `permissionMode` default (global, per-project override, bypass by default) and saved per-session modes. Waiting turns show "Waiting for you" in the status line, strip, sidebar and thread, and notify when Gloss isn't focused. URL elicitations are declined. Verified live on Haiku 5.5 through the Claude adapter (`src/main/claude.integration.test.ts`, opt in with `GLOSS_CLAUDE_LIVE=1`) and in the built app.
+
+Let the agent ask the user things, and let the user choose how much it may do without asking. Replaces SPEC → Permissions ("no approval UI"); update it in this milestone.
+
+- **Agent questions:** advertise ACP's `clientCapabilities.elicitation.form` and answer `elicitation/create` requests with a question dialog built from the request's JSON Schema: single and multiple choice, free text, and the agent's "other" answer where it allows one, plus Decline and Cancel. With form support the Claude adapter turns on Claude Code's AskUserQuestion tool (disabled today because Gloss doesn't advertise it) and sends its questions this way; MCP servers' elicitations arrive the same way. The question shows in the thread whose turn asked it. URL elicitations (open a link, wait for `session/complete_elicitation`) are optional.
+- **Permission modes:** a per-session mode picker from the agent's `modes` (Claude Code: Manual, Accept edits, Plan, Auto, Bypass permissions), set with `session/set_mode` and kept in sync from `current_mode_update`. It replaces the status line's "bypass" item. A default mode in settings (global, with a per-project override) replaces always entering `bypassModeId`; bypass stays the default.
+- **Approval prompts:** in a mode where the agent asks, `session/request_permission` shows an approval prompt (the tool call's title and what it will run or change, with the agent's options: allow once, allow always, reject) in the thread of the running turn, instead of being auto-approved. Auto-approval remains for agents without a bypass mode only if the user picks it.
+- **Waiting on the user:** a turn waiting on a question or an approval is still running (queued messages wait), shows "Waiting for you" in the status line and sidebar, and sends an OS notification when Gloss isn't focused. Cancel answers it with `cancelled`.
+- Agent-agnostic: everything comes from ACP modes, permission options and elicitation schemas. Verify first: the SDK's elicitation request and response shapes (`CreateElicitationRequest`/`CreateElicitationResponse`), and how the Claude adapter maps AskUserQuestion (several questions per request, multi-select, the custom answer).
+
+**Done when:** Claude Code can ask a multiple-choice question mid-turn and gets the answer from a Gloss dialog, and a session switched to Manual asks before each edit or command and continues or stops based on the answer.
+
+## ~~M16 - Visual feedback (experimental)~~
+
+**Done.** **Capture the screen** in the composer's Attach menu, `Ctrl+Shift+S`, or a global shortcut from any app (`Ctrl+Shift+PrtSc` by default, a setting) open a ShareX-style region overlay on every display (drag a region, click a window, Space for the display under the cursor; window hover on Windows only), then an annotation canvas filling the window, with zoom and pan, numbered pins and notes, pen, highlighter, box and arrow. The flattened image goes to the composer (Edit reopens it); its pin list is sent after the message text, and each pin opens its own thread from the sent message. One overlay instead of a palette of modes. Verified live in the built app on Haiku 5.5: the agent named every pin's element, a pin thread answered about its pin, and pins and the thread survived a restart and resync. See `docs/mocks/visual-feedback.html` and SPEC → Visual feedback.
+
+Point at things visually to give the agent feedback. Expect to iterate on this continuously based on use; the first version is deliberately small.
+
+**First version: capture, then annotate**
+- A palette (shortcut, or from the composer) captures a region, a window or the screen (Electron `desktopCapturer`), then opens it in a Gloss annotation canvas.
+- Tools: numbered **pins** with a short note each, pen, highlighter, box, arrow; undo.
+- Sent to the agent as the flattened image plus a numbered text list of the pins and notes ("1: …", "2: …"). Numbered marks follow Set-of-Mark prompting: models refer to labeled marks far more reliably than to free-form circles.
+- **Pins are anchors:** each pin can be opened into a thread, like list items, selections and diff lines.
+- Privacy: default to region or single-window capture, and always show exactly what will be sent before sending.
+- Needs M7 attachments (the agent must accept images).
+
+**Done when:** you can capture part of the screen, mark it up with pins and drawings, send it, get a response that refers to your marks, and discuss a single pin in its own thread.
+
+**Possible directions** (to try based on use, not commitments)
+- Live drawing over the screen (a transparent always-on-top overlay) instead of capture first.
+- Voice narration while drawing, sent with a timeline aligning what was said with what was drawn.
+- Element picking for web apps: select a DOM element in a running page and send its selector, styles and source location (stagewise / React Grab style), not just pixels.
+- Annotating Gloss's own content (messages, diffs) as images.
+- Annotating an image pasted, dropped or picked into the composer, not only a capture.
+- Window hover on macOS (`CGWindowListCopyWindowInfo`) and Linux X11 (`_NET_CLIENT_LIST_STACKING`), once they can be tested there; Wayland doesn't let apps see other windows.
+- A region across two displays.
+- A blank canvas for sketching mockups and diagrams.
+- Several images in one message: before and after, or a sequence of steps.
+- Short screen recordings for interactions and animations.
+- The agent annotates back: it returns a screenshot with its own numbered marks.
+- Verify loop: after a fix, re-capture the same region and compare with the original.
+- Automatic marks: segment the capture and number regions so you only pick the ones you mean.
+- An MCP tool so the agent can ask you for a screenshot of something.
