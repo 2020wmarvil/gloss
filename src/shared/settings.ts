@@ -59,7 +59,7 @@ export type GlobalSettings = {
   externalEditor: string
   /** Tools made available to all agents in every project. */
   mcpServers: import('./mcp').McpServer[]
-  /** An Electron accelerator that starts a capture while Gloss isn't focused; empty turns it off. */
+  /** The key combination that starts a capture, in Gloss or any app (an Electron accelerator); empty turns it off. */
   captureShortcut?: string
 }
 
@@ -75,7 +75,7 @@ export type ProjectSettings = {
 export type SettingField = {
   key: string
   scope: 'global' | 'project'
-  type: 'boolean' | 'enum' | 'string' | 'mcp' | 'profiles' | 'agent'
+  type: 'boolean' | 'enum' | 'string' | 'mcp' | 'profiles' | 'agent' | 'shortcut'
   label: string
   description: string
   /** For enum fields: the allowed values and how the screen labels them. */
@@ -196,11 +196,9 @@ export const SETTING_FIELDS: readonly SettingField[] = [
   {
     key: 'captureShortcut',
     scope: 'global',
-    type: 'string',
+    type: 'shortcut',
     label: 'Capture shortcut',
-    description:
-      'Captures part of the screen from any app, for the composer used last. Keys joined with +, e.g. Ctrl+Shift+PrintScreen. Empty turns it off; Ctrl+Shift+S still works inside Gloss.',
-    placeholder: 'Off'
+    description: 'Captures part of the screen for the composer you used last, in Gloss or any other app.'
   }
 ]
 

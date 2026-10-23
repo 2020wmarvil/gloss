@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import type { SettingsPatch, SettingsState } from '@shared/ipc'
 import type { Project } from '@shared/types'
 import { folderName, sameFolder } from '@shared/paths'
-import { SETTING_FIELDS, projectSettings, type ProjectSettings, type GlobalSettings, type SettingField } from '@shared/settings'
+import { DEFAULT_CAPTURE_SHORTCUT, SETTING_FIELDS, projectSettings, type ProjectSettings, type GlobalSettings, type SettingField } from '@shared/settings'
 import { errorText } from './errors'
 import { modKey, SHORTCUTS } from './shortcuts'
 import { McpSettings } from './McpSettings'
@@ -12,6 +12,7 @@ import { OpenCodeSettings } from './OpenCodeSettings'
 import { AgentProfileSettings } from './AgentProfileSettings'
 import { Segmented, Select, Switch } from './Select'
 import { EditorSetting } from './EditorSetting'
+import { ShortcutSetting } from './ShortcutSetting'
 import { ExternalLink, Folder, Keyboard, Palette, Server, SlidersVertical, Terminal } from 'lucide-react'
 
 export type SettingsSection = 'general' | 'appearance' | 'mcp' | 'agents' | 'project' | 'shortcuts'
@@ -271,6 +272,8 @@ function Field(props: { field: SettingField; value: unknown; onChange(value: unk
       </div>
       {field.key === 'externalEditor' ? (
         <EditorSetting id={id} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
+      ) : field.type === 'shortcut' ? (
+        <ShortcutSetting id={id} value={typeof value === 'string' ? value : ''} defaultValue={DEFAULT_CAPTURE_SHORTCUT} onChange={props.onChange} />
       ) : field.type === 'string' ? (
         <TextSetting id={id} field={field} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'enum' && SEGMENTED.has(field.key) ? (

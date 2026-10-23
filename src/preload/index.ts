@@ -57,7 +57,9 @@ const api: GlossApi = {
   cancel: (sessionId) => ipcRenderer.invoke(IPC.cancel, sessionId),
   setBadge: (badge) => ipcRenderer.send(IPC.setBadge, badge),
   capture: {
-    start: () => ipcRenderer.invoke(IPC.captureStart)
+    start: () => ipcRenderer.invoke(IPC.captureStart),
+    shortcutStatus: () => ipcRenderer.invoke(IPC.captureShortcutStatus),
+    pauseShortcut: (paused) => ipcRenderer.invoke(IPC.capturePauseShortcut, paused)
   },
   requests: {
     answer: (sessionId, requestId, answer) => ipcRenderer.invoke(IPC.requestsAnswer, sessionId, requestId, answer)

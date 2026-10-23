@@ -28,7 +28,7 @@ import { GeneralPanel, ReviewThreadList } from './ReviewPanels'
 import { locations as threadLocations } from './reviewThreads'
 import { useReviewSources } from './reviewSources'
 import { hideFileList, ReviewView, type DiffState } from './ReviewView'
-import { CAPTURE, FOCUS_COMPOSER, FOCUS_MAIN_COMPOSER, type ComposerQueue } from './Composer'
+import { CAPTURE, CaptureShortcut, FOCUS_COMPOSER, FOCUS_MAIN_COMPOSER, type ComposerQueue } from './Composer'
 import { errorText } from './errors'
 import { Conversation, type StripThread } from './Conversation'
 import type { Notice, Reveal } from './Log'
@@ -467,7 +467,7 @@ export function App(): React.JSX.Element {
           setFullScreenHint((n) => n + 1)
           break
         case 'captureShortcut':
-          // From another app: the composer used last takes the capture, as with Ctrl+Shift+S.
+          // The capture shortcut, in Gloss or another app: the composer used last takes the capture.
           window.dispatchEvent(new Event(CAPTURE))
           break
         case 'sessionDeleted':
@@ -990,10 +990,6 @@ export function App(): React.JSX.Element {
         setShowSettings(false)
         showQueue()
       }
-    } else if (e.key.toLowerCase() === 's' && e.shiftKey && !e.altKey) {
-      // Capture and annotate (SPEC → Visual feedback): the composer used last takes it.
-      e.preventDefault()
-      if (open && !showSettings) window.dispatchEvent(new Event(CAPTURE))
     } else if (e.key.toLowerCase() === 'j' && !e.shiftKey && !e.altKey) {
       e.preventDefault()
       jumpToWork()
@@ -1127,6 +1123,7 @@ export function App(): React.JSX.Element {
   })
 
   return (
+    <CaptureShortcut.Provider value={settings?.global.captureShortcut ?? ''}>
     <div className="app">
       <TitleBar />
       {sidebarWidth === null ? (
@@ -1427,5 +1424,6 @@ export function App(): React.JSX.Element {
         />
       )}
     </div>
+    </CaptureShortcut.Provider>
   )
 }

@@ -270,6 +270,10 @@ export type GlossApi = {
      * Resolves to what the user picked, or null if they cancelled.
      */
     start(): Promise<import('./capture').Capture | null>
+    /** The capture shortcut registered now (normalized), or null, and why not. */
+    shortcutStatus(): Promise<{ shortcut: string | null; error: string | null }>
+    /** Lets the settings screen record a new shortcut without the current one taking the keys. */
+    pauseShortcut(paused: boolean): Promise<void>
   }
   /** Subscribe to main-process events. Returns an unsubscribe function. */
   onEvent(listener: (event: GlossEvent) => void): () => void
@@ -333,5 +337,7 @@ export const IPC = {
   settingsUpdate: 'gloss:settings:update',
   settingsOpenFile: 'gloss:settings:openFile',
   captureStart: 'gloss:capture:start',
+  captureShortcutStatus: 'gloss:capture:shortcutStatus',
+  capturePauseShortcut: 'gloss:capture:pauseShortcut',
   event: 'gloss:event'
 } as const

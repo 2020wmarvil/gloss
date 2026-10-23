@@ -3,6 +3,7 @@
 
 import { type FSWatcher, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { normalizeShortcut } from '../shared/shortcut'
 import { mcpError } from '../shared/mcp'
 import { PROFILE_ID, profilesError } from '../shared/agentProfiles'
 import type { SettingsPatch, SettingsState } from '../shared/ipc'
@@ -66,6 +67,10 @@ function checkValue(field: SettingField, value: unknown): string | null {
       return typeof value === 'boolean' ? null : `expected true or false, got ${JSON.stringify(value)}`
     case 'string':
       return typeof value === 'string' ? null : `expected a string, got ${JSON.stringify(value)}`
+    case 'shortcut':
+      return typeof value === 'string' && (value.trim() === '' || normalizeShortcut(value) !== null)
+        ? null
+        : `expected a key combination like "Ctrl+Shift+PrintScreen", or "" for none, got ${JSON.stringify(value)}`
     case 'enum': {
       const values = field.options?.map((o) => o.value) ?? []
       return values.includes(value as string)
@@ -132,7 +137,7 @@ export function settingsSchema(defaults: GlobalSettings): object {
       fields(scope).map((f) => [
         f.key,
         {
-          ...(f.type === 'mcp' ? mcpSchema : f.type === 'profiles' ? profileSchema : f.type === 'agent' ? { type: 'string', pattern: '^(claude|codex|opencode|custom:[a-z0-9][a-z0-9-]{0,63})$' } : { type: f.type === 'enum' ? 'string' : f.type }),
+          ...(f.type === 'mcp' ? mcpSchema : f.type === 'profiles' ? profileSchema : f.type === 'agent' ? { type: 'string', pattern: '^(claude|codex|opencode|custom:[a-z0-9][a-z0-9-]{0,63})$' } : { type: f.type === 'enum' || f.type === 'shortcut' ? 'string' : f.type }),
           ...(f.options && f.type !== 'agent' ? { enum: f.options.map((o) => o.value) } : {}),
           description: f.description,
           default: defaultsFor?.[f.key]

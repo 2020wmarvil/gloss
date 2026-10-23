@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { normalizeShortcut, shortcutLabel } from '@shared/shortcut'
 import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
 import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor'
@@ -47,8 +48,11 @@ type Props = {
 
 export const FOCUS_COMPOSER = 'gloss:focus-composer'
 export const FOCUS_MAIN_COMPOSER = 'gloss:focus-main-composer'
-/** Ctrl+Shift+S: capture into the composer used last, else the primary one (SPEC → Visual feedback). */
+/** The capture shortcut was pressed: capture into the composer used last, else the primary one (SPEC → Visual feedback). */
 export const CAPTURE = 'gloss:capture'
+
+/** The capture shortcut setting, for the Capture item's tooltip; empty when off. */
+export const CaptureShortcut = createContext('')
 
 /** The captures in drafts, so Edit reopens them with their pins and marks until they are sent. */
 const annotations = new WeakMap<Attachment, Annotation>()
@@ -135,6 +139,7 @@ export function Composer({
   /** The capture being annotated, and which attachment it replaces (Edit) or null for a new one. */
   const [annotating, setAnnotating] = useState<{ annotation: Annotation; index: number | null } | null>(null)
   const startCapture = useRef<() => void>(() => {})
+  const captureKeys = normalizeShortcut(useContext(CaptureShortcut))
 
   // The caret goes back where it was when the user switched away (before the focus below).
   useLayoutEffect(() => {
@@ -382,13 +387,14 @@ export function Composer({
                         {accepts.image && accepts.file ? 'Images or files…' : accepts.image ? 'Images…' : 'Files…'}
                       </span>
                     </button>
-                    <button disabled={!accepts.image} onClick={() => (close(), void capture())}>
+                    <button
+                      disabled={!accepts.image}
+                      title={accepts.image && captureKeys ? `Capture the screen (${shortcutLabel(captureKeys, /Mac/.test(navigator.userAgent))})` : undefined}
+                      onClick={() => (close(), void capture())}
+                    >
                       <span className="menu-row">
                         <Scan size={14} />
                         Capture the screen
-                        <kbd>Ctrl</kbd>
-                        <kbd>Shift</kbd>
-                        <kbd>S</kbd>
                       </span>
                       {!accepts.image && <span className="muted">This agent doesn&apos;t accept images.</span>}
                     </button>

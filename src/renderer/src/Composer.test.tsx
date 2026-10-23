@@ -337,7 +337,7 @@ describe('screen capture', () => {
     expect(document.querySelector('button[title="Attach"]')).toBeNull()
   })
 
-  it('opens the annotation canvas on the capture, and Ctrl+Shift+S goes to the composer used last', async () => {
+  it('opens the annotation canvas on the capture, and the capture shortcut goes to the composer used last', async () => {
     // jsdom has neither layout nor canvas: the dialog still opens, without drawing.
     vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} })
     const start = vi.fn(async () => ({ data: 'iVBOR', width: 40, height: 30, source: 'Region' }))

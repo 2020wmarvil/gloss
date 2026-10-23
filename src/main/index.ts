@@ -17,6 +17,7 @@ import { editorArgs, launchEditor } from './openFile'
 import { fileLink } from '../shared/fileLink'
 import { runInTerminal } from './terminal'
 import { registerCaptureIpc, startCapture } from './capture'
+import { normalizeShortcut, shortcutLabel } from '../shared/shortcut'
 import { UsageSource } from './usage'
 import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
@@ -173,25 +174,32 @@ function emit(event: GlossEvent): void {
   if (event.type === 'turnEnd' && pendingProfiles.size) void applyProfileChanges()
 }
 
-/** The global capture shortcut registered now (SPEC → Visual feedback). */
-let captureShortcut: string | null = null
+/** The capture shortcut (SPEC → Visual feedback): the setting, what is registered now, and why it isn't. */
+const capture = { setting: '', registered: null as string | null, error: null as string | null, paused: false }
 
 /**
- * Registers the setting's capture shortcut in place of the last one. It works while Gloss is in
- * the background: the renderer starts a capture for the composer used last, as Ctrl+Shift+S
- * does inside Gloss. Empty turns it off. Another app holding the keys, or an invalid
- * accelerator, leaves none registered.
+ * Registers the setting's capture shortcut in place of the last one. It is the only one, and works
+ * whether Gloss or another app is in front: the renderer starts a capture for the composer used
+ * last. Empty turns it off. Another app holding the keys leaves none registered, with the reason
+ * kept for the settings screen. While the settings screen records a new one it is paused, or the
+ * keys would start a capture instead of reaching it.
  */
 function setCaptureShortcut(accelerator: string | undefined): void {
-  if (captureShortcut) globalShortcut.unregister(captureShortcut)
-  captureShortcut = null
-  const keys = (accelerator ?? '').trim()
-  if (!keys) return
+  if (capture.registered) globalShortcut.unregister(capture.registered)
+  capture.registered = null
+  capture.error = null
+  capture.setting = (accelerator ?? '').trim()
+  if (!capture.setting || capture.paused) return
+  const keys = normalizeShortcut(capture.setting)
+  if (!keys) {
+    capture.error = `${capture.setting} isn't a key combination Gloss can use.`
+    return
+  }
   try {
-    if (globalShortcut.register(keys, () => emit({ type: 'captureShortcut' }))) captureShortcut = keys
-    else console.warn(`The capture shortcut ${keys} is taken by another app.`)
-  } catch (err) {
-    console.warn(`The capture shortcut ${keys} isn't a valid key combination:`, err)
+    if (globalShortcut.register(keys, () => emit({ type: 'captureShortcut' }))) capture.registered = keys
+    else capture.error = `Another app is already using ${shortcutLabel(keys, process.platform === 'darwin')}.`
+  } catch {
+    capture.error = `${capture.setting} isn't a key combination Gloss can use.`
   }
 }
 
@@ -447,6 +455,12 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.search, (_e, request: SearchRequest) => store!.search(request))
   ipcMain.handle(IPC.history, () => manager.messageHistory())
   registerCaptureIpc()
+  ipcMain.handle(IPC.captureShortcutStatus, () => ({ shortcut: capture.registered, error: capture.error }))
+  ipcMain.handle(IPC.capturePauseShortcut, (e, paused: unknown) => {
+    if (e.sender !== mainWindow?.webContents) return
+    capture.paused = paused === true
+    setCaptureShortcut(capture.setting)
+  })
   ipcMain.handle(IPC.captureStart, (e) => {
     if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can start a capture.')
     return startCapture({
