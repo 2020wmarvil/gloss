@@ -15,7 +15,7 @@ import { threadSummaries } from './ThreadsOverview'
 import { modKey } from './shortcuts'
 import { useRightButtonLines, type LineBounds } from './lineSelect'
 import { copySelection, SelectionContextMenu, type MenuItem } from './SelectionMenu'
-import { ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronUp, Columns2, MessageSquare, MessageSquareOff, PanelLeft, RotateCcw, Rows2 } from 'lucide-react'
+import { ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronUp, Columns2, MessageSquare, MessageSquareOff, PanelLeft, RotateCcw, Rows2, ScanSearch } from 'lucide-react'
 
 export type DiffState = { diff: ReviewDiff | null; error: string | null }
 
@@ -48,6 +48,8 @@ type Props = {
   onSetRange(range: ReviewRange): void
   /** A session is being started. */
   creating: boolean
+  /** Asks the agent to review the diff (SPEC → Review sessions → Run review). */
+  onRunReview(): void
   /** Starts a fresh review session of the same range; this one stays. */
   onNewReview(): void
   /** Opens a file of the diff in the file manager, or in the external editor at `line`. */
@@ -56,6 +58,7 @@ type Props = {
 
 /** The header's tool icons. */
 const ICONS = {
+  runReview: <ScanSearch />,
   newReview: <RotateCcw />,
   files: <PanelLeft />,
   collapseAll: <ChevronsDownUp />,
@@ -344,17 +347,29 @@ export function ReviewView(props: Props): React.JSX.Element {
                 {ICONS.down}
               </button>
             </span>
-            {/* Starts another session rather than changing this view, so it stands apart. */}
+            {/* These act on the agent rather than this view, so they stand apart. */}
             <span className="tool-divider" aria-hidden />
             <button
               className="tool-button icon"
-              disabled={props.creating}
-              title="New review: a fresh review of this range, with a new agent session and a new first pass. This one stays in the sidebar."
-              aria-label="New review"
-              onClick={props.onNewReview}
+              disabled={props.runningThread !== undefined || files.length === 0}
+              title="Run review: the agent summarizes the change and lists its findings, which open as threads on their lines."
+              aria-label="Run review"
+              onClick={props.onRunReview}
             >
-              {ICONS.newReview}
+              {ICONS.runReview}
             </button>
+            {/* A draft is already fresh. */}
+            {!open.session.draft && (
+              <button
+                className="tool-button icon"
+                disabled={props.creating}
+                title="New review: a fresh review of this range, with a new agent session. This one stays in the sidebar."
+                aria-label="New review"
+                onClick={props.onNewReview}
+              >
+                {ICONS.newReview}
+              </button>
+            )}
           </div>
         </div>
         <div className="review-meta">

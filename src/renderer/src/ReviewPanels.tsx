@@ -11,16 +11,16 @@ import { Markdown } from './Markdown'
 import { inDiffOrder, KIND_NAMES, kindOf, shownLine, titleOf, type ThreadKind } from './reviewThreads'
 import { ago } from './Sidebar'
 import { threadSummaries } from './ThreadsOverview'
-import { ArrowLeft, PanelRight } from 'lucide-react'
+import { ArrowLeft, PanelRight, ScanSearch } from 'lucide-react'
 import { Check, ListFilter } from 'lucide-react'
 import { Popover } from './Popover'
 
 type Filter = 'open' | 'resolved' | 'all'
 const KINDS: ThreadKind[] = ['bug', 'suggestion', 'nit', 'you']
 
-/** The first pass as a status line in the general conversation. */
+/** A review Gloss asked for (Run review), as a status line in the general conversation. */
 export function firstPassLine(m: Message): string | null {
-  return isFirstPass(m.text) ? 'Gloss started the first pass: the agent is reviewing the diff.' : null
+  return isFirstPass(m.text) ? 'You ran a review: the agent is reviewing the diff.' : null
 }
 
 /** The Threads tab of a review session. */
@@ -116,7 +116,7 @@ export function ReviewThreadList(props: {
       </div>
       {ordered.length === 0 && (
         <p className="muted empty">
-          No threads yet. The agent&apos;s findings open here after its first pass; select code in the diff to start your own.
+          No threads yet. Run review to have the agent list its findings here, or select code in the diff to start your own.
         </p>
       )}
       {ordered.length > 0 && shown.length === 0 && <p className="muted empty">No threads match the filters.</p>}
@@ -219,6 +219,8 @@ export function GeneralPanel(props: {
   onSend(text: string, attachments: Attachment[]): void
   onSteer(text: string, attachments: Attachment[]): void
   onCancel(): void
+  /** Asks the agent to review the diff (SPEC → Review sessions → Run review). */
+  onRunReview(): void
   onBack(): void
   onClose(): void
   onOpenThread(threadId: string): void
@@ -241,7 +243,15 @@ export function GeneralPanel(props: {
       <Log
         className="thread-log"
         items={logItems(open, props.notices, null)}
-        empty={<p className="muted empty">The first pass starts here.</p>}
+        empty={
+          <div className="general-empty">
+            <p className="muted empty">Ask about the change, or have the agent review it.</p>
+            <button className="primary" disabled={runningThread !== undefined} onClick={props.onRunReview}>
+              <ScanSearch />
+              Run review
+            </button>
+          </div>
+        }
         renderAgent={(m) => <GeneralMessage message={m} open={open} onOpenThread={props.onOpenThread} onShowThreads={props.onBack} />}
         systemLine={firstPassLine}
         reveal={props.reveal}

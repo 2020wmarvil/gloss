@@ -3793,6 +3793,13 @@ button.thread-find {
   font-size: var(--t-14);
 }
 
+.general-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
 .thread-composer {
   padding: 8px 14px 14px;
   display: flex;

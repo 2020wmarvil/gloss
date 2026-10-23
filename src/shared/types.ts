@@ -27,6 +27,8 @@ export type Session = {
   review?: ReviewRange
   /** Review sessions: threads on diff lines that aren't resolved. */
   openThreads?: number
+  /** A review nothing was sent in yet: not listed, and dropped when it is replaced or Gloss restarts (SPEC → Review sessions). */
+  draft?: true
 }
 
 /**

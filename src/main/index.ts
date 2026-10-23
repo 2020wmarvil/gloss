@@ -487,6 +487,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
       baseRef == null ? undefined : { baseRef: str(baseRef, 'baseRef'), ...(headRef == null ? {} : { headRef: str(headRef, 'headRef') }) }
     )
   )
+  ipcMain.handle(IPC.sessionsRunReview, (_e, id: unknown) => manager.runReview(str(id, 'id')))
   ipcMain.handle(IPC.sessionsReviewRefs, (_e, id: unknown) => manager.reviewRefs(str(id, 'id')))
   ipcMain.handle(IPC.sessionsOpenReviewFile, async (_e, id: unknown, path: unknown, how: unknown, line: unknown) => {
     const file = await manager.reviewFilePath(str(id, 'id'), str(path, 'path'))

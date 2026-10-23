@@ -460,7 +460,8 @@ export function App(): React.JSX.Element {
     (event: GlossEvent) => {
       switch (event.type) {
         case 'session':
-          setSessions((list) => byActivity(upsert(list, event.session)))
+          // A draft review is listed once something is sent in it.
+          if (!event.session.draft) setSessions((list) => byActivity(upsert(list, event.session)))
           setOpen((o) => (o && o.session.id === event.session.id ? { ...o, session: event.session } : o))
           break
         case 'fullScreen':
@@ -677,8 +678,9 @@ export function App(): React.JSX.Element {
   }
 
   /**
-   * Starts a review of the project's branch (SPEC → Review sessions) with the default
-   * agent, or a fresh one of an open review (**New review**): same agent and range.
+   * Opens a review of the project's branch (SPEC → Review sessions) with the default
+   * agent: the project's draft, or a new one. **New review** passes an open review, for a
+   * fresh one with the same agent and range.
    */
   async function newReview(from?: Session): Promise<void> {
     const cwd = from?.cwd ?? projectPath
@@ -695,7 +697,7 @@ export function App(): React.JSX.Element {
       hideSidebar(true)
       await selectSession(session.id)
       setSideOpen(false)
-      // The first pass runs in the general conversation, which the side panel opens on.
+      // The side panel opens on the general conversation, where a review runs.
       setGeneral(true)
     } catch (err) {
       setSidebarError(errorText(err))
@@ -856,6 +858,12 @@ export function App(): React.JSX.Element {
     setPanelState(null)
     setGeneral(true)
     openSide()
+  }
+
+  /** **Run review**: the agent reviews the diff in the general conversation, which opens to show it. */
+  function runReview(sessionId: string): void {
+    openGeneral()
+    window.gloss.sessions.runReview(sessionId).catch((err: unknown) => addNotice(sessionId, null, errorText(err)))
   }
 
   async function send(
@@ -1214,6 +1222,7 @@ export function App(): React.JSX.Element {
             onOpenThread={openThread}
             onReplyLines={openLines}
             creating={creating}
+            onRunReview={() => runReview(open.session.id)}
             onNewReview={() => void newReview(open.session)}
             onOpenFile={(path, how, line) => {
               const id = open.session.id
@@ -1327,6 +1336,7 @@ export function App(): React.JSX.Element {
                 onSend={(text, attachments) => void send(text, attachments, null)}
                 onSteer={(text, attachments) => void send(text, attachments, null, 'steer')}
                 onCancel={() => void window.gloss.cancel(open.session.id)}
+                onRunReview={() => runReview(open.session.id)}
                 onBack={() => setPanel(null)}
                 onClose={collapseSide}
                 onOpenThread={openThread}

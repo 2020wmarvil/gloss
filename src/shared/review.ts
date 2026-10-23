@@ -90,8 +90,23 @@ export const LARGE_FILE_LINES = 1000
 
 // Agent instructions and the first pass
 
+/** How the agent lists findings: Gloss opens a thread on each one's lines. */
+const FINDINGS_FORMAT = `\`\`\`gloss-findings
+[{"file": "src/orders.ts", "side": "new", "start": 42, "end": 44, "severity": "bug", "title": "One line", "body": "Why it matters and what to do."}]
+\`\`\`
+
+- file: the path relative to the repository root, as in the diff.
+- side: "new" for lines of the current version, "old" for removed lines (numbered as in the base).
+- start, end: the lines the finding is about, on that side. Keep the range to the lines that matter.
+- severity: "bug" (wrong behavior), "suggestion" (worth changing) or "nit" (minor).
+
+Only report lines the diff shows. Use an empty array if you find nothing.`
+
 /** Added to Gloss's agent instructions in a review session. */
-export const REVIEW_INSTRUCTIONS = `- This is a review session. Tags of the form \`[re: path:line "<quote>"]\` (or \`path:start-end\`) quote lines of the diff under review: the path is relative to the repository root, and \`(old)\` after the lines means the base's version of removed lines.`
+export const REVIEW_INSTRUCTIONS = `- This is a review session. Tags of the form \`[re: path:line "<quote>"]\` (or \`path:start-end\`) quote lines of the diff under review: the path is relative to the repository root, and \`(old)\` after the lines means the base's version of removed lines.
+- When asked in the main conversation to review the diff or to find problems in it, list your findings in one fenced block tagged \`gloss-findings\` that holds a JSON array, after your answer:
+
+${FINDINGS_FORMAT}`
 
 /** The first line of the first pass, which marks that message in the log. */
 export const FIRST_PASS_MARK = 'Gloss review: first pass.'
@@ -118,16 +133,7 @@ ${what} Run ${diffCommand(diff)}, and read the surrounding code where you need i
 
 Reply with a short summary of the change and your overall assessment, then list your findings in one fenced block tagged \`gloss-findings\` that holds a JSON array:
 
-\`\`\`gloss-findings
-[{"file": "src/orders.ts", "side": "new", "start": 42, "end": 44, "severity": "bug", "title": "One line", "body": "Why it matters and what to do."}]
-\`\`\`
-
-- file: the path relative to the repository root, as in the diff.
-- side: "new" for lines of the current version, "old" for removed lines (numbered as in the base).
-- start, end: the lines the finding is about, on that side. Keep the range to the lines that matter.
-- severity: "bug" (wrong behavior), "suggestion" (worth changing) or "nit" (minor).
-
-Only report lines the diff shows. Use an empty array if you find nothing.`
+${FINDINGS_FORMAT}`
 }
 
 // Findings

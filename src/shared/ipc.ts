@@ -160,10 +160,12 @@ export type GlossApi = {
     /** Starts an agent session in `cwd`. Rejects if the agent can't start one. */
     create(cwd: string, agentId: string): Promise<Session>
     /**
-     * Starts a review of the project's branch; its first pass runs on (SPEC → Review
-     * sessions). `baseRef` and `headRef` (null: the working tree) replace the default range.
+     * Opens a draft review of the project's branch, or the project's draft again (SPEC →
+     * Review sessions). `baseRef` and `headRef` (null: the working tree) start a new one of that range.
      */
     createReview(cwd: string, agentId: string, baseRef?: string, headRef?: string | null): Promise<Session>
+    /** **Run review**: asks the agent for a summary and its findings; the turn runs on. */
+    runReview(id: string): Promise<void>
     /** What a review's dropdowns offer. */
     reviewRefs(id: string): Promise<ReviewRefs>
     /** Opens a file of a review's diff (path from the repository root) in the file manager, or in the external editor at `line`. */
@@ -299,6 +301,7 @@ export const IPC = {
   sessionsList: 'gloss:sessions:list',
   sessionsCreate: 'gloss:sessions:create',
   sessionsCreateReview: 'gloss:sessions:createReview',
+  sessionsRunReview: 'gloss:sessions:runReview',
   sessionsReviewDiff: 'gloss:sessions:reviewDiff',
   sessionsReviewFile: 'gloss:sessions:reviewFile',
   sessionsReviewRefs: 'gloss:sessions:reviewRefs',

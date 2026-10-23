@@ -178,7 +178,11 @@ const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   // Checks the schema: tests rewind databases to older versions without dropping later columns.
   addPermissionColumns,
   // Version 15 was also used by the worktree WIP branch, so databases it opened skipped the one above.
-  addPermissionColumns
+  addPermissionColumns,
+  // A review nothing was sent in yet (SPEC → Review sessions).
+  (db) => {
+    if (!db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'draft')) db.exec('ALTER TABLE sessions ADD COLUMN draft INTEGER')
+  }
 ]
 
 function addPermissionColumns(db: DatabaseSync): void {
@@ -209,7 +213,8 @@ function toSession(r: Row): Session {
           review: { baseRef: r.review_base as string, ...(r.review_head != null ? { headRef: r.review_head as string } : {}) },
           openThreads: Number(r.open_threads)
         }
-      : {})
+      : {}),
+    ...(r.draft ? { draft: true as const } : {})
   }
 }
 
@@ -337,7 +342,7 @@ export class Store {
   insertSession(s: Session): void {
     this.db
       .prepare(
-        'INSERT INTO sessions (id, agent_id, acp_session_id, cwd, title, created_at, title_set, review_base, review_head) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO sessions (id, agent_id, acp_session_id, cwd, title, created_at, title_set, review_base, review_head, draft) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
       .run(
         s.id,
@@ -348,7 +353,8 @@ export class Store {
         s.createdAt,
         s.titleSet ? 1 : null,
         s.review?.baseRef ?? null,
-        s.review?.headRef ?? null
+        s.review?.headRef ?? null,
+        s.draft ? 1 : null
       )
   }
 
@@ -367,8 +373,13 @@ export class Store {
   /** `syncedAt: null` forgets it. */
   updateSession(
     id: string,
-    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model' | 'effort' | 'mode' | 'autoApprove' | 'review'>> & { syncedAt?: string | null }
+    patch: Partial<Pick<Session, 'acpSessionId' | 'title' | 'titleSet' | 'model' | 'effort' | 'mode' | 'autoApprove' | 'review'>> & {
+      syncedAt?: string | null
+      /** false lists a draft review. */
+      draft?: false
+    }
   ): Session {
+    if (patch.draft === false) this.db.prepare('UPDATE sessions SET draft = NULL WHERE id = ?').run(id)
     if (patch.acpSessionId !== undefined) {
       this.db
         .prepare('UPDATE sessions SET acp_session_id = ? WHERE id = ?')

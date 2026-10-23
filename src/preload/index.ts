@@ -20,6 +20,7 @@ const api: GlossApi = {
     list: () => ipcRenderer.invoke(IPC.sessionsList),
     create: (cwd, agentId) => ipcRenderer.invoke(IPC.sessionsCreate, cwd, agentId),
     createReview: (cwd, agentId, baseRef, headRef) => ipcRenderer.invoke(IPC.sessionsCreateReview, cwd, agentId, baseRef, headRef),
+    runReview: (id) => ipcRenderer.invoke(IPC.sessionsRunReview, id),
     reviewRefs: (id) => ipcRenderer.invoke(IPC.sessionsReviewRefs, id),
     openReviewFile: (id, path, how, line) => ipcRenderer.invoke(IPC.sessionsOpenReviewFile, id, path, how, line),
     setReviewRange: (id, baseRef, headRef) => ipcRenderer.invoke(IPC.sessionsSetReviewRange, id, baseRef, headRef),
