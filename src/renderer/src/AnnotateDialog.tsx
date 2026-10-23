@@ -3,7 +3,8 @@
 // The right column shows exactly the text that goes with the image.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Crop, Eye, Highlighter, MapPin, MoveUpRight, Pencil, Redo2, Square, Trash2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { Crop, Eye, Highlighter, MapPin, MoveUpRight, PanelRight, Pencil, Redo2, Square, Trash2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { ResizeHandle, useStoredWidth } from './resize'
 import type { Capture } from '@shared/capture'
 import type { Attachment, Pin } from '@shared/types'
 import { pinList } from '@shared/wire'
@@ -46,6 +47,9 @@ const MAX_ZOOM = 8
 const ZOOM_STEP = 1.25
 /** Space around the capture inside the stage. */
 const STAGE_PAD = 20
+/** The pins panel's width when dragged; its default is the stylesheet's. */
+const PINS_LIMITS = { min: 220, max: 560 }
+const PINS_SHOWN_KEY = 'gloss:annotatePinsShown'
 
 /** The tool and color picked last, kept for the next capture while Gloss runs. */
 let lastTool: Tool = 'pin'
@@ -60,15 +64,24 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
   const [color, setColor] = useState(lastColor)
   const [lit, setLit] = useState(-1)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
-  /** The zoom: fitted to the stage when a capture opens, then only what the user picks. */
-  const [scale, setScale] = useState(1)
-  /** A right-button drag in progress, which pans. */
+  /**
+   * The view: the zoom, and where the capture's top left sits in the stage. Fitted and centered
+   * when a capture opens, then only what the user does: panning isn't held at the edges.
+   */
+  const [view, setView] = useState({ scale: 1, x: 0, y: 0 })
+  const scale = view.scale
+  /** A pan in progress (right button anywhere, or left on the background). */
   const [panning, setPanning] = useState(false)
   const pan = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
-  /** A point of the capture to keep under the same spot of the screen after a zoom. */
-  const zoomAnchor = useRef<{ ix: number; iy: number; cx: number; cy: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /** The pins panel: collapsible and resizable, remembered like the app's other panes. */
+  const [pinsWidth, setPinsWidth] = useStoredWidth('gloss:annotatePinsWidth')
+  const [pinsShown, setPinsShownState] = useState(() => localStorage.getItem(PINS_SHOWN_KEY) !== 'false')
+  const setPinsShown = (on: boolean): void => {
+    setPinsShownState(on)
+    localStorage.setItem(PINS_SHOWN_KEY, String(on))
+  }
   const canvas = useRef<HTMLCanvasElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const root = useRef<HTMLDivElement>(null)
@@ -104,39 +117,31 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
     return Math.max(MIN_ZOOM, Math.min(1, (el.clientWidth - 2 * STAGE_PAD) / width, (el.clientHeight - 2 * STAGE_PAD) / height))
   }
 
-  // A capture opens fitted to the stage. Resizing the window later keeps the zoom the user has.
-  useLayoutEffect(() => {
-    setScale(fitScale())
-  }, [width, height])
-
-  // After a zoom, scroll so the anchored point is where it was.
-  useLayoutEffect(() => {
-    const a = zoomAnchor.current
+  /** Fits the capture in the stage, centered. */
+  function fitView(): void {
     const el = stage.current
-    const box = canvas.current?.getBoundingClientRect()
-    if (!a || !el || !box) return
-    zoomAnchor.current = null
-    el.scrollLeft += box.left + a.ix * scale - a.cx
-    el.scrollTop += box.top + a.iy * scale - a.cy
-  }, [scale])
+    const k = fitScale()
+    setView({ scale: k, x: el ? (el.clientWidth - width * k) / 2 : 0, y: el ? (el.clientHeight - height * k) / 2 : 0 })
+  }
+
+  // A capture opens fitted to the stage. Resizing the window later keeps the view the user has.
+  useLayoutEffect(fitView, [width, height])
 
   /** Zooms to `next`, keeping the point under (cx, cy) in place: the cursor, or the stage's center. */
   function zoomTo(next: number, cx?: number, cy?: number): void {
     const el = stage.current
-    const box = canvas.current?.getBoundingClientRect()
-    if (el && box) {
-      const view = el.getBoundingClientRect()
-      const x = cx ?? view.left + view.width / 2
-      const y = cy ?? view.top + view.height / 2
-      zoomAnchor.current = { ix: clamp((x - box.left) / scale, width), iy: clamp((y - box.top) / scale, height), cx: x, cy: y }
-    }
-    setScale(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next)))
+    const k = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next))
+    if (!el) return setView((v) => ({ ...v, scale: k }))
+    const box = el.getBoundingClientRect()
+    const px = (cx ?? box.left + box.width / 2) - box.left
+    const py = (cy ?? box.top + box.height / 2) - box.top
+    setView((v) => ({ scale: k, x: px - ((px - v.x) / v.scale) * k, y: py - ((py - v.y) / v.scale) * k }))
   }
 
   /** Between fit and actual size: the zoom button, and 0 and 1. */
   const fitted = (): boolean => Math.abs(scale - fitScale()) < 0.005
 
-  // The wheel zooms at the cursor (scrollbars and a right-button drag move around). Not passive, so the stage doesn't scroll too.
+  // The wheel zooms at the cursor. Not passive, so the page doesn't scroll too.
   useEffect(() => {
     const el = stage.current
     if (!el) return
@@ -148,13 +153,14 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
     return () => el.removeEventListener('wheel', onWheel)
   })
 
-  /** A right-button drag pans the stage. */
+  /** A right-button drag anywhere pans, and so does a left-button drag on the background around the capture. */
   function onStagePointerDown(e: React.PointerEvent<HTMLDivElement>): void {
-    if (e.button !== 2) return
+    const onBackground = e.target === e.currentTarget
+    if (e.button !== 2 && !(e.button === 0 && onBackground)) return
     e.preventDefault()
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
-    pan.current = { x: e.clientX, y: e.clientY, left: e.currentTarget.scrollLeft, top: e.currentTarget.scrollTop }
+    pan.current = { x: e.clientX, y: e.clientY, left: view.x, top: view.y }
     setPanning(true)
   }
 
@@ -162,8 +168,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
     const p = pan.current
     if (!p) return
     e.stopPropagation()
-    e.currentTarget.scrollLeft = p.left - (e.clientX - p.x)
-    e.currentTarget.scrollTop = p.top - (e.clientY - p.y)
+    setView((v) => ({ ...v, x: p.left + (e.clientX - p.x), y: p.top + (e.clientY - p.y) }))
   }
 
   function onStagePointerUp(e: React.PointerEvent<HTMLDivElement>): void {
@@ -321,7 +326,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
       if (typing) root.current?.focus()
       else onCancel()
     } else if (!typing && !mod && !e.altKey) {
-      if (e.key === '0') zoomTo(fitScale())
+      if (e.key === '0') fitView()
       else if (e.key === '1') zoomTo(1)
       else {
         const t = TOOLS.find((x) => x.key === key)
@@ -391,7 +396,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
               className="annotate-zoom"
               title={fitted() ? 'Actual size (1)' : 'Fit (0)'}
               aria-label={fitted() ? 'Zoom to actual size' : 'Zoom to fit'}
-              onClick={() => zoomTo(fitted() ? 1 : fitScale())}
+              onClick={() => (fitted() ? zoomTo(1) : fitView())}
             >
               {`${Math.round(scale * 100)}%`}
             </button>
@@ -404,10 +409,20 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
             <Crop size={14} />
             Retake
           </button>
+          <button
+            className="icon-button"
+            title={pinsShown ? 'Hide pins' : 'Show pins'}
+            aria-label={pinsShown ? 'Hide pins' : 'Show pins'}
+            aria-pressed={pinsShown}
+            onClick={() => setPinsShown(!pinsShown)}
+          >
+            <PanelRight />
+          </button>
           <button className="icon-button" title="Cancel (Esc)" aria-label="Cancel" onClick={onCancel}>
             <X />
           </button>
         </header>
+        <div className="annotate-body">
         <div
           ref={stage}
           className={`annotate-stage${panning ? ' panning' : ''}`}
@@ -421,7 +436,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
             className={[tool === 'pin' && 'pin-tool', scale >= 2 && 'pixels'].filter(Boolean).join(' ') || undefined}
             width={width}
             height={height}
-            style={{ width: width * scale, height: height * scale }}
+            style={{ left: view.x, top: view.y, width: width * scale, height: height * scale }}
             aria-label="The capture: click to place a pin, or drag to draw"
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
@@ -429,7 +444,18 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
             onPointerCancel={onPointerUp}
           />
         </div>
-        <aside className="annotate-pins">
+        {pinsShown && (
+          <ResizeHandle
+            label="Resize the pins panel"
+            pane="after"
+            limits={PINS_LIMITS}
+            value={pinsWidth}
+            onResize={setPinsWidth}
+            onReset={() => setPinsWidth(null)}
+          />
+        )}
+        {pinsShown && (
+        <aside className="annotate-pins" style={pinsWidth === null ? undefined : { flexBasis: pinsWidth }}>
           <div className="annotate-pins-head">
             Pins <span className="count">{marks.pins.length}</span>
           </div>
@@ -467,6 +493,8 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
             <pre>{text}</pre>
           </div>
         </aside>
+        )}
+        </div>
         <footer className="annotate-foot">
           <span className="muted annotate-note">
             <Eye size={14} />
