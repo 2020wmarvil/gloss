@@ -3,7 +3,7 @@
 // The right column shows exactly the text that goes with the image.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Crop, Highlighter, MapPin, MoveUpRight, PanelRight, PanelRightClose, Pencil, Redo2, Square, Trash2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { Crop, Highlighter, MapPin, MoveUpRight, PanelRightClose, Pencil, Redo2, Square, Trash2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { ResizeHandle, useStoredWidth } from './resize'
 import type { Capture } from '@shared/capture'
 import type { Attachment, Pin } from '@shared/types'
@@ -87,9 +87,10 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
   const notes = useRef<HTMLDivElement>(null)
   /** The mark being drawn, or the pin being dragged (with the marks before, for undo). */
   const live = useRef<Shape | null>(null)
-  const dragging = useRef<{ index: number; before: Marks; dx: number; dy: number } | null>(null)
-  /** A pin just placed: its note takes the caret once it renders. */
-  const focusNote = useRef(-1)
+  /** A press on a pin: a click opens its note; with the Pin tool, a drag moves it. */
+  const dragging = useRef<{ index: number; before: Marks; dx: number; dy: number; from: [number, number]; moved: boolean } | null>(null)
+  /** A pin whose note takes the caret once the panel renders it: one just placed or clicked. */
+  const [focusNote, setFocusNote] = useState<{ index: number } | null>(null)
   const { width, height } = capture
   const r = pinRadius(width, height)
 
@@ -188,10 +189,18 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
   }, [])
 
   useEffect(() => {
-    if (focusNote.current < 0) return
-    notes.current?.querySelectorAll('textarea')[focusNote.current]?.focus()
-    focusNote.current = -1
-  })
+    if (!focusNote) return
+    // After the press that placed the pin, whose mousedown would move the focus back.
+    const index = focusNote.index
+    setTimeout(() => notes.current?.querySelectorAll('textarea')[index]?.focus())
+    setFocusNote(null)
+  }, [focusNote])
+
+  /** Shows the pins panel if it's closed, and puts the caret in a pin's note. */
+  function openNote(index: number): void {
+    setPinsShown(true)
+    setFocusNote({ index })
+  }
 
   /** Records the marks as they were, for undo, and applies a change. */
   function change(next: Marks, before: Marks = marks): void {
@@ -223,14 +232,15 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
     if (e.button !== 0) return
     e.currentTarget.setPointerCapture(e.pointerId)
     const [x, y] = point(e)
+    // A pin takes the press whatever the tool: clicking one opens its note.
+    const i = pinAt(marks.pins, x, y, r)
+    if (i >= 0) {
+      dragging.current = { index: i, before: marks, dx: marks.pins[i].x - x, dy: marks.pins[i].y - y, from: [e.clientX, e.clientY], moved: false }
+      return
+    }
     if (tool === 'pin') {
-      const i = pinAt(marks.pins, x, y, r)
-      if (i >= 0) {
-        dragging.current = { index: i, before: marks, dx: marks.pins[i].x - x, dy: marks.pins[i].y - y }
-        return
-      }
-      focusNote.current = marks.pins.length
       change({ ...marks, pins: [...marks.pins, { x, y, note: '' }] })
+      openNote(marks.pins.length)
       return
     }
     live.current =
@@ -243,6 +253,10 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
     const [x, y] = point(e)
     const drag = dragging.current
     if (drag) {
+      if (!drag.moved && Math.hypot(e.clientX - drag.from[0], e.clientY - drag.from[1]) < 4) return
+      drag.moved = true
+      // Only the Pin tool moves pins; with another tool the press stays a click.
+      if (tool !== 'pin') return
       const pins = marks.pins.map((p, i) => (i === drag.index ? { ...p, x: clamp(x + drag.dx, width), y: clamp(y + drag.dy, height) } : p))
       setMarks({ ...marks, pins })
       return
@@ -261,7 +275,8 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
     const drag = dragging.current
     if (drag) {
       dragging.current = null
-      if (drag.before.pins[drag.index] !== marks.pins[drag.index]) change(marks, drag.before)
+      if (!drag.moved) openNote(drag.index)
+      else if (drag.before.pins[drag.index] !== marks.pins[drag.index]) change(marks, drag.before)
       return
     }
     const s = live.current
@@ -407,14 +422,6 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
             <Crop size={14} />
             Retake
           </button>
-          {/* The pins panel hides from its own header; this brings it back. */}
-          {!pinsShown && (
-            <button className="ghost sm" title="Show pins" onClick={() => setPinsShown(true)}>
-              <PanelRight size={14} />
-              Pins
-              <span className="count">{marks.pins.length}</span>
-            </button>
-          )}
           <button className="icon-button" title="Cancel (Esc)" aria-label="Cancel" onClick={onCancel}>
             <X />
           </button>
@@ -451,6 +458,14 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
             onReset={() => setPinsWidth(null)}
           />
         )}
+        {!pinsShown && (
+          <div className="side-rail">
+            <button className="rail-button" title="Show pins" aria-label={`Show ${marks.pins.length} pins`} onClick={() => setPinsShown(true)}>
+              <MapPin />
+              {marks.pins.length > 0 && <span className="count rail-count">{marks.pins.length}</span>}
+            </button>
+          </div>
+        )}
         {pinsShown && (
         <aside className="annotate-pins" style={pinsWidth === null ? undefined : { flexBasis: pinsWidth }}>
           <div className="annotate-pins-head">
@@ -461,13 +476,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
             </button>
           </div>
           <div ref={notes} className="annotate-pin-list">
-            {marks.pins.length === 0 ? (
-              <p className="annotate-empty">
-                Choose <b>Pin</b> (<kbd>N</kbd>) and click the image. Each pin gets a number and a note, and the agent can refer to it
-                by number.
-              </p>
-            ) : (
-              marks.pins.map((p, i) => (
+            {marks.pins.map((p, i) => (
                 <div
                   key={i}
                   className={`annotate-pin${lit === i ? ' lit' : ''}`}
@@ -486,8 +495,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
                     <Trash2 size={14} />
                   </button>
                 </div>
-              ))
-            )}
+              ))}
           </div>
         </aside>
         )}

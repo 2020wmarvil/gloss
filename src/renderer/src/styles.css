@@ -5834,16 +5834,6 @@ button.review-changes {
   box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.annotate-empty {
-  margin: 6px 8px;
-  padding: 12px;
-  border-radius: var(--r-md);
-  border: 1px dashed var(--line-strong);
-  color: var(--muted);
-  font-size: var(--t-13);
-  line-height: 1.5;
-}
-
 .annotate-foot {
   display: flex;
   align-items: center;
