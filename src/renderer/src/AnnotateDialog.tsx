@@ -240,7 +240,8 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
     }
     if (tool === 'pin') {
       change({ ...marks, pins: [...marks.pins, { x, y, note: '' }] })
-      openNote(marks.pins.length)
+      // Its note takes the caret when the panel is open; a closed panel stays closed, so it doesn't cover the pin.
+      if (pinsShown) setFocusNote({ index: marks.pins.length })
       return
     }
     live.current =
