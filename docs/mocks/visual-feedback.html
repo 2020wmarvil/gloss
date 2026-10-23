@@ -543,7 +543,7 @@ function sidebar({ project = true, cur = 'cache', rows = ['cache', 'review', 'fa
   return `<nav class="side">
     <div class="switcher"><div class="switch-btn" title="C:\\Users\\you\\Desktop\\cachekit"><div class="names"><b>cachekit</b><span class="p">~\\Desktop</span></div>${ic('chevrons-up-down')}</div><button class="icon-btn" title="Hide sidebar">${ic('panel-left')}</button></div>
     <div class="split"><button class="btn secondary">${ic('plus')}New session<span class="ag">Claude</span></button><button class="btn secondary" title="New session with another agent">${ic('chevron-down')}</button></div>
-    <button class="btn ghost" style="justify-content:flex-start">${ic('git-compare')}Review changes</button>
+    <button class="btn ghost" style="justify-content:flex-start">${ic('git-compare')}View changes</button>
     <div class="label">Sessions</div>
     <div class="rows">${rows.map((k) => row(k, k === cur, k === hov)).join('')}</div>
     <span class="grow"></span>${foot(settings)}</nav>`
