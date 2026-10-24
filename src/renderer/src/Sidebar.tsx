@@ -73,21 +73,16 @@ export function ago(time: number, now = Date.now()): string {
 const reviewIcon = <GitCompare className="review-icon" />
 
 /**
- * The collapsed sidebar, like the side panel's rail: a sessions button (the project's
- * session count in its tooltip), and a running dot while a session runs (amber while one waits on the user).
+ * The collapsed sidebar, like the side panel's rail: a sessions button, the project's
+ * session count in its tooltip. Running sessions show on their rows, the project and the taskbar, not here.
  */
-export function SidebarRail(props: { count: number; running: boolean; waiting?: boolean; onExpand(): void }): React.JSX.Element {
+export function SidebarRail(props: { count: number; onExpand(): void }): React.JSX.Element {
   const what = `${props.count} ${props.count === 1 ? 'session' : 'sessions'}`
   return (
     <div className="side-rail sidebar-rail">
       <button className="rail-button" onClick={props.onExpand} title={`Show sidebar (${what})`} aria-label={`Show sidebar, ${what}`}>
         <List />
       </button>
-      {props.waiting ? (
-        <span className="waiting-dot" aria-label="Waiting for you" />
-      ) : (
-        props.running && <span className="running-dot" aria-label="Running" />
-      )}
     </div>
   )
 }
