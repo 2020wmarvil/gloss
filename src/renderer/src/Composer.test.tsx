@@ -174,9 +174,8 @@ describe('Composer markdown editing', () => {
 describe('Composer history', () => {
   const history = ['/review XYZ', 'line one\nline two', 'oldest']
 
-  it('recalls older messages with Up and comes back to the draft with Down', () => {
+  it('recalls older messages with Up and comes back to the empty composer with Down', () => {
     const view = mount('h1', { history })
-    type(view, 'my draft')
     expect(press(view, 'ArrowUp')).toBe(true)
     expect(text(view)).toBe('/review XYZ')
     // A recalled command doesn't open the slash menu.
@@ -195,16 +194,19 @@ describe('Composer history', () => {
     press(view, 'ArrowDown')
     expect(text(view)).toBe('/review XYZ')
     press(view, 'ArrowDown')
-    expect(text(view)).toBe('my draft')
-    // Back on the draft, the arrows move the caret again.
+    expect(text(view)).toBe('')
+    // Back on the empty composer, Down does nothing.
     expect(press(view, 'ArrowDown')).toBe(false)
   })
 
-  it('only starts from the first line, and stops cycling on an edit', () => {
+  it('only starts in an empty composer, and stops cycling on an edit', () => {
     const onSend = vi.fn()
     const view = mount('h2', { history, onSend })
-    type(view, 'a\nb')
+    // Even with the caret at the start of a one-line draft.
+    type(view, 'draft')
+    act(() => view.dispatch({ selection: EditorSelection.cursor(0) }))
     expect(press(view, 'ArrowUp')).toBe(false)
+    expect(text(view)).toBe('draft')
     type(view, '')
     press(view, 'ArrowUp')
     type(view, '/review ABC')

@@ -1087,7 +1087,6 @@ export function App(): React.JSX.Element {
     h.at = h.views.length - 1
   }, [showSettings, sessionId, panelThread])
   const runningThread = sessionId !== undefined && sessionId in running ? running[sessionId] : undefined
-  const runningThreadRow = open?.threads.find((t) => t.id === runningThread)
   /**
    * Where a turn runs (a thread or the main conversation), else where the latest message
    * was sent, with its state.
@@ -1136,8 +1135,7 @@ export function App(): React.JSX.Element {
       <TitleBar />
       {sidebarWidth === null ? (
         <SidebarRail
-          running={Object.keys(running).length > 0}
-          waiting={Object.values(requests).some((r) => r.length > 0)}
+          count={project ? sessions.filter((s) => sameFolder(s.cwd, project.path)).length : 0}
           onExpand={() => hideSidebar(false)}
         />
       ) : (
@@ -1306,7 +1304,6 @@ export function App(): React.JSX.Element {
         {open && !showSettings && !sideShown && (
           <SideRail
             {...sideRailCount(open, isReview)}
-            running={runningThreadRow !== undefined}
             onExpand={openSide}
           />
         )}

@@ -1667,7 +1667,7 @@ describe('SessionManager', () => {
   })
 
   describe('projects and existing sessions', () => {
-    it('lists folders of sessions and opened projects, most recent first, without duplicates', async () => {
+    it('lists folders of sessions and opened projects by name, without duplicates', async () => {
       let now = 1
       manager = new SessionManager({
         store,
@@ -1680,10 +1680,13 @@ describe('SessionManager', () => {
       })
       await manager.createSession('/work/shop', 'fake')
       manager.addProject('/work/blog')
+      manager.addProject('/old/Blog')
+      // Using a project doesn't move it.
       await manager.createSession('/work/shop', 'fake')
       expect(manager.listProjects()).toEqual([
-        { path: '/work/shop', name: 'shop', where: '/work' },
-        { path: '/work/blog', name: 'blog', where: '/work' }
+        { path: '/old/Blog', name: 'Blog', where: '/old' },
+        { path: '/work/blog', name: 'blog', where: '/work' },
+        { path: '/work/shop', name: 'shop', where: '/work' }
       ])
     })
 
@@ -1888,6 +1891,56 @@ describe('SessionManager', () => {
         { window: 'seven_day', status: 'warning', utilization: 82 },
         { window: 'five_hour', status: 'rejected', utilization: 100, resetsAt: 1_791_873_000_000 }
       ])
+    })
+
+    it("shares the account's plan limits across the agent's sessions", async () => {
+      const first = await manager.createSession('/w', 'fake')
+      const second = await manager.createSession('/w', 'fake')
+      state.script = async ({ update }) => {
+        await update({
+          sessionUpdate: 'usage_update',
+          used: 1000,
+          size: 200_000,
+          _meta: { '_claude/rateLimit': { status: 'allowed_warning', rateLimitType: 'five_hour', utilization: 0.9 } }
+        })
+        return 'end_turn'
+      }
+      await manager.send(first.id, 'hi', null)
+      const limits = [{ window: 'five_hour', status: 'warning', utilization: 90 }]
+      expect(manager.openSession(second.id).live.rateLimits).toEqual(limits)
+      expect(events).toContainEqual({ type: 'live', sessionId: second.id, live: expect.objectContaining({ rateLimits: limits }) })
+      // A session opened later starts with them too.
+      const third = await manager.createSession('/w', 'fake')
+      expect(manager.openSession(third.id).live.rateLimits).toEqual(limits)
+    })
+
+    it('drops a plan limit once its window resets', async () => {
+      let clock = 1000
+      await manager.dispose()
+      manager = new SessionManager({
+        store,
+        emit: (e) => events.push(e),
+        getAgentConfig: () => config,
+        agentEnv: () => ({}),
+        connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
+        runInTerminal: runInTerminal as never,
+        now: () => clock
+      })
+      state.script = async ({ update }) => {
+        await update({
+          sessionUpdate: 'usage_update',
+          used: 1000,
+          size: 200_000,
+          // Resets at 2000 ms.
+          _meta: { '_claude/rateLimit': { status: 'allowed_warning', rateLimitType: 'five_hour', utilization: 0.9, resetsAt: 2 } }
+        })
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'hi', null)
+      expect(manager.openSession(session.id).live.rateLimits).toHaveLength(1)
+      clock = 2000
+      await vi.waitFor(() => expect(manager.openSession(session.id).live.rateLimits).toEqual([]), { timeout: 3000 })
     })
 
     it('resumes a session on the agent when it is opened', async () => {

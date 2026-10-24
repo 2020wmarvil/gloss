@@ -2,7 +2,7 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { ensureSyntaxTree } from '@codemirror/language'
 import { EditorSelection, EditorState, type StateCommand } from '@codemirror/state'
 import { describe, expect, it } from 'vitest'
-import { inCodeBlock, insertLink, shiftListItem, toggleWrap } from './MarkdownEditor'
+import { indentLines, inCodeBlock, insertLink, shiftListItem, toggleWrap } from './MarkdownEditor'
 
 /** A document with "|" as the cursor, or "«" and "»" around the selection. */
 function make(doc: string): EditorState {
@@ -58,6 +58,22 @@ describe('list indentation', () => {
   it("leaves the first item alone, and isn't used outside a list", () => {
     expect(run(shiftListItem(1), '- on|e')).toBe('- on|e')
     expect(run(shiftListItem(1), 'plain|')).toBeNull()
+  })
+})
+
+describe('line indentation', () => {
+  it('indents the line by two spaces from anywhere on it, and takes them back', () => {
+    expect(run(indentLines(1), 'a|b')).toBe('  a|b')
+    expect(run(indentLines(1), '|')).toBe('  |')
+    expect(run(indentLines(-1), '   a|b')).toBe(' a|b')
+    expect(run(indentLines(-1), ' a|b')).toBe('a|b')
+    // Nothing to take away: it still keeps the key.
+    expect(run(indentLines(-1), 'a|b')).toBe('a|b')
+  })
+
+  it('indents every line of the selection, not the one it ends at the start of', () => {
+    expect(run(indentLines(1), '«one\ntwo\n»three')).toBe('  «one\n  two\n»three')
+    expect(run(indentLines(-1), '  «one\n  two»')).toBe('«one\ntwo»')
   })
 })
 

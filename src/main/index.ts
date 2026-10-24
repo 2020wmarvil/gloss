@@ -1,6 +1,6 @@
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerSaveBlocker, shell } from 'electron'
 import { IPC, type AppBadge, type GlossEvent } from '../shared/ipc'
 import type { Anchor, Attachment, Pin } from '../shared/types'
 import type { AnswerValue, RequestAnswer } from '../shared/requests'
@@ -164,8 +164,25 @@ function handleShortcut(win: BrowserWindow, input: Electron.Input): boolean {
   return true
 }
 
+/** Sessions with a turn running, and the sleep blocker held while there are any. */
+const working = new Set<string>()
+let awake: number | null = null
+
+/** Keeps the computer from sleeping while an agent works (the display may still turn off). */
+function keepAwake(event: GlossEvent): void {
+  if (event.type === 'turnStart') working.add(event.sessionId)
+  else if (event.type === 'turnEnd') working.delete(event.sessionId)
+  else return
+  if (working.size > 0 && awake === null) awake = powerSaveBlocker.start('prevent-app-suspension')
+  else if (working.size === 0 && awake !== null) {
+    powerSaveBlocker.stop(awake)
+    awake = null
+  }
+}
+
 function emit(event: GlossEvent): void {
   mainWindow?.webContents.send(IPC.event, event)
+  keepAwake(event)
   if (event.type === 'turnEnd') notifyTurnEnd(event)
   if (event.type === 'requests') notifyRequests(event)
   if (event.type === 'turnEnd' && openCodeRestartPending) {
