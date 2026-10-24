@@ -2,9 +2,10 @@
 // the region overlay over each: drag a region, click a window, or Space for the display under
 // the cursor, as in ShareX. A region stays on one display. Gloss doesn't hide first, so it is
 // part of the capture.
-import { BrowserWindow, desktopCapturer, ipcMain, screen, type Display, type NativeImage } from 'electron'
+import { BrowserWindow, desktopCapturer, ipcMain, nativeImage, screen, type Display, type NativeImage } from 'electron'
 import { CAPTURE_IPC, type Capture, type CaptureChoice, type CaptureFrame, type CaptureRect } from '../shared/capture'
 import { takeForeground } from './foreground'
+import { captureHdr } from './hdr'
 import { listWindows, windowsOn, type ScreenWindow } from './windows'
 
 type Overlay = { win: BrowserWindow; display: Display; image: NativeImage; frame: CaptureFrame }
@@ -70,15 +71,24 @@ export async function startCapture(options: CaptureOptions): Promise<Capture | n
   })
 }
 
-/** Each display's picture, at its own pixels. desktopCapturer scales every screen to one size, so it is asked once per size. */
+/**
+ * Each display's picture, at its own pixels. HDR displays are tone mapped on their own (hdr.ts);
+ * desktopCapturer scales every other screen to one size, so it is asked once per size.
+ */
 async function grab(displays: Display[]): Promise<Map<number, NativeImage>> {
+  const images = new Map<number, NativeImage>()
+  const hdr = process.platform === 'win32' ? await captureHdr(displays.map((d) => screen.dipToScreenRect(null, d.bounds))) : []
+  displays.forEach((d, i) => {
+    const f = hdr[i]
+    if (f) images.set(d.id, nativeImage.createFromBitmap(f.bgra, { width: f.width, height: f.height }))
+  })
   const bySize = new Map<string, Display[]>()
   for (const d of displays) {
+    if (images.has(d.id)) continue
     const size = physicalSize(d)
     const key = `${size.width}x${size.height}`
     bySize.set(key, [...(bySize.get(key) ?? []), d])
   }
-  const images = new Map<number, NativeImage>()
   for (const group of bySize.values()) {
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: physicalSize(group[0]) })
     for (const d of group) {
