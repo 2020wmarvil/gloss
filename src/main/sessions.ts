@@ -922,17 +922,22 @@ export class SessionManager {
 
   // Projects
 
-  /** Folders opened in Gloss and folders of its sessions, most recent first. */
+  /** Folders opened in Gloss and folders of its sessions, by name, so the order never shifts with use. */
   listProjects(): Project[] {
     const dated = [
       ...this.deps.store.listSessions().map((s) => ({ path: s.cwd, at: s.createdAt })),
       ...this.deps.store.listProjects().map((p) => ({ path: p.path, at: p.addedAt }))
     ].sort((a, b) => b.at - a.at)
+    // The most recent spelling of a folder wins.
     const projects: Project[] = []
     for (const { path } of dated) {
       if (!projects.some((p) => samePath(p.path, path))) projects.push(projectAt(path))
     }
-    return projects
+    return projects.sort(
+      (a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }) ||
+        a.path.localeCompare(b.path, undefined, { sensitivity: 'base', numeric: true })
+    )
   }
 
   addProject(path: string): Project {

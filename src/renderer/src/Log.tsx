@@ -68,6 +68,30 @@ export function Log({ items, className, empty, renderAgent, reveal, systemLine, 
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
   })
 
+  // When the pane gets shorter (the composer grows a line), the text at its bottom moves up
+  // with it instead of going under the composer.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    let height = el.clientHeight
+    // Where it was scrolled before the resize: a taller pane has already clamped scrollTop.
+    let top = el.scrollTop
+    const onScroll = (): void => {
+      top = el.scrollTop
+    }
+    const observer = new ResizeObserver(() => {
+      el.scrollTop = top + height - el.clientHeight
+      height = el.clientHeight
+      top = el.scrollTop
+    })
+    observer.observe(el)
+    el.addEventListener('scroll', onScroll)
+    return () => {
+      observer.disconnect()
+      el.removeEventListener('scroll', onScroll)
+    }
+  }, [])
+
   // After the stick-to-bottom scroll above, so it wins.
   useLayoutEffect(() => {
     const message = reveal && ref.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(reveal.messageId)}"]`)

@@ -35,7 +35,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: [['Enter']], action: 'Send: steer the active thread, or queue for another thread (inside a ``` code block, a new line)' },
       { keys: [['Shift', 'Enter']], action: 'New line; in a list, the next item (on an empty item, end the list)' },
       { keys: [['Backspace']], action: 'Right after a list marker or ">", remove it' },
-      { keys: [['Tab'], ['Shift', 'Tab']], action: 'In a list, indent or outdent the item' },
+      { keys: [['Tab'], ['Shift', 'Tab']], action: 'Indent or outdent the line by two spaces (in a list, the item)' },
       { keys: [['Mod', 'B']], action: 'Bold' },
       { keys: [['Mod', 'I']], action: 'Italic' },
       { keys: [['Mod', 'E']], action: 'Inline code' },

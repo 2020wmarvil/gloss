@@ -1667,7 +1667,7 @@ describe('SessionManager', () => {
   })
 
   describe('projects and existing sessions', () => {
-    it('lists folders of sessions and opened projects, most recent first, without duplicates', async () => {
+    it('lists folders of sessions and opened projects by name, without duplicates', async () => {
       let now = 1
       manager = new SessionManager({
         store,
@@ -1680,10 +1680,13 @@ describe('SessionManager', () => {
       })
       await manager.createSession('/work/shop', 'fake')
       manager.addProject('/work/blog')
+      manager.addProject('/old/Blog')
+      // Using a project doesn't move it.
       await manager.createSession('/work/shop', 'fake')
       expect(manager.listProjects()).toEqual([
-        { path: '/work/shop', name: 'shop', where: '/work' },
-        { path: '/work/blog', name: 'blog', where: '/work' }
+        { path: '/old/Blog', name: 'Blog', where: '/old' },
+        { path: '/work/blog', name: 'blog', where: '/work' },
+        { path: '/work/shop', name: 'shop', where: '/work' }
       ])
     })
 

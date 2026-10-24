@@ -131,10 +131,8 @@ export function Composer({
   const [pick, setPick] = useState(0)
   const [dismissed, setDismissed] = useState<string | null>(null)
   const ref = useRef<MarkdownEditorHandle>(null)
-  /** The history entry shown (0 = newest) and the draft it replaced; null when not browsing. */
-  const browsing = useRef<{ index: number; draft: string } | null>(null)
-  /** Cycling stopped on a recalled message being worked on: Up and Down are the editor's until it is sent or cleared. */
-  const held = useRef(false)
+  /** The history entry shown (0 = newest); null when not browsing. */
+  const browsing = useRef<number | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   /** The capture being annotated, and which attachment it replaces (Edit) or null for a new one. */
   const [annotating, setAnnotating] = useState<{ annotation: Annotation; index: number | null; attached?: boolean } | null>(null)
@@ -245,23 +243,20 @@ export function Composer({
   const empty = !text.trim() && attachments.length === 0
 
   /**
-   * Up on the first line starts cycling through the history: from then on Up shows the
+   * Up in an empty composer starts cycling through the history: from then on Up shows the
    * previous entry and Down the next, whatever line the caret is on (the editor puts it
-   * at the end of each), and Down past the newest brings the draft back. Editing or
+   * at the end of each), and Down past the newest empties the composer again. Editing or
    * moving the caret stops cycling (see `leave`). Returns whether it took the key.
    */
   function recall(dir: 1 | -1): boolean {
     const current = browsing.current
-    if (!current) {
-      if (held.current) return false
-      const [anchor, head] = ref.current?.selection() ?? [0, 0]
-      if (dir === -1 || anchor !== head || text.slice(0, head).includes('\n')) return false
-    }
-    const index = (current?.index ?? -1) + dir
+    // Once something is typed (or a recalled message is being worked on), the arrows are the editor's.
+    if (current === null && (dir === -1 || text !== '')) return false
+    const index = (current ?? -1) + dir
     // At the oldest entry, Up stays put rather than moving the caret.
     if (index >= history.length) return current !== null
-    const value = index < 0 ? current!.draft : history[index]
-    browsing.current = index < 0 ? null : { index, draft: current?.draft ?? text }
+    const value = index < 0 ? '' : history[index]
+    browsing.current = index < 0 ? null : index
     // A recalled "/command" shouldn't open the slash menu, which would take the arrows.
     setDismissed(value)
     setText(value)
@@ -270,9 +265,7 @@ export function Composer({
 
   /** Stops cycling on the recalled message shown, which the user is now working on. */
   function leave(): void {
-    if (!browsing.current) return
     browsing.current = null
-    held.current = true
   }
 
   function submit(how: 'send' | 'steer' | 'main' = 'send'): void {
@@ -282,7 +275,6 @@ export function Composer({
     else if (how === 'main' && onSendToMain) onSendToMain(trimmed, attachments)
     else onSend(trimmed, attachments)
     browsing.current = null
-    held.current = false
     setText('')
     setAttachments([])
     setError(null)
@@ -435,8 +427,7 @@ export function Composer({
             onChange={(value) => {
               // Editing a recalled message makes it the draft.
               const shown = browsing.current
-              if (shown && value !== history[shown.index]) leave()
-              if (!value) held.current = false
+              if (shown !== null && value !== history[shown]) leave()
               setText(value)
               setPick(0)
             }}

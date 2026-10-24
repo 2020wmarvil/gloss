@@ -3618,11 +3618,12 @@ button.thread-find {
   padding-top: 12px;
 }
 
-/* The collapsed sidebar stays part of the frame. */
+/* The collapsed sidebar stays part of the frame. Its button sits where the collapse
+   button was: the sidebar's 10px padding, centered on the 44px project switcher. */
 .side-rail.sidebar-rail {
   border-left: 0;
   background: transparent;
-  padding-top: 10px;
+  padding-top: calc(10px + (44px - var(--control)) / 2);
 }
 
 .side-rail {

@@ -132,10 +132,38 @@ function indentOf(state: EditorState, pos: number): number {
   return text.length - text.trimStart().length
 }
 
+const INDENT = 2
+
+/**
+ * Outside a list, Tab indents the cursor's line (or every line of the selection) by two
+ * spaces and Shift+Tab takes up to two away, so Tab never moves focus out of the editor.
+ */
+export function indentLines(dir: 1 | -1): StateCommand {
+  return ({ state, dispatch }) => {
+    const lines = new Set<number>()
+    for (const range of state.selection.ranges) {
+      const last = state.doc.lineAt(range.to)
+      // A selection ending at the start of a line doesn't take that line.
+      const end = range.to > range.from && range.to === last.from ? last.number - 1 : last.number
+      for (let n = state.doc.lineAt(range.from).number; n <= end; n++) lines.add(n)
+    }
+    const changes: ChangeSpec[] = []
+    for (const n of lines) {
+      const line = state.doc.line(n)
+      if (dir === 1) changes.push({ from: line.from, insert: ' '.repeat(INDENT) })
+      else changes.push({ from: line.from, to: line.from + Math.min(INDENT, indentOf(state, line.from)) })
+    }
+    const set = state.changes(changes)
+    // The caret moves with the text, also from the start of the line.
+    if (!set.empty) dispatch(state.update({ changes: set, selection: state.selection.map(set, 1), userEvent: 'input' }))
+    return true
+  }
+}
+
 /**
  * Tab nests the cursor's list item under the one before it, Shift+Tab moves it out to
  * its parent's level, together with its own lines and sub-items. Outside a list it does
- * nothing, so Tab keeps moving focus.
+ * nothing, and `indentLines` takes the key.
  */
 export function shiftListItem(dir: 1 | -1): StateCommand {
   return ({ state, dispatch }) => {
@@ -259,7 +287,9 @@ export function MarkdownEditor(props: Props): React.JSX.Element {
               { key: 'Shift-Enter', run: (target) => continueList(target) || newline(target) },
               { key: 'Backspace', run: deleteMarkupBackward },
               { key: 'Tab', run: shiftListItem(1) },
+              { key: 'Tab', run: indentLines(1) },
               { key: 'Shift-Tab', run: shiftListItem(-1) },
+              { key: 'Shift-Tab', run: indentLines(-1) },
               { key: 'Mod-b', run: toggleWrap('**') },
               { key: 'Mod-i', run: toggleWrap('*') },
               { key: 'Mod-e', run: toggleWrap('`') },
