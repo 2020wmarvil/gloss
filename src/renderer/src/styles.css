@@ -2148,6 +2148,15 @@ button.settings-button.on {
   text-decoration: underline dotted;
 }
 
+.md-local-image {
+  display: block;
+  max-width: 100%;
+  max-height: 640px;
+  object-fit: contain;
+  object-position: left;
+  margin: 8px 0;
+}
+
 .md-image {
   color: var(--muted);
 }

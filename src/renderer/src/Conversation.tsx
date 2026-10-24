@@ -127,6 +127,7 @@ export function Conversation(props: Props): React.JSX.Element {
         <span className="agent-name">{agentName}</span>
       </header>
       <Log
+        cwd={open.session.cwd}
         className="log"
         items={logItems(open, notices, null)}
         empty={<h2 className="new-hint">What should {agentName} do in {folderName(session.cwd)}?</h2>}

@@ -99,7 +99,7 @@ describe('Markdown', () => {
     expect(html).toContain('aria-label="Open thread, 2 replies"')
   })
 
-  it('never loads images', () => {
+  it('keeps remote images as placeholders', () => {
     const html = render('![tracker](https://example.com/pixel.png)')
     expect(html).not.toContain('<img')
     expect(html).toContain('[image: tracker]')

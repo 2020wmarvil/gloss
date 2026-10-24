@@ -140,6 +140,7 @@ export type GlossEvent =
 export type GlossApi = {
   /** Opens an absolute local Markdown file link in the editor, or reveals it without an editor. */
   openFileLink(href: string): Promise<void>
+  readMarkdownImage(src: string, cwd?: string): Promise<string>
   search(request: SearchRequest): Promise<SearchResponse>
   agents: {
     list(): Promise<AgentInfo[]>
@@ -289,6 +290,7 @@ export type AppBadge = { state: 'working' | 'completed' | 'failed' | null; unsee
 
 export const IPC = {
   openFileLink: 'gloss:openFileLink',
+  readMarkdownImage: 'gloss:readMarkdownImage',
   settingsPreviewMcpImport: 'gloss:settings:previewMcpImport',
   search: 'gloss:search',
   agentsList: 'gloss:agents:list',

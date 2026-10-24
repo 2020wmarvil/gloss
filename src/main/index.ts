@@ -15,6 +15,7 @@ import { BADGE_LABEL, BADGE_SIZE, badgePixels } from './badge'
 import { patchArg, SettingsFile } from './settings'
 import { editorArgs, launchEditor } from './openFile'
 import { fileLink } from '../shared/fileLink'
+import { readMarkdownImage } from './markdownImage'
 import { runInTerminal } from './terminal'
 import { registerCaptureIpc, startCapture } from './capture'
 import { normalizeShortcut, shortcutLabel } from '../shared/shortcut'
@@ -460,6 +461,10 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   )
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
+  ipcMain.handle(IPC.readMarkdownImage, (e, src: unknown, cwd: unknown) => {
+    if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can load images.')
+    return readMarkdownImage(str(src, 'src'), cwd === undefined ? undefined : folderArg(cwd, 'cwd'))
+  })
   ipcMain.handle(IPC.openFileLink, async (_e, href: unknown) => {
     const link = fileLink(str(href, 'href'))
     if (!link || !isAbsolute(link.path)) throw new Error('Expected an absolute local file path.')

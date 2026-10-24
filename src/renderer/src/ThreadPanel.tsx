@@ -120,6 +120,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         )}
       </blockquote>
       <Log
+        cwd={open.session.cwd}
         className="thread-log"
         items={panel.threadId === null ? [] : logItems(open, notices, panel.threadId)}
         empty={
@@ -216,6 +217,7 @@ function LineThreadPanel(
         </div>
       )}
       <Log
+        cwd={open.session.cwd}
         className="thread-log"
         items={threadId === null ? [] : logItems(open, props.notices, threadId)}
         empty={

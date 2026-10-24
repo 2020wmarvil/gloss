@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import { IPC, type GlossApi, type GlossEvent } from '../shared/ipc'
 
 const api: GlossApi = {
+  readMarkdownImage: (src, cwd) => ipcRenderer.invoke(IPC.readMarkdownImage, src, cwd),
   openFileLink: (href) => ipcRenderer.invoke(IPC.openFileLink, href),
   search: (request) => ipcRenderer.invoke(IPC.search, request),
   agents: {

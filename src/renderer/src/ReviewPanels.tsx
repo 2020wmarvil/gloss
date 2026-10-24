@@ -241,6 +241,7 @@ export function GeneralPanel(props: {
         </button>
       </header>
       <Log
+        cwd={open.session.cwd}
         className="thread-log"
         items={logItems(open, props.notices, null)}
         empty={

@@ -97,6 +97,8 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 1. **Checkpoints and undo per turn:** snapshot the working tree before each turn (in a hidden shadow repo or `git stash create`-style refs, not your history) to undo a turn's changes and see exactly what a turn changed. A safety net for bypass mode; pairs with review sessions ("review what turn 12 changed").
 2. **Hover to explain:** hover a term, function or code span in an agent message for a short explanation from a throwaway sub-agent (M20's `fresh` mode), without spending main-session context or opening a thread.
 
+3. **Revisit inline image guidance:** consider adding a suggestion to the agent system prompt to embed generated images (such as QR codes) using Markdown image syntax with local paths. Inline rendering is supported; first observe whether agents use it naturally. Keep prompts unchanged for now to avoid steering agents by default.
+
 ## Design passes needed
 - ~~**M14:** agent profiles and connection testing, guided open source/local-model setup, capability indicators, and actionable launch or model-server errors.~~ Done.
 - ~~**M15:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.~~ Done.
