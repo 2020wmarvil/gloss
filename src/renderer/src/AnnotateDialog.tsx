@@ -26,8 +26,8 @@ type Props = {
   /** Adds the flattened image to the composer; `annotation` reopens it with Edit. */
   onAdd(image: Extract<Attachment, { kind: 'image' }>, annotation: Annotation): void
   onCancel(): void
-  /** Opens the region overlay again; null if the user cancelled there. */
-  onRetake(): Promise<Capture | null>
+  /** Opens the region overlay again; null if the user cancelled there. Absent for an attached image. */
+  onRetake?(): Promise<Capture | null>
 }
 
 const TOOLS: { tool: Tool; key: string; name: string; icon: React.JSX.Element }[] = [
@@ -309,6 +309,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
   }
 
   async function retake(): Promise<void> {
+    if (!onRetake) return
     setError(null)
     try {
       const next = await onRetake()
@@ -419,10 +420,12 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
             </button>
           </div>
           <span className="grow" />
-          <button className="ghost sm" onClick={() => void retake()}>
-            <Crop size={14} />
-            Retake
-          </button>
+          {onRetake && (
+            <button className="ghost sm" onClick={() => void retake()}>
+              <Crop size={14} />
+              Retake
+            </button>
+          )}
           <button className="icon-button" title="Cancel (Esc)" aria-label="Cancel" onClick={onCancel}>
             <X />
           </button>

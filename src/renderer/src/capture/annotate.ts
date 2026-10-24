@@ -102,7 +102,7 @@ export function loadImage(capture: Capture): Promise<HTMLImageElement> {
     const img = new Image()
     img.onload = () => resolve(img)
     img.onerror = () => reject(new Error("Couldn't read the capture."))
-    img.src = `data:image/png;base64,${capture.data}`
+    img.src = `data:${capture.mimeType ?? 'image/png'};base64,${capture.data}`
   })
 }
 
@@ -131,9 +131,11 @@ export async function flatten(a: Annotation): Promise<Extract<Attachment, { kind
     mimeType = 'image/jpeg'
   }
   const pins = a.pins.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y), note: p.note.trim() }))
+  // An attached image (its source is its file name) keeps its name; a capture is a screenshot.
+  const base = a.capture.mimeType ? a.capture.source.replace(/\.[^.]*$/, '') || 'image' : 'screenshot'
   return {
     kind: 'image',
-    name: mimeType === 'image/png' ? 'screenshot.png' : 'screenshot.jpg',
+    name: `${base}.${mimeType === 'image/png' ? 'png' : 'jpg'}`,
     mimeType,
     data: url.slice(url.indexOf(',') + 1),
     ...(pins.length > 0 ? { pins } : {})

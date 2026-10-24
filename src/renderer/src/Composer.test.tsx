@@ -363,4 +363,37 @@ describe('screen capture', () => {
     expect(start).toHaveBeenCalledTimes(2)
     vi.unstubAllGlobals()
   })
+
+  it('opens the annotation canvas on an attached image, without Retake', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} })
+    // jsdom decodes no images: this one loads at once with a size.
+    vi.stubGlobal(
+      'Image',
+      class {
+        naturalWidth = 64
+        naturalHeight = 48
+        onload: (() => void) | null = null
+        set src(_: string) {
+          setTimeout(() => this.onload?.())
+        }
+      }
+    )
+    const start = vi.fn()
+    window.gloss = { capture: { start } } as unknown as typeof window.gloss
+    mount('attached-image', { accepts: { image: true, file: false } })
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: { files: [new File([new Uint8Array([1, 2, 3])], 'photo.jpg', { type: 'image/jpeg' })] } })
+    await act(async () => {
+      document.querySelector('.box')!.dispatchEvent(drop)
+      await new Promise((r) => setTimeout(r, 10))
+    })
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('.attachment .capture-edit')!.click()
+      await new Promise((r) => setTimeout(r, 10))
+    })
+    expect(document.querySelector('.annotate-head .muted')?.textContent).toBe('photo.jpg · 64 × 48')
+    expect([...document.querySelectorAll('[role="dialog"] button')].some((b) => b.textContent?.includes('Retake'))).toBe(false)
+    expect(start).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
 })
