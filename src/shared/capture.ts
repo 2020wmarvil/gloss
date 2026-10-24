@@ -24,8 +24,9 @@ export type CaptureChoice = { rect: CaptureRect; kind: 'region' | 'window' | 'di
 
 /** A finished capture, for the annotation canvas. */
 export type Capture = {
-  /** PNG, base64. */
+  /** Base64: a PNG, unless `mimeType` says otherwise (an attached image being annotated). */
   data: string
+  mimeType?: string
   width: number
   height: number
   /** What was captured, for the canvas's header: "Region", "Display" or "Window: <title>". */

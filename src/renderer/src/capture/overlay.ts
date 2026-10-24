@@ -240,7 +240,8 @@ window.addEventListener('keyup', (e) => {
 
 async function start(): Promise<void> {
   frame = await window.glossCapture.frame()
-  k = frame.scale
+  // Measured, not the display's scale: the page shares Gloss's zoom (Ctrl+=), which makes CSS pixels larger.
+  k = frame.width / (canvas.clientWidth || frame.width / frame.scale)
   const bitmap = await createImageBitmap(new Blob([frame.png as Uint8Array<ArrayBuffer>], { type: 'image/png' }))
   for (const c of [frameCanvas, canvas]) {
     c.width = frame.width

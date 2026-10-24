@@ -6,7 +6,7 @@ import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor'
 import { ArrowUp, Clock, CornerDownRight, Ellipsis, MapPin, Paperclip, Pencil, Scan, Square, Trash, X } from 'lucide-react'
 import { Popover } from './Popover'
 import { AnnotateDialog } from './AnnotateDialog'
-import type { Annotation } from './capture/annotate'
+import { loadImage, type Annotation } from './capture/annotate'
 
 /** The session's queue as one composer sees it: the messages queued from its thread. */
 export type ComposerQueue = {
@@ -137,7 +137,7 @@ export function Composer({
   const held = useRef(false)
   const fileInput = useRef<HTMLInputElement>(null)
   /** The capture being annotated, and which attachment it replaces (Edit) or null for a new one. */
-  const [annotating, setAnnotating] = useState<{ annotation: Annotation; index: number | null } | null>(null)
+  const [annotating, setAnnotating] = useState<{ annotation: Annotation; index: number | null; attached?: boolean } | null>(null)
   const startCapture = useRef<() => void>(() => {})
   const captureKeys = normalizeShortcut(useContext(CaptureShortcut))
 
@@ -192,6 +192,18 @@ export function Composer({
     }
   }
   startCapture.current = () => void capture()
+
+  /** Opens the annotation canvas on an attached image; adding replaces it with the annotated one. */
+  async function annotateImage(image: Extract<Attachment, { kind: 'image' }>, index: number): Promise<void> {
+    if (annotating) return
+    try {
+      const capture = { data: image.data, mimeType: image.mimeType, width: 0, height: 0, source: image.name }
+      const img = await loadImage(capture)
+      setAnnotating({ annotation: { capture: { ...capture, width: img.naturalWidth, height: img.naturalHeight }, shapes: [], pins: [] }, index, attached: true })
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
 
   useEffect(() => {
     listenForCapture()
@@ -347,22 +359,23 @@ export function Composer({
         {attachments.length > 0 && (
           <ul className="attachments">
             {attachments.map((a, i) =>
-              a.kind === 'image' && (a.pins || annotations.has(a)) ? (
+              a.kind === 'image' ? (
                 <CaptureChip
                   key={i}
                   image={a}
                   onEdit={
-                    annotations.has(a) ? () => setAnnotating({ annotation: annotations.get(a)!, index: i }) : undefined
+                    annotations.has(a)
+                      ? () => setAnnotating({ annotation: annotations.get(a)!, index: i })
+                      : // Pins already drawn in (a recalled message) would clash with new ones.
+                        a.pins
+                        ? undefined
+                        : () => void annotateImage(a, i)
                   }
                   onRemove={() => setAttachments((list) => list.filter((_, j) => j !== i))}
                 />
               ) : (
-              <li key={i} className="attachment" title={a.kind === 'file' ? (a.path ?? a.name) : a.name}>
-                {a.kind === 'image' ? (
-                  <img src={`data:${a.mimeType};base64,${a.data}`} alt={a.name} />
-                ) : (
-                  <span className="attachment-name">{a.name}</span>
-                )}
+              <li key={i} className="attachment" title={a.path ?? a.name}>
+                <span className="attachment-name">{a.name}</span>
                 <button
                   aria-label={`Remove ${a.name}`}
                   onClick={() => setAttachments((list) => list.filter((_, j) => j !== i))}
@@ -500,7 +513,7 @@ export function Composer({
       {annotating && (
         <AnnotateDialog
           initial={annotating.annotation}
-          onRetake={() => window.gloss.capture.start()}
+          onRetake={annotating.attached ? undefined : () => window.gloss.capture.start()}
           onCancel={() => {
             setAnnotating(null)
             ref.current?.focus()
@@ -518,7 +531,7 @@ export function Composer({
   )
 }
 
-/** An annotated capture in the composer: the flattened image, its pin count, Edit and Remove. */
+/** An image in the composer (an annotated capture: the flattened image and its pin count), Edit and Remove. */
 function CaptureChip(props: {
   image: Extract<Attachment, { kind: 'image' }>
   onEdit?(): void
@@ -528,7 +541,7 @@ function CaptureChip(props: {
   const pins = image.pins?.length ?? 0
   return (
     <li className="attachment capture" title={`${image.name}${pins ? ` · ${pins} pin${pins === 1 ? '' : 's'}` : ''}`}>
-      <img src={`data:${image.mimeType};base64,${image.data}`} alt={`Screenshot with ${pins} pins`} />
+      <img src={`data:${image.mimeType};base64,${image.data}`} alt={pins ? `Screenshot with ${pins} pins` : image.name} />
       {pins > 0 && (
         <span className="pin-pill">
           <MapPin size={11} />
