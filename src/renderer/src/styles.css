@@ -3657,7 +3657,8 @@ button.thread-find {
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
-.side-rail > .running-dot {
+.side-rail > .running-dot,
+.side-rail > .waiting-dot {
   width: 6px;
   height: 6px;
 }

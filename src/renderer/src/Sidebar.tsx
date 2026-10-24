@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import type { SessionOrder } from '@shared/settings'
 import type { AgentInfo, AgentSession, Project, Session } from '@shared/types'
-import { ChevronDown, ChevronsUpDown, CircleAlert, Ellipsis, GitCompare, Info, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
+import { ChevronDown, ChevronsUpDown, CircleAlert, Ellipsis, GitCompare, Info, MessagesSquare, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
 
 type Props = {
   agents: AgentInfo[]
@@ -72,18 +72,23 @@ export function ago(time: number, now = Date.now()): string {
 /** Marks review sessions and the button that starts one. */
 const reviewIcon = <GitCompare className="review-icon" />
 
-/** The collapsed sidebar: a button that expands it, with a running dot while a session runs (amber while one waits on the user). */
-export function SidebarRail(props: { running: boolean; waiting?: boolean; onExpand(): void }): React.JSX.Element {
+/**
+ * The collapsed sidebar, like the side panel's rail: a sessions button with the project's
+ * session count, and a running dot while a session runs (amber while one waits on the user).
+ */
+export function SidebarRail(props: { count: number; running: boolean; waiting?: boolean; onExpand(): void }): React.JSX.Element {
+  const what = `${props.count} ${props.count === 1 ? 'session' : 'sessions'}`
   return (
     <div className="side-rail sidebar-rail">
-      <button className="rail-button" onClick={props.onExpand} title="Show sidebar" aria-label="Show sidebar">
-        <PanelLeft />
-        {props.waiting ? (
-          <span className="waiting-dot" aria-label="Waiting for you" />
-        ) : (
-          props.running && <span className="running-dot" aria-label="Running" />
-        )}
+      <button className="rail-button" onClick={props.onExpand} title={`Show sidebar (${what})`} aria-label={`Show sidebar, ${what}`}>
+        <MessagesSquare />
+        {props.count > 0 && <span className="count rail-count">{props.count}</span>}
       </button>
+      {props.waiting ? (
+        <span className="waiting-dot" aria-label="Waiting for you" />
+      ) : (
+        props.running && <span className="running-dot" aria-label="Running" />
+      )}
     </div>
   )
 }

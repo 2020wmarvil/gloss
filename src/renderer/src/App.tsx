@@ -1136,6 +1136,7 @@ export function App(): React.JSX.Element {
       <TitleBar />
       {sidebarWidth === null ? (
         <SidebarRail
+          count={project ? sessions.filter((s) => sameFolder(s.cwd, project.path)).length : 0}
           running={Object.keys(running).length > 0}
           waiting={Object.values(requests).some((r) => r.length > 0)}
           onExpand={() => hideSidebar(false)}
