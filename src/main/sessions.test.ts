@@ -1890,6 +1890,56 @@ describe('SessionManager', () => {
       ])
     })
 
+    it("shares the account's plan limits across the agent's sessions", async () => {
+      const first = await manager.createSession('/w', 'fake')
+      const second = await manager.createSession('/w', 'fake')
+      state.script = async ({ update }) => {
+        await update({
+          sessionUpdate: 'usage_update',
+          used: 1000,
+          size: 200_000,
+          _meta: { '_claude/rateLimit': { status: 'allowed_warning', rateLimitType: 'five_hour', utilization: 0.9 } }
+        })
+        return 'end_turn'
+      }
+      await manager.send(first.id, 'hi', null)
+      const limits = [{ window: 'five_hour', status: 'warning', utilization: 90 }]
+      expect(manager.openSession(second.id).live.rateLimits).toEqual(limits)
+      expect(events).toContainEqual({ type: 'live', sessionId: second.id, live: expect.objectContaining({ rateLimits: limits }) })
+      // A session opened later starts with them too.
+      const third = await manager.createSession('/w', 'fake')
+      expect(manager.openSession(third.id).live.rateLimits).toEqual(limits)
+    })
+
+    it('drops a plan limit once its window resets', async () => {
+      let clock = 1000
+      await manager.dispose()
+      manager = new SessionManager({
+        store,
+        emit: (e) => events.push(e),
+        getAgentConfig: () => config,
+        agentEnv: () => ({}),
+        connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
+        runInTerminal: runInTerminal as never,
+        now: () => clock
+      })
+      state.script = async ({ update }) => {
+        await update({
+          sessionUpdate: 'usage_update',
+          used: 1000,
+          size: 200_000,
+          // Resets at 2000 ms.
+          _meta: { '_claude/rateLimit': { status: 'allowed_warning', rateLimitType: 'five_hour', utilization: 0.9, resetsAt: 2 } }
+        })
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'hi', null)
+      expect(manager.openSession(session.id).live.rateLimits).toHaveLength(1)
+      clock = 2000
+      await vi.waitFor(() => expect(manager.openSession(session.id).live.rateLimits).toEqual([]), { timeout: 3000 })
+    })
+
     it('resumes a session on the agent when it is opened', async () => {
       state.configOptions = [MODEL]
       const session = await manager.createSession('/w', 'fake')

@@ -166,6 +166,10 @@ type AgentSlot = {
   /** session/prompt requests in flight. */
   activePrompts: number
   signIn?: SignIn
+  /** The account's plan limits, last reported in any of the agent's sessions. */
+  rateLimits: RateLimit[]
+  /** Drops the limits whose window has reset. */
+  rateLimitTimer?: ReturnType<typeof setTimeout>
 }
 
 const TITLE_LENGTH = 60
@@ -205,6 +209,8 @@ export class SessionManager {
     let rt = this.runtimes.get(sessionId)
     if (!rt) {
       rt = { loading: false, queue: { items: [], paused: false }, live: emptyLive(), requests: new Map() }
+      const agentId = this.deps.store.getSession(sessionId)?.agentId
+      if (agentId) rt.live.rateLimits = this.slot(agentId).rateLimits
       this.runtimes.set(sessionId, rt)
     }
     return rt
@@ -213,7 +219,7 @@ export class SessionManager {
   private slot(agentId: string): AgentSlot {
     let slot = this.agents.get(agentId)
     if (!slot) {
-      slot = { activePrompts: 0 }
+      slot = { activePrompts: 0, rateLimits: [] }
       this.agents.set(agentId, slot)
     }
     return slot
@@ -261,7 +267,7 @@ export class SessionManager {
 
   private handlers(agentId: string): AgentHandlers {
     return {
-      onUpdate: (n) => this.onUpdate(n),
+      onUpdate: (n) => this.onUpdate(agentId, n),
       onPermission: (req, signal) => this.onPermission(req, signal),
       onElicitation: (req, signal) => this.onElicitation(req, signal),
       onStderr: (line) => console.error(`[${agentId}]`, line),
@@ -305,6 +311,25 @@ export class SessionManager {
     this.deps.emit({ type: 'live', sessionId, live: rt.live })
   }
 
+  /**
+   * Plan limits are the account's, not a session's: a new report updates every session of
+   * the agent, and a window that has reset is dropped until the agent reports it again.
+   */
+  private setRateLimits(agentId: string, limits: RateLimit[]): void {
+    const slot = this.slot(agentId)
+    clearTimeout(slot.rateLimitTimer)
+    slot.rateLimitTimer = undefined
+    slot.rateLimits = limits.filter((l) => l.resetsAt === undefined || l.resetsAt > this.now())
+    for (const id of this.runtimes.keys()) {
+      if (this.deps.store.getSession(id)?.agentId === agentId) this.setLive(id, { rateLimits: slot.rateLimits })
+    }
+    const resets = slot.rateLimits.flatMap((l) => (l.resetsAt === undefined ? [] : [l.resetsAt]))
+    if (resets.length > 0) {
+      const delay = Math.min(Math.max(0, Math.min(...resets) - this.now()), 2 ** 31 - 1)
+      slot.rateLimitTimer = setTimeout(() => this.setRateLimits(agentId, this.slot(agentId).rateLimits), delay)
+    }
+  }
+
   /** Stops the agent's process if no prompt is in flight. The next request starts a fresh one. */
   async restartIdleAgent(agentId: string, waitForResume = false): Promise<boolean> {
     const slot = this.slot(agentId)
@@ -329,6 +354,7 @@ export class SessionManager {
 
   async dispose(): Promise<void> {
     this.disposed = true
+    for (const s of this.agents.values()) clearTimeout(s.rateLimitTimer)
     const pending = [...this.agents.values()].map((s) => s.connection)
     this.agents.clear()
     for (const p of pending) {
@@ -1797,15 +1823,20 @@ export class SessionManager {
 
   // Agent → client
 
-  private onUpdate(n: acp.SessionNotification): void {
+  private onUpdate(agentId: string, n: acp.SessionNotification): void {
     if (this.disposed) return
     const u = n.update
     const sessionId = this.byAcpId.get(n.sessionId)
 
+    const limit = u.sessionUpdate === 'usage_update' ? claudeRateLimit(u._meta) : null
+    if (limit) {
+      const current = this.slot(agentId).rateLimits
+      this.setRateLimits(agentId, [...current.filter((l) => l.window !== limit.window), limit])
+    }
+
     // What the agent reports about the session, at any time.
     const pending = this.pendingLive.get(n.sessionId)
-    const current = sessionId ? this.runtime(sessionId).live.rateLimits : (pending?.rateLimits ?? [])
-    const live = liveUpdate(u, current)
+    const live = liveUpdate(u)
     if (live) {
       if (sessionId) this.setLive(sessionId, live)
       else this.pendingLive.set(n.sessionId, { ...pending, ...live })
@@ -2119,8 +2150,8 @@ export function claudeRateLimit(meta: unknown): RateLimit | null {
   return limit
 }
 
-/** The session state an update reports, if it is one of those. `rateLimits` is the current list, to merge into. */
-function liveUpdate(u: acp.SessionUpdate, rateLimits: RateLimit[]): Partial<SessionLive> | null {
+/** The session state an update reports, if it is one of those. Plan limits are the agent's (`setRateLimits`). */
+function liveUpdate(u: acp.SessionUpdate): Partial<SessionLive> | null {
   switch (u.sessionUpdate) {
     case 'available_commands_update':
       return {
@@ -2135,17 +2166,14 @@ function liveUpdate(u: acp.SessionUpdate, rateLimits: RateLimit[]): Partial<Sess
             }))
         ]
       }
-    case 'usage_update': {
-      const limit = claudeRateLimit(u._meta)
+    case 'usage_update':
       return {
         usage: {
           used: u.used,
           size: u.size,
           ...(u.cost ? { cost: { amount: u.cost.amount, currency: u.cost.currency } } : {})
-        },
-        ...(limit ? { rateLimits: [...rateLimits.filter((l) => l.window !== limit.window), limit] } : {})
+        }
       }
-    }
     case 'config_option_update':
       return configChoices(u.configOptions)
     default:
