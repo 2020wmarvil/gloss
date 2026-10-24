@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import type { SessionOrder } from '@shared/settings'
 import type { AgentInfo, AgentSession, Project, Session } from '@shared/types'
-import { ChevronDown, ChevronsUpDown, CircleAlert, Ellipsis, GitCompare, Info, MessagesSquare, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
+import { ChevronDown, ChevronsUpDown, CircleAlert, Ellipsis, GitCompare, Info, List, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
 
 type Props = {
   agents: AgentInfo[]
@@ -81,7 +81,7 @@ export function SidebarRail(props: { count: number; running: boolean; waiting?: 
   return (
     <div className="side-rail sidebar-rail">
       <button className="rail-button" onClick={props.onExpand} title={`Show sidebar (${what})`} aria-label={`Show sidebar, ${what}`}>
-        <MessagesSquare />
+        <List />
       </button>
       {props.waiting ? (
         <span className="waiting-dot" aria-label="Waiting for you" />
