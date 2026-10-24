@@ -46,7 +46,7 @@ export function messageStart(text: string, length = 60): string {
 }
 
 /**
- * The collapsed side panel: a threads button with the count and a running dot. `label`
+ * The collapsed side panel: a threads button (the count in its tooltip) and a running dot. `label`
  * says what the count is, when it isn't just threads.
  */
 export function SideRail(props: { count: number; running: boolean; label?: string; onExpand(): void }): React.JSX.Element {
@@ -60,7 +60,6 @@ export function SideRail(props: { count: number; running: boolean; label?: strin
         aria-label={`Show ${what}`}
       >
         <MessageSquare />
-        {props.count > 0 && <span className="count rail-count">{props.count}</span>}
       </button>
       {props.running && <span className="running-dot" aria-label="Running" />}
     </div>
