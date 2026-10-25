@@ -16,6 +16,7 @@ import type { StripThread } from './Conversation'
 import type { Notice, Reveal } from './Log'
 import type { SourceSelection } from './SelectionMenu'
 import type { SideTab } from './ThreadsOverview'
+import { restoreScrolls, sessionScrolls } from './scrollMemory'
 
 export type OpenSession = {
   session: Session
@@ -286,7 +287,8 @@ export function useSession() {
         general: general && panelRef.current === null,
         sideTab,
         expandedFiles: expandedFiles.current,
-        drafts: id ? sessionDrafts(id) : {}
+        drafts: id ? sessionDrafts(id) : {},
+        scroll: id ? sessionScrolls(id) : {}
       }
     },
     [sideOpen, general, sideTab]
@@ -296,6 +298,7 @@ export function useSession() {
   const restore = useCallback(
     async (id: string, state: PaneState): Promise<SessionView | null> => {
       restoreDrafts(id, state.drafts)
+      restoreScrolls(id, state.scroll)
       pendingExpanded.current = { sessionId: id, files: state.expandedFiles }
       const view = await load(id, state.threadId)
       if (!view) return null

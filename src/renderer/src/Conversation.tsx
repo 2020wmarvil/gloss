@@ -132,6 +132,7 @@ export function Conversation(props: Props): React.JSX.Element {
       <Log
         cwd={open.session.cwd}
         className="log"
+        scrollKey={`${open.session.id}:main`}
         items={logItems(open, notices, null)}
         empty={<h2 className="new-hint">What should {agentName} do in {folderName(session.cwd)}?</h2>}
         renderAgent={renderAgent}

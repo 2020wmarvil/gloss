@@ -51,7 +51,7 @@ function byActivity(list: Session[]): Session[] {
 }
 
 /** What a session popped out from the sidebar opens with: as if it were opened fresh. */
-const FRESH_PANE: PaneState = { threadId: null, sideOpen: false, general: false, sideTab: 'threads', expandedFiles: [], drafts: {} }
+const FRESH_PANE: PaneState = { threadId: null, sideOpen: false, general: false, sideTab: 'threads', expandedFiles: [], drafts: {}, scroll: {} }
 
 export function App(): React.JSX.Element {
   const { settings, agents, sent, signIn, fullScreenHint, updateSettings } = useAppData()

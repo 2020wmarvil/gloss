@@ -449,6 +449,11 @@ button.ghost:disabled {
   box-shadow: var(--lift-pane), inset 0 1px 0 var(--edge);
 }
 
+/* A session window has no sidebar for the corner to round against (SPEC → Session windows). */
+.session-window .sheet {
+  border-top-left-radius: 0;
+}
+
 /* Each pane catches a faint light at its top. */
 .conversation,
 .empty-state,

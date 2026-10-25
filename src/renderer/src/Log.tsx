@@ -1,5 +1,6 @@
 // The message log shared by the main view and the thread panel.
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useScrollMemory, type ScrollAnchors } from './scrollMemory'
 import type { Message, Plan, ToolCall } from '@shared/types'
 import type { OpenSession } from './App'
 import { Markdown, MarkdownImageDirectory } from './Markdown'
@@ -58,15 +59,24 @@ type Props = {
   systemLine?(message: Message): string | null
   /** Makes annotated screenshots' pins anchors (SPEC → Visual feedback). */
   pins?: PinAnchors
+  /** Names the log so its scroll position moves with its session to another window (SPEC → Session windows). */
+  scrollKey?: string
 }
 
+/** A log's position: a message, and the paragraph, list item or code block at the top. */
+const LOG_ANCHORS: ScrollAnchors = { item: '[data-message-id]', attr: 'data-message-id', block: 'p, li, pre, h1, h2, h3, h4, h5, h6, blockquote, tr' }
+
 /** A scrolling log that sticks to the bottom while new output arrives. */
-export function Log({ cwd, items, className, empty, renderAgent, reveal, systemLine, pins }: Props): React.JSX.Element {
+export function Log({ cwd, items, className, empty, renderAgent, reveal, systemLine, pins, scrollKey }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
   useLayoutEffect(() => {
     const el = ref.current
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
+  })
+  // After the stick-to-bottom scroll above, so a position from another window wins.
+  useScrollMemory(ref, scrollKey, LOG_ANCHORS, () => {
+    stickToBottom.current = false
   })
 
   // When the pane gets shorter (the composer grows a line), the text at its bottom moves up

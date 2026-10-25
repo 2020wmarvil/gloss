@@ -243,6 +243,7 @@ export function GeneralPanel(props: {
       <Log
         cwd={open.session.cwd}
         className="thread-log"
+        scrollKey={`${open.session.id}:general`}
         items={logItems(open, props.notices, null)}
         empty={
           <div className="general-empty">

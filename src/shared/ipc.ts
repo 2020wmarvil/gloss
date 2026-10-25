@@ -157,6 +157,8 @@ export type PaneState = {
   expandedFiles: string[]
   /** The session's unsent composer drafts, by draft key. */
   drafts: Record<string, { text: string; attachments: Attachment[] }>
+  /** Where its logs and diff are scrolled, by scroller: the bottom, or an element and how far past its top. */
+  scroll: Record<string, { bottom: true } | { id: string; block?: string; offset: number }>
 }
 
 /** Shortcuts a session window hands to the main window. */

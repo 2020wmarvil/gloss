@@ -111,7 +111,7 @@ it('pops the open session out with what it shows and goes back to the session be
   // Returned from its window: it opens here on the thread and panel it showed there.
   await act(async () => emit({ type: 'windows', popped: [], focused: null }))
   await act(async () =>
-    emit({ type: 'popIn', sessionId: 'b', state: { threadId: 'b-t', sideOpen: true, general: false, sideTab: 'threads', expandedFiles: [], drafts: { b: { text: 'half a thought', attachments: [] } } } })
+    emit({ type: 'popIn', sessionId: 'b', state: { threadId: 'b-t', sideOpen: true, general: false, sideTab: 'threads', expandedFiles: [], drafts: { b: { text: 'half a thought', attachments: [] } }, scroll: {} } })
   )
   expect(opened).toHaveBeenLastCalledWith('b')
   expect(el.querySelector('.session-row.on')!.getAttribute('title')).toBe('b')
@@ -126,7 +126,7 @@ it('pops a session out from its menu or Ctrl+Shift+O, and hands session-window s
   const item = [...el.querySelectorAll<HTMLButtonElement>('.row-actions [role="menuitem"]')].find((b) => b.textContent === 'Open in new window')!
   await act(async () => item.click())
   // Not open here, so it opens fresh there and this window stays on a.
-  expect(windows.popOut).toHaveBeenCalledWith('c', { threadId: null, sideOpen: false, general: false, sideTab: 'threads', expandedFiles: [], drafts: {} })
+  expect(windows.popOut).toHaveBeenCalledWith('c', { threadId: null, sideOpen: false, general: false, sideTab: 'threads', expandedFiles: [], drafts: {}, scroll: {} })
   expect(el.querySelector('.session-row.on')!.getAttribute('title')).toBe('a')
 
   await key({ key: 'O', ctrlKey: true, shiftKey: true })
@@ -162,7 +162,7 @@ it("doesn't mark or chime a turn that finishes in a focused session window", asy
 })
 
 it('opens a session window as the main window showed it, returns it there, and hands main-window shortcuts over', async () => {
-  const state = { threadId: 'b-t', sideOpen: true, general: false, sideTab: 'threads', expandedFiles: [], drafts: { 'b-m': { text: 'unsent', attachments: [] } } }
+  const state = { threadId: 'b-t', sideOpen: true, general: false, sideTab: 'threads', expandedFiles: [], drafts: { 'b-m': { text: 'unsent', attachments: [] } }, scroll: { 'b:main': { bottom: true } } }
   const { opened, windows } = fakeGloss()
   window.gloss.windows.initial = async () => ({ sessionId: 'b', state }) as Awaited<ReturnType<typeof window.gloss.windows.initial>>
   const el = await render(<SessionWindow sessionId="b" />)
@@ -183,7 +183,7 @@ it('opens a session window as the main window showed it, returns it there, and h
   await act(async () => button.click())
   // Its drafts go back with it.
   expect(windows.popIn).toHaveBeenCalledWith(
-    expect.objectContaining({ threadId: 'b-t', sideOpen: true, sideTab: 'threads', drafts: { 'b-m': { text: 'unsent', attachments: [] } } })
+    expect.objectContaining({ threadId: 'b-t', sideOpen: true, sideTab: 'threads', drafts: { 'b-m': { text: 'unsent', attachments: [] } }, scroll: expect.objectContaining({ 'b:main': { bottom: true } }) })
   )
   await key({ key: 'O', ctrlKey: true, shiftKey: true })
   expect(windows.popIn).toHaveBeenCalledTimes(2)

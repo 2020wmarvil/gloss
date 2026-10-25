@@ -795,13 +795,25 @@ function paneStateArg(value: unknown, sessionId: string): PaneState {
       drafts[key] = { text: d.text, attachments: attachmentsArg(d.attachments ?? []) }
     }
   }
+  const scroll: PaneState['scroll'] = {}
+  if (typeof v.scroll === 'object' && v.scroll !== null) {
+    for (const [key, spot] of Object.entries(v.scroll as Record<string, unknown>)) {
+      const p = spot as Partial<Record<string, unknown>> | null
+      if (!key.startsWith(sessionId) || !p) continue
+      if (p.bottom === true) scroll[key] = { bottom: true }
+      else if (typeof p.id === 'string' && typeof p.offset === 'number' && Number.isFinite(p.offset)) {
+        scroll[key] = { id: p.id, ...(typeof p.block === 'string' ? { block: p.block } : {}), offset: p.offset }
+      }
+    }
+  }
   return {
     threadId: typeof v.threadId === 'string' ? v.threadId : null,
     sideOpen: v.sideOpen === true,
     general: v.general === true,
     sideTab: v.sideTab === 'queue' ? 'queue' : 'threads',
     expandedFiles: Array.isArray(v.expandedFiles) ? v.expandedFiles.filter((f): f is string => typeof f === 'string') : [],
-    drafts
+    drafts,
+    scroll
   }
 }
 

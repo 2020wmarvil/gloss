@@ -122,6 +122,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
       <Log
         cwd={open.session.cwd}
         className="thread-log"
+        scrollKey={panel.threadId === null ? undefined : `${open.session.id}:thread:${panel.threadId}`}
         items={panel.threadId === null ? [] : logItems(open, notices, panel.threadId)}
         empty={
           <p className="muted empty">
@@ -221,6 +222,7 @@ function LineThreadPanel(
       <Log
         cwd={open.session.cwd}
         className="thread-log"
+        scrollKey={threadId === null ? undefined : `${open.session.id}:thread:${threadId}`}
         items={threadId === null ? [] : logItems(open, props.notices, threadId)}
         empty={
           thread?.finding ? null : <p className="muted empty">No replies yet. Your first message starts a thread on these lines.</p>
