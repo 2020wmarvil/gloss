@@ -20,7 +20,7 @@ beforeEach(() => { mocked.handlers.clear(); mocked.launch.mockReset() })
 it('returns saved prompt text after the editor closes, cleans up, and returns focus to Gloss', async () => {
   const sender = {} as WebContents
   const focus = vi.fn()
-  registerComposerIpc({} as Store, () => sender, () => 'code -g {file}:{line}', focus)
+  registerComposerIpc({} as Store, (s) => s === sender, () => 'code -g {file}:{line}', focus)
   let close!: () => void
   const closed = new Promise<void>((resolve) => { close = resolve })
   let path = ''

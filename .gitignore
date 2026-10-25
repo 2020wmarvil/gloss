@@ -5,3 +5,9 @@ dist/
 .DS_Store
 *.tsbuildinfo
 docs/.obsidian/
+
+# Agent instruction files (kept locally, not in the repo)
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.claude/

@@ -449,6 +449,11 @@ button.ghost:disabled {
   box-shadow: var(--lift-pane), inset 0 1px 0 var(--edge);
 }
 
+/* A session window has no sidebar for the corner to round against (SPEC → Session windows). */
+.session-window .sheet {
+  border-top-left-radius: 0;
+}
+
 /* Each pane catches a faint light at its top. */
 .conversation,
 .empty-state,
@@ -1012,6 +1017,15 @@ button.new-session-agents {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A session open in its own window (SPEC → Session windows). */
+.session-title .popped-icon {
+  width: 13px;
+  height: 13px;
+  margin-left: 5px;
+  vertical-align: -2px;
+  color: var(--muted);
 }
 
 .running-dot {
@@ -1743,6 +1757,12 @@ button.settings-button.on {
 
 .conversation header .agent-name {
   font-size: var(--t-13);
+}
+
+/* Pop out, or Return to main window, at the end of a conversation's header (SPEC → Session windows). */
+.conversation > header > .window-button {
+  flex: none;
+  margin-left: auto;
 }
 
 .conversation header .mono {

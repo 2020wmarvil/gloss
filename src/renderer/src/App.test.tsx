@@ -361,7 +361,8 @@ it("finds a thread's anchor in the main conversation from the thread panel", asy
 it("marks, badges and chimes a turn that finishes where the user isn't looking", async () => {
   const session = (id: string, createdAt: number): object => ({ id, title: id, cwd: '/project', agentId: 'claude', createdAt })
   const global = { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }
-  let emit: (event: object) => void = () => {}
+  const listeners = new Set<(event: object) => void>()
+  const emit = (event: object): void => listeners.forEach((l) => l(event))
   const setBadge = vi.fn()
   window.gloss = {
     history: async () => [],
@@ -379,7 +380,7 @@ it("marks, badges and chimes a turn that finishes where the user isn't looking",
     },
     git: { status: async () => null, pullRequest: async () => null },
     setBadge,
-    onEvent: (handler: (event: object) => void) => { emit = handler; return () => {} }
+    onEvent: (handler: (event: object) => void) => { listeners.add(handler); return () => listeners.delete(handler) }
   } as unknown as typeof window.gloss
   const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
   const chime = vi.mocked(playChime)
@@ -434,7 +435,8 @@ it("marks, badges and chimes a turn that finishes where the user isn't looking",
 
 it('keeps background completions and syncs from taking focus or closing settings, and retries the original failed session', async () => {
   const session = (id: string): object => ({ id, title: id, cwd: '/project', agentId: 'claude', createdAt: id === 'a' ? 2 : 1 })
-  let emit: (event: object) => void = () => {}
+  const listeners = new Set<(event: object) => void>()
+  const emit = (event: object): void => listeners.forEach((l) => l(event))
   let finish!: () => void
   const retry = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
   window.gloss = {
@@ -452,7 +454,7 @@ it('keeps background completions and syncs from taking focus or closing settings
     },
     git: { status: async () => null, pullRequest: async () => null },
     retry,
-    onEvent: (handler: (event: object) => void) => { emit = handler; return () => {} }
+    onEvent: (handler: (event: object) => void) => { listeners.add(handler); return () => listeners.delete(handler) }
   } as unknown as typeof window.gloss
   const el = document.createElement('div')
   document.body.replaceChildren(el)

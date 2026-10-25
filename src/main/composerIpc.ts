@@ -12,7 +12,7 @@ import { attachPathContext, contextPaths, externalContextItems, gitOutput, pathC
 import { draftEditorArgs, launchEditor } from './openFile'
 import { toMarkdown } from './export'
 
-export function registerComposerIpc(store: Store, window: () => WebContents | undefined, editor: () => string, returnToGloss: () => void): void {
+export function registerComposerIpc(store: Store, isGloss: (sender: WebContents) => boolean, editor: () => string, returnToGloss: (sender: WebContents) => void): void {
   const shells = new Map<string, AbortController>()
   const terminals = new Map<string, ShellResult>()
   const drafts = new Set<string>()
@@ -21,7 +21,7 @@ export function registerComposerIpc(store: Store, window: () => WebContents | un
     for (const dir of drafts) { try { rmSync(dir, { recursive: true, force: true }) } catch { /* The editor may still hold the file open. */ } }
   })
   const cache = new Map<string, { at: number; paths: Promise<string[]> }>()
-  const check = (sender: WebContents): void => { if (sender !== window()) throw new Error('Only the Gloss window can use composer tools.') }
+  const check = (sender: WebContents): void => { if (!isGloss(sender)) throw new Error('Only a Gloss window can use composer tools.') }
   const str = (value: unknown): string => { if (typeof value !== 'string') throw new Error('Expected text.'); return value }
   const session = (id: unknown) => {
     const s = store.getSession(str(id))
@@ -114,7 +114,7 @@ export function registerComposerIpc(store: Store, window: () => WebContents | un
     } finally {
       drafts.delete(dir)
       await rm(dir, { recursive: true, force: true }).catch(() => {})
-      returnToGloss()
+      returnToGloss(e.sender)
     }
   })
 }

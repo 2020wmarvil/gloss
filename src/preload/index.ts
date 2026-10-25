@@ -93,6 +93,14 @@ const api: GlossApi = {
     update: (patch) => ipcRenderer.invoke(IPC.settingsUpdate, patch),
     openFile: () => ipcRenderer.invoke(IPC.settingsOpenFile)
   },
+  windows: {
+    popOut: (sessionId, state) => ipcRenderer.invoke(IPC.windowsPopOut, sessionId, state),
+    popIn: (state) => ipcRenderer.invoke(IPC.windowsPopIn, state),
+    focus: (sessionId) => ipcRenderer.invoke(IPC.windowsFocus, sessionId),
+    list: () => ipcRenderer.invoke(IPC.windowsList),
+    initial: () => ipcRenderer.invoke(IPC.windowsInitial),
+    toMain: (action) => ipcRenderer.send(IPC.windowsToMain, action)
+  },
   onEvent(listener) {
     const wrapped = (_e: IpcRendererEvent, event: GlossEvent): void => listener(event)
     ipcRenderer.on(IPC.event, wrapped)

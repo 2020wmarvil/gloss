@@ -5,6 +5,7 @@ import type { GitStatus, PullRequest } from '@shared/ipc'
 import { expandable, gapsOf, linesOf, newLineOf, type LineAnchor, type Location, type ReviewDiff, type ReviewRange, type ReviewRefs, type Side } from '@shared/review'
 import type { MessageQueue, SessionLive } from '@shared/types'
 import type { OpenSession, Panel } from './App'
+import { useScrollMemory, type ScrollAnchors } from './scrollMemory'
 import { DiffView, EMPTY_LINE, cardOpen, firstLine, REVEAL_LABEL, type Card, type Layout } from './DiffView'
 import { expand, NO_EXPANSION, revealing, type Expansion } from './diffContext'
 import type { Sources } from './reviewSources'
@@ -54,6 +55,11 @@ type Props = {
   onNewReview(): void
   /** Opens a file of the diff in the file manager, or in the external editor at `line`. */
   onOpenFile(path: string, how: 'reveal' | 'editor', line: number): void
+  /** Pop out, or Return to main window, at the end of the header's tools (SPEC → Session windows). */
+  windowButton?: React.ReactNode
+  /** Files expanded when it opens: those it had in the window it came from. */
+  initialExpandedFiles?: string[]
+  onExpandedFilesChange?(files: string[]): void
 }
 
 /** The header's tool icons. */
@@ -94,6 +100,20 @@ export function hideFileList(): void {
   localStorage.setItem(TREE_KEY, 'hidden')
 }
 
+/**
+ * The diff's position: a file and the row at the top, named by its line (the new side's,
+ * else the old side's), which split and unified views share.
+ */
+const DIFF_ANCHORS: ScrollAnchors = {
+  item: '.diff-file[data-file]',
+  attr: 'data-file',
+  block: '.diff-row',
+  blockKey: (row, index) => {
+    const line = row.querySelector<HTMLElement>('.code[data-side="new"][data-line]') ?? row.querySelector<HTMLElement>('.code[data-line]')
+    return line ? `${line.dataset.side}:${line.dataset.line}` : `#${index}`
+  }
+}
+
 /** Below this width of the diff, split shows as unified. */
 const SPLIT_MIN_WIDTH = 640
 
@@ -105,7 +125,10 @@ export function ReviewView(props: Props): React.JSX.Element {
   const [comments, setComments] = useStored('gloss.review.comments', 'shown', ['shown', 'hidden'])
   const [toggled, setToggled] = useState(() => new Set<string>())
   /** Files expanded: every file starts collapsed, so a large review opens fast. */
-  const [expandedFiles, setExpandedFiles] = useState(() => new Set<string>())
+  const [expandedFiles, setExpandedFiles] = useState(() => new Set<string>(props.initialExpandedFiles))
+  const expandedChanged = useRef(props.onExpandedFilesChange)
+  expandedChanged.current = props.onExpandedFilesChange
+  useEffect(() => expandedChanged.current?.([...expandedFiles]), [expandedFiles])
   const [expansions, setExpansions] = useState<Record<string, Expansion>>({})
   const [narrow, setNarrow] = useState(false)
   const [current, setCurrent] = useState<string | null>(null)
@@ -125,6 +148,7 @@ export function ReviewView(props: Props): React.JSX.Element {
   }, [diff.diff !== null])
 
   const sessionId = open.session.id
+  useScrollMemory(scroller, `${sessionId}:diff`, DIFF_ANCHORS)
   // Another range is another diff: nothing shown beyond its hunks yet.
   const review = open.session.review
   const rangeKey = review ? `${review.baseRef}\0${review.headRef ?? ''}` : ''
@@ -375,6 +399,7 @@ export function ReviewView(props: Props): React.JSX.Element {
                 {ICONS.newReview}
               </button>
             )}
+            {props.windowButton}
           </div>
         </div>
         <div className="review-meta">

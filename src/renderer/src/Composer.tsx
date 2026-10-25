@@ -82,6 +82,24 @@ function listenForCapture(): void {
 type Draft = { text: string; attachments: Attachment[]; selection?: [number, number] }
 const drafts = new Map<string, Draft>()
 const stashedDrafts = new Map<string, Draft>()
+
+/** A session's unsent drafts (their keys start with its id), to carry it to another window (SPEC → Session windows). */
+export function sessionDrafts(sessionId: string): Record<string, { text: string; attachments: Attachment[] }> {
+  const out: Record<string, { text: string; attachments: Attachment[] }> = {}
+  for (const [key, d] of drafts) if (key.startsWith(sessionId)) out[key] = { text: d.text, attachments: d.attachments }
+  return out
+}
+
+/** Forgets a session's drafts: they went to another window with it. */
+export function clearDrafts(sessionId: string): void {
+  for (const key of [...drafts.keys()]) if (key.startsWith(sessionId)) drafts.delete(key)
+}
+
+/** A session's drafts brought from another window, for the composers that open next. */
+export function restoreDrafts(sessionId: string, from: Record<string, { text: string; attachments: Attachment[] }>): void {
+  clearDrafts(sessionId)
+  for (const [key, d] of Object.entries(from)) drafts.set(key, { text: d.text, attachments: d.attachments })
+}
 type EditorState = { busy: boolean; error?: string }
 const editorStates = new Map<string, EditorState>()
 type ShellState = { running: boolean; error?: string }
