@@ -30,6 +30,7 @@ import { OpenCodeSupport } from './opencode'
 import { AgentProfileSupport } from './agentProfiles'
 import { profileError, type AgentProfile } from '../shared/agentProfiles'
 import { boundsArg, placeSessionWindow, type Rect } from './windowPlacement'
+import { createCloseGuard } from './closeGuard'
 import iconIco from '../../build/icon.ico?asset'
 import iconPng from '../../build/icons/256x256.png?asset'
 
@@ -169,6 +170,9 @@ function newWindow(bounds: Partial<Rect> & { width: number; height: number }): B
 function createWindow(): void {
   const win = newWindow({ width: 1280, height: 820 })
   mainWindow = win
+  win.on('close', (event) => {
+    guardClose(event, () => { if (!win.isDestroyed()) win.close() })
+  })
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = undefined
     // Closing the main window quits Gloss, session windows included.
@@ -272,6 +276,27 @@ function handleShortcut(win: BrowserWindow, input: Electron.Input): boolean {
 /** Sessions with a turn running, and the sleep blocker held while there are any. */
 const working = new Set<string>()
 let awake: number | null = null
+
+const guardClose = createCloseGuard({
+  isWorking: () => working.size > 0,
+  confirm: async () => {
+    const options: Electron.MessageBoxOptions = {
+      type: 'warning',
+      title: 'Close Gloss?',
+      message: working.size === 1 ? 'A session is still working.' : `${working.size} sessions are still working.`,
+      detail: 'Closing Gloss will stop all running sessions.',
+      buttons: ['Keep open', 'Close Gloss'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    }
+    const parent = lastFocused && !lastFocused.isDestroyed() ? lastFocused : mainWindow
+    const result = parent && !parent.isDestroyed()
+      ? await dialog.showMessageBox(parent, options)
+      : await dialog.showMessageBox(options)
+    return result.response === 1
+  }
+})
 
 /** Keeps the computer from sleeping while an agent works (the display may still turn off). */
 function keepAwake(event: GlossEvent): void {
@@ -944,7 +969,8 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => globalShortcut.unregisterAll())
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  if (!guardClose(event, () => app.quit())) return
   settings?.close()
   void sessions?.dispose()
   store?.close()

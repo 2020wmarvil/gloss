@@ -31,11 +31,11 @@ type Props = {
 }
 
 const TOOLS: { tool: Tool; key: string; name: string; icon: React.JSX.Element }[] = [
-  { tool: 'pin', key: 'n', name: 'Pin', icon: <MapPin /> },
   { tool: 'pen', key: 'f', name: 'Pen', icon: <Pencil /> },
   { tool: 'highlighter', key: 'h', name: 'Highlighter', icon: <Highlighter /> },
   { tool: 'box', key: 'r', name: 'Box', icon: <Square /> },
-  { tool: 'arrow', key: 'a', name: 'Arrow', icon: <MoveUpRight /> }
+  { tool: 'arrow', key: 'a', name: 'Arrow', icon: <MoveUpRight /> },
+  { tool: 'pin', key: 'n', name: 'Pin', icon: <MapPin /> }
 ]
 
 type Marks = { shapes: Shape[]; pins: Pin[] }
@@ -50,8 +50,7 @@ const STAGE_PAD = 20
 const PINS_LIMITS = { min: 220, max: 560 }
 const PINS_SHOWN_KEY = 'gloss:annotatePinsShown'
 
-/** The tool and color picked last, kept for the next capture while Gloss runs. */
-let lastTool: Tool = 'pin'
+/** The color picked last, kept for the next capture while Gloss runs. */
 let lastColor = MARK_COLORS[0]
 
 export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): React.JSX.Element {
@@ -59,7 +58,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
   const [marks, setMarks] = useState<Marks>({ shapes: initial.shapes, pins: initial.pins })
   const [past, setPast] = useState<Marks[]>([])
   const [future, setFuture] = useState<Marks[]>([])
-  const [tool, setTool] = useState<Tool>(lastTool)
+  const [tool, setTool] = useState<Tool>('pen')
   const [color, setColor] = useState(lastColor)
   const [lit, setLit] = useState(-1)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
@@ -95,9 +94,8 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
   const r = pinRadius(width, height)
 
   useEffect(() => {
-    lastTool = tool
     lastColor = color
-  }, [tool, color])
+  }, [color])
 
   useEffect(() => {
     let current = true
@@ -333,7 +331,9 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
     if (mod && e.key === 'Enter') {
       e.preventDefault()
       void add()
-    } else if (mod && !typing && (key === 'z' || key === 'y')) {
+    } else if (mod && (key === 'z' || key === 'y') &&
+      (!typing || (key === 'z' && !e.shiftKey && (e.target as HTMLTextAreaElement).value === ''))) {
+      // An empty note should not trap undo after an accidental pin placement.
       e.preventDefault()
       if (key === 'y' || e.shiftKey) redo()
       else undo()

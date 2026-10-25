@@ -396,6 +396,14 @@ it("marks, badges and chimes a turn that finishes where the user isn't looking",
   expect(badge()).toEqual({ state: null, unseen: 0 })
   await act(async () => emit({ type: 'turnStart', sessionId: 'b', threadId: null }))
   expect(badge()).toEqual({ state: 'working', unseen: 0 })
+  const projectBadges = async (): Promise<string> => {
+    await act(async () => el.querySelector<HTMLButtonElement>('.switch-button')!.click())
+    expect(el.querySelector('.project-badges')!.textContent).toBe('')
+    const text = [...el.querySelectorAll('.project-badge')].map((b) => b.getAttribute('aria-label')).join('')
+    await act(async () => el.querySelector<HTMLButtonElement>('.switch-button')!.click())
+    return text
+  }
+  expect(await projectBadges()).toContain('Working')
 
   // The open session, in front: the user sees it finish.
   await end({ sessionId: 'a' })
@@ -409,9 +417,12 @@ it("marks, badges and chimes a turn that finishes where the user isn't looking",
   expect(chime).toHaveBeenCalledTimes(1)
   expect(lead('b')).toBe('done-dot')
   expect(badge()).toEqual({ state: 'completed', unseen: 1 })
+  expect(await projectBadges()).toContain('Completed')
+  // Project badges preserve both ongoing work and unseen completions.
   // Finished wins over working, and failed over finished.
   await act(async () => emit({ type: 'turnStart', sessionId: 'a', threadId: null }))
   expect(badge()).toEqual({ state: 'completed', unseen: 1 })
+  expect(await projectBadges()).toBe('WorkingCompleted')
   focused.mockReturnValue(false)
   await end({ sessionId: 'a', error: 'boom' })
   expect(chime).toHaveBeenCalledTimes(2)

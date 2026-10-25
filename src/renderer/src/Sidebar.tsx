@@ -132,8 +132,19 @@ export function Sidebar(props: Props): React.JSX.Element {
   const agentName = (id: string): string => props.agents.find((a) => a.id === id)?.name ?? id
   const defaultName = agentName(props.defaultAgent)
   const sessions = project ? props.sessions.filter((s) => sameFolder(s.cwd, project.path)) : []
-  const isRunningIn = (p: Project): boolean =>
-    props.sessions.some((s) => s.id in running && sameFolder(s.cwd, p.path))
+  const projectBadges = (p: Project): React.JSX.Element => {
+    const list = props.sessions.filter((s) => sameFolder(s.cwd, p.path))
+    const waiting = list.some((s) => (props.waiting?.[s.id]?.length ?? 0) > 0)
+    const working = list.some((s) => s.id in running)
+    const failed = list.some((s) => props.unseen[s.id] === 'failed')
+    const completed = list.some((s) => props.unseen[s.id] === 'completed')
+    return <span className="project-badges">
+      {waiting && <span className="project-badge" title="Waiting" role="img" aria-label="Waiting"><span className="waiting-dot" aria-hidden /></span>}
+      {working && <span className="project-badge" title="Working" role="img" aria-label="Working"><span className="running-dot" aria-hidden /></span>}
+      {failed && <span className="project-badge" title="Failed" role="img" aria-label="Failed"><span className="failed-dot" aria-hidden /></span>}
+      {completed && <span className="project-badge" title="Completed" role="img" aria-label="Completed"><span className="done-dot" aria-hidden /></span>}
+    </span>
+  }
   // Gloss's sessions and the agent's own, newest or most recently active first. The
   // agent doesn't say when its own sessions began, so they go by their last activity.
   const rows: Row[] = [
@@ -278,9 +289,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                   >
                     <b>
                       {p.name}
-                      {(!project || !sameFolder(p.path, project.path)) && isRunningIn(p) && (
-                        <span className="running-dot" aria-label="Running" />
-                      )}
+                      {projectBadges(p)}
                     </b>
                     <span className="project-where" title={p.path}>
                       {p.where}

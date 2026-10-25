@@ -132,26 +132,28 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         renderAgent={(m) => <Markdown text={m.text} />}
         reveal={props.reveal}
         pins={pinAnchorsFor(open, panel, runningThread, props.onOpenPin)}
-      />
-      <Composer
-        sessionId={open.session.id}
-        key={`${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
-        draftKey={`${open.session.id}:${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
-        className="thread-composer"
-        placeholder={pin ? `Reply about pin ${pin.pin}` : 'Reply in thread'}
-        running={running}
-        autoFocus
-        primary
-        commands={live.commands}
-        accepts={live.accepts}
-        history={props.history}
-        queue={props.queue}
-        onSend={onSend}
-        onSteer={live.steering && runningHere ? props.onSteer : undefined}
-        onInterrupt={props.onCancel}
-        onCancel={runningHere ? onCancel : undefined}
-        // A thread that doesn't exist yet has nothing to continue.
-        onSendToMain={threadId !== null ? props.onSendToMain : undefined}
+        footer={<>
+          <Composer
+            sessionId={open.session.id}
+            key={`${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
+            draftKey={`${open.session.id}:${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
+            className="thread-composer"
+            placeholder={pin ? `Reply about pin ${pin.pin}` : 'Reply in thread'}
+            running={running}
+            autoFocus
+            primary
+            commands={live.commands}
+            accepts={live.accepts}
+            history={props.history}
+            queue={props.queue}
+            onSend={onSend}
+            onSteer={live.steering && runningHere ? props.onSteer : undefined}
+            onInterrupt={props.onCancel}
+            onCancel={runningHere ? onCancel : undefined}
+            // A thread that doesn't exist yet has nothing to continue.
+            onSendToMain={threadId !== null ? props.onSendToMain : undefined}
+          />
+        </>}
       />
     </aside>
   )
@@ -229,25 +231,27 @@ function LineThreadPanel(
         }
         renderAgent={(m) => <Markdown text={m.text} />}
         reveal={props.reveal}
-      />
-      <Composer
-        sessionId={open.session.id}
-        key={`${open.session.id}:${JSON.stringify(panel.anchor)}`}
-        draftKey={`${open.session.id}:line:${JSON.stringify(panel.anchor)}`}
-        className="thread-composer"
-        placeholder="Reply in thread"
-        running={props.running}
-        autoFocus
-        primary
-        commands={live.commands}
-        accepts={live.accepts}
-        history={props.history}
-        queue={props.queue}
-        onSend={props.onSend}
-        onSteer={live.steering && props.runningHere ? props.onSteer : undefined}
-        onInterrupt={props.onCancel}
-        onCancel={props.runningHere ? props.onCancel : undefined}
-        onSendToMain={threadId !== null ? props.onSendToMain : undefined}
+        footer={<>
+          <Composer
+            sessionId={open.session.id}
+            key={`${open.session.id}:${JSON.stringify(panel.anchor)}`}
+            draftKey={`${open.session.id}:line:${JSON.stringify(panel.anchor)}`}
+            className="thread-composer"
+            placeholder="Reply in thread"
+            running={props.running}
+            autoFocus
+            primary
+            commands={live.commands}
+            accepts={live.accepts}
+            history={props.history}
+            queue={props.queue}
+            onSend={props.onSend}
+            onSteer={live.steering && props.runningHere ? props.onSteer : undefined}
+            onInterrupt={props.onCancel}
+            onCancel={props.runningHere ? props.onCancel : undefined}
+            onSendToMain={threadId !== null ? props.onSendToMain : undefined}
+          />
+        </>}
       />
     </aside>
   )

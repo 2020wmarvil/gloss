@@ -257,24 +257,26 @@ export function GeneralPanel(props: {
         renderAgent={(m) => <GeneralMessage message={m} open={open} onOpenThread={props.onOpenThread} onShowThreads={props.onBack} />}
         systemLine={firstPassLine}
         reveal={props.reveal}
-      />
-      <Composer
-        sessionId={open.session.id}
-        draftKey={open.session.id}
-        className="thread-composer"
-        placeholder="Message about the whole change"
-        running={runningThread !== undefined}
-        autoFocus
-        primary
-        main
-        commands={live.commands}
-        accepts={live.accepts}
-        history={props.history}
-        queue={props.queue}
-        onSend={props.onSend}
-        onSteer={live.steering && runningHere ? props.onSteer : undefined}
-        onInterrupt={props.onCancel}
-        onCancel={runningHere ? props.onCancel : undefined}
+        footer={<>
+          <Composer
+            sessionId={open.session.id}
+            draftKey={open.session.id}
+            className="thread-composer"
+            placeholder="Message about the whole change"
+            running={runningThread !== undefined}
+            autoFocus
+            primary
+            main
+            commands={live.commands}
+            accepts={live.accepts}
+            history={props.history}
+            queue={props.queue}
+            onSend={props.onSend}
+            onSteer={live.steering && runningHere ? props.onSteer : undefined}
+            onInterrupt={props.onCancel}
+            onCancel={runningHere ? props.onCancel : undefined}
+          />
+        </>}
       />
     </aside>
   )
