@@ -639,6 +639,25 @@ describe('SessionManager', () => {
     expect(manager.openSession(session.id).turn).toBeNull()
   })
 
+  it('omits Codex MCP startup reports from live turns and replay, preserving actual MCP calls', async () => {
+    state.script = async ({ update, say }) => {
+      await update({ sessionUpdate: 'tool_call', toolCallId: 'mcp_startup.UnityMCP.test', title: 'mcp__UnityMCP__startup', status: 'failed' })
+      await update({ sessionUpdate: 'tool_call_update', toolCallId: 'mcp_startup.UnityMCP.test', status: 'failed' })
+      await update({ sessionUpdate: 'tool_call', toolCallId: 'actual-mcp-call', title: 'mcp__UnityMCP__startup', status: 'failed' })
+      await say('Still works')
+      return 'end_turn'
+    }
+    const session = await manager.createSession('/w', 'codex')
+    await manager.send(session.id, 'hello', null)
+    expect(store.listToolCalls(session.id).map((t) => t.id)).toEqual(['actual-mcp-call'])
+    expect(events.filter((e) => e.type === 'toolCall').map((e) => e.toolCall.id)).toEqual(['actual-mcp-call'])
+    await manager.dispose()
+    manager = makeManager()
+    await manager.send(session.id, 'resume', null)
+    expect(store.listToolCalls(session.id).map((t) => t.id)).toEqual(['actual-mcp-call'])
+    expect(manager.openSession(session.id).messages.some((m) => m.text === 'Still works')).toBe(true)
+  })
+
   it('closes the tool calls a turn leaves running when it ends', async () => {
     state.script = async ({ update, cancelled }) => {
       await update({ sessionUpdate: 'tool_call', toolCallId: 'done', title: 'Read a.ts', status: 'completed' })

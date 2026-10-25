@@ -2459,6 +2459,27 @@ button.activity-thread:hover .activity-name {
   background: var(--hover);
 }
 
+.sent-to-main-trace {
+  margin: 12px 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--muted);
+  color: var(--muted);
+  font-size: var(--t-12);
+}
+
+.sent-to-main-trace button {
+  padding: 0;
+}
+
+.sent-to-main-trace p {
+  margin: 4px 0 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
 .menu-list .muted {
   font-size: var(--t-12);
 }
@@ -2874,12 +2895,20 @@ button.activity-thread:hover .activity-name {
 /* The agent's items: those that don't fit on the line are hidden, right to left
    (StatusLine's useFirstLineOnly), so the row never grows. */
 .status-agent {
-  flex: 1;
+  flex: 1 1 0%;
   min-width: 0;
   height: 24px;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0 2px;
+}
+
+.status-agent > * {
+  flex: none;
+}
+
+.status-agent > [hidden] {
+  display: none;
 }
 
 .status-line > .status-item.error {
@@ -3009,6 +3038,7 @@ a.status-item {
 .status-place {
   flex: 0 1 auto;
   min-width: 0;
+  max-width: 50%;
   display: flex;
   align-items: center;
   gap: 2px;

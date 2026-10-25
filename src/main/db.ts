@@ -188,7 +188,24 @@ const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
     session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
     prefix_entries INTEGER NOT NULL,
     context TEXT
-  );`
+  );`,
+  // Remove codex-acp's synthetic MCP startup reports, including their search rows
+  // (via the delete trigger). Retained rewind prefixes count log entries.
+  (db) => {
+    const rewinds = db.prepare(`SELECT r.session_id, r.prefix_entries FROM session_rewinds r
+      JOIN sessions s ON s.id = r.session_id WHERE s.agent_id = 'codex'`).all()
+    const entries = db.prepare(`SELECT seq, 0 AS diagnostic FROM messages WHERE session_id = ?
+      UNION ALL SELECT message_seq AS seq, id GLOB 'mcp_startup.*' AS diagnostic FROM tool_calls WHERE session_id = ?
+      UNION ALL SELECT seq, 0 AS diagnostic FROM plans WHERE session_id = ? ORDER BY seq LIMIT ?`)
+    const update = db.prepare('UPDATE session_rewinds SET prefix_entries = ? WHERE session_id = ?')
+    for (const r of rewinds) {
+      const retained = entries.all(r.session_id, r.session_id, r.session_id, r.prefix_entries)
+      const removed = retained.filter((e) => e.diagnostic === 1).length
+      if (removed) update.run(Number(r.prefix_entries) - removed, r.session_id)
+    }
+    db.exec(`DELETE FROM tool_calls WHERE id GLOB 'mcp_startup.*'
+      AND session_id IN (SELECT id FROM sessions WHERE agent_id = 'codex')`)
+  }
 ]
 
 function addPermissionColumns(db: DatabaseSync): void {
