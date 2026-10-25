@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
@@ -277,25 +278,31 @@ function handleShortcut(win: BrowserWindow, input: Electron.Input): boolean {
 const working = new Set<string>()
 let awake: number | null = null
 
+let closeConfirmation: { requestId: string; sender: Electron.WebContents; finish(close: boolean): void } | undefined
+
 const guardClose = createCloseGuard({
   isWorking: () => working.size > 0,
-  confirm: async () => {
-    const options: Electron.MessageBoxOptions = {
-      type: 'warning',
-      title: 'Close Gloss?',
-      message: working.size === 1 ? 'A session is still working.' : `${working.size} sessions are still working.`,
-      detail: 'Closing Gloss will stop all running sessions.',
-      buttons: ['Keep open', 'Close Gloss'],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true
-    }
+  confirm: () => new Promise<boolean>((resolve) => {
     const parent = lastFocused && !lastFocused.isDestroyed() ? lastFocused : mainWindow
-    const result = parent && !parent.isDestroyed()
-      ? await dialog.showMessageBox(parent, options)
-      : await dialog.showMessageBox(options)
-    return result.response === 1
-  }
+    if (!parent || parent.isDestroyed()) { resolve(false); return }
+    const sender = parent.webContents
+    const requestId = randomUUID()
+    const dismiss = (): void => finish(false)
+    const finish = (close: boolean): void => {
+      sender.removeListener('destroyed', dismiss)
+      sender.removeListener('render-process-gone', dismiss)
+      sender.removeListener('did-start-navigation', dismiss)
+      closeConfirmation = undefined
+      resolve(close)
+    }
+    closeConfirmation = { requestId, sender, finish }
+    sender.once('destroyed', dismiss)
+    sender.once('render-process-gone', dismiss)
+    sender.once('did-start-navigation', dismiss)
+    parent.show()
+    parent.focus()
+    sender.send(IPC.event, { type: 'confirmClose', requestId, working: working.size } satisfies GlossEvent)
+  })
 })
 
 /** Keeps the computer from sleeping while an agent works (the display may still turn off). */
@@ -615,6 +622,11 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     shell.showItemInFolder(link.path)
   })
   ipcMain.handle(IPC.search, (_e, request: SearchRequest) => store!.search(request))
+  ipcMain.handle(IPC.confirmClose, (event, requestId: unknown, close: unknown) => {
+    const pending = closeConfirmation
+    if (!pending || event.sender !== pending.sender || requestId !== pending.requestId) return
+    pending.finish(close === true)
+  })
   ipcMain.handle(IPC.history, () => manager.messageHistory())
   registerCaptureIpc()
   ipcMain.handle(IPC.captureShortcutStatus, () => ({ shortcut: capture.registered, error: capture.error }))

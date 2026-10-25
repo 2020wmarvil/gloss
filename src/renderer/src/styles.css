@@ -6258,3 +6258,10 @@ button.review-changes {
 .log-scroll::-webkit-scrollbar-thumb { background-color: transparent; }
 .log-scroll::-webkit-scrollbar-thumb:hover,
 .log-scroll.scrolling::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--ink) 22%, transparent); }
+
+/* Close confirmation sits above any dialog already open in the focused window. */
+.close-backdrop { z-index: 1000; }
+.close-heading { display: flex; align-items: center; gap: 10px; }
+.close-heading > svg { color: var(--failed); flex: none; }
+.close-heading h2 { margin: 0; }
+.close-dialog > p { line-height: 1.6; margin: 14px 0 20px; }
