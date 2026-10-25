@@ -1,3 +1,4 @@
+import type { ContextItem, RewindDraft, RewindPoint, ShellResult } from './composer'
 import type { SearchRequest, SearchResponse } from './search'
 import type { McpImportPreview, McpImportSource } from './mcp'
 import type { ReviewDiff, ReviewRefs } from './review'
@@ -100,6 +101,7 @@ export type GlossEvent =
   | { type: 'sessionDeleted'; sessionId: string; deletedOutside?: { title: string } }
   /** `/clear` emptied the session: its messages, tool calls and threads are gone. */
   | { type: 'sessionCleared'; sessionId: string }
+  | { type: 'sessionRewound'; sessionId: string }
   /** The log was synced from the agent's copy: reload it (SPEC → Shared sessions). */
   | { type: 'sessionSynced'; sessionId: string }
   | { type: 'live'; sessionId: string; live: SessionLive }
@@ -138,8 +140,16 @@ export type GlossEvent =
   | { type: 'captureShortcut' }
 
 export type GlossApi = {
+  composer: {
+    shell(sessionId: string, command: string): Promise<ShellResult>
+    cancelShell(sessionId: string): Promise<void>
+    contexts(sessionId: string, query: string): Promise<ContextItem[]>
+    attach(sessionId: string, item: ContextItem): Promise<Attachment>
+    editDraft(text: string): Promise<{ text: string }>
+  }
   /** Opens an absolute local Markdown file link in the editor, or reveals it without an editor. */
   openFileLink(href: string): Promise<void>
+  readMarkdownImage(src: string, cwd?: string): Promise<string>
   search(request: SearchRequest): Promise<SearchResponse>
   agents: {
     list(): Promise<AgentInfo[]>
@@ -183,6 +193,8 @@ export type GlossApi = {
     import(cwd: string, agentId: string, acpSessionId: string, title: string, listedAt?: string): Promise<Session>
     /** Its log and threads. Also resumes the session on the agent in the background, for the status line. */
     open(id: string): Promise<SessionView>
+    rewindPoints(id: string): Promise<RewindPoint[]>
+    rewind(id: string, messageId: string): Promise<RewindDraft>
     /** Reloads the session if the agent's copy changed elsewhere (SPEC → Shared sessions). */
     refresh(id: string): Promise<void>
     rename(id: string, title: string): Promise<Session>
@@ -288,7 +300,13 @@ export type GlossApi = {
 export type AppBadge = { state: 'working' | 'completed' | 'failed' | null; unseen: number }
 
 export const IPC = {
+  composerContexts: 'gloss:composerContexts',
+  composerShell: 'gloss:composerShell',
+  composerCancelShell: 'gloss:composerCancelShell',
+  composerAttach: 'gloss:composerAttach',
+  composerEditDraft: 'gloss:composerEditDraft:v2',
   openFileLink: 'gloss:openFileLink',
+  readMarkdownImage: 'gloss:readMarkdownImage',
   settingsPreviewMcpImport: 'gloss:settings:previewMcpImport',
   search: 'gloss:search',
   agentsList: 'gloss:agents:list',
@@ -309,6 +327,8 @@ export const IPC = {
   sessionsSetReviewRange: 'gloss:sessions:setReviewRange',
   sessionsImport: 'gloss:sessions:import',
   sessionsOpen: 'gloss:sessions:open',
+  sessionsRewindPoints: 'gloss:sessions:rewindPoints',
+  sessionsRewind: 'gloss:sessions:rewind',
   sessionsRefresh: 'gloss:sessions:refresh',
   sessionsRename: 'gloss:sessions:rename',
   sessionsDelete: 'gloss:sessions:delete',

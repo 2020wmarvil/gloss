@@ -1,10 +1,11 @@
 // Renders untrusted agent markdown. No raw HTML (it is shown as text), only
 // web/mail links and absolute local file links (opened through the main
-// process), and no images are loaded. Code blocks are highlighted and have a
-// copy button.
-import { useState } from 'react'
+// process), and local raster images loaded through the main process.
+// Code blocks are highlighted and have a copy button.
+import { createContext, useContext, useEffect, useState } from 'react'
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import { fileLink } from '../../shared/fileLink'
+import { imageLink } from '../../shared/imageLink'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import { listItemSpans, type ListItemSpan } from './anchors'
@@ -68,6 +69,26 @@ function FileLink({ href, children }: { href: string; children: React.ReactNode 
   )
 }
 
+export const MarkdownImageDirectory = createContext<string | undefined>(undefined)
+
+function LocalImage({ src, alt, title }: { src?: string; alt?: string; title?: string }): React.JSX.Element {
+  const cwd = useContext(MarkdownImageDirectory)
+  const [result, setResult] = useState<{ src: string; cwd?: string; data?: string; error?: string } | null>(null)
+  const local = src && imageLink(src) !== null
+  useEffect(() => {
+    if (!src || !local) return
+    let active = true
+    void window.gloss.readMarkdownImage(src, cwd).then(
+      (data) => { if (active) setResult({ src, cwd, data }) },
+      (error: unknown) => { if (active) setResult({ src, cwd, error: error instanceof Error ? error.message : String(error) }) }
+    )
+    return () => { active = false }
+  }, [src, cwd, local])
+  const current = result?.src === src && result?.cwd === cwd ? result : null
+  if (current?.data && !current.error) return <img className="md-local-image" src={current.data} alt={alt ?? ''} title={title} onError={() => setResult({ src: src!, cwd, error: 'Image could not be decoded.' })} />
+  return <span className="md-image" title={current?.error ?? src}>[image{alt ? `: ${alt}` : ''}]{current?.error && <span role="status"> {current.error}</span>}</span>
+}
+
 const baseComponents: Components = {
   a: ({ href, children }) =>
     href && fileLink(href) ? <FileLink href={href}>{children}</FileLink> : href && SAFE_LINK.test(href) ? (
@@ -79,7 +100,7 @@ const baseComponents: Components = {
         {children}
       </span>
     ),
-  img: ({ alt }) => <span className="md-image">[image{alt ? `: ${alt}` : ''}]</span>,
+  img: ({ src, alt, title }) => <LocalImage key={src} src={src} alt={alt} title={title} />,
   // The code's text without a trailing newline (the code node's value).
   pre: ({ node, children }) => <CodeBlock code={textOf(node as HastNode).replace(/\n$/, '')}>{children}</CodeBlock>
 }
@@ -189,7 +210,7 @@ export function Markdown({ text, anchors, breaks, listItemReplies = true }: { te
   return (
     <div className={anchors && listItemReplies ? 'md with-anchors' : 'md'}>
       <ReactMarkdown
-        urlTransform={(url) => fileLink(url) ? url : defaultUrlTransform(url)}
+        urlTransform={(url, key) => key === 'src' ? (imageLink(url) !== null ? url : '') : fileLink(url) ? url : defaultUrlTransform(url)}
         remarkPlugins={[
           remarkGfm,
           ...(breaks ? [remarkBreaks] : []),

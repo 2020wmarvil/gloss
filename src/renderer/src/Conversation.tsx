@@ -127,6 +127,7 @@ export function Conversation(props: Props): React.JSX.Element {
         <span className="agent-name">{agentName}</span>
       </header>
       <Log
+        cwd={open.session.cwd}
         className="log"
         items={logItems(open, notices, null)}
         empty={<h2 className="new-hint">What should {agentName} do in {folderName(session.cwd)}?</h2>}
@@ -146,6 +147,7 @@ export function Conversation(props: Props): React.JSX.Element {
         onOpenQueue={props.onOpenQueue}
       />
       <Composer
+        sessionId={open.session.id}
         draftKey={session.id}
         className="composer"
         placeholder="Message the agent"
@@ -159,6 +161,7 @@ export function Conversation(props: Props): React.JSX.Element {
         queue={props.composerQueue}
         onSend={props.onSend}
         onSteer={live.steering && runningThread === null ? props.onSteer : undefined}
+        onInterrupt={props.onCancel}
         onCancel={runningThread === null ? props.onCancel : undefined}
       />
       <StatusLine

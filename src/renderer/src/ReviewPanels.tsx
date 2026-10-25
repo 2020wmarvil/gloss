@@ -241,6 +241,7 @@ export function GeneralPanel(props: {
         </button>
       </header>
       <Log
+        cwd={open.session.cwd}
         className="thread-log"
         items={logItems(open, props.notices, null)}
         empty={
@@ -257,6 +258,7 @@ export function GeneralPanel(props: {
         reveal={props.reveal}
       />
       <Composer
+        sessionId={open.session.id}
         draftKey={open.session.id}
         className="thread-composer"
         placeholder="Message about the whole change"
@@ -270,6 +272,7 @@ export function GeneralPanel(props: {
         queue={props.queue}
         onSend={props.onSend}
         onSteer={live.steering && runningHere ? props.onSteer : undefined}
+        onInterrupt={props.onCancel}
         onCancel={runningHere ? props.onCancel : undefined}
       />
     </aside>

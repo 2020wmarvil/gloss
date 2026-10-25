@@ -5,7 +5,7 @@ import { useEffect, useImperativeHandle, useLayoutEffect, useRef, type Ref } fro
 import { history, historyKeymap, standardKeymap } from '@codemirror/commands'
 import { deleteMarkupBackward, insertNewlineContinueMarkupCommand, markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language'
-import { EditorSelection, EditorState, Prec, type ChangeSpec, type StateCommand } from '@codemirror/state'
+import { Compartment, EditorSelection, EditorState, Prec, type ChangeSpec, type StateCommand } from '@codemirror/state'
 import { EditorView, keymap, placeholder as placeholderExt } from '@codemirror/view'
 import type { SyntaxNode } from '@lezer/common'
 import { tags } from '@lezer/highlight'
@@ -21,6 +21,8 @@ type Props = {
   onChange(value: string): void
   placeholder: string
   ariaLabel: string
+  /** Literal command input, without Markdown formatting or list continuation. */
+  plainText?: boolean
   /** Runs before the editor's own keys; return true when it handled the key. */
   onKeyDown?(e: KeyboardEvent): boolean
   /** Enter outside a code block (`send`), or Ctrl/Cmd+Enter (`steer`, also in one). */
@@ -230,6 +232,7 @@ const theme = EditorView.theme({
 export function MarkdownEditor(props: Props): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
+  const language = useRef(new Compartment())
   /** Kept after the view is gone, so a draft can save it while unmounting. */
   const lastSelection = useRef<[number, number]>([0, 0])
   // The editor is built once; its handlers read the latest props.
@@ -250,7 +253,7 @@ export function MarkdownEditor(props: Props): React.JSX.Element {
   // A layout effect, so the editor exists when the composer restores a draft's caret.
   useLayoutEffect(() => {
     const submit = (how: 'send' | 'steer'): StateCommand => ({ state }) => {
-      if (how === 'send' && inCodeBlock(state, state.selection.main.head)) return false
+      if (!latest.current.plainText && how === 'send' && inCodeBlock(state, state.selection.main.head)) return false
       latest.current.onSubmit(how)
       return true
     }
@@ -263,8 +266,10 @@ export function MarkdownEditor(props: Props): React.JSX.Element {
           EditorView.lineWrapping,
           placeholderExt(latest.current.placeholder),
           EditorView.contentAttributes.of({ 'aria-label': latest.current.ariaLabel, 'aria-multiline': 'true' }),
-          markdown({ base: markdownLanguage, addKeymap: false, completeHTMLTags: false }),
-          syntaxHighlighting(highlight),
+          language.current.of(latest.current.plainText ? [] : [
+            markdown({ base: markdownLanguage, addKeymap: false, completeHTMLTags: false }),
+            syntaxHighlighting(highlight)
+          ]),
           theme,
           Prec.highest(
             EditorView.domEventHandlers({
@@ -284,7 +289,7 @@ export function MarkdownEditor(props: Props): React.JSX.Element {
               { key: 'Enter', run: submit('send') },
               { key: 'Enter', run: newline },
               { key: 'Mod-Enter', run: submit('steer') },
-              { key: 'Shift-Enter', run: (target) => continueList(target) || newline(target) },
+              { key: 'Shift-Enter', run: (target) => (!latest.current.plainText && continueList(target)) || newline(target) },
               { key: 'Backspace', run: deleteMarkupBackward },
               { key: 'Tab', run: shiftListItem(1) },
               { key: 'Tab', run: indentLines(1) },
@@ -312,6 +317,13 @@ export function MarkdownEditor(props: Props): React.JSX.Element {
       view.current = null
     }
   }, [])
+
+  useEffect(() => {
+    view.current?.dispatch({ effects: language.current.reconfigure(props.plainText ? [] : [
+      markdown({ base: markdownLanguage, addKeymap: false, completeHTMLTags: false }),
+      syntaxHighlighting(highlight)
+    ]) })
+  }, [props.plainText])
 
   // Text set from outside (cleared after sending, a completed slash command) replaces the document.
   useEffect(() => {

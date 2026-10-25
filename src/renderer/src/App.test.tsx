@@ -140,6 +140,7 @@ it('shows where the agent works and what waits, jumps there, and lists the queue
         queue: { items: [{ id: 'q1', threadId: 't1', text: 'then this', attachments: [] }, { id: 'q2', threadId: null, text: 'main next', attachments: [] }], paused: false }
       })
     },
+    cancel: vi.fn(async () => {}),
     queue: { remove, edit: async () => {}, resume: async () => {} },
     git: { status: async () => null, pullRequest: async () => null },
     onEvent: () => () => {}
@@ -195,8 +196,9 @@ it('shows where the agent works and what waits, jumps there, and lists the queue
   await key({ key: 'T', ctrlKey: true, shiftKey: true })
   expect(el.querySelector('aside[aria-label="Thread"]')).not.toBeNull()
 
-  // Escape no longer hides the side panel.
+  // Escape cancels the running turn without hiding the side panel.
   await key({ key: 'Escape' })
+  expect(window.gloss.cancel).toHaveBeenCalledExactlyOnceWith('s')
   expect(el.querySelector('aside[aria-label="Thread"]')).not.toBeNull()
   await act(async () => (el.querySelector('.thread-panel .back') as HTMLButtonElement).click())
   await act(async () => (el.querySelector('.side-tabs [role="tab"]') as HTMLButtonElement).click())

@@ -1,3 +1,4 @@
+import type { RewindSeed } from './rewind'
 // SQLite persistence (node:sqlite). For agents that share their sessions, the log is a
 // cache of the agent's own copy; threads and the rest are Gloss's own (SPEC → Shared sessions).
 import { DatabaseSync } from 'node:sqlite'
@@ -182,7 +183,12 @@ const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   // A review nothing was sent in yet (SPEC → Review sessions).
   (db) => {
     if (!db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'draft')) db.exec('ALTER TABLE sessions ADD COLUMN draft INTEGER')
-  }
+  },
+  `CREATE TABLE IF NOT EXISTS session_rewinds (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+    prefix_entries INTEGER NOT NULL,
+    context TEXT
+  );`
 ]
 
 function addPermissionColumns(db: DatabaseSync): void {
@@ -536,10 +542,31 @@ export class Store {
 
   /** Removes the session's messages, tool calls, plans and threads (to rebuild them). */
   clearLog(sessionId: string): void {
+    this.db.prepare('DELETE FROM session_rewinds WHERE session_id = ?').run(sessionId)
     this.db.prepare('DELETE FROM plans WHERE session_id = ?').run(sessionId)
     this.db.prepare('DELETE FROM threads WHERE session_id = ?').run(sessionId)
     this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId)
     this.db.prepare('DELETE FROM tool_calls WHERE session_id = ?').run(sessionId)
+  }
+
+  /** Remove the selected user message and everything after it, including anchored threads. */
+  rewindLog(sessionId: string, seq: number, prefixEntries: number, seed: RewindSeed | null, at?: number): void {
+    this.db.prepare('DELETE FROM plans WHERE session_id = ? AND seq >= ?').run(sessionId, seq)
+    this.db.prepare('DELETE FROM tool_calls WHERE session_id = ? AND message_seq >= ?').run(sessionId, seq)
+    this.db.prepare('DELETE FROM messages WHERE session_id = ? AND seq >= ?').run(sessionId, seq)
+    if (at !== undefined) this.db.prepare('DELETE FROM threads WHERE session_id = ? AND anchor_message_id IS NULL AND created_at > ?').run(sessionId, at)
+    this.db.prepare(`INSERT INTO session_rewinds (session_id, prefix_entries, context) VALUES (?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET prefix_entries = excluded.prefix_entries, context = excluded.context`)
+      .run(sessionId, prefixEntries, seed ? JSON.stringify(seed) : null)
+  }
+
+  rewindState(sessionId: string): { prefixEntries: number; context: RewindSeed | null } | null {
+    const row = this.db.prepare('SELECT prefix_entries, context FROM session_rewinds WHERE session_id = ?').get(sessionId)
+    return row ? { prefixEntries: Number(row.prefix_entries), context: row.context ? JSON.parse(row.context as string) as RewindSeed : null } : null
+  }
+
+  rewindContextSent(sessionId: string): void {
+    this.db.prepare('UPDATE session_rewinds SET context = NULL WHERE session_id = ?').run(sessionId)
   }
 
   listMessages(sessionId: string): Message[] {

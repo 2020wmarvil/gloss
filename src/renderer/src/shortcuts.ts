@@ -43,10 +43,14 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: [['Mod', 'Z'], ['Mod', 'Shift', 'Z']], action: 'Undo, redo' },
       { keys: [['Mod', 'Enter']], action: 'Send, including inside a code block (steers the active thread when supported)' },
       { keys: [['Alt', 'Enter']], action: 'Queue for after the running turn, instead of steering it' },
-      { keys: [['/']], action: 'At the start, list the slash commands' },
+      { keys: [['/']], action: 'At the start, list agent commands and local composer actions' },
+      { keys: [['@']], action: 'Attach context or browse paths, including Downloads and files outside the project' },
+      { keys: [['!']], action: 'At the start, use monospace shell mode to run a command directly' },
+      { keys: [['Mod', 'S']], action: 'Stash, restore or swap drafts, including attachments' },
+      { keys: [['Mod', 'G']], action: 'Edit the prompt in an external editor' },
       { keys: [['↑'], ['↓']], action: 'Move through the slash commands' },
       { keys: [['Tab'], ['Enter']], action: 'Complete the slash command (Enter on an exact match sends it)' },
-      { keys: [['Esc']], action: 'Dismiss the slash commands; otherwise, in the working thread, cancel the turn' }
+      { keys: [['Esc']], action: "Dismiss completions or cancel the active turn; double-tap to clear the draft, or browse rewind points when empty" }
     ]
   },
   {

@@ -2148,11 +2148,54 @@ button.settings-button.on {
   text-decoration: underline dotted;
 }
 
+.md-local-image {
+  display: block;
+  max-width: 100%;
+  max-height: 640px;
+  object-fit: contain;
+  object-position: left;
+  margin: 8px 0;
+}
+
 .md-image {
   color: var(--muted);
 }
 
 /* Composer */
+
+.shell-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  color: var(--muted);
+  font-size: var(--t-12);
+}
+.editor-status { margin: 6px 0; color: var(--muted); font-size: var(--t-12); }
+.command-mode .md-editor {
+  padding: 2px 12px;
+  background: var(--code-bg);
+  color: var(--code-ink);
+  border-radius: var(--r-md);
+  box-shadow: var(--sink);
+}
+.command-mode .md-editor .cm-content, .command-mode .md-editor .cm-content span { font-family: var(--font-mono); }
+.command-mode .md-editor .cm-content { caret-color: var(--code-ink); }
+
+.dialog.rewind-menu { width: 550px; padding: 0; overflow: hidden; outline: none; border: 1px solid var(--line); }
+.rewind-menu .rewind-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding: 20px 22px 17px; border-bottom: 1px solid var(--line); }
+.rewind-menu .rewind-head h2 { font-size: var(--t-17); font-weight: 550; letter-spacing: -.025em; margin: 0; }
+.rewind-menu ul { list-style: none; padding: 7px; margin: 0; max-height: min(334px, 45vh); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; outline: none; }
+.rewind-menu li { position: relative; cursor: pointer; border: 1px solid transparent; border-radius: var(--r-md); padding: 12px 13px; color: var(--ink); }
+.rewind-menu li + li { margin-top: 3px; }
+.rewind-menu li.on { background: color-mix(in srgb, var(--accent) 8%, var(--raised)); border-color: color-mix(in srgb, var(--accent) 24%, transparent); }
+.rewind-menu li.on::before { content: ''; position: absolute; width: 2px; left: -1px; top: 13px; bottom: 13px; background: var(--accent); border-radius: 2px; }
+.rewind-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: var(--t-13); line-height: 1.55; }
+.rewind-row > span { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.rewind-row > svg { flex: none; color: var(--accent); visibility: hidden; }
+.rewind-menu li.on .rewind-row > svg { visibility: visible; }
+.rewind-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 5px; color: var(--muted); font-size: var(--t-11); }
+.rewind-menu .rewind-empty, .rewind-menu .rewind-error { margin: 16px 22px; font-size: var(--t-13); }
 
 .composer {
   padding: 12px 32px 20px;
@@ -5891,74 +5934,46 @@ button.review-changes {
   padding-left: 22px;
 }
 
-/* A capture in the composer: the flattened image, its pin count and, on hover, Edit. */
-.attachment.capture {
-  border: 0;
-  box-shadow: inset 0 0 0 1px var(--line);
-  max-width: none;
-}
+/* Compact attachment strip (docs/mocks/composer-review.html, option B). */
+.composer-input { min-width: 0; }
+.composer-actions { justify-content: space-between; }
+.composer-send-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.box:not(.has-attachments) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+.box:not(.has-attachments).can-attach { grid-template-columns: var(--control) minmax(0, 1fr) auto; }
+.box:not(.has-attachments) .composer-input { grid-row: 1; grid-column: 1; }
+.box:not(.has-attachments).can-attach .composer-input { grid-column: 2; }
+.box:not(.has-attachments) .composer-actions { display: contents; }
+.box:not(.has-attachments) .composer-send-actions { grid-row: 1; grid-column: 2; }
+.box:not(.has-attachments).can-attach .composer-send-actions { grid-column: 3; }
+.box:not(.has-attachments) .composer-actions > .popover-anchor { grid-row: 1; grid-column: 1; }
+.composer-attachments { min-width: 0; padding: 2px 3px; }
+.attachment-strip { display: flex; align-items: center; gap: 10px; overflow-x: auto; overscroll-behavior: contain; scrollbar-width: thin; list-style: none; padding: 2px 0 5px; margin: 0; }
+.attachment-strip .attachment.capture { display: flex; align-items: center; gap: 10px; flex: 0 0 260px; max-width: calc(100vw - 96px); padding: 7px; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-md); }
+.attachment.capture .capture-preview { width: 94px; height: 74px; flex: none; margin: 0; padding: 0; background: transparent; display: flex; align-items: center; justify-content: center; cursor: zoom-in; }
+.attachment.capture img { width: auto; height: auto; max-width: 94px; max-height: 74px; object-fit: contain; border-radius: 3px; }
+.capture-details { min-width: 0; flex: 1; }
+.capture-filename { font-size: var(--t-11); color: var(--ink); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.capture-meta { font-size: var(--t-11); color: var(--muted); margin-top: 4px; }
+.capture-pins { display: inline-flex; align-items: center; gap: 3px; }
+.capture-actions { display: flex; justify-content: space-between; align-items: center; gap: 2px; margin-top: 6px; }
+.attachment.capture .capture-edit { position: static; display: inline-flex; align-items: center; gap: 5px; width: auto; height: 28px; padding: 4px 2px; margin: 0; color: var(--ink-2); background: transparent; font: 500 var(--t-12) var(--font-ui); }
+.attachment.capture .attachment-remove { position: static; width: 28px; height: 28px; padding: 0; margin: 0 0 0 auto; display: grid; place-items: center; color: var(--muted); background: transparent; }
+.attachment.capture .capture-edit:hover, .attachment-remove:hover { background: var(--hover); color: var(--ink); }
+.attachment-files { display: flex; gap: 8px; flex-wrap: wrap; list-style: none; padding: 0; margin: 5px 0 0; }
+.attachment-files .attachment { max-width: 100%; padding: 2px 3px 2px 8px; gap: 6px; }
+.attachment-files .attachment > svg { flex: none; color: var(--muted); }
+.attachment-files .attachment-name { padding: 0; font-family: var(--font-ui); }
+.attachment-files .attachment-remove { width: 24px; height: 24px; display: grid; place-items: center; margin: 0; padding: 0; }
+.attachment-preview-dialog { max-width: min(96vw, 1400px); background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px; box-shadow: var(--shadow-3); }
+.attachment-preview-dialog > img { display: block; max-width: 100%; max-height: 75vh; width: auto; height: auto; object-fit: contain; }
+.attachment-preview-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 12px; font-size: var(--t-12); color: var(--muted); }
+.attachment-preview-dialog footer > span { min-width: 0; overflow-wrap: anywhere; }
+.attachment-preview-dialog footer button { flex: none; border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--ink-2); padding: 6px 10px; }
 
-.attachment.capture img {
-  height: 72px;
-  max-width: 200px;
-  object-fit: contain;
-  background: var(--sunken);
-}
-
-.capture-edit {
-  position: absolute;
-  inset: 0;
-  display: none;
-  place-items: center;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: rgba(28, 27, 24, 0.45);
-  color: #fff;
-  font: 500 var(--t-12) / 1 var(--font-ui);
-}
-
-.attachment.capture:hover .capture-edit,
-.capture-edit:focus-visible {
-  display: grid;
-}
-
-.capture-edit span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.pin-pill {
-  position: absolute;
-  left: 4px;
-  bottom: 4px;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  height: 18px;
-  padding: 0 6px 0 4px;
-  border-radius: var(--r-pill);
-  background: var(--pin);
-  color: #fff;
-  font: 600 var(--t-11) / 1 var(--font-ui);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  pointer-events: none;
-}
-
-.attachment.capture .attachment-remove {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  z-index: 1;
-  margin: 0;
-  background: rgba(255, 255, 255, 0.85);
-  color: #3a3833;
-}
-
-/* An annotated screenshot in a sent message: wider bubble, the image, then the pins' notes. */
-.you.has-capture {
-  max-width: min(560px, 85%);
-}
+/* Sent images sit below the text bubble, without its background or padding. */
+.sent-message { display: flex; flex-direction: column; min-width: 0; }
+.sent-images { align-self: flex-end; max-width: min(560px, 85%); }
+.sent-images .capture-figure { margin: 10px 0 0; }
 
 .capture-figure {
   margin: 10px 0 2px;

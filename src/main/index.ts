@@ -15,6 +15,9 @@ import { BADGE_LABEL, BADGE_SIZE, badgePixels } from './badge'
 import { patchArg, SettingsFile } from './settings'
 import { editorArgs, launchEditor } from './openFile'
 import { fileLink } from '../shared/fileLink'
+import { readMarkdownImage } from './markdownImage'
+import { registerComposerIpc } from './composerIpc'
+import { takeForeground } from './foreground'
 import { runInTerminal } from './terminal'
 import { registerCaptureIpc, startCapture } from './capture'
 import { normalizeShortcut, shortcutLabel } from '../shared/shortcut'
@@ -459,7 +462,19 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     manager.agentSessions(folderArg(path, 'path'), str(agentId, 'agentId'))
   )
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
+  registerComposerIpc(store!, () => mainWindow?.webContents, () => settingsFile.state().global.externalEditor, () => {
+    const win = mainWindow
+    if (!win || win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    void takeForeground(win.getNativeWindowHandle())
+  })
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
+  ipcMain.handle(IPC.readMarkdownImage, (e, src: unknown, cwd: unknown) => {
+    if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can load images.')
+    return readMarkdownImage(str(src, 'src'), cwd === undefined ? undefined : folderArg(cwd, 'cwd'))
+  })
   ipcMain.handle(IPC.openFileLink, async (_e, href: unknown) => {
     const link = fileLink(str(href, 'href'))
     if (!link || !isAbsolute(link.path)) throw new Error('Expected an absolute local file path.')
@@ -535,6 +550,23 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
         typeof listedAt === 'string' ? listedAt : undefined
       )
   )
+  ipcMain.handle(IPC.sessionsRewindPoints, (e, id: unknown) => {
+    if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can rewind.')
+    const sessionId = str(id, 'id')
+    const session = store!.getSession(sessionId)
+    if (!session) throw new Error('Session no longer exists.')
+    const messages = store!.listMessages(sessionId)
+    return messages.flatMap((m, index) => m.role === 'user' ? [{ id: m.id, text: m.text.slice(0, 500), threadId: m.threadId, createdAt: m.createdAt, laterMessages: messages.length - index - 1, sessionTitle: session.title, outcome: m.outcome }] : []).reverse()
+  })
+  ipcMain.handle(IPC.sessionsRewind, async (e, id: unknown, messageId: unknown) => {
+    if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can rewind.')
+    const sessionId = str(id, 'id')
+    const targetId = str(messageId, 'messageId')
+    const message = store!.listMessages(sessionId).find((m) => m.id === targetId && m.role === 'user')
+    if (!message) throw new Error('That rewind point no longer exists.')
+    await manager.rewindSession(sessionId, targetId)
+    return { text: message.text, attachments: message.attachments ?? [] }
+  })
   ipcMain.handle(IPC.sessionsOpen, (_e, id: unknown) => manager.openSession(str(id, 'id')))
   ipcMain.handle(IPC.sessionsRefresh, (_e, id: unknown) => manager.refreshSession(str(id, 'id')))
   ipcMain.handle(IPC.sessionsRename, (_e, id: unknown, title: unknown) =>

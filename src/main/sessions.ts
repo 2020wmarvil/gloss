@@ -1,6 +1,7 @@
 // Owns agent connections, session attachment, turns and sign-in.
 // The agent sees one linear ACP session per Gloss session. When the agent can load
 // its sessions, its copy is the source of truth for the log (SPEC → Shared sessions).
+import { rewindSeed } from './rewind'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import type * as acp from '@agentclientprotocol/sdk'
@@ -112,6 +113,8 @@ type Turn = {
 }
 
 type SessionRuntime = {
+  rewinding?: boolean
+  resetting?: boolean
   mcpFingerprint?: string
   /** A review's range changed: told to the agent at the start of the next message (SPEC → Review sessions). */
   rangeNote?: string
@@ -758,6 +761,7 @@ export class SessionManager {
    */
   async refreshSession(id: string): Promise<void> {
     const rt = this.runtimes.get(id)
+    if (rt?.rewinding || rt?.resetting) return
     // A load in progress gets the latest history; then check again.
     await rt?.attaching?.promise.catch(() => {})
     const conn = rt?.attachedTo
@@ -788,6 +792,7 @@ export class SessionManager {
   async deleteSession(id: string): Promise<string | null> {
     const session = this.session(id)
     const rt = this.runtime(id)
+    if (rt.rewinding || rt.resetting) throw new Error('Wait for conversation reset or rewind to finish.')
     if (rt.turn) await this.cancel(id)
     let warning: string | null = null
     try {
@@ -821,9 +826,18 @@ export class SessionManager {
    * along with the session's messages, tool calls, threads and queue.
    */
   async clearSession(id: string): Promise<void> {
+    const rt = this.runtime(id)
+    if (rt.resetting || rt.rewinding) throw new Error('Wait for conversation reset to finish.')
+    rt.resetting = true
+    try { await this.doClearSession(id) }
+    finally { rt.resetting = false }
+  }
+
+  private async doClearSession(id: string): Promise<void> {
     let session = this.session(id)
     const servers = this.mcpServers(session.cwd)
     const rt = this.runtime(id)
+    if (rt.rewinding) throw new Error('Wait for conversation reset or rewind to finish.')
     if (rt.turn) throw new Error('Cancel the running turn before clearing the session.')
     // A resume in progress would attach the old agent session after this.
     await rt.attaching?.promise.catch(() => {})
@@ -836,6 +850,7 @@ export class SessionManager {
       mode = await this.applyMode(session.agentId, session.cwd, session, c, created.sessionId, created.modes)
       return created
     })
+    if (rt.rewinding) throw new Error('Wait for conversation reset or rewind to finish.')
     if (rt.turn) throw new Error('Cancel the running turn before clearing the session.')
 
     const old = session.acpSessionId
@@ -862,6 +877,41 @@ export class SessionManager {
         if (hadMessages) this.notice(id, null, `Cleared, but the agent couldn't delete the old conversation: ${errorMessage(err)}`)
       }
     }
+  }
+
+  /** Rewind the whole linear conversation, rebuilding the agent context on the next prompt. */
+  async rewindSession(id: string, messageId: string): Promise<void> {
+    const original = this.session(id)
+    const rt = this.runtime(id)
+    if (rt.rewinding || rt.resetting || rt.turn || rt.queue.items.length) throw new Error('Finish or cancel the running turn and clear queued messages before rewinding.')
+    rt.rewinding = true
+    try {
+      await rt.attaching?.promise.catch(() => {})
+      const target = this.deps.store.listMessages(id).find((m) => m.id === messageId && m.role === 'user')
+      if (!target) throw new Error('That rewind point no longer exists.')
+      const messages = this.deps.store.listMessages(id).filter((m) => m.seq < target.seq)
+      const tools = this.deps.store.listToolCalls(id).filter((t) => t.messageSeq < target.seq)
+      const plans = this.deps.store.listPlans(id).filter((p) => p.seq < target.seq)
+      // Persist the retained context before changing the visible log. Agent startup
+      // belongs to attach, so it never holds the rewind UI or restored draft hostage.
+      const seed = rewindSeed(messages, tools, this.deps.store.listThreads(id))
+      const pendingId = `gloss-rewind:${randomUUID()}`
+      this.deps.store.transaction(() => {
+        this.deps.store.rewindLog(id, target.seq, messages.length + tools.length + plans.length, seed, target.createdAt)
+        this.deps.store.updateSession(id, { acpSessionId: pendingId, syncedAt: null })
+        this.deps.store.addDeletedAgentSession(original.agentId, original.acpSessionId)
+      })
+      const conn = rt.attachedTo
+      this.byAcpId.delete(original.acpSessionId)
+      rt.attachedTo = undefined
+      rt.mcpFingerprint = undefined
+      rt.failures?.clear()
+      this.withdrawRequests(id)
+      this.setLive(id, { usage: null, attached: false })
+      this.deps.emit({ type: 'session', session: this.session(id) })
+      this.deps.emit({ type: 'sessionRewound', sessionId: id })
+      if (conn?.canCloseSessions) void conn.closeSession(original.acpSessionId).catch(() => {})
+    } finally { rt.rewinding = false }
   }
 
   /** Picks the session's model or effort via the agent's config option, and saves it on the session. */
@@ -1113,6 +1163,8 @@ export class SessionManager {
     const session = this.session(sessionId)
     const servers = this.mcpServers(session.cwd)
     conn.validateMcp(servers)
+    if (session.acpSessionId.startsWith('gloss-rewind:')) return this.replaceAgentSession(sessionId, conn, false)
+    if (!conn.canLoadSession && this.deps.store.rewindState(sessionId)?.context) return this.replaceAgentSession(sessionId, conn, false)
     if (!conn.canLoadSession) throw new Error('This agent cannot resume previous sessions. The conversation is preserved here. Create a new conversation to continue with this agent.')
 
     // The agent's last change, before the load changes it: the time of what the replay adds.
@@ -1133,7 +1185,7 @@ export class SessionManager {
       }
       // Deleted outside Gloss. A session that never had a message has no saved
       // history (Claude Code writes none until the first prompt): nothing is lost.
-      if (this.deps.store.countUserMessages(sessionId) > (rt.turn?.unsent ? 1 : 0)) {
+      if (!this.deps.store.rewindState(sessionId)?.context && this.deps.store.countUserMessages(sessionId) > (rt.turn?.unsent ? 1 : 0)) {
         this.removeDeletedOutside(sessionId)
         throw new SessionGoneError()
       }
@@ -1263,7 +1315,9 @@ export class SessionManager {
       ...store.listToolCalls(sessionId).map((toolCall): CachedEntry => ({ type: 'toolCall', toolCall })),
       ...store.listPlans(sessionId).map((plan): CachedEntry => ({ type: 'plan', plan }))
     ].sort((a, b) => seqOf(a) - seqOf(b))
-    const { log, removed } = matchReplay(cached, parseReplay(updates))
+    const prefix = this.deps.store.rewindState(sessionId)?.prefixEntries ?? 0
+    const { log, removed } = matchReplay(cached.slice(prefix), parseReplay(updates))
+    log.unshift(...cached.slice(0, prefix).map((entry) => ({ cached: entry })))
     const last = messages.find((m) => m.id === unsent)
     if (last) log.push({ cached: { type: 'message', message: last } })
 
@@ -1487,6 +1541,7 @@ export class SessionManager {
       return { cleared: true }
     }
     const rt = this.runtime(sessionId)
+    if (rt.rewinding || rt.resetting) throw new Error('Wait for conversation reset or rewind to finish.')
     if (rt.turn) {
       if (rt.turn.threadId === threadId && rt.live.steering) {
         return this.steer(sessionId, text, threadId, attachments, fromThread)
@@ -1623,8 +1678,10 @@ export class SessionManager {
   ): Promise<TurnResult> {
     let session = this.session(sessionId)
     const rt = this.runtime(sessionId)
+    if (rt.rewinding || rt.resetting) throw new Error('Wait for conversation reset or rewind to finish.')
     if (rt.turn) throw new Error('A turn is already running in this session.')
-    const wire = originalWire ?? this.wire(sessionId, text, threadId, attachments, fromThread)
+    const seed = this.deps.store.rewindState(sessionId)?.context
+    const wire = originalWire ?? `${seed?.text ?? ''}${this.wire(sessionId, text, threadId, attachments, fromThread)}`
     // Only a session still named after its folder takes its title from the first message.
     const retitle = this.deps.store.countUserMessages(sessionId) === 0 && session.title === folderName(session.cwd)
     const message: Message = {
@@ -1639,7 +1696,7 @@ export class SessionManager {
       createdAt: this.now()
     }
     this.deps.store.insertMessage(message)
-    this.told(sessionId, wire)
+    this.told(sessionId, seed && wire.startsWith(seed.text) ? wire.slice(seed.text.length) : wire)
     this.deps.emit({ type: 'message', message })
     this.listDraft(sessionId)
     if (retitle) {
@@ -1664,13 +1721,14 @@ export class SessionManager {
         result = { stopReason: 'cancelled' }
       } else {
         attachedTo = conn
-        const prompt = promptBlocks(wire, attachments, conn.promptCapabilities)
+        const prompt = promptBlocks(wire, [...(seed?.images ?? []), ...attachments], conn.promptCapabilities)
         const slot = this.slot(session.agentId)
         slot.activePrompts++
         turn.unsent = undefined
         try {
           const res = await conn.prompt(acpSessionId, prompt)
           result = { stopReason: res.stopReason }
+          if (seed) this.deps.store.rewindContextSent(sessionId)
         } finally {
           slot.activePrompts--
         }
@@ -1692,7 +1750,9 @@ export class SessionManager {
       recovery = { messageId: message.id, action: 'retry' }
     }
     // The turn changed the agent's copy: remember its updatedAt so it isn't taken for a change made elsewhere.
-    if (attachedTo) await this.recordSynced(sessionId, attachedTo)
+    // Cancellation must reach the UI without waiting for session/list. A later
+    // refresh can reconcile the timestamp if the user keeps this conversation.
+    if (attachedTo && result.stopReason !== 'cancelled') await this.recordSynced(sessionId, attachedTo)
     rt.turn = undefined
     this.recordOutcome(turn, result)
     this.closeToolCalls(sessionId, turn, result)
@@ -1774,7 +1834,7 @@ export class SessionManager {
   /** Starts the next queued message if the session is idle and its queue isn't paused. */
   private drain(sessionId: string): void {
     const rt = this.runtimes.get(sessionId)
-    if (!rt || rt.turn || rt.queue.paused) return
+    if (!rt || rt.rewinding || rt.resetting || rt.turn || rt.queue.paused) return
     const [next, ...rest] = rt.queue.items
     if (!next) return
     this.setQueue(sessionId, { items: rest, paused: false })

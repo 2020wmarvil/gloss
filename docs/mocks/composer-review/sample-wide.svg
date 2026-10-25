@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="440" viewBox="0 0 1100 440">
+  <rect width="1100" height="440" rx="14" fill="#141312"/>
+  <rect x="0" y="0" width="1100" height="42" rx="14" fill="#262522"/>
+  <circle cx="22" cy="21" r="5" fill="#ff5c9e"/><text x="38" y="27" fill="#d4d1c8" font-family="Segoe UI,sans-serif" font-size="16">Gloss · Composer improvements</text>
+  <text x="38" y="95" fill="#efeee9" font-family="Segoe UI,sans-serif" font-size="23">Keep the image in view.</text>
+  <text x="38" y="132" fill="#a39f96" font-family="Segoe UI,sans-serif" font-size="17">Controls should be easy to find without covering the screenshot.</text>
+  <rect x="38" y="175" width="1024" height="58" rx="10" fill="#262522"/><circle cx="60" cy="204" r="5" fill="#6cc070"/>
+  <text x="78" y="211" fill="#d4d1c8" font-family="Segoe UI,sans-serif" font-size="18">Done in main conversation</text>
+  <rect x="38" y="250" width="1024" height="118" rx="14" fill="#1c1b19" stroke="#3e3b36"/>
+  <text x="60" y="287" fill="#efeee9" font-family="Segoe UI,sans-serif" font-size="19">Please review the new attachment layout.</text>
+  <rect x="60" y="312" width="183" height="32" rx="6" fill="#0f0e0d"/><text x="73" y="333" fill="#a39f96" font-family="Segoe UI,sans-serif" font-size="15">composer-notes.md</text>
+  <rect x="969" y="311" width="66" height="34" rx="8" fill="#ff5c9e"/><text x="984" y="334" fill="#17040e" font-family="Segoe UI,sans-serif" font-size="16">Send</text>
+  <text x="40" y="411" fill="#7d796f" font-family="Segoe UI,sans-serif" font-size="15">6.1 Sol    ·    Medium    ·    Full access</text>
+</svg>
