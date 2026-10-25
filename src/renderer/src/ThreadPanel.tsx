@@ -44,6 +44,7 @@ type Props = {
   onSaveMarkdown(threadId: string): void
   /** Scrolls the main conversation to the thread's anchor; absent when it isn't shown there. */
   onFindInMain?(): void
+  onRevealMain(message: Message): void
   /** A line thread's place in the review's diff now (SPEC → Review sessions). */
   location?: Location
   /** Resolves or reopens a line thread. */
@@ -130,6 +131,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
           </p>
         }
         renderAgent={(m) => <Markdown text={m.text} />}
+        onRevealMain={props.onRevealMain}
         reveal={props.reveal}
         pins={pinAnchorsFor(open, panel, runningThread, props.onOpenPin)}
         footer={<>
@@ -230,6 +232,7 @@ function LineThreadPanel(
           thread?.finding ? null : <p className="muted empty">No replies yet. Your first message starts a thread on these lines.</p>
         }
         renderAgent={(m) => <Markdown text={m.text} />}
+        onRevealMain={props.onRevealMain}
         reveal={props.reveal}
         footer={<>
           <Composer

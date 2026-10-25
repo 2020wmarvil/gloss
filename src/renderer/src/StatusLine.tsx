@@ -252,9 +252,8 @@ function ModePicker(props: {
 }
 
 /**
- * Hides the children of a wrapping row that don't fit on its first line, so items drop out
- * from the right as the pane narrows. Hidden rather than clipped: a clipping box would cut
- * off the items' popovers too.
+ * Removes trailing items that don't fit a single row. Clipping would cut off
+ * popovers; invisible wrapped rows would still enlarge the scrollable footer.
  */
 function useFirstLineOnly(): React.RefObject<HTMLSpanElement | null> {
   const ref = useRef<HTMLSpanElement>(null)
@@ -263,18 +262,25 @@ function useFirstLineOnly(): React.RefObject<HTMLSpanElement | null> {
     if (!row || typeof ResizeObserver === 'undefined') return
     const fit = (): void => {
       const items = [...row.children] as HTMLElement[]
-      for (const el of items) el.style.visibility = ''
-      const top = items[0]?.offsetTop ?? 0
-      for (const el of items) if (el.offsetTop > top) el.style.visibility = 'hidden'
+      for (const el of items) el.hidden = false
+      const edge = row.getBoundingClientRect().right
+      let full = false
+      const hidden = items.map((el) => {
+        full ||= el.getBoundingClientRect().right > edge + 0.5
+        return full
+      })
+      items.forEach((el, i) => { el.hidden = hidden[i] })
     }
     fit()
     const resized = new ResizeObserver(fit)
     resized.observe(row)
     const changed = new MutationObserver(fit)
     changed.observe(row, { childList: true, subtree: true, characterData: true })
+    document.fonts?.addEventListener('loadingdone', fit)
     return () => {
       resized.disconnect()
       changed.disconnect()
+      document.fonts?.removeEventListener('loadingdone', fit)
     }
   }, [])
   return ref

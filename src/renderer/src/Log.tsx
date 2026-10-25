@@ -2,6 +2,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useScrollMemory, type ScrollAnchors } from './scrollMemory'
 import type { Message, Plan, ToolCall } from '@shared/types'
+import { threadToMainTag } from '@shared/wire'
 import type { OpenSession } from './App'
 import { Markdown, MarkdownImageDirectory } from './Markdown'
 import { RequestCard } from './RequestCard'
@@ -15,6 +16,7 @@ export type Notice = { id: string; threadId: string | null; text: string; afterS
 
 export type LogItem =
   | { kind: 'message'; seq: number; message: Message }
+  | { kind: 'sentToMain'; seq: number; message: Message }
   | { kind: 'tool'; seq: number; toolCall: ToolCall }
   | { kind: 'plan'; seq: number; plan: Plan }
   | { kind: 'notice'; seq: number; notice: Notice }
@@ -23,7 +25,23 @@ export type LogItem =
 
 /** Messages, tool calls, plans and notices of one thread (null = main), in seq order. */
 export function logItems(open: OpenSession, notices: Notice[], threadId: string | null): LogItem[] {
+  // These are references to existing main messages, not additional agent messages.
+  // Derive them from persisted wire tags so older conversations also show them.
+  const continuations: LogItem[] = []
+  if (threadId !== null) {
+    const active = new Map<string, number>()
+    for (const m of [...open.messages].sort((a, b) => a.seq - b.seq)) {
+      if (m.threadId !== null) { active.set(m.threadId, m.seq); continue }
+      if (m.role !== 'user' || !m.wireText) continue
+      const tag = m.wireText.split('\n', 1)[0]
+      const source = open.threads.filter((t) => threadToMainTag(t.anchor) === tag)
+        .sort((a, b) => (active.get(b.id) ?? -1) - (active.get(a.id) ?? -1) || b.createdAt - a.createdAt)[0]
+      if (source) active.set(source.id, m.seq)
+      if (source?.id === threadId) continuations.push({ kind: 'sentToMain', seq: m.seq, message: m })
+    }
+  }
   return [
+    ...continuations,
     ...open.messages
       .filter((m) => m.threadId === threadId)
       .map((m): LogItem => ({ kind: 'message', seq: m.seq, message: m })),
@@ -63,13 +81,15 @@ type Props = {
   pins?: PinAnchors
   /** Names the log so its scroll position moves with its session to another window (SPEC → Session windows). */
   scrollKey?: string
+  /** Opens the actual main-thread message referenced by a Send to main marker. */
+  onRevealMain?(message: Message): void
 }
 
 /** A log's position: a message, and the paragraph, list item or code block at the top. */
 const LOG_ANCHORS: ScrollAnchors = { item: '[data-message-id]', attr: 'data-message-id', block: 'p, li, pre, h1, h2, h3, h4, h5, h6, blockquote, tr' }
 
 /** A scrolling log that sticks to the bottom while new output arrives. */
-export function Log({ footer, cwd, items, className, empty, renderAgent, reveal, systemLine, pins, scrollKey }: Props): React.JSX.Element {
+export function Log({ footer, cwd, items, className, empty, renderAgent, reveal, systemLine, pins, scrollKey, onRevealMain }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -147,6 +167,15 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
             {groupTools(items).map((item) => {
               if (Array.isArray(item)) return <ToolGroup key={item[0].toolCall.id} tools={item} reveal={reveal} />
               switch (item.kind) {
+                case 'sentToMain':
+                  return (
+                    <div key={`sent-to-main:${item.message.id}`} className="sent-to-main-trace">
+                      <button className="ghost sm" onClick={() => onRevealMain?.(item.message)} title="Show this message in the main conversation">
+                        Sent to main <ChevronRight aria-hidden />
+                      </button>
+                      <p>{item.message.text || item.message.attachments?.map((a) => a.name).join(', ')}</p>
+                    </div>
+                  )
                 case 'message': {
                   const line = item.message.role === 'user' ? systemLine?.(item.message) : null
                   if (line) {

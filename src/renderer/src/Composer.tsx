@@ -9,6 +9,7 @@ import { ArrowUp, Clock, CornerDownRight, Ellipsis, Paperclip, Pencil, Scan, Squ
 import { ComposerAttachments } from './ComposerAttachments'
 import { RewindDialog } from './RewindDialog'
 import { Popover } from './Popover'
+import { modKey } from './shortcuts'
 import { AnnotateDialog } from './AnnotateDialog'
 import { loadImage, type Annotation } from './capture/annotate'
 
@@ -608,6 +609,10 @@ export function Composer({
               if (e.isComposing) return false
               if (e.key === 'Escape' && document.querySelector('[role="dialog"], .popover')) return false
               if (e.key !== 'Escape') lastEscape.current = null
+              if (onSendToMain && e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
+                if (!(commandMode && shell.running)) submit('main')
+                return true
+              }
               if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
                 if (e.key.toLowerCase() === 's') { stashDraft(); return true }
                 if (e.key.toLowerCase() === 'g') { void editExternally(); return true }
@@ -708,10 +713,9 @@ export function Composer({
                   <button
                     className="to-main"
                     onClick={() => (close(), submit('main'))}
-                    title={running ? 'Steers the main conversation if it is active, otherwise queues' : undefined}
+                    title={`Send to main (${modKey()}+Shift+Enter)${running ? '. Steers the main conversation if it is active, otherwise queues' : ''}`}
                   >
                     Send to main
-                    <span className="muted">Continue in the main conversation instead of this thread</span>
                   </button>
                 </div>
               )}

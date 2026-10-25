@@ -1891,6 +1891,9 @@ export class SessionManager {
   private onUpdate(agentId: string, n: acp.SessionNotification): void {
     if (this.disposed) return
     const u = n.update
+    // codex-acp emits connection diagnostics as synthetic tools on every resume.
+    // Keep these out of both live turns and history replay; /mcp exposes status.
+    if (agentId === 'codex' && (u.sessionUpdate === 'tool_call' || u.sessionUpdate === 'tool_call_update') && u.toolCallId.startsWith('mcp_startup.')) return
     const sessionId = this.byAcpId.get(n.sessionId)
 
     const limit = u.sessionUpdate === 'usage_update' ? claudeRateLimit(u._meta) : null

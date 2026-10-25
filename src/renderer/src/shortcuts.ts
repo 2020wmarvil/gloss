@@ -42,6 +42,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: [['Mod', 'K']], action: 'Link (pasting a URL over selected text also makes a link)' },
       { keys: [['Mod', 'Z'], ['Mod', 'Shift', 'Z']], action: 'Undo, redo' },
       { keys: [['Mod', 'Enter']], action: 'Send, including inside a code block (steers the active thread when supported)' },
+      { keys: [['Mod', 'Shift', 'Enter']], action: 'Send to main from a thread composer' },
       { keys: [['Alt', 'Enter']], action: 'Queue for after the running turn, instead of steering it' },
       { keys: [['/']], action: 'At the start, list agent commands and local composer actions' },
       { keys: [['@']], action: 'Attach context or browse paths, including Downloads and files outside the project' },

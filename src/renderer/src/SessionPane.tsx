@@ -230,6 +230,7 @@ export function SessionPane(props: Props): React.JSX.Element {
               onSaveMarkdown={(threadId) => exportMarkdown(threadId, 'save')}
               // A review's conversation is in the General panel, which this panel replaces.
               onFindInMain={panel.anchorMessageId !== null && !isReview ? () => s.findInMain(panel) : undefined}
+              onRevealMain={s.revealMessage}
             />
           ) : (
             <ThreadsOverview

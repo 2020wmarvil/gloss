@@ -76,9 +76,42 @@ describe('Store', () => {
     } finally { store.close() }
     const migrated = new DatabaseSync(path)
     try {
-      expect(migrated.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 18 })
+      expect(migrated.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 19 })
       expect(migrated.prepare('PRAGMA foreign_key_check').all()).toEqual([])
       if (branch === 'dev') expect(migrated.prepare('SELECT handoff FROM sessions').get()).toMatchObject({ handoff: 'existing handoff' })
+    } finally { migrated.close() }
+  })
+
+  it('removes saved Codex MCP startup reports and adjusts rewind prefixes without hiding actual tools', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gloss-db-'))
+    dirs.push(dir)
+    const path = join(dir, 'gloss.db')
+    let store = new Store(path)
+    for (const agentId of ['codex', 'claude']) {
+      store.insertSession({ id: agentId, agentId, acpSessionId: agentId, cwd: '/w', title: agentId, createdAt: 1 })
+      store.insertMessage({ id: `${agentId}-prompt`, sessionId: agentId, seq: 0, role: 'user', text: 'hello', threadId: null })
+      store.upsertToolCall({ id: 'mcp_startup.UnityMCP.old', sessionId: agentId, messageSeq: 1, threadId: null, title: 'mcp__UnityMCP__startup', status: 'failed' })
+      store.upsertToolCall({ id: 'real-tool', sessionId: agentId, messageSeq: 2, threadId: null, title: 'mcp__UnityMCP__startup', status: 'failed' })
+      store.rewindLog(agentId, 3, 3, null)
+      // A report outside the retained prefix must not decrement the prefix count.
+      store.upsertToolCall({ id: 'mcp_startup.UnityMCP.later', sessionId: agentId, messageSeq: 4, threadId: null, title: 'startup', status: 'failed' })
+    }
+    store.close()
+    const db = new DatabaseSync(path)
+    db.exec('PRAGMA user_version = 18')
+    db.close()
+    store = new Store(path)
+    try {
+      expect(store.listToolCalls('codex').map((t) => t.id)).toEqual(['real-tool'])
+      expect(store.listToolCalls('claude')).toHaveLength(3)
+      expect(store.rewindState('codex')?.prefixEntries).toBe(2)
+      expect(store.rewindState('claude')?.prefixEntries).toBe(3)
+      expect(store.listMessages('codex')[0].text).toBe('hello')
+    } finally { store.close() }
+    const migrated = new DatabaseSync(path)
+    try {
+      expect(migrated.prepare('SELECT count(*) AS n FROM tool_search').get()).toMatchObject({ n: 4 })
+      expect(migrated.prepare('PRAGMA foreign_key_check').all()).toEqual([])
     } finally { migrated.close() }
   })
 

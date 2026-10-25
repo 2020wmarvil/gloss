@@ -19,6 +19,7 @@ function mount(
     sessionId?: string
     onSend?: (text: string) => void
     onSteer?: (text: string) => void
+    onSendToMain?: (text: string) => void
     commands?: SlashCommand[]
     running?: boolean
     onCancel?: () => void
@@ -47,6 +48,7 @@ function mount(
           paused: false, onEdit: async () => {}, onRemove: async () => {}, onResume: async () => {} }}
         onSend={opts.onSend ?? (() => {})}
         onSteer={opts.onSteer}
+        onSendToMain={opts.onSendToMain}
         onCancel={opts.onCancel}
         history={opts.history}
       />
@@ -87,6 +89,19 @@ const text = (view: EditorView): string => view.state.doc.toString()
 afterEach(unmount)
 
 describe('Composer drafts', () => {
+  it.each(['ctrlKey', 'metaKey'])('sends a thread draft to main with %s+Shift+Enter, including code blocks', (modifier) => {
+    const onSend = vi.fn()
+    const onSteer = vi.fn()
+    const onSendToMain = vi.fn()
+    const view = mount(`send-main-${modifier}`, { onSend, onSteer, onSendToMain, running: true })
+    type(view, '```ts\nconst n = 1')
+    expect(press(view, 'Enter', { [modifier]: true, shiftKey: true })).toBe(true)
+    expect(onSendToMain).toHaveBeenCalledExactlyOnceWith('```ts\nconst n = 1', [])
+    expect(onSend).not.toHaveBeenCalled()
+    expect(onSteer).not.toHaveBeenCalled()
+    expect(text(view)).toBe('')
+  })
+
   it('keeps unsent text per composer across switching away and back', () => {
     type(mount('s1'), 'half a thought')
     unmount()
