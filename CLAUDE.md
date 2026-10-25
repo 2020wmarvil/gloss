@@ -138,3 +138,8 @@ There is no dev model setting. When testing against a live agent, pick Haiku you
 - `IDXGIOutput5::DuplicateOutput1` with `R16G16B16A16_FLOAT` (device from `D3D11CreateDevice` on the output's own adapter) gives scRGB (linear, 1.0 = 80 nits); the first `AcquireNextFrame` returns the whole desktop in about 10 ms. Dividing by the SDR white level (`DisplayConfigGetDeviceInfo` type 11, thousandths of 80 nits, matched by the source's GDI name) gives the image as SDR content is shown. Vtable slots in `src/main/hdr.ts` are from the 10.0.26100 SDK headers.
 - `koffi.view` crashes Electron (no external ArrayBuffers); copy native memory into a Buffer with `RtlMoveMemory`.
 - The capture overlay shares Chromium's per-host zoom with the main window when both load from the dev server (`localhost`), so CSS pixels there aren't the display's DIPs; the built app's `file://` pages don't share it.
+
+## Verified external APIs (session windows)
+- `BrowserWindow.loadFile(path, { query: { session } })` (Electron 44) loads `index.html?session=<id>`, so a session window reuses the main page and preload; the renderer reads it from `location.search`.
+- Over CDP (`--remote-debugging-port`) each Gloss window is its own `page` target; a session window's URL carries `?session=`, so pick the main window by the URL ending in `/index.html`.
+- On Windows `win.getNormalBounds()` in a `close` handler gives the frame to restore; a second window placed at the same spot was opened 28 px down and right, as `placeSessionWindow` intends.

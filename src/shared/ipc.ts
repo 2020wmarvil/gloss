@@ -138,6 +138,35 @@ export type GlossEvent =
   | { type: 'settings'; state: SettingsState }
   /** The global capture shortcut was pressed (SPEC → Visual feedback). */
   | { type: 'captureShortcut' }
+  /** The sessions popped out into their own windows, and the one whose window is focused (SPEC → Session windows). */
+  | { type: 'windows'; popped: string[]; focused: string | null }
+  /** Main window only: a session window was returned to it, with what it showed. */
+  | { type: 'popIn'; sessionId: string; state: PaneState }
+  /** Main window only: a shortcut pressed in a session window that acts in the main window. */
+  | { type: 'mainAction'; action: MainAction }
+
+/** What a session's view shows, carried when it moves between windows (SPEC → Session windows). */
+export type PaneState = {
+  /** The side panel's thread; null for the overview (or a review's general conversation). */
+  threadId: string | null
+  sideOpen: boolean
+  /** A review's side panel shows its general conversation. */
+  general: boolean
+  sideTab: 'threads' | 'queue'
+  /** A review's expanded files. */
+  expandedFiles: string[]
+  /** The session's unsent composer drafts, by draft key. */
+  drafts: Record<string, { text: string; attachments: Attachment[] }>
+}
+
+/** Shortcuts a session window hands to the main window. */
+export type MainAction =
+  | { kind: 'search' }
+  | { kind: 'newSession' }
+  | { kind: 'settings' }
+  | { kind: 'cycleSession'; back: boolean }
+  /** **New review** in a popped-out review: the fresh draft opens in the main window. */
+  | { kind: 'newReview'; sessionId: string }
 
 export type GlossApi = {
   composer: {
@@ -289,6 +318,20 @@ export type GlossApi = {
     /** Lets the settings screen record a new shortcut without the current one taking the keys. */
     pauseShortcut(paused: boolean): Promise<void>
   }
+  /** Session windows (SPEC → Session windows). */
+  windows: {
+    /** Main window: pops the session out into its own window, or brings its window forward. */
+    popOut(sessionId: string, state: PaneState): Promise<void>
+    /** Session window: closes it and opens its session in the main window. */
+    popIn(state: PaneState): Promise<void>
+    /** Brings a popped-out session's window forward; false if it has none. */
+    focus(sessionId: string): Promise<boolean>
+    list(): Promise<{ popped: string[]; focused: string | null }>
+    /** Session window: its session and the state it opened with. */
+    initial(): Promise<{ sessionId: string; state: PaneState } | null>
+    /** Session window: brings the main window forward to act there. */
+    toMain(action: MainAction): void
+  }
   /** Subscribe to main-process events. Returns an unsubscribe function. */
   onEvent(listener: (event: GlossEvent) => void): () => void
 }
@@ -362,5 +405,11 @@ export const IPC = {
   captureStart: 'gloss:capture:start',
   captureShortcutStatus: 'gloss:capture:shortcutStatus',
   capturePauseShortcut: 'gloss:capture:pauseShortcut',
+  windowsPopOut: 'gloss:windows:popOut',
+  windowsPopIn: 'gloss:windows:popIn',
+  windowsFocus: 'gloss:windows:focus',
+  windowsList: 'gloss:windows:list',
+  windowsInitial: 'gloss:windows:initial',
+  windowsToMain: 'gloss:windows:toMain',
   event: 'gloss:event'
 } as const

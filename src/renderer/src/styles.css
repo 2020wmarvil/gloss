@@ -1014,6 +1014,15 @@ button.new-session-agents {
   white-space: nowrap;
 }
 
+/* A session open in its own window (SPEC → Session windows). */
+.session-title .popped-icon {
+  width: 13px;
+  height: 13px;
+  margin-left: 5px;
+  vertical-align: -2px;
+  color: var(--muted);
+}
+
 .running-dot {
   flex: none;
   width: 8px;
@@ -1743,6 +1752,12 @@ button.settings-button.on {
 
 .conversation header .agent-name {
   font-size: var(--t-13);
+}
+
+/* Pop out, or Return to main window, at the end of a conversation's header (SPEC → Session windows). */
+.conversation > header > .window-button {
+  flex: none;
+  margin-left: auto;
 }
 
 .conversation header .mono {

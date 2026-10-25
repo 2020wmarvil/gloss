@@ -1,7 +1,8 @@
+import { readFileSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerSaveBlocker, shell } from 'electron'
-import { IPC, type AppBadge, type GlossEvent } from '../shared/ipc'
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerSaveBlocker, screen, shell, type WebContents } from 'electron'
+import { IPC, type AppBadge, type GlossEvent, type MainAction, type PaneState } from '../shared/ipc'
 import type { Anchor, Attachment, Pin } from '../shared/types'
 import type { AnswerValue, RequestAnswer } from '../shared/requests'
 import { AgentConnection } from './acp'
@@ -28,6 +29,7 @@ import { previewMcpImport } from './mcp-import'
 import { OpenCodeSupport } from './opencode'
 import { AgentProfileSupport } from './agentProfiles'
 import { profileError, type AgentProfile } from '../shared/agentProfiles'
+import { boundsArg, placeSessionWindow, type Rect } from './windowPlacement'
 import iconIco from '../../build/icon.ico?asset'
 import iconPng from '../../build/icons/256x256.png?asset'
 
@@ -84,10 +86,39 @@ function titleBarOverlay(): Electron.TitleBarOverlayOptions {
 }
 
 function updateTitleBar(): void {
-  if (process.platform !== 'darwin') mainWindow?.setTitleBarOverlay(titleBarOverlay())
+  if (process.platform !== 'darwin') for (const win of glossWindows()) win.setTitleBarOverlay(titleBarOverlay())
 }
 
-function createWindow(): void {
+/** Session id → the window it is popped out into (SPEC → Session windows). */
+const sessionWindows = new Map<string, BrowserWindow>()
+/** Each session window's session and the state it opened with, by its webContents id. */
+const windowStates = new Map<number, { sessionId: string; state: PaneState }>()
+/** The Gloss window focused last: its composer used last takes a capture. */
+let lastFocused: BrowserWindow | undefined
+
+/** The main window and the session windows (not capture overlays). */
+function glossWindows(): BrowserWindow[] {
+  return [mainWindow, ...sessionWindows.values()].filter((w): w is BrowserWindow => w !== undefined && !w.isDestroyed())
+}
+
+function isGlossSender(sender: WebContents): boolean {
+  return glossWindows().some((w) => w.webContents === sender)
+}
+
+/** The session a session window holds, by its webContents. */
+function windowSession(sender: WebContents): string | undefined {
+  for (const [id, win] of sessionWindows) if (!win.isDestroyed() && win.webContents === sender) return id
+  return undefined
+}
+
+function bringForward(win: BrowserWindow): void {
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+/** A Gloss window: the title bar, icon, security settings and navigation guards every one has. */
+function newWindow(bounds: Partial<Rect> & { width: number; height: number }): BrowserWindow {
   const win = new BrowserWindow({
     title: 'Gloss',
     titleBarStyle: 'hidden',
@@ -96,8 +127,7 @@ function createWindow(): void {
     trafficLightPosition: { x: 14, y: 13 },
     // Windows takes every size from the .ico; macOS uses the app bundle's icon instead.
     icon: process.platform === 'win32' ? iconIco : iconPng,
-    width: 1280,
-    height: 820,
+    ...bounds,
     minWidth: 720,
     minHeight: 480,
     show: false,
@@ -108,13 +138,14 @@ function createWindow(): void {
       sandbox: true
     }
   })
-  mainWindow = win
   win.once('ready-to-show', () => win.show())
-  win.on('closed', () => {
-    if (mainWindow === win) mainWindow = undefined
+  win.on('focus', () => {
+    lastFocused = win
   })
   // The renderer shows how to leave full screen; macOS shows its own controls.
-  if (process.platform !== 'darwin') win.on('enter-full-screen', () => emit({ type: 'fullScreen' }))
+  if (process.platform !== 'darwin') {
+    win.on('enter-full-screen', () => win.webContents.send(IPC.event, { type: 'fullScreen' } satisfies GlossEvent))
+  }
   if (process.platform !== 'darwin') {
     win.webContents.on('before-input-event', (event, input) => {
       if (handleShortcut(win, input)) event.preventDefault()
@@ -132,17 +163,88 @@ function createWindow(): void {
     event.preventDefault()
     if (isExternalUrl(url)) void shell.openExternal(url)
   })
+  return win
+}
 
+function createWindow(): void {
+  const win = newWindow({ width: 1280, height: 820 })
+  mainWindow = win
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = undefined
+    // Closing the main window quits Gloss, session windows included.
+    for (const w of sessionWindows.values()) if (!w.isDestroyed()) w.close()
+  })
   loadPage(win, 'index.html')
 }
 
+/** The last session window's size and position (SPEC → Session windows → Restart). */
+function boundsFile(): string {
+  return join(app.getPath('userData'), 'session-window.json')
+}
+
+function savedBounds(): Rect | null {
+  try {
+    return boundsArg(JSON.parse(readFileSync(boundsFile(), 'utf8')))
+  } catch {
+    return null
+  }
+}
+
+let boundsTimer: ReturnType<typeof setTimeout> | undefined
+function saveBounds(win: BrowserWindow, now = false): void {
+  if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return
+  const bounds = win.getNormalBounds()
+  clearTimeout(boundsTimer)
+  const write = (): void => void writeFile(boundsFile(), JSON.stringify(bounds)).catch(() => {})
+  if (now) write()
+  else boundsTimer = setTimeout(write, 500)
+}
+
+/** Tells every window which sessions are popped out, and whose window is focused. */
+function sendWindows(): void {
+  const focused = [...sessionWindows].find(([, w]) => !w.isDestroyed() && w.isFocused())?.[0] ?? null
+  emit({ type: 'windows', popped: [...sessionWindows.keys()], focused })
+}
+
+/** Pops a session out into its own window, where it opens with `state` (SPEC → Session windows). */
+function openSessionWindow(sessionId: string, state: PaneState): void {
+  const home = mainWindow && !mainWindow.isDestroyed()
+    ? screen.getDisplayMatching(mainWindow.getBounds()).workArea
+    : screen.getPrimaryDisplay().workArea
+  const bounds = placeSessionWindow(
+    savedBounds(),
+    [...sessionWindows.values()].filter((w) => !w.isDestroyed()).map((w) => w.getBounds()),
+    screen.getAllDisplays().map((d) => d.workArea),
+    home
+  )
+  const win = newWindow(bounds)
+  const contentsId = win.webContents.id
+  sessionWindows.set(sessionId, win)
+  windowStates.set(contentsId, { sessionId, state })
+  win.on('focus', sendWindows)
+  win.on('blur', sendWindows)
+  win.on('moved', () => saveBounds(win))
+  win.on('resized', () => saveBounds(win))
+  win.on('close', () => saveBounds(win, true))
+  win.on('closed', () => {
+    windowStates.delete(contentsId)
+    if (sessionWindows.get(sessionId) === win) sessionWindows.delete(sessionId)
+    if (lastFocused === win) lastFocused = undefined
+    sendWindows()
+  })
+  loadPage(win, 'index.html', { session: sessionId })
+  sendWindows()
+}
+
 /** Loads one of the renderer's pages: from the dev server in development, else from the build. */
-function loadPage(win: BrowserWindow, page: 'index.html' | 'capture.html'): void {
+function loadPage(win: BrowserWindow, page: 'index.html' | 'capture.html', query?: Record<string, string>): void {
   const devUrl = process.env.ELECTRON_RENDERER_URL
   if (!app.isPackaged && devUrl) {
-    void win.loadURL(new URL(page, devUrl.endsWith('/') ? devUrl : `${devUrl}/`).href)
+    const url = new URL(page, devUrl.endsWith('/') ? devUrl : `${devUrl}/`)
+    for (const [k, v] of Object.entries(query ?? {})) url.searchParams.set(k, v)
+    void win.loadURL(url.href)
   } else {
-    void win.loadFile(join(__dirname, '../renderer', page))
+    void win.loadFile(join(__dirname, '../renderer', page), query ? { query } : undefined)
   }
 }
 
@@ -184,7 +286,16 @@ function keepAwake(event: GlossEvent): void {
 }
 
 function emit(event: GlossEvent): void {
-  mainWindow?.webContents.send(IPC.event, event)
+  if (event.type === 'reveal') {
+    // A notification's session opens where it is: its own window, else the main one.
+    ;(sessionWindows.get(event.sessionId) ?? mainWindow)?.webContents.send(IPC.event, event)
+  } else if (event.type === 'captureShortcut') {
+    const win = lastFocused && !lastFocused.isDestroyed() ? lastFocused : mainWindow
+    win?.webContents.send(IPC.event, event)
+  } else {
+    for (const win of glossWindows()) win.webContents.send(IPC.event, event)
+  }
+  if (event.type === 'sessionDeleted') sessionWindows.get(event.sessionId)?.close()
   keepAwake(event)
   if (event.type === 'turnEnd') notifyTurnEnd(event)
   if (event.type === 'requests') notifyRequests(event)
@@ -228,9 +339,8 @@ const notifications = new Set<Notification>()
 
 /** An OS notification when a turn ends or fails while Gloss isn't focused. Clicking it opens the session (and thread). */
 function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
-  const win = mainWindow
   // A queued message starting next isn't the end of the agent's work.
-  if (!win || win.isFocused() || event.stopReason === 'cancelled' || event.continues || !Notification.isSupported()) return
+  if (glossWindows().some((w) => w.isFocused()) || event.stopReason === 'cancelled' || event.continues || !Notification.isSupported()) return
   const session = store?.getSession(event.sessionId)
   if (!session) return
   const body = event.error
@@ -243,10 +353,9 @@ function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
   notifications.add(n)
   n.on('click', () => {
     notifications.delete(n)
-    if (win.isDestroyed()) return
-    if (win.isMinimized()) win.restore()
-    win.show()
-    win.focus()
+    const win = sessionWindows.get(event.sessionId) ?? mainWindow
+    if (!win || win.isDestroyed()) return
+    bringForward(win)
     emit({ type: 'reveal', sessionId: event.sessionId, threadId: event.threadId })
   })
   n.on('close', () => notifications.delete(n))
@@ -261,9 +370,8 @@ function notifyRequests(event: Extract<GlossEvent, { type: 'requests' }>): void 
   const seen = notifiedRequests.get(event.sessionId)
   const fresh = event.requests.filter((r) => !seen?.has(r.id))
   notifiedRequests.set(event.sessionId, new Set(event.requests.map((r) => r.id)))
-  const win = mainWindow
   const first = fresh[0]
-  if (!first || !win || win.isFocused() || !Notification.isSupported()) return
+  if (!first || glossWindows().some((w) => w.isFocused()) || !Notification.isSupported()) return
   const session = store?.getSession(event.sessionId)
   if (!session) return
   const body = first.kind === 'question' ? `Waiting for you: ${first.message}` : `Waiting for your approval: ${first.title}`
@@ -271,10 +379,9 @@ function notifyRequests(event: Extract<GlossEvent, { type: 'requests' }>): void 
   notifications.add(n)
   n.on('click', () => {
     notifications.delete(n)
-    if (win.isDestroyed()) return
-    if (win.isMinimized()) win.restore()
-    win.show()
-    win.focus()
+    const win = sessionWindows.get(event.sessionId) ?? mainWindow
+    if (!win || win.isDestroyed()) return
+    bringForward(win)
     emit({ type: 'reveal', sessionId: event.sessionId, threadId: first.threadId })
   })
   n.on('close', () => notifications.delete(n))
@@ -462,17 +569,15 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     manager.agentSessions(folderArg(path, 'path'), str(agentId, 'agentId'))
   )
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
-  registerComposerIpc(store!, () => mainWindow?.webContents, () => settingsFile.state().global.externalEditor, () => {
-    const win = mainWindow
-    if (!win || win.isDestroyed()) return
-    if (win.isMinimized()) win.restore()
-    win.show()
-    win.focus()
+  registerComposerIpc(store!, isGlossSender, () => settingsFile.state().global.externalEditor, (sender) => {
+    const win = glossWindows().find((w) => w.webContents === sender)
+    if (!win) return
+    bringForward(win)
     void takeForeground(win.getNativeWindowHandle())
   })
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
   ipcMain.handle(IPC.readMarkdownImage, (e, src: unknown, cwd: unknown) => {
-    if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can load images.')
+    if (!isGlossSender(e.sender)) throw new Error('Only a Gloss window can load images.')
     return readMarkdownImage(str(src, 'src'), cwd === undefined ? undefined : folderArg(cwd, 'cwd'))
   })
   ipcMain.handle(IPC.openFileLink, async (_e, href: unknown) => {
@@ -494,18 +599,15 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     setCaptureShortcut(capture.setting)
   })
   ipcMain.handle(IPC.captureStart, (e) => {
-    if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can start a capture.')
+    const win = glossWindows().find((w) => w.webContents === e.sender)
+    if (!win) throw new Error('Only a Gloss window can start a capture.')
     return startCapture({
       preload: join(__dirname, '../preload/capture.js'),
       load: (overlay) => loadPage(overlay, 'capture.html'),
-      // Started from another app (the global shortcut), the canvas needs Gloss in front. An
-      // overlay has the focus now, so Windows lets Gloss take it.
+      // Started from another app (the global shortcut), the canvas needs its window in front.
+      // An overlay has the focus now, so Windows lets Gloss take it.
       onPicked: () => {
-        const win = mainWindow
-        if (!win || win.isDestroyed()) return
-        if (win.isMinimized()) win.restore()
-        win.show()
-        win.focus()
+        if (!win.isDestroyed()) bringForward(win)
       }
     })
   })
@@ -551,7 +653,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
       )
   )
   ipcMain.handle(IPC.sessionsRewindPoints, (e, id: unknown) => {
-    if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can rewind.')
+    if (!isGlossSender(e.sender)) throw new Error('Only a Gloss window can rewind.')
     const sessionId = str(id, 'id')
     const session = store!.getSession(sessionId)
     if (!session) throw new Error('Session no longer exists.')
@@ -559,7 +661,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     return messages.flatMap((m, index) => m.role === 'user' ? [{ id: m.id, text: m.text.slice(0, 500), threadId: m.threadId, createdAt: m.createdAt, laterMessages: messages.length - index - 1, sessionTitle: session.title, outcome: m.outcome }] : []).reverse()
   })
   ipcMain.handle(IPC.sessionsRewind, async (e, id: unknown, messageId: unknown) => {
-    if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can rewind.')
+    if (!isGlossSender(e.sender)) throw new Error('Only a Gloss window can rewind.')
     const sessionId = str(id, 'id')
     const targetId = str(messageId, 'messageId')
     const message = store!.listMessages(sessionId).find((m) => m.id === targetId && m.role === 'user')
@@ -588,13 +690,15 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.sessionsCopyMarkdown, (_e, id: unknown, threadId: unknown) => {
     clipboard.writeText(exportLog(str(id, 'id'), threadArg(threadId)).markdown)
   })
-  ipcMain.handle(IPC.sessionsSaveMarkdown, async (_e, id: unknown, threadId: unknown) => {
+  ipcMain.handle(IPC.sessionsSaveMarkdown, async (e, id: unknown, threadId: unknown) => {
     const { title, markdown } = exportLog(str(id, 'id'), threadArg(threadId))
     const options: Electron.SaveDialogOptions = {
       defaultPath: `${title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'session'}.md`,
       filters: [{ name: 'Markdown', extensions: ['md'] }]
     }
-    const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options)
+    // Over the window that asked.
+    const parent = glossWindows().find((w) => w.webContents === e.sender)
+    const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
     if (result.canceled || !result.filePath) return false
     await writeFile(result.filePath, markdown)
     return true
@@ -645,7 +749,11 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.steer, (_e, sessionId: unknown, text: unknown, threadId: unknown, attachments: unknown) =>
     manager.steer(str(sessionId, 'sessionId'), str(text, 'text'), threadArg(threadId), attachmentsArg(attachments))
   )
-  ipcMain.on(IPC.setBadge, (_e, badge: unknown) => setBadge(badge))
+  // The main window's renderer owns the badge (SPEC → Session windows).
+  ipcMain.on(IPC.setBadge, (e, badge: unknown) => {
+    if (e.sender === mainWindow?.webContents) setBadge(badge)
+  })
+  registerWindowsIpc()
   ipcMain.handle(IPC.retry, (_e, sessionId: unknown, messageId: unknown) => manager.retry(str(sessionId, 'sessionId'), str(messageId, 'messageId')))
   ipcMain.handle(IPC.cancel, (_e, sessionId: unknown) => manager.cancel(str(sessionId, 'sessionId')))
   ipcMain.handle(IPC.queueEdit, (_e, sessionId: unknown, id: unknown, text: unknown) =>
@@ -671,6 +779,85 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.settingsOpenFile, async () => {
     const error = await shell.openPath(settingsFile.path)
     return error === '' ? null : error
+  })
+}
+
+/** What a session's view showed, sent along when it moves to another window. */
+function paneStateArg(value: unknown, sessionId: string): PaneState {
+  const v = (typeof value === 'object' && value !== null ? value : {}) as Partial<Record<string, unknown>>
+  const drafts: PaneState['drafts'] = {}
+  if (typeof v.drafts === 'object' && v.drafts !== null) {
+    for (const [key, draft] of Object.entries(v.drafts as Record<string, unknown>)) {
+      // A session's drafts only: their keys start with its id.
+      if (!key.startsWith(sessionId)) continue
+      const d = draft as Partial<Record<string, unknown>> | null
+      if (!d || typeof d.text !== 'string' || d.text.length > MAX_FILE_CHARS) continue
+      drafts[key] = { text: d.text, attachments: attachmentsArg(d.attachments ?? []) }
+    }
+  }
+  return {
+    threadId: typeof v.threadId === 'string' ? v.threadId : null,
+    sideOpen: v.sideOpen === true,
+    general: v.general === true,
+    sideTab: v.sideTab === 'queue' ? 'queue' : 'threads',
+    expandedFiles: Array.isArray(v.expandedFiles) ? v.expandedFiles.filter((f): f is string => typeof f === 'string') : [],
+    drafts
+  }
+}
+
+function mainActionArg(value: unknown): MainAction {
+  const a = (typeof value === 'object' && value !== null ? value : {}) as Partial<Record<string, unknown>>
+  if (a.kind === 'search' || a.kind === 'newSession' || a.kind === 'settings') return { kind: a.kind }
+  if (a.kind === 'cycleSession') return { kind: 'cycleSession', back: a.back === true }
+  if (a.kind === 'newReview') return { kind: 'newReview', sessionId: str(a.sessionId, 'sessionId') }
+  throw new Error('Unknown action')
+}
+
+/** Session windows (SPEC → Session windows). */
+function registerWindowsIpc(): void {
+  ipcMain.handle(IPC.windowsPopOut, (e, id: unknown, state: unknown) => {
+    if (e.sender !== mainWindow?.webContents) throw new Error('Only the main window can pop out a session.')
+    const sessionId = str(id, 'sessionId')
+    if (!store?.getSession(sessionId)) throw new Error('Session no longer exists.')
+    const open = sessionWindows.get(sessionId)
+    if (open && !open.isDestroyed()) return bringForward(open)
+    openSessionWindow(sessionId, paneStateArg(state, sessionId))
+  })
+  ipcMain.handle(IPC.windowsPopIn, (e, state: unknown) => {
+    const sessionId = windowSession(e.sender)
+    const win = sessionId ? sessionWindows.get(sessionId) : undefined
+    const main = mainWindow
+    if (!sessionId || !win || !main || main.isDestroyed()) throw new Error('Only a session window can return to the main window.')
+    const pane = paneStateArg(state, sessionId)
+    // Listed as back in the main window before it opens the session there.
+    sessionWindows.delete(sessionId)
+    sendWindows()
+    main.webContents.send(IPC.event, { type: 'popIn', sessionId, state: pane } satisfies GlossEvent)
+    win.close()
+    bringForward(main)
+  })
+  ipcMain.handle(IPC.windowsFocus, (_e, id: unknown) => {
+    const win = sessionWindows.get(str(id, 'sessionId'))
+    if (!win || win.isDestroyed()) return false
+    bringForward(win)
+    return true
+  })
+  ipcMain.handle(IPC.windowsList, () => ({
+    popped: [...sessionWindows.keys()],
+    focused: [...sessionWindows].find(([, w]) => !w.isDestroyed() && w.isFocused())?.[0] ?? null
+  }))
+  ipcMain.handle(IPC.windowsInitial, (e) => windowStates.get(e.sender.id) ?? null)
+  ipcMain.on(IPC.windowsToMain, (e, action: unknown) => {
+    const main = mainWindow
+    if (!windowSession(e.sender) || !main || main.isDestroyed()) return
+    let parsed: MainAction
+    try {
+      parsed = mainActionArg(action)
+    } catch {
+      return
+    }
+    bringForward(main)
+    main.webContents.send(IPC.event, { type: 'mainAction', action: parsed } satisfies GlossEvent)
   })
 }
 

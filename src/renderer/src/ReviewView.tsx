@@ -54,6 +54,11 @@ type Props = {
   onNewReview(): void
   /** Opens a file of the diff in the file manager, or in the external editor at `line`. */
   onOpenFile(path: string, how: 'reveal' | 'editor', line: number): void
+  /** Pop out, or Return to main window, at the end of the header's tools (SPEC → Session windows). */
+  windowButton?: React.ReactNode
+  /** Files expanded when it opens: those it had in the window it came from. */
+  initialExpandedFiles?: string[]
+  onExpandedFilesChange?(files: string[]): void
 }
 
 /** The header's tool icons. */
@@ -105,7 +110,10 @@ export function ReviewView(props: Props): React.JSX.Element {
   const [comments, setComments] = useStored('gloss.review.comments', 'shown', ['shown', 'hidden'])
   const [toggled, setToggled] = useState(() => new Set<string>())
   /** Files expanded: every file starts collapsed, so a large review opens fast. */
-  const [expandedFiles, setExpandedFiles] = useState(() => new Set<string>())
+  const [expandedFiles, setExpandedFiles] = useState(() => new Set<string>(props.initialExpandedFiles))
+  const expandedChanged = useRef(props.onExpandedFilesChange)
+  expandedChanged.current = props.onExpandedFilesChange
+  useEffect(() => expandedChanged.current?.([...expandedFiles]), [expandedFiles])
   const [expansions, setExpansions] = useState<Record<string, Expansion>>({})
   const [narrow, setNarrow] = useState(false)
   const [current, setCurrent] = useState<string | null>(null)
@@ -375,6 +383,7 @@ export function ReviewView(props: Props): React.JSX.Element {
                 {ICONS.newReview}
               </button>
             )}
+            {props.windowButton}
           </div>
         </div>
         <div className="review-meta">

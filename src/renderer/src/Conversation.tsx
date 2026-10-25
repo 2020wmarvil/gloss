@@ -51,6 +51,8 @@ type Props = {
   onOpenMain(): void
   /** Opens the side panel's Queue tab. */
   onOpenQueue(): void
+  /** Pop out, or Return to main window, at the header's end (SPEC → Session windows). */
+  windowButton?: React.ReactNode
 }
 
 export function Conversation(props: Props): React.JSX.Element {
@@ -125,6 +127,7 @@ export function Conversation(props: Props): React.JSX.Element {
       <header>
         <h1 title={session.title}>{session.title}</h1>
         <span className="agent-name">{agentName}</span>
+        {props.windowButton}
       </header>
       <Log
         cwd={open.session.cwd}

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import type { SessionOrder } from '@shared/settings'
 import type { AgentInfo, AgentSession, Project, Session } from '@shared/types'
-import { ChevronDown, ChevronsUpDown, CircleAlert, Ellipsis, GitCompare, Info, List, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
+import { AppWindow, ChevronDown, ChevronsUpDown, CircleAlert, Ellipsis, GitCompare, Info, List, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
 
 type Props = {
   agents: AgentInfo[]
@@ -19,6 +19,8 @@ type Props = {
   /** All Gloss sessions; the sidebar shows the current project's. */
   sessions: Session[]
   openId: string | null
+  /** Sessions open in their own windows (SPEC → Session windows); clicking one brings its window forward. */
+  popped?: string[]
   running: Record<string, string | null>
   /** Sessions whose last turn finished or failed while the user wasn't looking. */
   unseen: Record<string, 'completed' | 'failed'>
@@ -49,6 +51,8 @@ type Props = {
   onRename(id: string, title: string): void
   onDelete(id: string): void
   onCopyMarkdown(id: string): void
+  /** Opens a session in its own window. */
+  onPopOut?(id: string): void
   onSaveMarkdown(id: string): void
   onSearch(): void
   /** Collapses the sidebar to a rail. */
@@ -191,6 +195,9 @@ export function Sidebar(props: Props): React.JSX.Element {
         </span>
         <span className="session-title" onDoubleClick={() => setRenaming(s.id)}>
           {s.title}
+          {props.popped?.includes(s.id) && (
+            <AppWindow className="popped-icon" aria-label="In its own window" />
+          )}
           <small className="session-agent">
             {agentName(s.agentId)}
             {s.review && (s.openThreads ?? 0) > 0 && ` · ${s.openThreads} open`}
@@ -215,6 +222,11 @@ export function Sidebar(props: Props): React.JSX.Element {
             <button role="menuitem" onClick={() => (setMenuFor(null), setRenaming(s.id))}>
               Rename
             </button>
+            {props.onPopOut && !props.popped?.includes(s.id) && (
+              <button role="menuitem" onClick={() => (setMenuFor(null), props.onPopOut?.(s.id))}>
+                Open in new window
+              </button>
+            )}
             <button role="menuitem" onClick={() => (setMenuFor(null), props.onCopyMarkdown(s.id))}>
               Copy as markdown
             </button>
