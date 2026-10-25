@@ -515,7 +515,7 @@ describe('composer shell mode', () => {
     expect(onSend).toHaveBeenCalledWith('next request', [])
   })
 
-  it('keeps command results across composer switches without overwriting new drafts', async () => {
+  it('finishes commands across composer switches without overwriting new drafts or showing output', async () => {
     let resolve!: (value: unknown) => void
     const shell = vi.fn().mockReturnValue(new Promise((done) => { resolve = done }))
     const cancelShell = vi.fn().mockResolvedValue(undefined)
@@ -530,7 +530,8 @@ describe('composer shell mode', () => {
     const restored = mount('shell-switch', { sessionId: 's', accepts: { image: true, file: true } })
     expect(text(restored)).toBe('a new draft while command runs')
     expect(document.querySelector('.attachment-name')).toBeNull()
-    expect(document.querySelector('.shell-result')?.textContent).toContain('finished')
+    expect(document.querySelector('.shell-result')).toBeNull()
+    expect(document.body.textContent).not.toContain('finished')
   })
 
   it('leaves text-only drafts empty after executing shell commands', async () => {
@@ -541,7 +542,8 @@ describe('composer shell mode', () => {
     type(view, '!echo hello')
     await act(async () => { press(view, 'Enter') })
     expect(text(view)).toBe('')
-    expect(document.querySelector('.shell-result')?.textContent).toContain('hello')
+    expect(document.querySelector('.shell-result')).toBeNull()
+    expect(document.body.textContent).not.toContain('hello')
     expect(onSend).not.toHaveBeenCalled()
     press(view, 'Enter')
     expect(onSend).not.toHaveBeenCalled()

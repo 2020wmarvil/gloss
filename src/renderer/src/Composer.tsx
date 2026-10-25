@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { normalizeShortcut, shortcutLabel } from '@shared/shortcut'
-import type { ContextItem, ShellResult } from '@shared/composer'
+import type { ContextItem } from '@shared/composer'
 import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
 import { composerMention, mentionPrefix } from './composerMention'
@@ -83,7 +83,7 @@ const drafts = new Map<string, Draft>()
 const stashedDrafts = new Map<string, Draft>()
 type EditorState = { busy: boolean; error?: string }
 const editorStates = new Map<string, EditorState>()
-type ShellState = { running: boolean; result?: ShellResult; error?: string }
+type ShellState = { running: boolean; error?: string }
 const shellStates = new Map<string, ShellState>()
 const DRAFT_CHANGED = 'gloss:composer-draft'
 function publishShell(key: string, state: ShellState): void {
@@ -193,8 +193,8 @@ export function Composer({
     setText('')
     publishShell(draftKey, { running: true })
     try {
-      const result = await window.gloss.composer.shell(sessionId, command)
-      publishShell(draftKey, { running: false, result })
+      await window.gloss.composer.shell(sessionId, command)
+      publishShell(draftKey, { running: false })
     } catch (err) { publishShell(draftKey, { running: false, error: errorText(err) }) }
   }
 
@@ -720,10 +720,6 @@ export function Composer({
       {shell.running && <div className="shell-status" role="status">
         <span>Running shell command. Esc to stop.</span>
       </div>}
-      {shell.result && <details className="shell-result">
-        <summary>Shell: {shell.result.command.slice(0, 100)} (exit {shell.result.exitCode ?? 'unavailable'})</summary>
-        <pre>{shell.result.output || '(No output)'}</pre>
-      </details>}
       {shell.error && <p className="composer-error" role="alert">{shell.error}</p>}
       {rewindOpen && sessionId && <RewindDialog sessionId={sessionId} onClose={() => { setRewindOpen(false); ref.current?.focus() }} />}
       {editorBusy && <p className="editor-status" role="status">Editing in external editor. Save and close the file to return.</p>}

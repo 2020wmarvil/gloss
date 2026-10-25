@@ -2181,9 +2181,6 @@ button.settings-button.on {
 }
 .command-mode .md-editor .cm-content, .command-mode .md-editor .cm-content span { font-family: var(--font-mono); }
 .command-mode .md-editor .cm-content { caret-color: var(--code-ink); }
-.shell-result { margin-top: 8px; font-size: var(--t-12); }
-.shell-result summary { cursor: pointer; overflow-wrap: anywhere; }
-.shell-result pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .rewind-menu { width: 580px; outline: none; }
 .rewind-menu ul { list-style: none; padding: 0; margin: 12px -8px; max-height: min(360px, 45vh); overflow-y: auto; }
