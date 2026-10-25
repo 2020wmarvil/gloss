@@ -510,9 +510,9 @@ export function App(): React.JSX.Element {
     } else if (e.key.toLowerCase() === 'n' && !e.shiftKey && !e.altKey) {
       e.preventDefault()
       void newSession()
-    } else if (e.key === 'Tab' || e.key === 'PageDown' || e.key === 'PageUp') {
+    } else if (e.key === 'Tab') {
       e.preventDefault()
-      cycleSession(e.key === 'PageUp' || (e.key === 'Tab' && e.shiftKey))
+      cycleSession(e.shiftKey)
     } else {
       const id = openId.current
       const result = s.shortcut(e, sideShown, () => {

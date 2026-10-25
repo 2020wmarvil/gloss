@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import { IPC, type GlossApi, type GlossEvent } from '../shared/ipc'
 
 const api: GlossApi = {
+  confirmClose: (requestId, close) => ipcRenderer.invoke(IPC.confirmClose, requestId, close),
   composer: {
     shell: (id, command) => ipcRenderer.invoke(IPC.composerShell, id, command),
     cancelShell: (id) => ipcRenderer.invoke(IPC.composerCancelShell, id),

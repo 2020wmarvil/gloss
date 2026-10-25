@@ -96,6 +96,7 @@ export type AgentProfileStatus = {
 }
 
 export type GlossEvent =
+  | { type: 'confirmClose'; requestId: string; working: number }
   | { type: 'session'; session: Session }
   /** `deletedOutside`: the agent no longer had it, so Gloss deleted it too (SPEC → Shared sessions). */
   | { type: 'sessionDeleted'; sessionId: string; deletedOutside?: { title: string } }
@@ -171,6 +172,7 @@ export type MainAction =
   | { kind: 'newReview'; sessionId: string }
 
 export type GlossApi = {
+  confirmClose(requestId: string, close: boolean): Promise<void>
   composer: {
     shell(sessionId: string, command: string): Promise<ShellResult>
     cancelShell(sessionId: string): Promise<void>
@@ -413,5 +415,6 @@ export const IPC = {
   windowsList: 'gloss:windows:list',
   windowsInitial: 'gloss:windows:initial',
   windowsToMain: 'gloss:windows:toMain',
+  confirmClose: 'gloss:confirmClose',
   event: 'gloss:event'
 } as const

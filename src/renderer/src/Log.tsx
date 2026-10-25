@@ -49,6 +49,8 @@ export function logItems(open: OpenSession, notices: Notice[], threadId: string 
 export type Reveal = { messageId: string; threadId?: string | null; key: number }
 
 type Props = {
+  /** Composer, optional activity strip and status line, pinned inside the full-height scroller. */
+  footer?: ReactNode
   cwd?: string
   items: LogItem[]
   className: string
@@ -67,9 +69,11 @@ type Props = {
 const LOG_ANCHORS: ScrollAnchors = { item: '[data-message-id]', attr: 'data-message-id', block: 'p, li, pre, h1, h2, h3, h4, h5, h6, blockquote, tr' }
 
 /** A scrolling log that sticks to the bottom while new output arrives. */
-export function Log({ cwd, items, className, empty, renderAgent, reveal, systemLine, pins, scrollKey }: Props): React.JSX.Element {
+export function Log({ footer, cwd, items, className, empty, renderAgent, reveal, systemLine, pins, scrollKey }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useLayoutEffect(() => () => clearTimeout(scrollTimer.current), [])
   useLayoutEffect(() => {
     const el = ref.current
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
@@ -91,11 +95,13 @@ export function Log({ cwd, items, className, empty, renderAgent, reveal, systemL
       top = el.scrollTop
     }
     const observer = new ResizeObserver(() => {
-      el.scrollTop = top + height - el.clientHeight
+      el.scrollTop = stickToBottom.current ? el.scrollHeight : top + height - el.clientHeight
       height = el.clientHeight
       top = el.scrollTop
     })
     observer.observe(el)
+    // Content and composer growth should keep a bottom-pinned log at the bottom too.
+    if (el.firstElementChild) observer.observe(el.firstElementChild)
     el.addEventListener('scroll', onScroll)
     return () => {
       observer.disconnect()
@@ -130,71 +136,77 @@ export function Log({ cwd, items, className, empty, renderAgent, reveal, systemL
         onScroll={(e) => {
           const el = e.currentTarget
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+          el.classList.add('scrolling')
+          clearTimeout(scrollTimer.current)
+          scrollTimer.current = setTimeout(() => el.classList.remove('scrolling'), 900)
         }}
       >
-        <div className={className}>
-          {items.length === 0 && empty}
-          {groupTools(items).map((item) => {
-            if (Array.isArray(item)) return <ToolGroup key={item[0].toolCall.id} tools={item} reveal={reveal} />
-            switch (item.kind) {
-              case 'message': {
-                const line = item.message.role === 'user' ? systemLine?.(item.message) : null
-                if (line) {
-                  return (
-                    <p key={item.message.id} className="system-line" data-message-id={item.message.id}>
-                      {line}
-                    </p>
+        <div className={footer ? 'log-layout' : undefined}>
+          <div className={className}>
+            {items.length === 0 && empty}
+            {groupTools(items).map((item) => {
+              if (Array.isArray(item)) return <ToolGroup key={item[0].toolCall.id} tools={item} reveal={reveal} />
+              switch (item.kind) {
+                case 'message': {
+                  const line = item.message.role === 'user' ? systemLine?.(item.message) : null
+                  if (line) {
+                    return (
+                      <p key={item.message.id} className="system-line" data-message-id={item.message.id}>
+                        {line}
+                      </p>
+                    )
+                  }
+                  return item.message.role === 'user' ? (
+                    <div
+                      key={item.message.id}
+                      className="sent-message"
+                      data-message-id={item.message.id}
+                    >
+                      {(item.message.text || item.message.steered || item.message.attachments?.some((a) => a.kind === 'file')) && <div className={item.message.steered ? 'you steered' : 'you'}>
+                      {item.message.steered && (
+                        <span className="steered-label" title="Sent into the running turn">
+                          steered
+                        </span>
+                      )}
+                      {item.message.attachments?.some((a) => a.kind === 'file') && (
+                        <ul className="attachments sent">
+                          {item.message.attachments.map((a, i) => a.kind === 'file' ? (
+                            <li key={i} className="attachment" title={a.path ?? a.name}>
+                              <span className="attachment-name">{a.name}</span>
+                            </li>
+                          ) : null)}
+                        </ul>
+                      )}
+                      <Markdown text={item.message.text} breaks />
+                      </div>}
+                      {item.message.attachments?.some((a) => a.kind === 'image') && <div className="sent-images">
+                        {item.message.attachments.map((a, i) =>
+                          a.kind === 'image' ? <CaptureFigure key={i} message={item.message} image={a} index={i} anchors={pins} /> : null
+                        )}
+                      </div>}
+                    </div>
+                  ) : (
+                    <div key={item.message.id} className="agent" data-message-id={item.message.id}>
+                      {renderAgent(item.message)}
+                    </div>
                   )
                 }
-                return item.message.role === 'user' ? (
-                  <div
-                    key={item.message.id}
-                    className="sent-message"
-                    data-message-id={item.message.id}
-                  >
-                    {(item.message.text || item.message.steered || item.message.attachments?.some((a) => a.kind === 'file')) && <div className={item.message.steered ? 'you steered' : 'you'}>
-                    {item.message.steered && (
-                      <span className="steered-label" title="Sent into the running turn">
-                        steered
-                      </span>
-                    )}
-                    {item.message.attachments?.some((a) => a.kind === 'file') && (
-                      <ul className="attachments sent">
-                        {item.message.attachments.map((a, i) => a.kind === 'file' ? (
-                          <li key={i} className="attachment" title={a.path ?? a.name}>
-                            <span className="attachment-name">{a.name}</span>
-                          </li>
-                        ) : null)}
-                      </ul>
-                    )}
-                    <Markdown text={item.message.text} breaks />
-                    </div>}
-                    {item.message.attachments?.some((a) => a.kind === 'image') && <div className="sent-images">
-                      {item.message.attachments.map((a, i) =>
-                        a.kind === 'image' ? <CaptureFigure key={i} message={item.message} image={a} index={i} anchors={pins} /> : null
-                      )}
-                    </div>}
-                  </div>
-                ) : (
-                  <div key={item.message.id} className="agent" data-message-id={item.message.id}>
-                    {renderAgent(item.message)}
-                  </div>
-                )
+                case 'plan':
+                  return <PlanChecklist key={item.plan.id} plan={item.plan} />
+                case 'request':
+                  return <RequestCard key={item.request.id} request={item.request} />
+                case 'notice':
+                  return item.notice.tone === 'failed' ? (
+                    <FailedNotice key={item.notice.id} notice={item.notice} />
+                  ) : (
+                    <p key={item.notice.id} className="notice">
+                      {item.notice.text}
+                    </p>
+                  )
               }
-              case 'plan':
-                return <PlanChecklist key={item.plan.id} plan={item.plan} />
-              case 'request':
-                return <RequestCard key={item.request.id} request={item.request} />
-              case 'notice':
-                return item.notice.tone === 'failed' ? (
-                  <FailedNotice key={item.notice.id} notice={item.notice} />
-                ) : (
-                  <p key={item.notice.id} className="notice">
-                    {item.notice.text}
-                  </p>
-                )
-            }
-          })}
+            })}
+          </div>
+          {footer && <div className="log-footer">{footer}</div>}
         </div>
       </div>
     </MarkdownImageDirectory>

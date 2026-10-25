@@ -15,8 +15,8 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
     shortcuts: [
       { keys: [['Mod', 'Shift', 'F']], action: 'Search conversations' },
       { keys: [['Mod', 'N']], action: 'New session' },
-      { keys: [['Mod', 'Tab'], ['Mod', 'PageDown']], action: 'Next session in the project' },
-      { keys: [['Mod', 'Shift', 'Tab'], ['Mod', 'PageUp']], action: 'Previous session in the project' },
+      { keys: [['Mod', 'Tab']], action: 'Next session in the project' },
+      { keys: [['Mod', 'Shift', 'Tab']], action: 'Previous session in the project' },
       { keys: [['Mod', 'L']], action: 'Focus the composer' },
       { keys: [['Mod', 'Shift', 'T']], action: 'Show or hide the side panel' },
       { keys: [['Mod', 'J']], action: 'Go to where the agent is working, or last worked' },

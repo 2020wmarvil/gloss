@@ -97,18 +97,18 @@ describe('question', () => {
     })
   })
 
-  it('unpicks an optional single choice, and declines or cancels', async () => {
+  it('unpicks an optional single choice, and declines with one button', async () => {
     const answer = mount(question)
     const radio = document.querySelectorAll<HTMLInputElement>('input[type="radio"]')[0]
     await click(radio)
     expect(radio.checked).toBe(true)
     await click(radio)
     expect(radio.checked).toBe(false)
-    const [, decline, cancel] = document.querySelectorAll('.request-actions button')
+    const [, decline] = document.querySelectorAll('.request-actions button')
     await click(decline)
     expect(answer).toHaveBeenLastCalledWith('s1', 'r1', { kind: 'question', action: 'decline' })
-    await click(cancel)
-    expect(answer).toHaveBeenLastCalledWith('s1', 'r1', { kind: 'question', action: 'cancel' })
+    expect(document.querySelectorAll('.request-actions button')).toHaveLength(2)
+    expect(answer).toHaveBeenCalledOnce()
   })
 
   it("can't be submitted until required fields are answered", async () => {

@@ -98,6 +98,13 @@ it('pops the open session out with what it shows and goes back to the session be
   expect(windows.focus).toHaveBeenCalledWith('b')
   expect(opened).toHaveBeenCalledTimes(calls)
 
+  // Page keys remain available for scrolling, even with Ctrl held.
+  for (const pageKey of ['PageDown', 'PageUp']) {
+    await key({ key: pageKey })
+    await key({ key: pageKey, ctrlKey: true })
+  }
+  expect(opened).toHaveBeenCalledTimes(calls)
+
   // Ctrl+Tab and Back skip it.
   await key({ key: 'Tab', ctrlKey: true })
   expect(opened).toHaveBeenLastCalledWith('c')
@@ -175,6 +182,12 @@ it('opens a session window as the main window showed it, returns it there, and h
   expect(windows.toMain).toHaveBeenLastCalledWith({ kind: 'newSession' })
   await key({ key: 'F', ctrlKey: true, shiftKey: true })
   expect(windows.toMain).toHaveBeenLastCalledWith({ kind: 'search' })
+  const forwarded = windows.toMain.mock.calls.length
+  for (const pageKey of ['PageDown', 'PageUp']) {
+    await key({ key: pageKey })
+    await key({ key: pageKey, ctrlKey: true })
+  }
+  expect(windows.toMain).toHaveBeenCalledTimes(forwarded)
   await key({ key: 'Tab', ctrlKey: true, shiftKey: true })
   expect(windows.toMain).toHaveBeenLastCalledWith({ kind: 'cycleSession', back: true })
 

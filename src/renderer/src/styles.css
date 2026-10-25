@@ -6243,3 +6243,25 @@ button.review-changes {
 .shortcut-note.error {
   color: var(--failed);
 }
+
+/* Keep project activity visible for the selected project too. */
+.project-menu b { flex-wrap: wrap; }
+.project-badges { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.project-badge { display: inline-flex; align-items: center; }
+
+/* The scrollbar spans the log and its pinned composer. */
+.log-scroll { min-height: 0; }
+.log-layout { min-height: 100%; display: flex; flex-direction: column; }
+.log-layout > .log, .log-layout > .thread-log { flex: 1 0 auto; min-height: 0; }
+.thread-panel .log-footer { background: var(--surface) var(--sheen); }
+.log-footer { position: sticky; bottom: 0; flex: none; background: var(--bg); z-index: 2; }
+.log-scroll::-webkit-scrollbar-thumb { background-color: transparent; }
+.log-scroll::-webkit-scrollbar-thumb:hover,
+.log-scroll.scrolling::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--ink) 22%, transparent); }
+
+/* Close confirmation sits above any dialog already open in the focused window. */
+.close-backdrop { z-index: 1000; }
+.close-heading { display: flex; align-items: center; gap: 10px; }
+.close-heading > svg { color: var(--failed); flex: none; }
+.close-heading h2 { margin: 0; }
+.close-dialog > p { line-height: 1.6; margin: 14px 0 20px; }

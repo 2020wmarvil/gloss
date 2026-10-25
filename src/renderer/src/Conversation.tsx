@@ -138,49 +138,51 @@ export function Conversation(props: Props): React.JSX.Element {
         renderAgent={renderAgent}
         reveal={props.reveal}
         pins={pinAnchorsFor(open, panel, runningThread, props.onOpenPin)}
-      />
-      <ActivityStrip
-        thread={props.lastThread}
-        queued={props.queue.items.length}
-        onOpenThread={props.onOpenThread}
-        onOpenMain={() => {
-          const log = mainRef.current?.querySelector('.log-scroll')
-          log?.scrollTo?.({ top: log.scrollHeight, behavior: 'smooth' })
-          props.onOpenMain()
-        }}
-        onOpenQueue={props.onOpenQueue}
-      />
-      <Composer
-        sessionId={open.session.id}
-        draftKey={session.id}
-        className="composer"
-        placeholder="Message the agent"
-        running={running}
-        autoFocus={panel === null}
-        primary={panel === null}
-        main
-        commands={live.commands}
-        accepts={live.accepts}
-        history={props.history}
-        queue={props.composerQueue}
-        onSend={props.onSend}
-        onSteer={live.steering && runningThread === null ? props.onSteer : undefined}
-        onInterrupt={props.onCancel}
-        onCancel={runningThread === null ? props.onCancel : undefined}
-      />
-      <StatusLine
-        obsidianVault={props.obsidianVault}
-        session={session}
-        live={live}
-        git={props.git}
-        pr={props.pr}
-        running={running}
-        waiting={open.requests?.length}
-        queue={props.queue}
-        queueShownAbove
-        onResumeQueue={() => void props.composerQueue.onResume()}
-        onSetChoice={props.onSetChoice}
-        onCommand={(text) => props.onSend(text, [])}
+        footer={<>
+          <ActivityStrip
+            thread={props.lastThread}
+            queued={props.queue.items.length}
+            onOpenThread={props.onOpenThread}
+            onOpenMain={() => {
+              const log = mainRef.current?.querySelector('.log-scroll')
+              log?.scrollTo?.({ top: log.scrollHeight, behavior: 'smooth' })
+              props.onOpenMain()
+            }}
+            onOpenQueue={props.onOpenQueue}
+          />
+          <Composer
+            sessionId={open.session.id}
+            draftKey={session.id}
+            className="composer"
+            placeholder="Message the agent"
+            running={running}
+            autoFocus={panel === null}
+            primary={panel === null}
+            main
+            commands={live.commands}
+            accepts={live.accepts}
+            history={props.history}
+            queue={props.composerQueue}
+            onSend={props.onSend}
+            onSteer={live.steering && runningThread === null ? props.onSteer : undefined}
+            onInterrupt={props.onCancel}
+            onCancel={runningThread === null ? props.onCancel : undefined}
+          />
+          <StatusLine
+            obsidianVault={props.obsidianVault}
+            session={session}
+            live={live}
+            git={props.git}
+            pr={props.pr}
+            running={running}
+            waiting={open.requests?.length}
+            queue={props.queue}
+            queueShownAbove
+            onResumeQueue={() => void props.composerQueue.onResume()}
+            onSetChoice={props.onSetChoice}
+            onCommand={(text) => props.onSend(text, [])}
+          />
+        </>}
       />
       <SelectionMenu scope={mainRef} messages={open.messages} onReply={props.onOpenSelection} />
     </main>

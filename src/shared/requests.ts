@@ -18,7 +18,7 @@ export type QuestionField = { key: string; title?: string; description?: string;
   | { kind: 'text'; format?: string; minLength?: number; maxLength?: number; pattern?: string; default?: string }
   | { kind: 'number'; integer: boolean; minimum?: number; maximum?: number; default?: number }
   | { kind: 'boolean'; default?: boolean }
-  /** A type Gloss can't show. Required ones leave only Decline and Cancel. */
+  /** A type Gloss can't show. Required ones leave only Decline. */
   | { kind: 'unsupported' }
 )
 

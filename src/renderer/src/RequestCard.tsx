@@ -289,15 +289,7 @@ function QuestionCard({ request, pending, error, onAnswer }: CardProps<Question>
           Decline
           <Key>Esc</Key>
         </button>
-        <button
-          type="button"
-          className="ghost sm"
-          disabled={pending}
-          title="Stop what the agent was asking for"
-          onClick={() => onAnswer({ kind: 'question', action: 'cancel' })}
-        >
-          Cancel
-        </button>
+
       </div>
       {error && <p className="request-error" role="alert">{error}</p>}
     </form>
@@ -419,7 +411,7 @@ function FieldInput(props: {
       return (
         <fieldset className="request-field" disabled>
           {head}
-          <p className="muted">Gloss can’t show this field{field.required ? ', so this question can only be declined or cancelled' : ''}.</p>
+          <p className="muted">Gloss can’t show this field{field.required ? ', so this question can only be declined' : ''}.</p>
         </fieldset>
       )
   }

@@ -64,8 +64,8 @@ export function SessionWindow({ sessionId }: { sessionId: string }): React.JSX.E
     if (e.shiftKey && key === 'f') toMain({ kind: 'search' })
     else if (!e.shiftKey && key === 'n') toMain({ kind: 'newSession' })
     else if (e.key === ',') toMain({ kind: 'settings' })
-    else if (e.key === 'Tab' || e.key === 'PageDown' || e.key === 'PageUp') {
-      toMain({ kind: 'cycleSession', back: e.key === 'PageUp' || (e.key === 'Tab' && e.shiftKey) })
+    else if (e.key === 'Tab') {
+      toMain({ kind: 'cycleSession', back: e.shiftKey })
     } else if (s.shortcut(e, sideShown, popIn).handled) e.preventDefault()
   }
   useEffect(() => {

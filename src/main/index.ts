@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
@@ -30,6 +31,7 @@ import { OpenCodeSupport } from './opencode'
 import { AgentProfileSupport } from './agentProfiles'
 import { profileError, type AgentProfile } from '../shared/agentProfiles'
 import { boundsArg, placeSessionWindow, type Rect } from './windowPlacement'
+import { createCloseGuard } from './closeGuard'
 import iconIco from '../../build/icon.ico?asset'
 import iconPng from '../../build/icons/256x256.png?asset'
 
@@ -169,6 +171,9 @@ function newWindow(bounds: Partial<Rect> & { width: number; height: number }): B
 function createWindow(): void {
   const win = newWindow({ width: 1280, height: 820 })
   mainWindow = win
+  win.on('close', (event) => {
+    guardClose(event, () => { if (!win.isDestroyed()) win.close() })
+  })
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = undefined
     // Closing the main window quits Gloss, session windows included.
@@ -272,6 +277,33 @@ function handleShortcut(win: BrowserWindow, input: Electron.Input): boolean {
 /** Sessions with a turn running, and the sleep blocker held while there are any. */
 const working = new Set<string>()
 let awake: number | null = null
+
+let closeConfirmation: { requestId: string; sender: Electron.WebContents; finish(close: boolean): void } | undefined
+
+const guardClose = createCloseGuard({
+  isWorking: () => working.size > 0,
+  confirm: () => new Promise<boolean>((resolve) => {
+    const parent = lastFocused && !lastFocused.isDestroyed() ? lastFocused : mainWindow
+    if (!parent || parent.isDestroyed()) { resolve(false); return }
+    const sender = parent.webContents
+    const requestId = randomUUID()
+    const dismiss = (): void => finish(false)
+    const finish = (close: boolean): void => {
+      sender.removeListener('destroyed', dismiss)
+      sender.removeListener('render-process-gone', dismiss)
+      sender.removeListener('did-start-navigation', dismiss)
+      closeConfirmation = undefined
+      resolve(close)
+    }
+    closeConfirmation = { requestId, sender, finish }
+    sender.once('destroyed', dismiss)
+    sender.once('render-process-gone', dismiss)
+    sender.once('did-start-navigation', dismiss)
+    parent.show()
+    parent.focus()
+    sender.send(IPC.event, { type: 'confirmClose', requestId, working: working.size } satisfies GlossEvent)
+  })
+})
 
 /** Keeps the computer from sleeping while an agent works (the display may still turn off). */
 function keepAwake(event: GlossEvent): void {
@@ -590,6 +622,11 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     shell.showItemInFolder(link.path)
   })
   ipcMain.handle(IPC.search, (_e, request: SearchRequest) => store!.search(request))
+  ipcMain.handle(IPC.confirmClose, (event, requestId: unknown, close: unknown) => {
+    const pending = closeConfirmation
+    if (!pending || event.sender !== pending.sender || requestId !== pending.requestId) return
+    pending.finish(close === true)
+  })
   ipcMain.handle(IPC.history, () => manager.messageHistory())
   registerCaptureIpc()
   ipcMain.handle(IPC.captureShortcutStatus, () => ({ shortcut: capture.registered, error: capture.error }))
@@ -944,7 +981,8 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => globalShortcut.unregisterAll())
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  if (!guardClose(event, () => app.quit())) return
   settings?.close()
   void sessions?.dispose()
   store?.close()
