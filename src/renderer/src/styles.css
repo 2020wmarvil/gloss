@@ -2163,6 +2163,45 @@ button.settings-button.on {
 
 /* Composer */
 
+.shell-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  color: var(--muted);
+  font-size: var(--t-12);
+}
+.editor-status { margin: 6px 0; color: var(--muted); font-size: var(--t-12); }
+.command-mode .md-editor {
+  padding: 2px 12px;
+  background: var(--code-bg);
+  color: var(--code-ink);
+  border-radius: var(--r-md);
+  box-shadow: var(--sink);
+}
+.command-mode .md-editor .cm-content, .command-mode .md-editor .cm-content span { font-family: var(--font-mono); }
+.command-mode .md-editor .cm-content { caret-color: var(--code-ink); }
+.shell-result { margin-top: 8px; font-size: var(--t-12); }
+.shell-result summary { cursor: pointer; overflow-wrap: anywhere; }
+.shell-result pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.rewind-menu { width: 580px; outline: none; }
+.rewind-menu ul { list-style: none; padding: 0; margin: 12px -8px; max-height: min(360px, 45vh); overflow-y: auto; }
+.rewind-menu li {
+  cursor: pointer;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 110px;
+  overflow: hidden;
+  color: var(--ink);
+}
+.rewind-menu li.on { background: var(--accent-mark); }
+.rewind-thread { color: var(--muted); font-size: var(--t-12); margin-right: 8px; }
+.rewind-preview { margin: 12px 0; padding: 12px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; }
+.rewind-menu .rewind-keys { color: var(--muted); font-size: var(--t-12); margin-top: 16px; }
+
 .composer {
   padding: 12px 32px 20px;
 }

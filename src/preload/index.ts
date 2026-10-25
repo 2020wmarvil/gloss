@@ -2,6 +2,13 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import { IPC, type GlossApi, type GlossEvent } from '../shared/ipc'
 
 const api: GlossApi = {
+  composer: {
+    shell: (id, command) => ipcRenderer.invoke(IPC.composerShell, id, command),
+    cancelShell: (id) => ipcRenderer.invoke(IPC.composerCancelShell, id),
+    contexts: (id, query) => ipcRenderer.invoke(IPC.composerContexts, id, query),
+    attach: (id, item) => ipcRenderer.invoke(IPC.composerAttach, id, item),
+    editDraft: (text) => ipcRenderer.invoke(IPC.composerEditDraft, text)
+  },
   readMarkdownImage: (src, cwd) => ipcRenderer.invoke(IPC.readMarkdownImage, src, cwd),
   openFileLink: (href) => ipcRenderer.invoke(IPC.openFileLink, href),
   search: (request) => ipcRenderer.invoke(IPC.search, request),
@@ -18,6 +25,8 @@ const api: GlossApi = {
   },
   history: () => ipcRenderer.invoke(IPC.history),
   sessions: {
+    rewindPoints: (id) => ipcRenderer.invoke(IPC.sessionsRewindPoints, id),
+    rewind: (id, messageId) => ipcRenderer.invoke(IPC.sessionsRewind, id, messageId),
     list: () => ipcRenderer.invoke(IPC.sessionsList),
     create: (cwd, agentId) => ipcRenderer.invoke(IPC.sessionsCreate, cwd, agentId),
     createReview: (cwd, agentId, baseRef, headRef) => ipcRenderer.invoke(IPC.sessionsCreateReview, cwd, agentId, baseRef, headRef),

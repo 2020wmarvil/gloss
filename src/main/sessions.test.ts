@@ -382,6 +382,79 @@ describe('SessionManager', () => {
     store.close()
   })
 
+  it('rewinds conversation history, restores retained attachments, and keeps the prefix on replay', async () => {
+    state.promptCapabilities = { embeddedContext: true, image: true }
+    const session = await manager.createSession('/project', 'claude')
+    const image = { kind: 'image' as const, name: 'keep.png', mimeType: 'image/png', data: 'iVBOR' }
+    await manager.send(session.id, 'keep this context', null, [{ kind: 'file', name: 'notes.txt', text: 'retained file context' }, image])
+    const keep = store.listMessages(session.id)
+    await manager.send(session.id, 'remove this secret turn', null)
+    const target = store.listMessages(session.id).find((m) => m.text === 'remove this secret turn')!
+    const removedThread = manager.createThread(session.id, store.listMessages(session.id).at(-1)!.id, { kind: 'selection', start: 0, end: 5, text: 'Hello' })
+    await manager.rewindSession(session.id, target.id)
+    expect(store.listMessages(session.id)).toEqual(keep)
+    expect(store.getThread(removedThread.id)).toBeUndefined()
+    const replacement = store.getSession(session.id)!
+    expect(replacement.acpSessionId).not.toBe(session.acpSessionId)
+    expect(state.prompts).toHaveLength(2)
+    expect(events.some((e) => e.type === 'sessionRewound')).toBe(true)
+    await manager.send(session.id, 'continue here', null)
+    expect(state.prompts.at(-1)).toContain('keep this context')
+    expect(state.prompts.at(-1)).toContain('retained file context')
+    expect(state.prompts.at(-1)).not.toContain('remove this secret turn')
+    expect(state.promptBlocks.at(-1)).toContainEqual({ type: 'image', mimeType: 'image/png', data: 'iVBOR' })
+    expect(store.rewindState(session.id)?.context).toBeNull()
+    await manager.dispose()
+    manager = makeManager()
+    const before = store.listMessages(session.id)
+    await manager.send(session.id, 'after reconnect', null)
+    expect(store.listMessages(session.id).slice(0, before.length)).toEqual(before)
+    expect(state.prompts.at(-1)).toBe('after reconnect')
+  })
+
+  it('preserves a pending rewind across reconnect even if the agent never saved the fresh session', async () => {
+    const session = await manager.createSession('/project', 'claude')
+    await manager.send(session.id, 'keep before restart', null)
+    await manager.send(session.id, 'remove before restart', null)
+    const target = store.listMessages(session.id).find((m) => m.text === 'remove before restart')!
+    await manager.rewindSession(session.id, target.id)
+    const fresh = store.getSession(session.id)!.acpSessionId
+    await manager.dispose()
+    state.sessions.delete(fresh)
+    state.transcripts.delete(fresh)
+    manager = makeManager()
+    expect((await manager.send(session.id, 'resume rewind', null)).error).toBeUndefined()
+    expect(store.getSession(session.id)).toBeDefined()
+    expect(store.listMessages(session.id)[0].text).toBe('keep before restart')
+    expect(state.prompts.at(-1)).toContain('keep before restart')
+    expect(state.prompts.at(-1)).not.toContain('remove before restart')
+  })
+
+  it('leaves history untouched when creating the replacement agent fails', async () => {
+    const session = await manager.createSession('/project', 'claude')
+    await manager.send(session.id, 'keep on failure', null)
+    const before = store.listMessages(session.id)
+    const spy = vi.spyOn(AgentConnection.prototype, 'newSession').mockRejectedValueOnce(new Error('Cannot start agent'))
+    try { await expect(manager.rewindSession(session.id, before[0].id)).rejects.toThrow('Cannot start agent') }
+    finally { spy.mockRestore() }
+    expect(store.listMessages(session.id)).toEqual(before)
+    expect(store.getSession(session.id)?.acpSessionId).toBe(session.acpSessionId)
+    expect((await manager.send(session.id, 'still works', null)).error).toBeUndefined()
+  })
+
+  it('refuses rewind while a turn or queued messages are pending', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    state.script = async () => { await gate; return 'end_turn' }
+    const session = await manager.createSession('/project', 'claude')
+    const sending = manager.send(session.id, 'working', null)
+    await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+    const target = store.listMessages(session.id)[0]
+    await expect(manager.rewindSession(session.id, target.id)).rejects.toThrow('running turn')
+    release()
+    await sending
+  })
+
   it('keeps a running turn on its MCP configuration and reloads for the queued follow-up', async () => {
     state.canClose = true
     let release!: () => void

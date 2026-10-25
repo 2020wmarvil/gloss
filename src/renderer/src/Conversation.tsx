@@ -147,6 +147,7 @@ export function Conversation(props: Props): React.JSX.Element {
         onOpenQueue={props.onOpenQueue}
       />
       <Composer
+        sessionId={open.session.id}
         draftKey={session.id}
         className="composer"
         placeholder="Message the agent"
@@ -160,6 +161,7 @@ export function Conversation(props: Props): React.JSX.Element {
         queue={props.composerQueue}
         onSend={props.onSend}
         onSteer={live.steering && runningThread === null ? props.onSteer : undefined}
+        onInterrupt={props.onCancel}
         onCancel={runningThread === null ? props.onCancel : undefined}
       />
       <StatusLine

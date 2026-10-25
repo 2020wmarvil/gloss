@@ -488,7 +488,13 @@ export function App(): React.JSX.Element {
             setPanel(null)
           }
           break
+        case 'sessionRewound':
         case 'sessionSynced':
+          if (event.type === 'sessionRewound') {
+            panels.current.delete(event.sessionId)
+            setNotices((all) => ({ ...all, [event.sessionId]: [] }))
+            if (openId.current === event.sessionId) setPanel(null)
+          }
           // Refresh the log without navigating, closing settings, or moving focus.
           if (openId.current === event.sessionId) {
             void window.gloss.sessions.open(event.sessionId).then((view) => {

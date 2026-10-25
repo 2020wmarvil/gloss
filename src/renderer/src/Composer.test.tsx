@@ -14,6 +14,9 @@ let root: Root | null = null
 function mount(
   draftKey: string,
   opts: {
+    primary?: boolean
+    onInterrupt?: () => void
+    sessionId?: string
     onSend?: (text: string) => void
     onSteer?: (text: string) => void
     commands?: SlashCommand[]
@@ -30,6 +33,9 @@ function mount(
   act(() =>
     root!.render(
       <Composer
+        primary={opts.primary}
+        onInterrupt={opts.onInterrupt}
+        sessionId={opts.sessionId}
         draftKey={draftKey}
         className="composer"
         placeholder="Message the agent"
@@ -398,4 +404,249 @@ describe('screen capture', () => {
     expect(start).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
+})
+
+
+describe('composer conveniences', () => {
+  it('swaps stashed drafts and restores their selections across remounts', () => {
+    let view = mount('stash-test')
+    type(view, 'a larger request')
+    act(() => view.dispatch({ selection: EditorSelection.single(2, 7) }))
+    press(view, 's', { ctrlKey: true })
+    expect(text(view)).toBe('')
+    type(view, 'quick question')
+    unmount()
+    view = mount('stash-test')
+    press(view, 's', { ctrlKey: true })
+    expect(text(view)).toBe('a larger request')
+    expect([view.state.selection.main.anchor, view.state.selection.main.head]).toEqual([2, 7])
+    press(view, 's', { ctrlKey: true })
+    expect(text(view)).toBe('quick question')
+  })
+
+  it('keeps history as arrow recall, with no new action buttons or search panel', () => {
+    const view = mount('history-shortcuts', { history: ['fix login', 'add a chart'] })
+    expect(document.querySelector('.composer-tools')).toBeNull()
+    expect(document.querySelector('button[title*="external editor"]')).toBeNull()
+    press(view, 'r', { ctrlKey: true })
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    press(view, 'ArrowUp')
+    expect(text(view)).toBe('fix login')
+  })
+
+  it('attaches selected @ context without sending the message', async () => {
+    const onSend = vi.fn()
+    const contexts = vi.fn().mockResolvedValue([{ kind: 'file', id: 'src/main.ts', label: 'src/main.ts', description: 'Attach file' }])
+    const attachment = { kind: 'file', name: 'main.ts', text: 'hello' }
+    const attach = vi.fn().mockResolvedValue(attachment)
+    Object.defineProperty(window, 'gloss', { configurable: true, value: { composer: { contexts, attach } } })
+    const view = mount('mention-test', { sessionId: 'session', onSend, accepts: { file: true, image: true } })
+    type(view, 'Look at @main')
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 160)) })
+    expect(contexts).toHaveBeenCalledWith('session', 'main')
+    await act(async () => { press(view, 'Tab') })
+    expect(attach).toHaveBeenCalledWith('session', expect.objectContaining({ id: 'src/main.ts' }))
+    expect(text(view)).toBe('Look at ')
+    expect(document.querySelector('.attachment-name')?.textContent).toBe('main.ts')
+    expect(onSend).not.toHaveBeenCalled()
+    press(view, 'Enter')
+    expect(onSend).toHaveBeenCalledWith('Look at', [attachment])
+  })
+
+  it('automatically restores the edited prompt on editor close, including after switching away', async () => {
+    const onSend = vi.fn()
+    let complete!: (value: string) => void
+    const editDraft = vi.fn().mockReturnValue(new Promise<string>((resolve) => { complete = resolve }))
+    Object.defineProperty(window, 'gloss', { configurable: true, value: { composer: { editDraft } } })
+    const view = mount('editor-auto-test', { onSend })
+    type(view, 'original draft')
+    press(view, 'g', { ctrlKey: true })
+    expect(editDraft).toHaveBeenCalledWith('original draft')
+    expect(document.querySelector('.editor-status')?.textContent).toContain('close the file')
+    press(view, 'g', { ctrlKey: true })
+    expect(editDraft).toHaveBeenCalledTimes(1)
+    unmount()
+    await act(async () => { complete('saved in editor') })
+    const restored = mount('editor-auto-test', { onSend })
+    expect(text(restored)).toBe('saved in editor')
+    expect(document.querySelector('.editor-status')).toBeNull()
+    expect(onSend).not.toHaveBeenCalled()
+    press(restored, 's', { ctrlKey: true })
+    expect(text(restored)).toBe('original draft')
+    editDraft.mockResolvedValueOnce('edited again')
+    await act(async () => { press(restored, 'g', { ctrlKey: true }) })
+    expect(editDraft).toHaveBeenCalledTimes(2)
+    expect(text(restored)).toBe('edited again')
+  })
+
+  it('unlocks Ctrl+G after editor errors without losing the draft', async () => {
+    const editDraft = vi.fn().mockRejectedValueOnce(new Error('Editor could not start')).mockResolvedValueOnce('recovered')
+    Object.defineProperty(window, 'gloss', { configurable: true, value: { composer: { editDraft } } })
+    const view = mount('editor-retry')
+    type(view, 'keep this draft')
+    await act(async () => { press(view, 'g', { ctrlKey: true }) })
+    expect(text(view)).toBe('keep this draft')
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain('Editor could not start')
+    await act(async () => { press(view, 'g', { ctrlKey: true }) })
+    expect(text(view)).toBe('recovered')
+    expect(document.querySelector('[role="alert"]')).toBeNull()
+  })
+
+})
+
+
+describe('composer shell mode', () => {
+  it('runs ! commands without changing the next message or leaving attachments', async () => {
+    const onSend = vi.fn()
+    const shell = vi.fn().mockResolvedValue({ command: 'Get-Location', output: 'C:/project', exitCode: 0, truncated: false })
+    Object.defineProperty(window, 'gloss', { configurable: true, value: { composer: { shell } } })
+    const view = mount('shell-auto', { sessionId: 's', onSend, accepts: { image: true, file: true } })
+    type(view, '!Get-Location')
+    expect(document.querySelector('.send')?.textContent).toBe('Run command')
+    expect(document.querySelector('.command-mode')).not.toBeNull()
+    await act(async () => { press(view, 'Enter') })
+    expect(shell).toHaveBeenCalledExactlyOnceWith('s', 'Get-Location')
+    expect(onSend).not.toHaveBeenCalled()
+    expect(text(view)).toBe('')
+    expect(document.querySelector('.attachment-name')).toBeNull()
+    expect(document.querySelector('.command-mode')).toBeNull()
+    type(view, 'next request')
+    press(view, 'Enter')
+    expect(onSend).toHaveBeenCalledWith('next request', [])
+  })
+
+  it('keeps command results across composer switches without overwriting new drafts', async () => {
+    let resolve!: (value: unknown) => void
+    const shell = vi.fn().mockReturnValue(new Promise((done) => { resolve = done }))
+    const cancelShell = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(window, 'gloss', { configurable: true, value: { composer: { shell, cancelShell } } })
+    const view = mount('shell-switch', { sessionId: 's', accepts: { image: true, file: true } })
+    type(view, '!long-command')
+    press(view, 'Enter')
+    type(view, 'a new draft while command runs')
+    expect(document.querySelector<HTMLButtonElement>('.send')?.disabled).toBe(false)
+    unmount()
+    await act(async () => { resolve({ command: 'long-command', output: 'finished', exitCode: 0, truncated: false }) })
+    const restored = mount('shell-switch', { sessionId: 's', accepts: { image: true, file: true } })
+    expect(text(restored)).toBe('a new draft while command runs')
+    expect(document.querySelector('.attachment-name')).toBeNull()
+    expect(document.querySelector('.shell-result')?.textContent).toContain('finished')
+  })
+
+  it('leaves text-only drafts empty after executing shell commands', async () => {
+    const onSend = vi.fn()
+    const shell = vi.fn().mockResolvedValue({ command: 'echo hello', output: 'hello', exitCode: 0, truncated: false })
+    Object.defineProperty(window, 'gloss', { configurable: true, value: { composer: { shell } } })
+    const view = mount('shell-text', { sessionId: 's', onSend })
+    type(view, '!echo hello')
+    await act(async () => { press(view, 'Enter') })
+    expect(text(view)).toBe('')
+    expect(document.querySelector('.shell-result')?.textContent).toContain('hello')
+    expect(onSend).not.toHaveBeenCalled()
+    press(view, 'Enter')
+    expect(onSend).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('Escape and rewind shortcuts', () => {
+  it('cancels on one Escape and opens the session rewind picker on a second tap', async () => {
+    const onInterrupt = vi.fn()
+    const rewindPoints = vi.fn().mockResolvedValue([{ id: 'm', text: 'sent in this session', threadId: null }])
+    Object.defineProperty(window, 'gloss', { configurable: true, value: { sessions: { rewindPoints } } })
+    const view = mount('escape-rewind', { sessionId: 's', running: true, onInterrupt })
+    press(view, 'Escape')
+    expect(onInterrupt).toHaveBeenCalledOnce()
+    expect(rewindPoints).not.toHaveBeenCalled()
+    await act(async () => { press(view, 'Escape') })
+    expect(rewindPoints).toHaveBeenCalledExactlyOnceWith('s')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('sent in this session')
+    expect(onInterrupt).toHaveBeenCalledOnce()
+  })
+
+  it('ignores held Escape and works when reading the log rather than editing', async () => {
+    const rewindPoints = vi.fn().mockResolvedValue([])
+    Object.defineProperty(window, 'gloss', { configurable: true, value: { sessions: { rewindPoints } } })
+    const view = mount('escape-reading', { sessionId: 's', primary: true })
+    press(view, 'Escape', { repeat: true })
+    expect(rewindPoints).not.toHaveBeenCalled()
+    act(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    await act(async () => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(rewindPoints).toHaveBeenCalledOnce()
+  })
+
+  it('does not treat separated Escape presses or a menu dismissal as a double tap', async () => {
+    const clock = vi.spyOn(Date, 'now')
+    const rewindPoints = vi.fn().mockResolvedValue([])
+    Object.defineProperty(window, 'gloss', { configurable: true, value: { sessions: { rewindPoints } } })
+    try {
+      const view = mount('escape-timing', { sessionId: 's', commands: [{ name: 'compact', description: 'Compact' }] })
+      clock.mockReturnValue(1000)
+      press(view, 'Escape')
+      clock.mockReturnValue(1500)
+      press(view, 'Escape')
+      expect(rewindPoints).not.toHaveBeenCalled()
+      type(view, '/co')
+      press(view, 'Escape')
+      press(view, 'Escape')
+      expect(rewindPoints).not.toHaveBeenCalled()
+    } finally { clock.mockRestore() }
+  })
+})
+
+
+it('scrolls @ selection into view and lets mouse hover pick an entry', async () => {
+  const contexts = vi.fn().mockResolvedValue(Array.from({ length: 12 }, (_, i) => ({ kind: 'file', id: `file${i}.ts`, label: `file${i}.ts`, description: 'Attach file' })))
+  const attach = vi.fn().mockResolvedValue({ kind: 'file', name: 'chosen.ts', text: 'chosen' })
+  Object.defineProperty(window, 'gloss', { configurable: true, value: { composer: { contexts, attach } } })
+  const view = mount('mention-scroll', { sessionId: 's', accepts: { image: true, file: true } })
+  type(view, '@file')
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 160)) })
+  const options = [...document.querySelectorAll<HTMLElement>('[aria-label="Attach context"] [role="option"]')]
+  const scroll = vi.fn()
+  options[9].scrollIntoView = scroll
+  for (let i = 0; i < 9; i++) press(view, 'ArrowDown')
+  expect(options[9].getAttribute('aria-selected')).toBe('true')
+  expect(scroll).toHaveBeenCalledWith({ block: 'nearest' })
+  act(() => options[4].dispatchEvent(new MouseEvent('mousemove', { bubbles: true })))
+  expect(options[4].getAttribute('aria-selected')).toBe('true')
+  await act(async () => { press(view, 'Enter') })
+  expect(attach).toHaveBeenCalledWith('s', expect.objectContaining({ id: 'file4.ts' }))
+})
+
+it('browses Downloads and quoted paths before attaching a selected file', async () => {
+  const contexts = vi.fn().mockImplementation(async (_id: string, query: string) => query === 'Down' ? [
+    { kind: 'folder', id: 'C:/My Downloads', label: 'Downloads/', description: 'Browse Downloads', browse: true }
+  ] : [{ kind: 'file', id: 'C:/My Downloads/note.txt', label: 'note.txt', description: 'Attach file' }])
+  const attach = vi.fn().mockResolvedValue({ kind: 'file', name: 'note.txt', text: 'downloaded note' })
+  Object.defineProperty(window, 'gloss', { configurable: true, value: { composer: { contexts, attach } } })
+  const view = mount('mention-outside', { sessionId: 's', accepts: { image: true, file: true } })
+  type(view, 'Read @Down')
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 160)) })
+  press(view, 'Tab')
+  expect(text(view)).toBe('Read @"C:/My Downloads/')
+  expect(attach).not.toHaveBeenCalled()
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 160)) })
+  expect(contexts).toHaveBeenLastCalledWith('s', 'C:/My Downloads/')
+  await act(async () => { press(view, 'Enter') })
+  expect(attach).toHaveBeenCalledWith('s', expect.objectContaining({ id: 'C:/My Downloads/note.txt' }))
+  expect(text(view)).toBe('Read ')
+})
+
+
+it('edits shell commands literally and sends their line breaks unchanged', async () => {
+  const shell = vi.fn().mockResolvedValue({ command: 'echo first\necho second', output: '', exitCode: 0, truncated: false })
+  Object.defineProperty(window, 'gloss', { configurable: true, value: { composer: { shell } } })
+  const view = mount('shell-multiline', { sessionId: 's' })
+  type(view, '!echo first')
+  expect(document.querySelector('.command-mode .md-editor')).not.toBeNull()
+  expect(document.querySelector('.shell-mode-hint')).toBeNull()
+  press(view, 'Enter', { shiftKey: true })
+  expect(text(view)).toBe('!echo first\n')
+  type(view, '!echo first\necho second')
+  await act(async () => { press(view, 'Enter') })
+  expect(shell).toHaveBeenCalledExactlyOnceWith('s', 'echo first\necho second')
+  type(view, '!echo - item')
+  press(view, 'Enter', { shiftKey: true })
+  expect(text(view)).toBe('!echo - item\n')
 })

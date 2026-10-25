@@ -37,6 +37,24 @@ export function editorArgs(command: string, file: string, line: number): string[
   return args.some((a) => a.includes('{file}')) ? filled : [...filled, file]
 }
 
+/** Prompt edits must wait for the file to close, even when an editor is already running. */
+export function draftEditorArgs(command: string, file: string): string[] {
+  const args = editorArgs(command, file, 1)
+  const executable = args[0]?.split(/[\\/]/).pop()?.replace(/\.(exe|cmd|bat)$/i, '').toLowerCase()
+  if (!executable) return args
+  const add = (...flags: string[]): void => {
+    for (const flag of flags) if (!args.includes(flag)) args.splice(1, 0, flag)
+  }
+  if (['code', 'code-insiders', 'cursor', 'windsurf', 'codium', 'zed', 'subl', 'sublime_text', 'gedit'].includes(executable)) {
+    if (!args.includes('-w')) add('--wait')
+  } else if (executable === 'kate') {
+    if (!args.includes('-b')) add('--block')
+  } else if (executable === 'notepad++') {
+    add('-multiInst', '-nosession')
+  }
+  return args
+}
+
 /**
  * A cmd.exe command line for the arguments. cmd expands `%VAR%` even inside quotes and
  * has no escape for it there, so a file path with `%` or `"` is refused.
@@ -48,9 +66,10 @@ export function windowsCommandLine(args: string[], file: string): string {
 
 /**
  * Starts the editor and resolves once it is running (or its launcher has exited
- * cleanly). Rejects if it can't start or exits with an error straight away.
+ * cleanly). With `wait`, resolves only when the editor command exits. Rejects
+ * if it can't start or exits with an error.
  */
-export async function launchEditor(args: string[], file: string, platform = process.platform): Promise<void> {
+export async function launchEditor(args: string[], file: string, platform = process.platform, wait = false): Promise<void> {
   // An editor that is already running is handed the file: let it come to the front.
   await allowForeground(platform)
   // Gloss runs its agents as Node with this set; an Electron-based editor must not inherit it.
@@ -59,10 +78,10 @@ export async function launchEditor(args: string[], file: string, platform = proc
   // On Windows editors are often .cmd launchers (code.cmd), which only run through a shell.
   const child =
     platform === 'win32'
-      ? spawn(windowsCommandLine(args, file), { shell: true, detached: true, stdio: 'ignore', windowsHide: true, env })
-      : spawn(args[0], args.slice(1), { detached: true, stdio: 'ignore', env })
+      ? spawn(windowsCommandLine(args, file), { shell: true, detached: !wait, stdio: 'ignore', windowsHide: true, env })
+      : spawn(args[0], args.slice(1), { detached: !wait, stdio: 'ignore', env })
   return new Promise((resolve, reject) => {
-    const done = setTimeout(() => {
+    const done = wait ? undefined : setTimeout(() => {
       child.unref()
       resolve()
     }, 1500)

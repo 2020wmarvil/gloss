@@ -1,9 +1,12 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { normalizeShortcut, shortcutLabel } from '@shared/shortcut'
+import type { ContextItem, ShellResult } from '@shared/composer'
 import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
+import { composerMention, mentionPrefix } from './composerMention'
 import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor'
 import { ArrowUp, Clock, CornerDownRight, Ellipsis, MapPin, Paperclip, Pencil, Scan, Square, Trash, X } from 'lucide-react'
+import { RewindDialog } from './RewindDialog'
 import { Popover } from './Popover'
 import { AnnotateDialog } from './AnnotateDialog'
 import { loadImage, type Annotation } from './capture/annotate'
@@ -18,6 +21,7 @@ export type ComposerQueue = {
 }
 
 type Props = {
+  sessionId?: string
   /** Which composer this is (session, and thread anchor), so its unsent draft survives switching away. */
   draftKey: string
   className: string
@@ -40,8 +44,10 @@ type Props = {
   onSend(text: string, attachments: Attachment[]): void
   /** Offered while a turn runs in this composer's thread and the agent supports steering (SPEC → Steer). */
   onSteer?(text: string, attachments: Attachment[]): void
-  /** Given only to the composer of the thread the turn runs in: Cancel, and Escape, stop it. */
+  /** Given only to the active thread composer, where the Stop button is shown. */
   onCancel?(): void
+  /** Escape interrupts the session, including a turn running in another thread. */
+  onInterrupt?(): void
   /** A thread's composer: sends the message to the main conversation instead (SPEC → Send to main). */
   onSendToMain?(text: string, attachments: Attachment[]): void
 }
@@ -72,7 +78,18 @@ function listenForCapture(): void {
 }
 
 /** Unsent text, attachments and where the caret was, by draftKey, kept while Gloss runs (SPEC → Composer). */
-const drafts = new Map<string, { text: string; attachments: Attachment[]; selection?: [number, number] }>()
+type Draft = { text: string; attachments: Attachment[]; selection?: [number, number] }
+const drafts = new Map<string, Draft>()
+const stashedDrafts = new Map<string, Draft>()
+type EditorState = { busy: boolean; error?: string }
+const editorStates = new Map<string, EditorState>()
+type ShellState = { running: boolean; result?: ShellResult; error?: string }
+const shellStates = new Map<string, ShellState>()
+const DRAFT_CHANGED = 'gloss:composer-draft'
+function publishShell(key: string, state: ShellState): void {
+  shellStates.set(key, state)
+  window.dispatchEvent(new CustomEvent(DRAFT_CHANGED, { detail: { key } }))
+}
 
 /** Keys that move the caret within the text, which stop cycling through the history. */
 const CARET_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'])
@@ -107,6 +124,7 @@ async function toAttachment(file: File, accepts: Props['accepts']): Promise<Atta
 }
 
 export function Composer({
+  sessionId,
   draftKey,
   className,
   placeholder,
@@ -122,10 +140,22 @@ export function Composer({
   onSend,
   onSteer,
   onCancel,
+  onInterrupt,
   onSendToMain
 }: Props): React.JSX.Element {
   const [text, setText] = useState(() => drafts.get(draftKey)?.text ?? '')
   const [attachments, setAttachments] = useState<Attachment[]>(() => drafts.get(draftKey)?.attachments ?? [])
+  const [shell, setShell] = useState<ShellState>(() => shellStates.get(draftKey) ?? { running: false })
+  const [rewindOpen, setRewindOpen] = useState(false)
+  const [caret, setCaret] = useState(0)
+  const contextMenu = useRef<HTMLUListElement>(null)
+  const [contexts, setContexts] = useState<ContextItem[]>([])
+  const [contextPick, setContextPick] = useState(0)
+  const [contextBusy, setContextBusy] = useState(false)
+  const [editor, setEditor] = useState<EditorState>(() => editorStates.get(draftKey) ?? { busy: false })
+  const editorBusy = editor.busy
+  const lastEscape = useRef<number | null>(null)
+  const restoreSelection = useRef<[number, number] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [pick, setPick] = useState(0)
@@ -138,6 +168,35 @@ export function Composer({
   const [annotating, setAnnotating] = useState<{ annotation: Annotation; index: number | null; attached?: boolean } | null>(null)
   const startCapture = useRef<() => void>(() => {})
   const captureKeys = normalizeShortcut(useContext(CaptureShortcut))
+
+  useEffect(() => {
+    const update = (event: Event): void => {
+      const detail = (event as CustomEvent<{ key: string; focus?: boolean }>).detail
+      if (detail.key !== draftKey) return
+      setShell(shellStates.get(draftKey) ?? { running: false })
+      setEditor(editorStates.get(draftKey) ?? { busy: false })
+      const draft = drafts.get(draftKey)
+      if (draft) { setText(draft.text); setAttachments(draft.attachments) }
+      if (detail.focus) ref.current?.focus()
+    }
+    window.addEventListener(DRAFT_CHANGED, update)
+    return () => window.removeEventListener(DRAFT_CHANGED, update)
+  }, [draftKey])
+
+  async function runShell(): Promise<void> {
+    if (!sessionId || shell.running) return
+    const command = text.trim().slice(1).trim()
+    if (!command) { setError('Enter a command after !.'); return }
+    setError(null)
+    const draft = drafts.get(draftKey) ?? { text, attachments }
+    drafts.set(draftKey, { ...draft, text: '' })
+    setText('')
+    publishShell(draftKey, { running: true })
+    try {
+      const result = await window.gloss.composer.shell(sessionId, command)
+      publishShell(draftKey, { running: false, result })
+    } catch (err) { publishShell(draftKey, { running: false, error: errorText(err) }) }
+  }
 
   // The caret goes back where it was when the user switched away (before the focus below).
   useLayoutEffect(() => {
@@ -212,14 +271,129 @@ export function Composer({
   }, [draftKey, primary])
 
   // Slash commands: offered while the text is a single "/word" at the start.
+  const localCommands: SlashCommand[] = [
+    { name: 'stash', description: 'Stash or swap the current draft' },
+    { name: 'editor', description: 'Edit the prompt in your external editor' },
+    ...(sessionId ? [{ name: 'rewind', description: 'Remove a message and later conversation history' }] : [])
+  ].filter((c) => !commands.some((agent) => agent.name === c.name))
+  const availableCommands = [...commands, ...localCommands]
   const slash = /^\/(\S*)$/.exec(text)
   const matches =
     slash && dismissed !== text
-      ? commands.filter((c) => c.name.toLowerCase().startsWith(slash[1].toLowerCase())).slice(0, 8)
+      ? availableCommands.filter((c) => c.name.toLowerCase().startsWith(slash[1].toLowerCase())).slice(0, 8)
       : []
   const picked = matches.length > 0 ? Math.min(pick, matches.length - 1) : 0
 
+  const mention = composerMention(text, caret)
+  const mentionQuery = mention?.query
+  const contextPicked = Math.min(contextPick, Math.max(0, contexts.length - 1))
+  useEffect(() => {
+    setContexts([])
+    if (mentionQuery === undefined || !sessionId || dismissed === text || !(accepts.file || accepts.image)) return
+    let active = true
+    const timer = setTimeout(() => {
+      void window.gloss.composer.contexts(sessionId, mentionQuery).then(
+        (items) => { if (active) { setContexts(items); setContextPick(0) } },
+        (err: unknown) => { if (active) setError(errorText(err)) }
+      )
+    }, 120)
+    return () => { active = false; clearTimeout(timer) }
+  }, [mentionQuery, sessionId, dismissed, text, accepts.file, accepts.image])
+
+  useEffect(() => {
+    contextMenu.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' })
+  }, [contextPicked, contexts])
+
+  async function chooseContext(item: ContextItem): Promise<void> {
+    if (!sessionId || contextBusy || !mention) return
+    if (item.browse) {
+      const path = item.label.startsWith('~/') ? item.label : `${item.id.replace(/[\\/]$/, '')}/`
+      const inserted = mentionPrefix(path)
+      const value = text.slice(0, mention.start) + inserted + text.slice(mention.end)
+      restoreSelection.current = [mention.start + inserted.length, mention.start + inserted.length]
+      setText(value)
+      setCaret(mention.start + inserted.length)
+      setContexts([])
+      ref.current?.focus()
+      return
+    }
+    if (attachments.length >= 20) { setError('A message can have up to 20 attachments.'); return }
+    const before = text
+    const start = mention.start
+    setContextBusy(true)
+    setError(null)
+    try {
+      const attachment = await window.gloss.composer.attach(sessionId, item)
+      if (attachment.kind === 'image' ? !accepts.image : !accepts.file) throw new Error(`This agent doesn't accept ${attachment.kind === 'image' ? 'images' : 'attached files'}.`)
+      setAttachments((list) => [...list, attachment])
+      setText((value) => value === before && start >= 0 ? value.slice(0, start) + value.slice(caret) : value)
+      setContexts([])
+      ref.current?.focus()
+    } catch (err) { setError(errorText(err)) }
+    finally { setContextBusy(false) }
+  }
+
+  async function editExternally(value = text): Promise<void> {
+    if (editorStates.get(draftKey)?.busy) return
+    setError(null)
+    editorStates.set(draftKey, { busy: true })
+    window.dispatchEvent(new CustomEvent(DRAFT_CHANGED, { detail: { key: draftKey } }))
+    try {
+      const edited = await window.gloss.composer.editDraft(value)
+      const draft = drafts.get(draftKey) ?? { text: value, attachments: [] }
+      if (draft.text !== edited) stashedDrafts.set(draftKey, draft)
+      drafts.set(draftKey, { ...draft, text: edited, selection: [edited.length, edited.length] })
+      editorStates.set(draftKey, { busy: false })
+    } catch (err) {
+      editorStates.set(draftKey, { busy: false, error: errorText(err) })
+    } finally {
+      window.dispatchEvent(new CustomEvent(DRAFT_CHANGED, { detail: { key: draftKey, focus: true } }))
+    }
+  }
+
+  function escape(e: KeyboardEvent): boolean {
+    if (e.key !== 'Escape' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.isComposing) return false
+    if (e.repeat) return true
+    e.stopPropagation()
+    const now = Date.now()
+    if (sessionId && lastEscape.current !== null && now >= lastEscape.current && now - lastEscape.current <= 400) {
+      lastEscape.current = null
+      setRewindOpen(true)
+      return true
+    }
+    lastEscape.current = now
+    if (shell.running && sessionId) {
+      void window.gloss.composer.cancelShell(sessionId).catch((err: unknown) => setError(errorText(err)))
+    } else if (running && (onInterrupt || onCancel)) {
+      (onInterrupt ?? onCancel)?.()
+    }
+    return !!sessionId || (running && !!(onInterrupt || onCancel))
+  }
+
+  // Escape also works while reading the log. Menus and dialogs handle it first.
+  const latestEscape = useRef(escape)
+  latestEscape.current = escape
+  useEffect(() => {
+    if (!primary) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.defaultPrevented || document.querySelector('[role="dialog"], .popover')) return
+      if (e.key !== 'Escape') { lastEscape.current = null; return }
+      if (latestEscape.current(e)) e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [primary])
+
+  function runLocalCommand(name: string): boolean {
+    if (!localCommands.some((c) => c.name === name)) return false
+    if (name === 'stash') stashDraft('')
+    if (name === 'editor') { void editExternally(''); setText('') }
+    if (name === 'rewind') { setText(''); setRewindOpen(true) }
+    return true
+  }
+
   function choose(c: SlashCommand): void {
+    if (runLocalCommand(c.name)) return
     setText(`/${c.name} `)
     setPick(0)
     ref.current?.focus()
@@ -240,6 +414,7 @@ export function Composer({
   const steer = running ? onSteer : undefined
   /** What Send does now: send, steer the running turn, or queue for after it (SPEC → Queue and Steer). */
   const mode: 'send' | 'steer' | 'queue' = steer ? 'steer' : running ? 'queue' : 'send'
+  const commandMode = text.trimStart().startsWith('!')
   const empty = !text.trim() && attachments.length === 0
 
   /**
@@ -269,8 +444,11 @@ export function Composer({
   }
 
   function submit(how: 'send' | 'steer' | 'main' = 'send'): void {
+    if (contextBusy || editorBusy) return
     const trimmed = text.trim()
     if (!trimmed && attachments.length === 0) return
+    if (trimmed.startsWith('!')) { void runShell(); return }
+    if (attachments.length === 0 && /^\/[^\s]+$/.test(trimmed) && runLocalCommand(trimmed.slice(1))) return
     if (how !== 'main' && steer) steer(trimmed, attachments)
     else if (how === 'main' && onSendToMain) onSendToMain(trimmed, attachments)
     else onSend(trimmed, attachments)
@@ -279,6 +457,25 @@ export function Composer({
     setAttachments([])
     setError(null)
   }
+
+  function stashDraft(value = text): void {
+    const saved = stashedDrafts.get(draftKey)
+    const current = { text: value, attachments, selection: ref.current?.selection() }
+    if (value || attachments.length) stashedDrafts.set(draftKey, current)
+    else stashedDrafts.delete(draftKey)
+    setText(saved?.text ?? '')
+    setAttachments(saved?.attachments ?? [])
+    restoreSelection.current = saved?.selection ?? [0, 0]
+    leave()
+    ref.current?.focus()
+  }
+
+  useEffect(() => {
+    if (restoreSelection.current) {
+      ref.current?.setSelection(...restoreSelection.current)
+      restoreSelection.current = null
+    }
+  }, [text, attachments])
 
   const canAttach = accepts.image || accepts.file
 
@@ -295,7 +492,7 @@ export function Composer({
   }
 
   return (
-    <div className={className} onFocus={() => (lastComposer = draftKey)}>
+    <div className={`${className}${commandMode ? ' command-mode' : ''}`} onFocus={() => (lastComposer = draftKey)}>
       {queue.items.length > 0 && (
         <div className="queue">
           {queue.paused && (
@@ -316,6 +513,15 @@ export function Composer({
             ))}
           </ol>
         </div>
+      )}
+      {contexts.length > 0 && (
+        <ul ref={contextMenu} className="slash-menu" role="listbox" aria-label="Attach context">
+          {contexts.map((item, i) => <li key={`${item.kind}:${item.id}`} role="option" aria-selected={i === contextPicked} onMouseMove={() => setContextPick(i)}>
+            <button type="button" className={i === contextPicked ? 'on' : undefined} onMouseDown={(e) => e.preventDefault()} disabled={contextBusy} onClick={() => void chooseContext(item)}>
+              <span className="slash-name">{item.label}</span><span className="slash-desc">{item.description}</span>
+            </button>
+          </li>)}
+        </ul>
       )}
       {matches.length > 0 && (
         <ul className="slash-menu" role="listbox" aria-label="Slash commands">
@@ -424,14 +630,16 @@ export function Composer({
             placeholder={placeholder}
             ariaLabel={placeholder}
             value={text}
+            plainText={commandMode}
             onChange={(value) => {
               // Editing a recalled message makes it the draft.
               const shown = browsing.current
               if (shown !== null && value !== history[shown]) leave()
               setText(value)
+              setCaret(ref.current?.selection()[1] ?? value.length)
               setPick(0)
             }}
-            onSelectionChange={leave}
+            onSelectionChange={() => { leave(); setCaret(ref.current?.selection()[1] ?? 0) }}
             onPasteFiles={(files) => {
               if (canAttach) void addFiles(files)
               else setError("The agent doesn't accept images or files.")
@@ -439,14 +647,23 @@ export function Composer({
             }}
             onKeyDown={(e) => {
               if (e.isComposing) return false
+              if (e.key === 'Escape' && document.querySelector('[role="dialog"], .popover')) return false
+              if (e.key !== 'Escape') lastEscape.current = null
+              if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+                if (e.key.toLowerCase() === 's') { stashDraft(); return true }
+                if (e.key.toLowerCase() === 'g') { void editExternally(); return true }
+              }
+              if (contexts.length > 0) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { setContextPick((contextPicked + (e.key === 'ArrowDown' ? 1 : contexts.length - 1)) % contexts.length); return true }
+                if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') { void chooseContext(contexts[contextPicked]); return true }
+                if (e.key === 'Escape') { lastEscape.current = null; e.stopPropagation(); setContexts([]); setDismissed(text); return true }
+              }
               if (matches.length === 0) {
                 const plain = !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
                 if (plain && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) return recall(e.key === 'ArrowUp' ? 1 : -1)
                 // Even where the caret can't go further (Right at the end), these mean "edit this one".
                 if (CARET_KEYS.has(e.key)) leave()
-                if (e.key !== 'Escape' || !running || !onCancel) return false
-                onCancel()
-                return true
+                return escape(e)
               }
               if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 setPick((picked + (e.key === 'ArrowDown' ? 1 : matches.length - 1)) % matches.length)
@@ -458,6 +675,7 @@ export function Composer({
                 return true
               }
               if (e.key === 'Escape') {
+                lastEscape.current = null
                 e.stopPropagation()
                 setDismissed(text)
                 return true
@@ -473,7 +691,7 @@ export function Composer({
             </button>
           )}
           {onSendToMain && (
-            <Popover className="icon-button composer-more" title="More ways to send" label={<Ellipsis />} disabled={empty}>
+            <Popover className="icon-button composer-more" title="More ways to send" label={<Ellipsis />} disabled={empty || contextBusy || editorBusy || (commandMode && shell.running)}>
               {(close) => (
                 <div className="menu-list">
                   <button
@@ -491,14 +709,25 @@ export function Composer({
           <button
             className={mode === 'queue' ? 'secondary send' : 'primary send'}
             onClick={() => submit()}
-            disabled={empty}
+            disabled={empty || contextBusy || editorBusy || (commandMode && shell.running)}
             title={mode === 'steer' ? 'Send into the running turn now' : mode === 'queue' ? 'Sent when the running turn ends' : undefined}
           >
             {mode === 'steer' ? <CornerDownRight /> : mode === 'queue' ? <Clock /> : <ArrowUp />}
-            {mode === 'steer' ? 'Steer' : mode === 'queue' ? 'Queue' : 'Send'}
+            {commandMode ? 'Run command' : mode === 'steer' ? 'Steer' : mode === 'queue' ? 'Queue' : 'Send'}
           </button>
         </div>
       </div>
+      {shell.running && <div className="shell-status" role="status">
+        <span>Running shell command. Esc to stop.</span>
+      </div>}
+      {shell.result && <details className="shell-result">
+        <summary>Shell: {shell.result.command.slice(0, 100)} (exit {shell.result.exitCode ?? 'unavailable'})</summary>
+        <pre>{shell.result.output || '(No output)'}</pre>
+      </details>}
+      {shell.error && <p className="composer-error" role="alert">{shell.error}</p>}
+      {rewindOpen && sessionId && <RewindDialog sessionId={sessionId} onClose={() => { setRewindOpen(false); ref.current?.focus() }} />}
+      {editorBusy && <p className="editor-status" role="status">Editing in external editor. Save and close the file to return.</p>}
+      {editor.error && <p className="composer-error" role="alert">{editor.error}</p>}
       {error && <p className="composer-error">{error}</p>}
       {footer}
       {annotating && (

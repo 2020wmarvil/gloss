@@ -16,6 +16,8 @@ import { patchArg, SettingsFile } from './settings'
 import { editorArgs, launchEditor } from './openFile'
 import { fileLink } from '../shared/fileLink'
 import { readMarkdownImage } from './markdownImage'
+import { registerComposerIpc } from './composerIpc'
+import { takeForeground } from './foreground'
 import { runInTerminal } from './terminal'
 import { registerCaptureIpc, startCapture } from './capture'
 import { normalizeShortcut, shortcutLabel } from '../shared/shortcut'
@@ -460,6 +462,14 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     manager.agentSessions(folderArg(path, 'path'), str(agentId, 'agentId'))
   )
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
+  registerComposerIpc(store!, () => mainWindow?.webContents, () => settingsFile.state().global.externalEditor, () => {
+    const win = mainWindow
+    if (!win || win.isDestroyed()) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    void takeForeground(win.getNativeWindowHandle())
+  })
   ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
   ipcMain.handle(IPC.readMarkdownImage, (e, src: unknown, cwd: unknown) => {
     if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can load images.')
@@ -540,6 +550,16 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
         typeof listedAt === 'string' ? listedAt : undefined
       )
   )
+  ipcMain.handle(IPC.sessionsRewindPoints, (e, id: unknown) => {
+    if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can rewind.')
+    const sessionId = str(id, 'id')
+    if (!store!.getSession(sessionId)) throw new Error('Session no longer exists.')
+    return store!.listMessages(sessionId).filter((m) => m.role === 'user').reverse().map((m) => ({ id: m.id, text: m.text.slice(0, 500), threadId: m.threadId }))
+  })
+  ipcMain.handle(IPC.sessionsRewind, (e, id: unknown, messageId: unknown) => {
+    if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can rewind.')
+    return manager.rewindSession(str(id, 'id'), str(messageId, 'messageId'))
+  })
   ipcMain.handle(IPC.sessionsOpen, (_e, id: unknown) => manager.openSession(str(id, 'id')))
   ipcMain.handle(IPC.sessionsRefresh, (_e, id: unknown) => manager.refreshSession(str(id, 'id')))
   ipcMain.handle(IPC.sessionsRename, (_e, id: unknown, title: unknown) =>
