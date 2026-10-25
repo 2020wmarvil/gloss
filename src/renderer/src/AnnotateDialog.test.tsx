@@ -75,3 +75,31 @@ it('preserves native text undo and redo for note editing', () => {
   expect(undo(note, { ctrlKey: false, metaKey: true }).defaultPrevented).toBe(true)
   expect(document.querySelector('textarea')).toBeNull()
 })
+it('keeps keyboard focus through repeated undo of three pins and a drawing', async () => {
+  const canvas = document.querySelector('canvas')!
+  canvas.setPointerCapture = vi.fn()
+  const pointer = (type: string, x: number): void => {
+    act(() => canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: x })))
+  }
+  pointer('pointerdown', 2)
+  pointer('pointermove', 20)
+  pointer('pointerup', 20)
+  act(() => button('Pin').click())
+  for (const x of [10, 45, 80]) {
+    pointer('pointerdown', x)
+    pointer('pointerup', x)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  }
+  expect(document.querySelectorAll('textarea')).toHaveLength(3)
+  expect(document.activeElement).toBe(document.querySelector('[aria-label="Note for pin 3"]'))
+  for (const count of [2, 1, 0]) {
+    expect(undo(document.activeElement as HTMLElement).defaultPrevented).toBe(true)
+    expect(document.querySelectorAll('textarea')).toHaveLength(count)
+    expect(document.activeElement).toBe(document.querySelector('.annotate'))
+  }
+  expect(button('Undo').disabled).toBe(false)
+  undo(document.activeElement as HTMLElement)
+  expect(button('Undo').disabled).toBe(true)
+  for (let i = 0; i < 4; i++) undo(document.activeElement as HTMLElement, { shiftKey: true })
+  expect(document.querySelectorAll('textarea')).toHaveLength(3)
+})

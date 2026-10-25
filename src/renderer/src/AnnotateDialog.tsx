@@ -335,6 +335,8 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
       (!typing || (key === 'z' && !e.shiftKey && (e.target as HTMLTextAreaElement).value === ''))) {
       // An empty note should not trap undo after an accidental pin placement.
       e.preventDefault()
+      // Undo may remove the focused note. Keep subsequent shortcuts in the dialog.
+      if (typing) root.current?.focus({ preventScroll: true })
       if (key === 'y' || e.shiftKey) redo()
       else undo()
     } else if (e.key === 'Escape') {
