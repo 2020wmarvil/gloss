@@ -5,7 +5,8 @@ import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
 import { composerMention, mentionPrefix } from './composerMention'
 import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor'
-import { ArrowUp, Clock, CornerDownRight, Ellipsis, MapPin, Paperclip, Pencil, Scan, Square, Trash, X } from 'lucide-react'
+import { ArrowUp, Clock, CornerDownRight, Ellipsis, Paperclip, Pencil, Scan, Square, Trash } from 'lucide-react'
+import { ComposerAttachments } from './ComposerAttachments'
 import { RewindDialog } from './RewindDialog'
 import { Popover } from './Popover'
 import { AnnotateDialog } from './AnnotateDialog'
@@ -339,13 +340,18 @@ export function Composer({
     editorStates.set(draftKey, { busy: true })
     window.dispatchEvent(new CustomEvent(DRAFT_CHANGED, { detail: { key: draftKey } }))
     try {
-      const edited = await window.gloss.composer.editDraft(value)
+      const result = await window.gloss.composer.editDraft(value)
+      if (!result || typeof result !== 'object' || typeof result.text !== 'string') {
+        throw new Error('Restart Gloss to load the updated editor handoff. Your draft has been kept.')
+      }
+      const edited = result.text
       const draft = drafts.get(draftKey) ?? { text: value, attachments: [] }
       if (draft.text !== edited) stashedDrafts.set(draftKey, draft)
       drafts.set(draftKey, { ...draft, text: edited, selection: [edited.length, edited.length] })
       editorStates.set(draftKey, { busy: false })
     } catch (err) {
-      editorStates.set(draftKey, { busy: false, error: errorText(err) })
+      const message = errorText(err)
+      editorStates.set(draftKey, { busy: false, error: /No handler registered.*composerEditDraft/.test(message) ? 'Restart Gloss to load the updated editor handoff. Your draft has been kept.' : message })
     } finally {
       window.dispatchEvent(new CustomEvent(DRAFT_CHANGED, { detail: { key: draftKey, focus: true } }))
     }
@@ -356,9 +362,14 @@ export function Composer({
     if (e.repeat) return true
     e.stopPropagation()
     const now = Date.now()
-    if (sessionId && lastEscape.current !== null && now >= lastEscape.current && now - lastEscape.current <= 400) {
+    if ((sessionId || text || attachments.length) && lastEscape.current !== null && now >= lastEscape.current && now - lastEscape.current <= 400) {
       lastEscape.current = null
-      setRewindOpen(true)
+      if (text || attachments.length) {
+        stashedDrafts.set(draftKey, { text, attachments, selection: ref.current?.selection() })
+        setText('')
+        setAttachments([])
+        leave()
+      } else setRewindOpen(true)
       return true
     }
     lastEscape.current = now
@@ -541,7 +552,7 @@ export function Composer({
         </ul>
       )}
       <div
-        className={`box${dragging ? ' dragging' : ''}`}
+        className={`box${canAttach ? ' can-attach' : ''}${attachments.length ? ' has-attachments' : ''}${dragging ? ' dragging' : ''}`}
         onDragOver={(e) => {
           if (!canAttach || !e.dataTransfer.types.includes('Files')) return
           e.preventDefault()
@@ -554,77 +565,7 @@ export function Composer({
           if (canAttach) void addFiles([...e.dataTransfer.files])
         }}
       >
-        {attachments.length > 0 && (
-          <ul className="attachments">
-            {attachments.map((a, i) =>
-              a.kind === 'image' ? (
-                <CaptureChip
-                  key={i}
-                  image={a}
-                  onEdit={
-                    annotations.has(a)
-                      ? () => setAnnotating({ annotation: annotations.get(a)!, index: i })
-                      : // Pins already drawn in (a recalled message) would clash with new ones.
-                        a.pins
-                        ? undefined
-                        : () => void annotateImage(a, i)
-                  }
-                  onRemove={() => setAttachments((list) => list.filter((_, j) => j !== i))}
-                />
-              ) : (
-              <li key={i} className="attachment" title={a.path ?? a.name}>
-                <span className="attachment-name">{a.name}</span>
-                <button
-                  aria-label={`Remove ${a.name}`}
-                  onClick={() => setAttachments((list) => list.filter((_, j) => j !== i))}
-                >
-                  <X size={14} />
-                </button>
-              </li>
-              )
-            )}
-          </ul>
-        )}
-        <div className="box-row">
-          {canAttach && (
-            <>
-              {/* One button for everything a message can carry: files, and a screen capture. */}
-              <Popover className="attach" title="Attach" label={<Paperclip aria-label="Attach" />}>
-                {(close) => (
-                  <div className="menu-list attach-menu">
-                    <button onClick={() => (close(), fileInput.current?.click())}>
-                      <span className="menu-row">
-                        <Paperclip size={14} />
-                        Attachments
-                      </span>
-                    </button>
-                    <button
-                      disabled={!accepts.image}
-                      title={accepts.image && captureKeys ? `Screen capture (${shortcutLabel(captureKeys, /Mac/.test(navigator.userAgent))})` : undefined}
-                      onClick={() => (close(), void capture())}
-                    >
-                      <span className="menu-row">
-                        <Scan size={14} />
-                        Screen capture
-                      </span>
-                      {!accepts.image && <span className="muted">This agent doesn&apos;t accept images.</span>}
-                    </button>
-                  </div>
-                )}
-              </Popover>
-              <input
-                ref={fileInput}
-                type="file"
-                multiple
-                hidden
-                accept={accepts.file ? undefined : 'image/*'}
-                onChange={(e) => {
-                  void addFiles([...(e.target.files ?? [])])
-                  e.target.value = ''
-                }}
-              />
-            </>
-          )}
+        <div className="composer-input">
           <MarkdownEditor
             ref={ref}
             placeholder={placeholder}
@@ -684,6 +625,58 @@ export function Composer({
             }}
             onSubmit={submit}
           />
+        </div>
+        {attachments.length > 0 && <ComposerAttachments
+          attachments={attachments}
+          canEditImage={(image) => annotations.has(image) || !image.pins}
+          onEditImage={(image, index) => {
+            const annotation = annotations.get(image)
+            if (annotation) setAnnotating({ annotation, index })
+            else void annotateImage(image, index)
+          }}
+          onRemove={(index) => setAttachments((list) => list.filter((_, i) => i !== index))}
+        />}
+        <div className="box-row composer-actions">
+          {canAttach && (
+            <>
+              {/* One button for everything a message can carry: files, and a screen capture. */}
+              <Popover className="attach" title="Attach" label={<Paperclip aria-label="Attach" />}>
+                {(close) => (
+                  <div className="menu-list attach-menu">
+                    <button onClick={() => (close(), fileInput.current?.click())}>
+                      <span className="menu-row">
+                        <Paperclip size={14} />
+                        Attachments
+                      </span>
+                    </button>
+                    <button
+                      disabled={!accepts.image}
+                      title={accepts.image && captureKeys ? `Screen capture (${shortcutLabel(captureKeys, /Mac/.test(navigator.userAgent))})` : undefined}
+                      onClick={() => (close(), void capture())}
+                    >
+                      <span className="menu-row">
+                        <Scan size={14} />
+                        Screen capture
+                      </span>
+                      {!accepts.image && <span className="muted">This agent doesn&apos;t accept images.</span>}
+                    </button>
+                  </div>
+                )}
+              </Popover>
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                hidden
+                accept={accepts.file ? undefined : 'image/*'}
+                onChange={(e) => {
+                  void addFiles([...(e.target.files ?? [])])
+                  e.target.value = ''
+                }}
+              />
+            </>
+          )}
+          <div className="composer-send-actions">
           {running && onCancel && (
             <button className="cancel" onClick={onCancel} title="Stop the running turn (Esc)">
               <Square />
@@ -715,13 +708,21 @@ export function Composer({
             {mode === 'steer' ? <CornerDownRight /> : mode === 'queue' ? <Clock /> : <ArrowUp />}
             {commandMode ? 'Run command' : mode === 'steer' ? 'Steer' : mode === 'queue' ? 'Queue' : 'Send'}
           </button>
+          </div>
         </div>
       </div>
       {shell.running && <div className="shell-status" role="status">
         <span>Running shell command. Esc to stop.</span>
       </div>}
       {shell.error && <p className="composer-error" role="alert">{shell.error}</p>}
-      {rewindOpen && sessionId && <RewindDialog sessionId={sessionId} onClose={() => { setRewindOpen(false); ref.current?.focus() }} />}
+      {rewindOpen && sessionId && <RewindDialog sessionId={sessionId} running={running} onRewind={(draft) => {
+        // Rewind closes thread panels, so restore into the session's main composer.
+        const key = sessionId
+        const current = drafts.get(key)
+        if (current && (current.text || current.attachments.length)) stashedDrafts.set(key, current)
+        drafts.set(key, { ...draft, selection: [draft.text.length, draft.text.length] })
+        window.dispatchEvent(new CustomEvent(DRAFT_CHANGED, { detail: { key, focus: true } }))
+      }} onClose={() => { setRewindOpen(false); ref.current?.focus() }} />}
       {editorBusy && <p className="editor-status" role="status">Editing in external editor. Save and close the file to return.</p>}
       {editor.error && <p className="composer-error" role="alert">{editor.error}</p>}
       {error && <p className="composer-error">{error}</p>}
@@ -744,38 +745,6 @@ export function Composer({
         />
       )}
     </div>
-  )
-}
-
-/** An image in the composer (an annotated capture: the flattened image and its pin count), Edit and Remove. */
-function CaptureChip(props: {
-  image: Extract<Attachment, { kind: 'image' }>
-  onEdit?(): void
-  onRemove(): void
-}): React.JSX.Element {
-  const { image } = props
-  const pins = image.pins?.length ?? 0
-  return (
-    <li className="attachment capture" title={`${image.name}${pins ? ` · ${pins} pin${pins === 1 ? '' : 's'}` : ''}`}>
-      <img src={`data:${image.mimeType};base64,${image.data}`} alt={pins ? `Screenshot with ${pins} pins` : image.name} />
-      {pins > 0 && (
-        <span className="pin-pill">
-          <MapPin size={11} />
-          {pins}
-        </span>
-      )}
-      {props.onEdit && (
-        <button className="capture-edit" aria-label="Edit the annotations" onClick={props.onEdit}>
-          <span>
-            <Pencil size={14} />
-            Edit
-          </span>
-        </button>
-      )}
-      <button className="attachment-remove" aria-label={`Remove ${image.name}`} onClick={props.onRemove}>
-        <X size={14} />
-      </button>
-    </li>
   )
 }
 

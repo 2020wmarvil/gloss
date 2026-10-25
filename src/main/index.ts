@@ -553,12 +553,19 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.sessionsRewindPoints, (e, id: unknown) => {
     if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can rewind.')
     const sessionId = str(id, 'id')
-    if (!store!.getSession(sessionId)) throw new Error('Session no longer exists.')
-    return store!.listMessages(sessionId).filter((m) => m.role === 'user').reverse().map((m) => ({ id: m.id, text: m.text.slice(0, 500), threadId: m.threadId }))
+    const session = store!.getSession(sessionId)
+    if (!session) throw new Error('Session no longer exists.')
+    const messages = store!.listMessages(sessionId)
+    return messages.flatMap((m, index) => m.role === 'user' ? [{ id: m.id, text: m.text.slice(0, 500), threadId: m.threadId, createdAt: m.createdAt, laterMessages: messages.length - index - 1, sessionTitle: session.title, outcome: m.outcome }] : []).reverse()
   })
-  ipcMain.handle(IPC.sessionsRewind, (e, id: unknown, messageId: unknown) => {
+  ipcMain.handle(IPC.sessionsRewind, async (e, id: unknown, messageId: unknown) => {
     if (e.sender !== mainWindow?.webContents) throw new Error('Only the Gloss window can rewind.')
-    return manager.rewindSession(str(id, 'id'), str(messageId, 'messageId'))
+    const sessionId = str(id, 'id')
+    const targetId = str(messageId, 'messageId')
+    const message = store!.listMessages(sessionId).find((m) => m.id === targetId && m.role === 'user')
+    if (!message) throw new Error('That rewind point no longer exists.')
+    await manager.rewindSession(sessionId, targetId)
+    return { text: message.text, attachments: message.attachments ?? [] }
   })
   ipcMain.handle(IPC.sessionsOpen, (_e, id: unknown) => manager.openSession(str(id, 'id')))
   ipcMain.handle(IPC.sessionsRefresh, (_e, id: unknown) => manager.refreshSession(str(id, 'id')))

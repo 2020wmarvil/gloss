@@ -455,8 +455,8 @@ describe('composer conveniences', () => {
 
   it('automatically restores the edited prompt on editor close, including after switching away', async () => {
     const onSend = vi.fn()
-    let complete!: (value: string) => void
-    const editDraft = vi.fn().mockReturnValue(new Promise<string>((resolve) => { complete = resolve }))
+    let complete!: (value: { text: string }) => void
+    const editDraft = vi.fn().mockReturnValue(new Promise<{ text: string }>((resolve) => { complete = resolve }))
     Object.defineProperty(window, 'gloss', { configurable: true, value: { composer: { editDraft } } })
     const view = mount('editor-auto-test', { onSend })
     type(view, 'original draft')
@@ -466,21 +466,21 @@ describe('composer conveniences', () => {
     press(view, 'g', { ctrlKey: true })
     expect(editDraft).toHaveBeenCalledTimes(1)
     unmount()
-    await act(async () => { complete('saved in editor') })
+    await act(async () => { complete({ text: 'saved in editor' }) })
     const restored = mount('editor-auto-test', { onSend })
     expect(text(restored)).toBe('saved in editor')
     expect(document.querySelector('.editor-status')).toBeNull()
     expect(onSend).not.toHaveBeenCalled()
     press(restored, 's', { ctrlKey: true })
     expect(text(restored)).toBe('original draft')
-    editDraft.mockResolvedValueOnce('edited again')
+    editDraft.mockResolvedValueOnce({ text: 'edited again' })
     await act(async () => { press(restored, 'g', { ctrlKey: true }) })
     expect(editDraft).toHaveBeenCalledTimes(2)
     expect(text(restored)).toBe('edited again')
   })
 
   it('unlocks Ctrl+G after editor errors without losing the draft', async () => {
-    const editDraft = vi.fn().mockRejectedValueOnce(new Error('Editor could not start')).mockResolvedValueOnce('recovered')
+    const editDraft = vi.fn().mockRejectedValueOnce(new Error('Editor could not start')).mockResolvedValueOnce({ text: 'recovered' })
     Object.defineProperty(window, 'gloss', { configurable: true, value: { composer: { editDraft } } })
     const view = mount('editor-retry')
     type(view, 'keep this draft')
@@ -552,7 +552,7 @@ describe('composer shell mode', () => {
 
 
 describe('Escape and rewind shortcuts', () => {
-  it('cancels on one Escape and opens the session rewind picker on a second tap', async () => {
+  it('cancels on one Escape and waits for cancellation when entering rewind on a second tap', async () => {
     const onInterrupt = vi.fn()
     const rewindPoints = vi.fn().mockResolvedValue([{ id: 'm', text: 'sent in this session', threadId: null }])
     Object.defineProperty(window, 'gloss', { configurable: true, value: { sessions: { rewindPoints } } })
@@ -561,8 +561,8 @@ describe('Escape and rewind shortcuts', () => {
     expect(onInterrupt).toHaveBeenCalledOnce()
     expect(rewindPoints).not.toHaveBeenCalled()
     await act(async () => { press(view, 'Escape') })
-    expect(rewindPoints).toHaveBeenCalledExactlyOnceWith('s')
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('sent in this session')
+    expect(rewindPoints).not.toHaveBeenCalled()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
     expect(onInterrupt).toHaveBeenCalledOnce()
   })
 
@@ -651,4 +651,82 @@ it('edits shell commands literally and sends their line breaks unchanged', async
   type(view, '!echo - item')
   press(view, 'Enter', { shiftKey: true })
   expect(text(view)).toBe('!echo - item\n')
+})
+
+
+it('clears a nonempty composer on double Escape before offering rewind, and stashes the cleared text', async () => {
+  const rewindPoints = vi.fn().mockResolvedValue([])
+  const attachment = { kind: 'file', name: 'note.txt', text: 'note' }
+  Object.defineProperty(window, 'gloss', { configurable: true, value: {
+    sessions: { rewindPoints },
+    composer: { contexts: vi.fn().mockResolvedValue([{ kind: 'file', id: 'note.txt', label: 'note.txt', description: 'Attach file' }]), attach: vi.fn().mockResolvedValue(attachment) }
+  } })
+  const view = mount('escape-clear-first', { sessionId: 's', accepts: { image: true, file: true } })
+  type(view, '@note')
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 160)) })
+  await act(async () => { press(view, 'Tab') })
+  expect(document.querySelector('.attachment-name')?.textContent).toBe('note.txt')
+  type(view, 'unfinished draft')
+  press(view, 'Escape')
+  expect(text(view)).toBe('unfinished draft')
+  press(view, 'Escape')
+  expect(text(view)).toBe('')
+  expect(document.querySelector('.attachment-name')).toBeNull()
+  expect(rewindPoints).not.toHaveBeenCalled()
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+  press(view, 's', { ctrlKey: true })
+  expect(text(view)).toBe('unfinished draft')
+  expect(document.querySelector('.attachment-name')?.textContent).toBe('note.txt')
+})
+
+it('rejects a legacy editor token instead of inserting it into the prompt', async () => {
+  const editDraft = vi.fn().mockResolvedValueOnce('74f4347d-023d-427b-be09-871ebb382ac7').mockResolvedValueOnce({ text: 'fixed prompt' })
+  Object.defineProperty(window, 'gloss', { configurable: true, value: { composer: { editDraft } } })
+  const view = mount('editor-version-mismatch')
+  type(view, 'keep my prompt')
+  await act(async () => { press(view, 'g', { ctrlKey: true }) })
+  expect(text(view)).toBe('keep my prompt')
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('Restart Gloss')
+  await act(async () => { press(view, 'g', { ctrlKey: true }) })
+  expect(text(view)).toBe('fixed prompt')
+})
+
+
+it('restores the full rewound prompt and attachments into the composer without sending', async () => {
+  const original = 'A long prompt '.repeat(80)
+  const attachment = { kind: 'file', name: 'notes.md', text: 'original context' }
+  const rewind = vi.fn().mockRejectedValueOnce(new Error('Could not rewind')).mockResolvedValueOnce({ text: original, attachments: [attachment] })
+  const onSend = vi.fn()
+  Object.defineProperty(window, 'gloss', { configurable: true, value: { sessions: {
+    rewindPoints: vi.fn().mockResolvedValue([{ id: 'm', text: original.slice(0, 500), threadId: null }]), rewind
+  } } })
+  const view = mount('rewind-restore', { sessionId: 'rewind-restore', onSend, accepts: { image: true, file: true } })
+  type(view, '/rewind')
+  await act(async () => { press(view, 'Enter') })
+  const select = async () => act(async () => document.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+  await select()
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('Could not rewind')
+  expect(text(view)).toBe('')
+  await select()
+  expect(text(view)).toBe(original)
+  expect(document.querySelector('.attachment-name')?.textContent).toBe('notes.md')
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+  expect(onSend).not.toHaveBeenCalled()
+  unmount()
+  expect(text(mount('rewind-restore', { sessionId: 'rewind-restore' }))).toBe(original)
+})
+
+it('restores a rewind draft to the main composer even if its thread panel closes first', async () => {
+  let finish!: (draft: { text: string; attachments: [] }) => void
+  Object.defineProperty(window, 'gloss', { configurable: true, value: { sessions: {
+    rewindPoints: vi.fn().mockResolvedValue([{ id: 'm', text: 'thread prompt', threadId: 'thread' }]),
+    rewind: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve }))
+  } } })
+  const view = mount('rewind-thread:panel', { sessionId: 'rewind-thread' })
+  type(view, '/rewind')
+  await act(async () => { press(view, 'Enter') })
+  act(() => document.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+  unmount()
+  await act(async () => { finish({ text: 'thread prompt', attachments: [] }) })
+  expect(text(mount('rewind-thread', { sessionId: 'rewind-thread' }))).toBe('thread prompt')
 })

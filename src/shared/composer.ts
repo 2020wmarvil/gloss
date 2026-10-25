@@ -1,3 +1,5 @@
+import type { Attachment, TurnOutcome } from './types'
+
 export type ContextItem = {
   kind: 'file' | 'folder' | 'diff' | 'chat' | 'terminal'
   id: string
@@ -8,3 +10,15 @@ export type ContextItem = {
 }
 
 export type ShellResult = { command: string; output: string; exitCode: number | null; truncated: boolean }
+
+export type RewindPoint = {
+  id: string
+  text: string
+  threadId: string | null
+  createdAt?: number
+  laterMessages?: number
+  sessionTitle?: string
+  outcome?: TurnOutcome
+}
+
+export type RewindDraft = { text: string; attachments: Attachment[] }

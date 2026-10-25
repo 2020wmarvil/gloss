@@ -1,10 +1,23 @@
 # Milestones
 
-Build in order, from M17 through M23 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
+Build in order, from M17 through M24 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1 through M16 and failed-turn actions are done. The remaining milestones add remote and mobile access, shared skills and plugins, worktrees, sub-agent threads, and performance improvements before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1 through M16 and failed-turn actions are done. The next milestone replaces transcript reconstruction with agent-native history restoration where supported. The remaining milestones then add remote and mobile access, shared skills and plugins, worktrees, sub-agent threads, and performance improvements before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
-## M17: Remote and mobile (future)
+## M17: Agent-native conversation rewind (next)
+Replace the current fresh-session transcript prompt with native history restoration where the agent supports it. Keep the existing rewind interaction, draft restoration and conversation-only scope. Update `SPEC.md` in this milestone.
+
+- **Compatibility spike first:** verify the installed Claude Code and Codex adapters and their underlying session APIs. Record support for resuming or forking at a historical message, capability negotiation, cancellation requirements and persistence across restart. Claude's adapter currently has a message-targeted `session/fork` extension backed by the SDK's `upToMessageId`; validate its contract and exact boundaries before adopting it. Standard ACP fork support alone does not establish historical-point support. Investigate Codex separately; document unsupported custom agents honestly.
+- **Preserve structured history:** continue from the agent's original user, assistant and tool records, including image blocks and tool results. Do not flatten retained history into a new user message or reattach every image to that message on the native path. Agent context limits and compaction still apply; native rewind does not imply unlimited context or restoration of private internal state.
+- **Exact rewind boundary:** map Gloss messages to stable native history identifiers. Remove the selected user message and everything after it while retaining every entry of the preceding turn, including trailing tool results. Cover cancelled turns, steering, repeated identical messages, compaction and thread routing. Fail explicitly when the boundary cannot be resolved; never silently resume the full discarded history.
+- **Keep the interaction immediate:** preserve double Escape behavior, automatic rewind of the latest cancelled turn, and restoration of the selected prompt and attachments into the composer. Project files stay unchanged. Separate local UI updates from agent setup, without claiming the native operation succeeded before it has; define recovery for a failed native restore without losing the draft or retained history.
+- **Persist and reconcile:** save the native session or branch identity and rewind boundary, preserve retained message IDs and pin/thread anchors, and reconcile replay without resurrecting removed turns or duplicating retained entries. Verify restart before the next prompt and after it. Handle conversations already created through the reconstruction fallback.
+- **Explicit fallback policy:** decide what unsupported agents can offer after the spike. Clearly distinguish native restoration from transcript reconstruction; never silently substitute a summary or drop images and tool output. Remove the arbitrary reconstruction byte cap as a blocker to local rewind, and report actual provider constraints separately from Gloss history retention.
+- **Verification:** exercise both supported built-in agents with long, image-heavy sessions, mixed tool calls and results, cancellation followed by immediate rewind, repeated rewinds, restart/replay, native-startup failures and recovery. Document tested adapter versions and remaining capability gaps.
+
+**Done when:** supported agents continue from the exact retained structured history without a synthetic transcript prompt; discarded turns do not return after reconnect or restart; the selected message and attachments are ready to edit in the composer; project files remain unchanged; and long or image-heavy conversations are not blocked by Gloss's arbitrary snapshot limit. Unsupported agents have a documented, explicit behavior rather than an assumed native rewind.
+
+## M18: Remote and mobile (future)
 Drive Gloss from a phone while the desktop app runs the agents. The desktop stays the only place agents, ACP and the database live; the phone is another client of the main process. Adds a section to `SPEC.md` (update it in this milestone).
 
 - **Bridge in the main process:** off by default, turned on in Settings. Serves the same API the preload exposes (requests and the event stream) over an authenticated WebSocket, plus a mobile web client. No new agent-facing logic: the phone's calls go through `SessionManager` like the renderer's, so a turn started on the phone shows live on the desktop and the reverse.
@@ -17,7 +30,7 @@ Drive Gloss from a phone while the desktop app runs the agents. The desktop stay
 
 **Done when:** you can pair a phone by scanning a QR code, see the same sessions as the desktop, start and steer a turn in a thread from the phone while watching it stream on both, and a revoked phone can no longer connect.
 
-## M18: Shared skills and plugin marketplaces (future)
+## M19: Shared skills and plugin marketplaces (future)
 Build on M13's global MCP settings and reviewed one-time imports. Start with shared skills, then add plugin discovery, marketplace search and installation. Update `SPEC.md` and design the library, search results and import/install previews before implementation.
 
 - **Global skill library:** one Gloss-managed library available to Claude Code and Codex across projects. List skills with their description, source and agent compatibility, with Add, Edit and Remove actions. Verify how each installed agent discovers skills and refreshes them before choosing the storage and delivery mechanism.
@@ -30,7 +43,7 @@ Build on M13's global MCP settings and reviewed one-time imports. Start with sha
 
 **Done when:** a user can review and import a skill once, use it with both agents where compatible, search a supported marketplace, and install and remove a selected plugin from Gloss. Plugin previews identify what can be shared and what stays agent-specific. Imports leave original agent files unchanged, installations use the reviewed destination, and shared skills and installed-plugin records survive restart.
 
-## M19: Git worktrees (future)
+## M20: Git worktrees (future)
 Run independent coding tasks in separate checkouts while keeping their sessions together under one project. Worktrees are optional per session; conversation threads stay in their session's checkout. Update `SPEC.md` and design the creation, project grouping and cleanup flows before implementation.
 
 - **Project identity and session folder:** separate the shared project identity from each session's working directory. Discover related checkouts through Git's common directory and worktree metadata, including worktrees created outside Gloss. Non-Git folders keep their existing behavior. Migrate existing sessions and project settings without losing history, threads or overrides; resolve conflicting settings explicitly when existing projects become one group.
@@ -43,7 +56,7 @@ Run independent coding tasks in separate checkouts while keeping their sessions 
 
 **Done when:** you can start two sessions for one repository in different worktrees, make independent edits, find both under one project, restart Gloss and resume each in the correct checkout, review each checkout's changes, and explicitly remove a clean, idle worktree without deleting its conversation or branch. Existing externally created worktrees are usable through the same flow.
 
-## M20: Sub-agent threads (future)
+## M21: Sub-agent threads (future)
 An opt-in alternative to view-only threads: a thread runs its own agent session instead of being tagged into the main one. Changes the core idea in `SPEC.md` (update it in this milestone).
 
 - **Thread mode setting** (M6 settings, global with a per-project override): `view-only` (default, today's behavior), `fresh` or `fork`.
@@ -57,21 +70,21 @@ An opt-in alternative to view-only threads: a thread runs its own agent session 
 
 **Done when:** with either mode on, a thread runs as its own agent, can run while the main thread works, and resolving it brings its summary into the main session.
 
-## M21: Performance (future)
+## M22: Performance (future)
 Measure first, then fix what the numbers show. Gloss has had no performance work so far; keep the app's behavior unchanged, and don't optimize anything the measurements don't point at.
 
-- **Benchmarks you can rerun:** a script that seeds a scratch user data folder (`--user-data-dir`) with large sessions (hundreds of turns, long code-heavy answers, many tool calls and diffs, dozens of threads) and drives the built app over CDP. It records: cold start to first paint and to an interactive sidebar, opening a large session, the frame time and main-process CPU while a fake agent streams a long answer at realistic chunk rates, switching sessions, opening a thread, search latency, and memory after an hour of use. Results go to a JSON file so a later run can be compared.
-- **Profile the hot paths:** the renderer with the Chrome DevTools Performance panel and React Profiler (which components render per streamed chunk, and why), the main process with `--inspect` and a CPU profile, and the database with timings of the statements run per chunk (including the full-text triggers). Count IPC messages and bytes per turn.
-- **Fix the confirmed hotspots,** each with its before and after numbers in the PR. Likely candidates to check: re-rendering and re-parsing every message's markdown on each chunk, rewriting a message's full text (and its search index) on each chunk, sending the full text over IPC on each chunk, and rendering long logs and large diffs in full. Choices like batching chunks or virtualizing the log are made here from the measurements, and recorded in `SPEC.md` where they change the design.
+- **Benchmarks you can rerun:** a script that seeds a scratch user data folder (`--user-data-dir`) with large sessions (hundreds of turns, long code-heavy answers, many tool calls and diffs, dozens of threads, and many large screenshot/image attachments with mixed aspect ratios and pin notes) and drives the built app over CDP. It records: cold start to first paint and to an interactive sidebar, opening a large session, the frame time and main-process CPU while a fake agent streams a long answer at realistic chunk rates, switching sessions, opening a thread, search latency, typing latency and scroll frame times while streaming in an image-heavy session, and memory after an hour of use (including image decoding and retained offscreen images). Results go to a JSON file so a later run can be compared.
+- **Profile the hot paths:** the renderer with the Chrome DevTools Performance panel and React Profiler (which components render per streamed chunk, and why), the main process with `--inspect` and a CPU profile, and the database with timings of the statements run per chunk (including the full-text triggers). Count IPC messages and bytes per turn. Measure layout and paint costs from scroll-height reads, automatic bottom scrolling, resize observers and image-load handlers; check whether streamed chunks force layout of the entire conversation.
+- **Fix the confirmed hotspots,** each with its before and after numbers in the PR. Likely candidates to check: re-rendering and re-parsing every message's markdown on each chunk, rewriting a message's full text (and its search index) on each chunk, sending the full text over IPC on each chunk, and rendering long logs and large diffs in full, repeated scroll-height/layout work, and retaining or reprocessing offscreen images. Include a reproducible regression case matching a long coding session with repeated screenshot feedback, tool output and active streaming. Choices like batching chunks or virtualizing the log are made here from the measurements, and recorded in `SPEC.md` where they change the design.
 - **Startup and size:** what loads before the first window (bundle size, Shiki grammars, adapter launch, the session list) and what can wait.
 - **Regression tests, in two tiers:**
   - *Deterministic, in `npm test`:* assert counts, not times, so they don't flake. Streaming a chunk re-renders only the message it changed (React Profiler `onRender` counts). Database writes and IPC bytes per chunk stay bounded rather than growing with the message length (`SessionManager` against the fake agent, with an instrumented store and emit). Opening a large seeded session issues a bounded number of queries. The renderer bundle and the main bundle stay under a size budget.
   - *Timed, run on demand (`npm run bench`), not in CI by default:* the benchmark compares itself against a checked-in baseline and fails past a generous margin (for example 25% slower, or any renderer long task over 50 ms while streaming). Shared CI runners are too noisy for wall-clock budgets, so the baseline is per machine, and updating it is an explicit step.
 - Add the benchmark and the regression tests to the docs, with how to run them and how to update the baseline.
 
-**Done when:** the benchmark runs from one command, each fixed hotspot shows a measured improvement and has a deterministic test that would catch it coming back, streaming a long answer into a large session stays smooth (no long tasks over 50 ms in the renderer), and the numbers are recorded for the next comparison.
+**Done when:** the benchmark runs from one command, each fixed hotspot shows a measured improvement and has a deterministic test that would catch it coming back, typing and scrolling while streaming a long answer into a large, image-heavy session stay smooth (no long tasks over 50 ms in the renderer), and the numbers are recorded for the next comparison.
 
-## M22: Shipping
+## M23: Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
 - **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
 - **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
@@ -80,7 +93,7 @@ Measure first, then fix what the numbers show. Gloss has had no performance work
 
 **Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place.
 
-## M23: Marketing
+## M24: Marketing
 Present Gloss to people who haven't used it. Comes after Shipping, so every link points at a release people can install.
 
 - **README:** lead with what Gloss is and why threads help, with visuals near the top: screenshots in light and dark, and short GIFs of the core features (replying to an item in a thread, steering a running turn, visual feedback pins). Install from the latest GitHub Release first; building from source moves lower. Trim the feature walkthrough to the highlights and link to the docs for the rest.
@@ -95,7 +108,7 @@ Present Gloss to people who haven't used it. Comes after Shipping, so every link
 Ideas worth building once the milestones are done. Not scheduled; first item first.
 
 1. **Checkpoints and undo per turn:** snapshot the working tree before each turn (in a hidden shadow repo or `git stash create`-style refs, not your history) to undo a turn's changes and see exactly what a turn changed. A safety net for bypass mode; pairs with review sessions ("review what turn 12 changed").
-2. **Hover to explain:** hover a term, function or code span in an agent message for a short explanation from a throwaway sub-agent (M20's `fresh` mode), without spending main-session context or opening a thread.
+2. **Hover to explain:** hover a term, function or code span in an agent message for a short explanation from a throwaway sub-agent (M21's `fresh` mode), without spending main-session context or opening a thread.
 
 3. **Revisit inline image guidance:** consider adding a suggestion to the agent system prompt to embed generated images (such as QR codes) using Markdown image syntax with local paths. Inline rendering is supported; first observe whether agents use it naturally. Keep prompts unchanged for now to avoid steering agents by default.
 
@@ -103,10 +116,10 @@ Ideas worth building once the milestones are done. Not scheduled; first item fir
 - ~~**M14:** agent profiles and connection testing, guided open source/local-model setup, capability indicators, and actionable launch or model-server errors.~~ Done.
 - ~~**M15:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.~~ Done.
 - ~~**M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.~~ Done: `docs/mocks/visual-feedback.html`.
-- **M17:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.
-- **M18:** the global skill library, skill import preview and conflict resolution, marketplace search and source management, and plugin compatibility, installation and removal.
-- **M19:** the checkout picker and new-worktree form, project grouping with branch indicators, missing-checkout recovery, and explicit cleanup with affected sessions visible.
-- **M20:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
+- **M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.
+- **M19:** the global skill library, skill import preview and conflict resolution, marketplace search and source management, and plugin compatibility, installation and removal.
+- **M20:** the checkout picker and new-worktree form, project grouping with branch indicators, missing-checkout recovery, and explicit cleanup with affected sessions visible.
+- **M21:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 
 ## Todo
 - Learn about code signing (Windows Authenticode certificates, macOS signing and notarization) before sharing Gloss more widely.
@@ -169,7 +182,7 @@ A home for Gloss's settings, editable by hand (and by agents) as well as in the 
 - **Settings screen** (from the sidebar, or `Ctrl+,`): global and current-project sections, the file's path, and "Open in editor". Saving from the screen writes the file, keeping unknown keys.
 - Validated and owned by the main process; the renderer reads and writes through the IPC API.
 - Move the dev model (Haiku) toggle into it.
-- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M22: updates). No section appears before its feature exists.
+- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M23: updates). No section appears before its feature exists.
 
 **Done when:** a setting changed in the screen shows up in the file, a change made in an editor (or by an agent) shows up in the app without a restart, and a broken edit is reported without losing the previous settings.
 
@@ -274,7 +287,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
 - **Dark mode**, following the system setting, built on the dark tokens. *A Theme setting (System, Light, Dark) and a provisional dark palette landed early; M12 replaces the palette with the designed dark tokens.* *Done: the dark tokens, applied in the screen pass.*
 - Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected. *Done.*
-- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M22 installers. *Done.*
+- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M23 installers. *Done.*
 - Polish: empty, loading and error states; window title. *Done.*
 
 **Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
@@ -318,7 +331,7 @@ Let users bring an ACP-compatible coding agent and run it with either a hosted m
 
 - **Compatibility spike first:** evaluate OpenCode as the initial supported open source agent. Its documented `opencode acp` command speaks ACP over stdio, and its provider configuration supports local model servers. Verify the current release, license, Windows launch behavior, instruction injection, permissions, model selection, tool events, cancellation, session listing and resume before committing to the integration. Record supported features and gaps; choose another ACP agent if the basic Gloss flow cannot work reliably.
 - **Bring your own ACP agent:** add global agent profiles with a stable ID, display name, executable, argument array and environment-variable references, plus a Test connection action. Keep Claude Code and Codex available. Launch directly without composing a shell command; report missing executables, incompatible protocol versions, failed initialization and process exits clearly. Keep credentials in the agent's native credential store or referenced environment variables, and redact them from diagnostics. Removing a profile retains its conversations and allows restoring the profile to resume them.
-- **One documented integration:** provide a guided profile for the selected open source agent using a user-installed executable. Explain installation and configuration with official links, show the detected version, and verify a connection before offering it for new sessions. Persist the profile used by each session and retain the chosen working directory. M19 will extend this to worktrees. Do not silently switch an existing session to another agent or model provider.
+- **One documented integration:** provide a guided profile for the selected open source agent using a user-installed executable. Explain installation and configuration with official links, show the detected version, and verify a connection before offering it for new sessions. Persist the profile used by each session and retain the chosen working directory. M20 will extend this to worktrees. Do not silently switch an existing session to another agent or model provider.
 - **Local inference path:** document and validate one complete setup, initially the selected agent connected to a user-managed Ollama server with a tool-capable local model. Gloss speaks ACP to the agent; the agent connects to the model server. Keep model/provider configuration in the agent's supported configuration unless it exposes that choice through ACP. Explain each component in setup and distinguish a loopback endpoint from a LAN or hosted endpoint. A server such as Ollama or LM Studio is not itself a coding agent and cannot be added as an ACP executable.
 - **Capabilities and instructions:** offer attachments, model switching, session discovery/resume, steering, plans, usage and permission controls only where supported. Show unavailable usage or cost as unknown. Verify that Gloss's thread-routing instructions reach the agent without modifying the user's project instruction files. Preserve display history when resume is unavailable and require an explicit new-session action instead of claiming the agent retained context. Use the current permission behavior initially; M15 will add questions, permission modes and approval prompts across agents.
 - **Failures and local expectations:** distinguish an unavailable model server, a missing model, authentication failure, insufficient memory and unsupported tool calling where the agent exposes those errors. Explain that speed, memory requirements and coding quality depend on the model and hardware. A local model does not guarantee an offline workflow: tools, MCP servers and other integrations may still access the network. Do not silently fall back to a hosted provider.

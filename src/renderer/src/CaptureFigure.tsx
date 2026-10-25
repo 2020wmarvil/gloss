@@ -121,7 +121,7 @@ export function CaptureFigure(props: Props): React.JSX.Element {
       <div className="capture-frame">
         <img
           src={src}
-          alt={`Screenshot with ${pins.length} ${pins.length === 1 ? 'pin' : 'pins'}`}
+          alt={pins.length ? `Screenshot with ${pins.length} ${pins.length === 1 ? 'pin' : 'pins'}` : image.name}
           onLoad={(e) => setSize({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })}
           onClick={() => setEnlarged(true)}
         />

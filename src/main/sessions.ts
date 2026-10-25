@@ -892,30 +892,25 @@ export class SessionManager {
       const messages = this.deps.store.listMessages(id).filter((m) => m.seq < target.seq)
       const tools = this.deps.store.listToolCalls(id).filter((t) => t.messageSeq < target.seq)
       const plans = this.deps.store.listPlans(id).filter((p) => p.seq < target.seq)
-      const seed = messages.length || tools.length ? rewindSeed(messages, tools, this.deps.store.listThreads(id)) : null
-      const servers = this.mcpServers(original.cwd)
-      await this.withAgent(original.agentId, async (conn) => {
-        const created = await conn.newSession(original.cwd, this.sessionMeta(original.agentId, 'new', !!original.review), servers)
-        const mode = await this.applyMode(original.agentId, original.cwd, original, conn, created.sessionId, created.modes)
-        this.session(id)
-        this.deps.store.transaction(() => {
-          this.deps.store.rewindLog(id, target.seq, messages.length + tools.length + plans.length, seed, target.createdAt)
-          this.deps.store.updateSession(id, { acpSessionId: created.sessionId, syncedAt: null })
-          this.deps.store.addDeletedAgentSession(original.agentId, original.acpSessionId)
-        })
-        this.byAcpId.delete(original.acpSessionId)
-        this.register(created.sessionId, id)
-        rt.attachedTo = conn
-        rt.mcpFingerprint = JSON.stringify(servers)
-        rt.failures?.clear()
-        this.withdrawRequests(id)
-        this.setLive(id, { usage: null })
-        const session = this.saveMode(id, mode)
-        this.deps.emit({ type: 'session', session })
-        await this.attached(id, conn, created.configOptions, mode)
-        if (conn.canCloseSessions) await conn.closeSession(original.acpSessionId).catch(() => {})
-        this.deps.emit({ type: 'sessionRewound', sessionId: id })
+      // Persist the retained context before changing the visible log. Agent startup
+      // belongs to attach, so it never holds the rewind UI or restored draft hostage.
+      const seed = rewindSeed(messages, tools, this.deps.store.listThreads(id))
+      const pendingId = `gloss-rewind:${randomUUID()}`
+      this.deps.store.transaction(() => {
+        this.deps.store.rewindLog(id, target.seq, messages.length + tools.length + plans.length, seed, target.createdAt)
+        this.deps.store.updateSession(id, { acpSessionId: pendingId, syncedAt: null })
+        this.deps.store.addDeletedAgentSession(original.agentId, original.acpSessionId)
       })
+      const conn = rt.attachedTo
+      this.byAcpId.delete(original.acpSessionId)
+      rt.attachedTo = undefined
+      rt.mcpFingerprint = undefined
+      rt.failures?.clear()
+      this.withdrawRequests(id)
+      this.setLive(id, { usage: null, attached: false })
+      this.deps.emit({ type: 'session', session: this.session(id) })
+      this.deps.emit({ type: 'sessionRewound', sessionId: id })
+      if (conn?.canCloseSessions) void conn.closeSession(original.acpSessionId).catch(() => {})
     } finally { rt.rewinding = false }
   }
 
@@ -1168,6 +1163,7 @@ export class SessionManager {
     const session = this.session(sessionId)
     const servers = this.mcpServers(session.cwd)
     conn.validateMcp(servers)
+    if (session.acpSessionId.startsWith('gloss-rewind:')) return this.replaceAgentSession(sessionId, conn, false)
     if (!conn.canLoadSession && this.deps.store.rewindState(sessionId)?.context) return this.replaceAgentSession(sessionId, conn, false)
     if (!conn.canLoadSession) throw new Error('This agent cannot resume previous sessions. The conversation is preserved here. Create a new conversation to continue with this agent.')
 
@@ -1754,7 +1750,9 @@ export class SessionManager {
       recovery = { messageId: message.id, action: 'retry' }
     }
     // The turn changed the agent's copy: remember its updatedAt so it isn't taken for a change made elsewhere.
-    if (attachedTo) await this.recordSynced(sessionId, attachedTo)
+    // Cancellation must reach the UI without waiting for session/list. A later
+    // refresh can reconcile the timestamp if the user keeps this conversation.
+    if (attachedTo && result.stopReason !== 'cancelled') await this.recordSynced(sessionId, attachedTo)
     rt.turn = undefined
     this.recordOutcome(turn, result)
     this.closeToolCalls(sessionId, turn, result)

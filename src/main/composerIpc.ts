@@ -110,7 +110,7 @@ export function registerComposerIpc(store: Store, window: () => WebContents | un
       if (!args.length) throw new Error('Choose an external editor in Settings first.')
       await writeFile(file, text, { mode: 0o600 })
       await launchEditor(args, file, process.platform, true)
-      return await readContextText(file)
+      return { text: await readContextText(file) }
     } finally {
       drafts.delete(dir)
       await rm(dir, { recursive: true, force: true }).catch(() => {})

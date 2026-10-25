@@ -50,7 +50,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
       { keys: [['Mod', 'G']], action: 'Edit the prompt in an external editor' },
       { keys: [['↑'], ['↓']], action: 'Move through the slash commands' },
       { keys: [['Tab'], ['Enter']], action: 'Complete the slash command (Enter on an exact match sends it)' },
-      { keys: [['Esc']], action: "Dismiss completions or cancel the active turn; double-tap to browse this session's rewind points" }
+      { keys: [['Esc']], action: "Dismiss completions or cancel the active turn; double-tap to clear the draft, or browse rewind points when empty" }
     ]
   },
   {

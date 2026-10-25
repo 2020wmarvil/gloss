@@ -139,31 +139,31 @@ export function Log({ cwd, items, className, empty, renderAgent, reveal, systemL
                 return item.message.role === 'user' ? (
                   <div
                     key={item.message.id}
-                    className={['you', item.message.steered && 'steered', item.message.attachments?.some((a) => a.kind === 'image' && a.pins) && 'has-capture'].filter(Boolean).join(' ')}
+                    className="sent-message"
                     data-message-id={item.message.id}
                   >
+                    {(item.message.text || item.message.steered || item.message.attachments?.some((a) => a.kind === 'file')) && <div className={item.message.steered ? 'you steered' : 'you'}>
                     {item.message.steered && (
                       <span className="steered-label" title="Sent into the running turn">
                         steered
                       </span>
                     )}
-                    {item.message.attachments?.some((a) => a.kind !== 'image' || !a.pins) && (
+                    {item.message.attachments?.some((a) => a.kind === 'file') && (
                       <ul className="attachments sent">
-                        {item.message.attachments.map((a, i) => a.kind === 'image' && a.pins ? null : (
-                          <li key={i} className="attachment" title={a.kind === 'file' ? (a.path ?? a.name) : a.name}>
-                            {a.kind === 'image' ? (
-                              <img src={`data:${a.mimeType};base64,${a.data}`} alt={a.name} />
-                            ) : (
-                              <span className="attachment-name">{a.name}</span>
-                            )}
+                        {item.message.attachments.map((a, i) => a.kind === 'file' ? (
+                          <li key={i} className="attachment" title={a.path ?? a.name}>
+                            <span className="attachment-name">{a.name}</span>
                           </li>
-                        ))}
+                        ) : null)}
                       </ul>
                     )}
                     <Markdown text={item.message.text} breaks />
-                    {item.message.attachments?.map((a, i) =>
-                      a.kind === 'image' && a.pins ? <CaptureFigure key={i} message={item.message} image={a} index={i} anchors={pins} /> : null
-                    )}
+                    </div>}
+                    {item.message.attachments?.some((a) => a.kind === 'image') && <div className="sent-images">
+                      {item.message.attachments.map((a, i) =>
+                        a.kind === 'image' ? <CaptureFigure key={i} message={item.message} image={a} index={i} anchors={pins} /> : null
+                      )}
+                    </div>}
                   </div>
                 ) : (
                   <div key={item.message.id} className="agent" data-message-id={item.message.id}>

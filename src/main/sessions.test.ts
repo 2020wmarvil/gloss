@@ -430,16 +430,55 @@ describe('SessionManager', () => {
     expect(state.prompts.at(-1)).not.toContain('remove before restart')
   })
 
-  it('leaves history untouched when creating the replacement agent fails', async () => {
+  it('commits rewind without agent startup and preserves context if later startup fails', async () => {
     const session = await manager.createSession('/project', 'claude')
-    await manager.send(session.id, 'keep on failure', null)
-    const before = store.listMessages(session.id)
+    await manager.send(session.id, 'retained context', null)
+    const keep = store.listMessages(session.id)
+    await manager.send(session.id, 'remove this turn', null)
+    const target = store.listMessages(session.id).find((m) => m.text === 'remove this turn')!
     const spy = vi.spyOn(AgentConnection.prototype, 'newSession').mockRejectedValueOnce(new Error('Cannot start agent'))
-    try { await expect(manager.rewindSession(session.id, before[0].id)).rejects.toThrow('Cannot start agent') }
-    finally { spy.mockRestore() }
-    expect(store.listMessages(session.id)).toEqual(before)
-    expect(store.getSession(session.id)?.acpSessionId).toBe(session.acpSessionId)
-    expect((await manager.send(session.id, 'still works', null)).error).toBeUndefined()
+    try {
+      await manager.rewindSession(session.id, target.id)
+      expect(spy).not.toHaveBeenCalled()
+      expect(store.listMessages(session.id)).toEqual(keep)
+      expect(store.getSession(session.id)?.acpSessionId).toMatch(/^gloss-rewind:/)
+      expect(events.some((e) => e.type === 'sessionRewound')).toBe(true)
+      expect((await manager.send(session.id, 'continue after rewind', null)).error).toContain('Cannot start agent')
+      expect(store.rewindState(session.id)?.context?.text).toContain('retained context')
+      const failed = store.listMessages(session.id).find((m) => m.text === 'continue after rewind')!
+      expect((await manager.retry(session.id, failed.id)).error).toBeUndefined()
+      expect(state.prompts.at(-1)).toContain('retained context')
+      expect(state.prompts.at(-1)).not.toContain('remove this turn')
+    } finally { spy.mockRestore() }
+  })
+
+  it('does not wait for old agent session cleanup before returning the rewound log', async () => {
+    state.canClose = true
+    const session = await manager.createSession('/project', 'claude')
+    await manager.send(session.id, 'remove immediately', null)
+    const target = store.listMessages(session.id)[0]
+    let release!: () => void
+    const close = vi.spyOn(AgentConnection.prototype, 'closeSession').mockReturnValueOnce(new Promise<void>((resolve) => { release = resolve }))
+    try {
+      await manager.rewindSession(session.id, target.id)
+      expect(close).toHaveBeenCalledWith(session.acpSessionId)
+      expect(store.listMessages(session.id)).toEqual([])
+      expect(store.rewindState(session.id)?.context).not.toBeNull()
+    } finally { release(); close.mockRestore() }
+  })
+
+  it('finishes cancellation without waiting for agent session listing', async () => {
+    state.script = async ({ cancelled }) => { await cancelled; return 'cancelled' }
+    const session = await manager.createSession('/project', 'claude')
+    const sending = manager.send(session.id, 'cancel promptly', null)
+    await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+    const listing = vi.spyOn(AgentConnection.prototype, 'findSession')
+    try {
+      await manager.cancel(session.id)
+      expect((await sending).stopReason).toBe('cancelled')
+      expect(listing).not.toHaveBeenCalled()
+      expect(store.listMessages(session.id)[0].outcome).toBe('cancelled')
+    } finally { listing.mockRestore() }
   })
 
   it('refuses rewind while a turn or queued messages are pending', async () => {

@@ -1,4 +1,4 @@
-import type { ContextItem, ShellResult } from './composer'
+import type { ContextItem, RewindDraft, RewindPoint, ShellResult } from './composer'
 import type { SearchRequest, SearchResponse } from './search'
 import type { McpImportPreview, McpImportSource } from './mcp'
 import type { ReviewDiff, ReviewRefs } from './review'
@@ -145,7 +145,7 @@ export type GlossApi = {
     cancelShell(sessionId: string): Promise<void>
     contexts(sessionId: string, query: string): Promise<ContextItem[]>
     attach(sessionId: string, item: ContextItem): Promise<Attachment>
-    editDraft(text: string): Promise<string>
+    editDraft(text: string): Promise<{ text: string }>
   }
   /** Opens an absolute local Markdown file link in the editor, or reveals it without an editor. */
   openFileLink(href: string): Promise<void>
@@ -193,8 +193,8 @@ export type GlossApi = {
     import(cwd: string, agentId: string, acpSessionId: string, title: string, listedAt?: string): Promise<Session>
     /** Its log and threads. Also resumes the session on the agent in the background, for the status line. */
     open(id: string): Promise<SessionView>
-    rewindPoints(id: string): Promise<Pick<Message, 'id' | 'text' | 'threadId'>[]>
-    rewind(id: string, messageId: string): Promise<void>
+    rewindPoints(id: string): Promise<RewindPoint[]>
+    rewind(id: string, messageId: string): Promise<RewindDraft>
     /** Reloads the session if the agent's copy changed elsewhere (SPEC → Shared sessions). */
     refresh(id: string): Promise<void>
     rename(id: string, title: string): Promise<Session>
@@ -304,7 +304,7 @@ export const IPC = {
   composerShell: 'gloss:composerShell',
   composerCancelShell: 'gloss:composerCancelShell',
   composerAttach: 'gloss:composerAttach',
-  composerEditDraft: 'gloss:composerEditDraft',
+  composerEditDraft: 'gloss:composerEditDraft:v2',
   openFileLink: 'gloss:openFileLink',
   readMarkdownImage: 'gloss:readMarkdownImage',
   settingsPreviewMcpImport: 'gloss:settings:previewMcpImport',
