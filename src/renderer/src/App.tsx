@@ -54,7 +54,7 @@ function byActivity(list: Session[]): Session[] {
 const FRESH_PANE: PaneState = { threadId: null, sideOpen: false, general: false, sideTab: 'threads', expandedFiles: [], drafts: {}, scroll: {} }
 
 export function App(): React.JSX.Element {
-  const { settings, agents, sent, signIn, fullScreenHint, updateSettings } = useAppData()
+  const { settings, agents, rateLimits, sent, signIn, fullScreenHint, updateSettings } = useAppData()
   const s = useSession()
   const { load, close: closeSession, openId } = s
   const [showSettings, setShowSettings] = useState(false)
@@ -128,6 +128,8 @@ export function App(): React.JSX.Element {
   /** Settings' turnEndSound, for the event handler. */
   const chimeOn = useRef(true)
   chimeOn.current = settings?.global.turnEndSound ?? true
+  /** The review whose opening collapsed the sidebar, for `Ctrl+Shift+D` to bring it back. */
+  const reviewHidSidebar = useRef<string | null>(null)
   /** Views visited, and the current one; `moving` while back or forward restores one. */
   const history = useRef<{ views: View[]; at: number; moving: boolean }>({ views: [], at: -1, moving: false })
   const project = projects.find((p) => projectPath !== null && sameFolder(p.path, projectPath)) ?? null
@@ -313,13 +315,12 @@ export function App(): React.JSX.Element {
   }
 
   /**
-   * Opens a review of the project's branch (SPEC → Review sessions) with the default
-   * agent: the project's draft, or a new one. **New review** passes an open review, for a
-   * fresh one with the same agent and range.
+   * Opens a review of the project's branch (SPEC → Review sessions) with the given agent,
+   * else the default one: the project's draft, or a new one. **New review** passes an open
+   * review, for a fresh one with the same agent and range.
    */
-  async function newReview(from?: Session): Promise<void> {
+  async function newReview(from?: Session, agentId = from?.agentId ?? agent?.id): Promise<void> {
     const cwd = from?.cwd ?? projectPath
-    const agentId = from?.agentId ?? agent?.id
     if (!cwd || !agentId) return
     setSidebarError(null)
     setCreating(true)
@@ -331,6 +332,7 @@ export function App(): React.JSX.Element {
       // A new review starts with only the diff: the session list, the side panel and the
       // file list closed. Each remembers what it is set to from then on.
       hideFileList()
+      reviewHidSidebar.current = sidebarHidden ? null : session.id
       hideSidebar(true)
       await selectSession(session.id)
       s.setSideOpen(false)
@@ -437,6 +439,11 @@ export function App(): React.JSX.Element {
     if (!isOpen) return
     // Its drafts went with it.
     clearDrafts(id)
+    await leaveSession(id)
+  }
+
+  /** Shows the last view visited that isn't this session (or the empty state), as if going back to it. */
+  async function leaveSession(id: string): Promise<void> {
     const h = history.current
     let i = h.at
     while (i >= 0 && (gone(h.views[i]) || (h.views[i] !== 'settings' && (h.views[i] as { sessionId: string }).sessionId === id))) i--
@@ -484,10 +491,24 @@ export function App(): React.JSX.Element {
     void selectSession(next.id)
   }
 
+  /**
+   * `Ctrl+Shift+D`: a review with the default agent, or out of the open review, back to
+   * where the user was, with the sidebar back if opening the review collapsed it.
+   */
+  async function toggleReview(): Promise<void> {
+    const id = openId.current
+    if (!id || showSettings || !s.openReview.current) return newReview()
+    const restore = reviewHidSidebar.current === id
+    reviewHidSidebar.current = null
+    await leaveSession(id)
+    if (restore) hideSidebar(false)
+  }
+
   /** A shortcut pressed in a session window that acts here (SPEC → Session windows). */
   function runMainAction(action: Extract<GlossEvent, { type: 'mainAction' }>['action']): void {
     if (action.kind === 'search') setShowSearch(true)
     else if (action.kind === 'newSession') void newSession()
+    else if (action.kind === 'review') void newReview()
     else if (action.kind === 'settings') setShowSettings(true)
     else if (action.kind === 'cycleSession') cycleSession(action.back)
     else {
@@ -521,6 +542,9 @@ export function App(): React.JSX.Element {
     } else if (e.key.toLowerCase() === 'n' && !e.shiftKey && !e.altKey) {
       e.preventDefault()
       void newSession()
+    } else if (e.key.toLowerCase() === 'd' && e.shiftKey && !e.altKey) {
+      e.preventDefault()
+      void toggleReview()
     } else if (e.key === 'Tab') {
       e.preventDefault()
       cycleSession(e.shiftKey)
@@ -621,6 +645,7 @@ export function App(): React.JSX.Element {
           <Sidebar
             agents={agents}
             defaultAgent={agent?.id ?? ''}
+            rateLimits={rateLimits}
             onSetDefaultAgent={(id) => void updateSettings({ global: { defaultAgent: id as GlobalSettings['defaultAgent'] } })}
             width={sidebarWidth}
             projects={projects}
@@ -645,7 +670,7 @@ export function App(): React.JSX.Element {
             onDeleteProject={(path) => void deleteProject(path)}
             onSelect={(id) => void selectSession(id)}
             onNew={(agentId) => void newSession(agentId)}
-            onReview={() => void newReview()}
+            onReview={(agentId) => void newReview(undefined, agentId)}
             onImport={(a) => void importSession(a)}
             onRename={(id, title) =>
               void window.gloss.sessions.rename(id, title).catch((err: unknown) => setSidebarError(errorText(err)))

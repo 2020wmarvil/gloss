@@ -16,6 +16,7 @@ import type {
   MessageQueue,
   Plan,
   PlanUsage,
+  RateLimit,
   Project,
   Session,
   SessionLive,
@@ -97,6 +98,8 @@ export type AgentProfileStatus = {
 
 export type GlossEvent =
   | { type: 'agents'; agents: AgentInfo[] }
+  /** An agent's plan limits changed (a report, or a window that reset). */
+  | { type: 'rateLimits'; agentId: string; limits: RateLimit[] }
   | { type: 'confirmClose'; requestId: string; working: number }
   | { type: 'session'; session: Session }
   /** `deletedOutside`: the agent no longer had it, so Gloss deleted it too (SPEC → Shared sessions). */
@@ -167,6 +170,8 @@ export type PaneState = {
 export type MainAction =
   | { kind: 'search' }
   | { kind: 'newSession' }
+  /** `Ctrl+Shift+D`: a review of the project's branch with the default agent. */
+  | { kind: 'review' }
   | { kind: 'settings' }
   | { kind: 'cycleSession'; back: boolean }
   /** **New review** in a popped-out review: the fresh draft opens in the main window. */
@@ -187,6 +192,8 @@ export type GlossApi = {
   search(request: SearchRequest): Promise<SearchResponse>
   agents: {
     list(): Promise<AgentInfo[]>
+    /** Each agent's plan limits as last reported while Gloss runs, without windows that have reset. */
+    rateLimits(): Promise<Record<string, RateLimit[]>>
     testOpenCode(executable: string): Promise<OpenCodeStatus>
     testProfile(profile: import('./agentProfiles').AgentProfile): Promise<AgentProfileStatus>
   }
@@ -358,6 +365,7 @@ export const IPC = {
   settingsPreviewMcpImport: 'gloss:settings:previewMcpImport',
   search: 'gloss:search',
   agentsList: 'gloss:agents:list',
+  agentsRateLimits: 'gloss:agents:rateLimits',
   agentsTestOpenCode: 'gloss:agents:testOpenCode',
   agentsTestProfile: 'gloss:agents:testProfile',
   projectsList: 'gloss:projects:list',

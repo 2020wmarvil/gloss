@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gloss · New session menu</title>
+<style>
+@font-face{font-family:Inter;src:url('../../node_modules/@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2');font-weight:100 900}
+:root{color-scheme:light;--bg:#f7f6f2;--frame:#ebeae4;--surface:#fff;--raised:#fff;--sunken:#efeee9;--ink:#1c1b18;--ink-2:#3a3833;--muted:#5f5c55;--faint:#8a867d;--line:#e3e1da;--line-strong:#d3d0c6;--hover:rgba(28,27,24,.05);--selected:rgba(28,27,24,.07);--edge:#fff;--accent:#c2147a;--accent-tint:#fae5f0;--warn:#9a5b00;--warn-tint:#fbf0dc;--shadow-2:0 1px 2px rgba(28,27,24,.06),0 8px 24px rgba(28,27,24,.12);--raised-fill:linear-gradient(to bottom,var(--surface),var(--bg));--lift-1:0 1px 2px rgba(28,27,24,.08)}
+:root[data-theme=dark]{color-scheme:dark;--bg:#141312;--frame:#0c0b0a;--surface:#1c1b19;--raised:#262522;--sunken:#0f0e0d;--ink:#efeee9;--ink-2:#d4d1c8;--muted:#a39f96;--faint:#7d796f;--line:#2c2a27;--line-strong:#3e3b36;--hover:rgba(255,255,255,.05);--selected:rgba(255,255,255,.07);--edge:rgba(255,255,255,.08);--accent:#ff5c9e;--accent-tint:#3a1a2c;--warn:#f0b04a;--warn-tint:#33280f;--shadow-2:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.45);--raised-fill:linear-gradient(to bottom,var(--raised),var(--surface));--lift-1:0 1px 2px rgba(0,0,0,.5)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Inter,system-ui,sans-serif}button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}button:disabled{cursor:default;opacity:.6}
+svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+kbd{font:11px Inter,system-ui;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--muted);background:var(--surface)}
+
+.study{max-width:1120px;margin:0 auto;padding:30px 32px}
+.study-head{display:flex;justify-content:space-between;align-items:start;gap:20px}
+.eyebrow{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+h1{font-size:24px;letter-spacing:-.04em;font-weight:600;margin:4px 0 18px}
+.quiet{color:var(--muted);padding:7px 10px;border:1px solid var(--line);border-radius:7px}
+.tabs{display:flex;gap:6px;margin-bottom:18px}.tabs a{font-size:13px;text-decoration:none;color:var(--muted);padding:8px 13px;border-radius:7px}.tabs a.active{background:var(--raised);box-shadow:inset 0 0 0 1px var(--line);color:var(--ink)}
+
+.app-window{border:1px solid var(--line);border-radius:13px;background:var(--frame);height:600px;overflow:hidden;position:relative}
+.titlebar{height:34px;padding:9px 16px;font-size:11px;color:var(--muted)}
+.shell{display:grid;grid-template-columns:240px 1fr;height:calc(100% - 34px)}
+.sidebar{padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.project{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;padding:4px 6px 6px}
+.workspace{background:var(--bg);border:1px solid var(--line);border-right:0;border-bottom:0;border-radius:11px 0 0 0;display:grid;place-items:center;color:var(--faint);font-size:13px}
+.label{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:6px}
+.rows{display:flex;flex-direction:column;gap:2px}.row{display:flex;gap:10px;align-items:center;padding:7px 8px 7px 10px;border-radius:8px;font-size:13px;color:var(--ink-2)}.row.on{background:var(--selected);color:var(--ink)}.row .i{color:var(--faint);width:14px;height:14px}
+.ghost-old{display:flex;align-items:center;gap:6px;height:32px;padding:0 12px;font-size:13px;color:var(--ink-2);border-radius:8px;text-decoration:line-through;opacity:.45}
+
+/* The split button, as in the app. */
+.split{position:relative;display:flex}
+.btn{height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;font-size:13px;font-weight:500;border-radius:8px;background:var(--raised-fill);box-shadow:inset 0 0 0 1px var(--line-strong),inset 0 1px 0 var(--edge),var(--lift-1)}
+.split .main{flex:1;min-width:0;border-radius:8px 0 0 8px}.split .main .agent{margin-left:auto;color:var(--muted);font-weight:400}
+.split .caret{width:30px;margin-left:1px;padding:0;justify-content:center;border-radius:0 8px 8px 0}.split .caret[aria-expanded=true]{background:var(--selected)}
+
+/* The menu: the app's .menu, a little wider than the sidebar's button row would allow. */
+.menu{position:absolute;z-index:10;left:0;top:36px;width:272px;background:var(--raised);border-radius:12px;box-shadow:var(--shadow-2),inset 0 0 0 1px var(--line),inset 0 1px 0 var(--edge);padding:6px;font-size:13px}
+.menu hr{border:0;border-top:1px solid var(--line);margin:6px 4px}
+.menu .head{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:6px 10px 4px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.menu .head small{text-transform:none;letter-spacing:0;font-weight:400;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item{display:flex;align-items:center;gap:2px}
+.item .go{flex:1;min-width:0;white-space:nowrap;display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;text-align:left}
+.item .go:hover,.item .go.kb{background:var(--hover)}
+.item .go .i{color:var(--muted);width:15px;height:15px}
+.item .meta{margin-left:auto;font-size:11px;color:var(--faint);white-space:nowrap}
+.item .meta.warn{color:var(--warn)}
+.chip{font-size:10.5px;padding:1px 6px;border-radius:999px;background:var(--accent-tint);color:var(--accent);margin-left:auto}
+.star{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:6px;color:var(--faint)}.star:hover{background:var(--hover)}.star.on{color:var(--ink)}.star .i{width:14px;height:14px}
+.hint{display:flex;gap:10px;align-items:center;padding:8px 10px 4px;font-size:11px;color:var(--faint);border-top:1px solid var(--line);margin-top:6px}
+
+/* B: a type switch over the agent list. */
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:2px;padding:3px;margin:2px 2px 6px;background:var(--sunken);border-radius:8px;box-shadow:inset 0 0 0 1px var(--line)}
+.seg button{display:flex;align-items:center;justify-content:center;gap:6px;padding:5px 8px;border-radius:6px;font-size:12.5px;color:var(--muted)}
+.seg button[aria-checked=true]{background:var(--raised);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line-strong),var(--lift-1)}
+.seg .i{width:14px;height:14px}
+.desc{font-size:12px;color:var(--muted);padding:2px 10px 8px;line-height:1.45}.desc b{color:var(--ink-2);font-weight:500}
+
+.toast{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);background:var(--raised);box-shadow:var(--shadow-2),inset 0 0 0 1px var(--line);border-radius:9px;padding:8px 14px;font-size:12.5px;opacity:0;transition:opacity .15s;pointer-events:none}.toast.show{opacity:1}
+
+.caption{display:flex;justify-content:space-between;gap:30px;margin-top:17px}.caption h2{font-size:14px;font-weight:500;margin:0 0 5px}.caption p{color:var(--muted);font-size:12.5px;margin:0 0 6px;max-width:720px}.badge{font-size:11px;white-space:nowrap;border:1px solid var(--line);border-radius:30px;padding:4px 10px;color:var(--muted);height:fit-content}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="compare" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M11 18H8a2 2 0 0 1-2-2V9"/></symbol>
+<symbol id="chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+<symbol id="star" viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></symbol>
+<symbol id="folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+</defs></svg>
+
+<main class="study">
+  <header class="study-head">
+    <div><div class="eyebrow">Gloss / UX studies / October 2026</div><h1>Pick the agent for a review.</h1></div>
+    <button class="quiet" id="theme">Light theme</button>
+  </header>
+
+  <div class="app-window">
+    <div class="titlebar">Gloss</div>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="project"><svg class="i"><use href="#folder"/></svg>gloss</div>
+        <div class="split" id="split"></div>
+        <div class="ghost-old" title="Removed: folded into the menu"><svg class="i"><use href="#compare"/></svg>View changes</div>
+        <div class="label">Sessions</div>
+        <div class="rows">
+          <div class="row on"><svg class="i"><use href="#chat"/></svg>New session menu</div>
+          <div class="row"><svg class="i"><use href="#compare"/></svg>Review: #48 Session UI fixes</div>
+          <div class="row"><svg class="i"><use href="#chat"/></svg>Startup latency</div>
+          <div class="row"><svg class="i"><use href="#chat"/></svg>Annotation shortcuts</div>
+        </div>
+      </aside>
+      <section class="workspace">Click the caret next to New session</section>
+    </div>
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <div class="caption">
+    <div><h2 id="cap-title"></h2><div id="cap"></div></div>
+    <span class="badge">Interactive mock · not live UI</span>
+  </div>
+</main>
+
+<script>
+const ic = (n) => `<svg class="i" aria-hidden="true"><use href="#${n}"/></svg>`
+// Claude is the default and out of usage, which is the case this fixes.
+const agents = [
+  { id: 'claude', name: 'Claude Code', short: 'Claude', limit: 'Limit · 3:40 PM' },
+  { id: 'codex', name: 'Codex', short: 'Codex' }
+]
+let open = true, type = 'session', def = 'claude', kb = 0
+
+function star(a) {
+  const on = a.id === def
+  return `<button class="star ${on ? 'on' : ''}" data-star="${a.id}" title="${on ? 'Default agent' : 'Make default'}" aria-label="Make ${a.name} the default agent">${ic('star').replace('<svg', `<svg style="fill:${on ? 'currentColor' : 'none'}"`)}</button>`
+}
+function meta(a) {
+  return a.limit ? `<span class="meta warn">${a.limit}</span>` : ''
+}
+
+function menu() {
+  return `<div class="menu" role="menu">
+    <div class="seg" role="radiogroup" aria-label="Session type">
+      <button role="radio" aria-checked="${type === 'session'}" data-type="session">${ic('chat')}Session</button>
+      <button role="radio" aria-checked="${type === 'review'}" data-type="review">${ic('compare')}Review</button>
+    </div>
+    ${agents.map((a, i) => `<div class="item"><button class="go ${i === kb ? 'kb' : ''}" role="menuitem" data-go="${type}:${a.id}">${a.name}${meta(a)}</button>${star(a)}</div>`).join('')}
+  </div>`
+}
+
+function render() {
+  const d = agents.find((a) => a.id === def)
+  document.getElementById('split').innerHTML =
+    `<button class="btn main" data-go="session:${def}" title="New session with ${d.name} (Ctrl+N)">${ic('plus')}New session<span class="agent">${d.short}</span></button>` +
+    `<button class="btn caret" id="caret" aria-haspopup="menu" aria-expanded="${open}" aria-label="New session or review with any agent">${ic('down')}</button>` +
+    (open ? menu() : '')
+  document.getElementById('cap-title').textContent = 'Type, then agent'
+  document.getElementById('cap').innerHTML = [
+    'The caret opens one menu: a <b>Session / Review</b> switch, then the agents. Picking an agent starts that type with it, so a review runs on Codex when Claude is out of usage, without changing the default.',
+    'The switch remembers the last type until the app restarts. The main button stays "New session with the default agent" (Ctrl+N), and the separate <b>View changes</b> button goes away.',
+    'Grows with more types (another segment) or agents (another row). The keyboard works without a hint row: Tab switches the type, the arrows move between agents, Enter starts.'
+  ].map((p) => `<p>${p}</p>`).join('') +
+    '<p>The amber "Limit" note is optional and would only appear if the agent\'s plan limits are known (Claude\'s from the usage request). The rest works without it.</p>'
+}
+
+let toastTimer
+function toast(text) {
+  const t = document.getElementById('toast')
+  t.textContent = text; t.classList.add('show')
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1800)
+}
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('button')
+  if (!el) { if (open) { open = false; render() } return }
+  if (el.id === 'theme') {
+    const dark = document.documentElement.dataset.theme === 'dark'
+    document.documentElement.dataset.theme = dark ? 'light' : 'dark'
+    el.textContent = dark ? 'Dark theme' : 'Light theme'
+    return
+  }
+  if (el.id === 'caret') { open = !open; kb = 0; return render() }
+  if (el.dataset.type) { type = el.dataset.type; return render() }
+  if (el.dataset.star) { def = el.dataset.star; return render() }
+  if (el.dataset.go) {
+    const [t, id] = el.dataset.go.split(':')
+    const a = agents.find((x) => x.id === id)
+    toast(t === 'review' ? `Starts a review with ${a.name}` : `Starts a session with ${a.name}`)
+    open = false; render()
+  }
+})
+
+document.addEventListener('keydown', (e) => {
+  if (!open) return
+  if (e.key === 'Tab') { e.preventDefault(); type = type === 'session' ? 'review' : 'session' }
+  else if (e.key === 'ArrowDown') kb = (kb + 1) % agents.length
+  else if (e.key === 'ArrowUp') kb = (kb + agents.length - 1) % agents.length
+  else if (e.key === 'Enter') { document.querySelector('.go.kb')?.click(); return }
+  else if (e.key === 'Escape') open = false
+  else return
+  render()
+})
+
+render()
+</script>
+</body>
+</html>

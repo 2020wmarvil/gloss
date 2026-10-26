@@ -590,6 +590,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   const availability = new AgentAvailability((key) => openCode.check(key), (key, status) => {
     if (!quitting && (settingsFile.state().global.opencodeExecutable ?? '') === key) emit({ type: 'agents', agents: agentEntries(status) })
   })
+  ipcMain.handle(IPC.agentsRateLimits, () => manager.rateLimits())
   ipcMain.handle(IPC.agentsList, () => agentEntries(availability.get(settingsFile.state().global.opencodeExecutable ?? '')))
   ipcMain.handle(IPC.agentsTestProfile, (_e, profile: unknown) => {
     const error = profileError(profile)
@@ -866,7 +867,7 @@ function paneStateArg(value: unknown, sessionId: string): PaneState {
 
 function mainActionArg(value: unknown): MainAction {
   const a = (typeof value === 'object' && value !== null ? value : {}) as Partial<Record<string, unknown>>
-  if (a.kind === 'search' || a.kind === 'newSession' || a.kind === 'settings') return { kind: a.kind }
+  if (a.kind === 'search' || a.kind === 'newSession' || a.kind === 'review' || a.kind === 'settings') return { kind: a.kind }
   if (a.kind === 'cycleSession') return { kind: 'cycleSession', back: a.back === true }
   if (a.kind === 'newReview') return { kind: 'newReview', sessionId: str(a.sessionId, 'sessionId') }
   throw new Error('Unknown action')

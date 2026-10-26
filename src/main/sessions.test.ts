@@ -2090,6 +2090,9 @@ describe('SessionManager', () => {
       const limits = [{ window: 'five_hour', status: 'warning', utilization: 90 }]
       expect(manager.openSession(second.id).live.rateLimits).toEqual(limits)
       expect(events).toContainEqual({ type: 'live', sessionId: second.id, live: expect.objectContaining({ rateLimits: limits }) })
+      // The renderer gets them per agent too, for the New session menu.
+      expect(events).toContainEqual({ type: 'rateLimits', agentId: 'fake', limits })
+      expect(manager.rateLimits()).toEqual({ fake: limits })
       // A session opened later starts with them too.
       const third = await manager.createSession('/w', 'fake')
       expect(manager.openSession(third.id).live.rateLimits).toEqual(limits)

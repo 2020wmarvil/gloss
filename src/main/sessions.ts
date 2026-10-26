@@ -326,11 +326,17 @@ export class SessionManager {
     for (const id of this.runtimes.keys()) {
       if (this.deps.store.getSession(id)?.agentId === agentId) this.setLive(id, { rateLimits: slot.rateLimits })
     }
+    this.deps.emit({ type: 'rateLimits', agentId, limits: slot.rateLimits })
     const resets = slot.rateLimits.flatMap((l) => (l.resetsAt === undefined ? [] : [l.resetsAt]))
     if (resets.length > 0) {
       const delay = Math.min(Math.max(0, Math.min(...resets) - this.now()), 2 ** 31 - 1)
       slot.rateLimitTimer = setTimeout(() => this.setRateLimits(agentId, this.slot(agentId).rateLimits), delay)
     }
+  }
+
+  /** Each agent's plan limits, as `setRateLimits` keeps them. */
+  rateLimits(): Record<string, RateLimit[]> {
+    return Object.fromEntries([...this.agents].map(([id, slot]) => [id, slot.rateLimits]))
   }
 
   /** Stops the agent's process if no prompt is in flight. The next request starts a fresh one. */
