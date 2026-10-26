@@ -8,6 +8,7 @@ export default defineConfig({
     alias: { '@shared': resolve('src/shared') }
   },
   test: {
-    include: ['src/**/*.test.{ts,tsx}']
+    include: ['src/**/*.test.{ts,tsx}'],
+    setupFiles: ['src/renderer/src/testSetup.ts']
   }
 })

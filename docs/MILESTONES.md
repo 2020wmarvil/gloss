@@ -277,13 +277,13 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 **Phase 1: review and target design** (designer-led)
 - Inventory every screen and state as screenshots: empty app, project and session list (including imported sessions), streaming turn, tool details, status line, queued and steering messages, thread panel (new, active, running), selection popover and markers, threads overview, plan, search, review sessions (diff viewer, line threads, general conversation), settings, sign-in, notifications, errors and notices.
 - List what is inconsistent, cluttered or unclear.
-  *Done (with the inventory above): `docs/ux-review/README.md`, screenshots in `docs/ux-review/screens/`.*
+  *Done. The original inventory and screenshots are preserved in Git history; the approved design is in `docs/mocks/target.html` and `docs/mocks/design-system.html`.*
 - **Brand identity:** a logo and wordmark for Gloss, an app icon (with the sizes and formats Windows, macOS and Linux need), a brand color, typography, and the overall visual style (the "margin note" idea is a natural starting point). *Done: a glossy bead in a Sunset gradient, lowercase `gloss` wordmark; see `docs/BRAND.md`.*
 - **Live up to the name:** the interface should feel glossy, with sheen and depth, not flat panels. The window stays opaque: sheen and depth come from the styles (light catching the top edges of panes, layered elevation), defined in the target mocks. *A translucent window (Electron's `backgroundMaterial` Mica and Acrylic on Windows 11) was tried in a live demo and rejected: Mica was too faint to notice and Acrylic looked muddy over other windows.*
 - Define a small design system: color, type scale, spacing, radii, elevation and motion tokens for light and dark, an icon set, and the core components (buttons, chips and badges, inputs, panels, list rows, popovers).
   *Done and implemented early (the visual-language items of the review): `docs/mocks/design-system.html`; the stylesheet is built on its tokens.*
 - Updated mocks in `docs/mocks/` for the target interface. These replace the M1-era mocks as the reference.
-  *Done: `docs/mocks/target.html`, with the sheen and depth from `docs/mocks/depth.html` (option C).*
+  *Done: `docs/mocks/target.html`, including the approved sheen and depth.*
 
 **Phase 2: implementation**
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.

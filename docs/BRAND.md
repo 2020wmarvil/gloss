@@ -1,6 +1,6 @@
 # Gloss brand
 
-Decided in M12 Phase 1 (explorations: `docs/mocks/brand.html`).
+Decided in M12 Phase 1. This document records the approved brand.
 
 ## Mark
 A glossy bead in the Sunset gradient, used on its own with no tile: the bead is the app icon, round on the taskbar and dock.

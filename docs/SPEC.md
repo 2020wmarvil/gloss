@@ -508,6 +508,8 @@ A line under the composer for the open session (in a review, a band under the di
 
 ## Keyboard shortcuts
 
+In a session (including its own window), `Ctrl+Alt+E` opens its folder in File Explorer (Finder on macOS), `Ctrl+Alt+B` opens its branch on GitHub, `Ctrl+Alt+P` opens its pull request, and `Ctrl+Alt+O` opens the configured project Obsidian vault. Branch, PR and vault actions apply only when their status bar controls are available. The controls show the shortcuts in their tooltips. Held keys do not repeatedly open windows. On macOS, use Cmd+Option for Ctrl+Alt.
+
 `Ctrl+Shift+F` search conversations · `Ctrl+N` new session · `Ctrl+Shift+D` review the branch's changes with the default agent, or leave the open review · `Ctrl+Tab` / `Ctrl+Shift+Tab` next / previous session in the project · `Ctrl+L` focus the composer · `Ctrl+Shift+T` show or hide the side panel · `Ctrl+J` go to where the agent is working, or last worked (the thread of the latest message sent), with the caret in that composer (the main conversation's when it was there; nothing in a session without messages) · `Ctrl+Shift+Q` show the queue · the capture shortcut (`Ctrl+Shift+PrintScreen` by default, a setting; see Visual feedback for the overlay's and canvas's keys) · `Ctrl+Shift+H` show or hide comment cards and `N` / `P` next / previous open thread (review sessions) · `Ctrl+Shift+O` pop the session out into its own window, or return it to the main window (see Session windows, which also says which shortcuts work there) · `Esc` close settings or a menu, or cancel the turn from the working thread's composer · `Ctrl+,` settings. `Cmd` works for `Ctrl` on macOS. The mouse's back and forward buttons, and `Alt+Left` / `Alt+Right`, move through the views visited: a session with its open thread (or none), and the settings screen. Deleted sessions are skipped. On macOS, `Option+arrow` in a text field still moves by word. On a focused question or approval card, `1` to `9` pick, `Enter` submits or allows once, and `Esc` declines or rejects once (see Questions and approvals). The settings screen lists these and the shortcuts that apply in one place (composer, queued messages, selections, session list, panel edges, question and approval cards); they can't be changed, except the capture shortcut, which is a setting.
 
 ## Notifications
@@ -523,8 +525,8 @@ While any turn runs, Gloss keeps the computer from going to sleep (Electron's `p
 See `docs/mocks/`:
 - `target.html` — the target interface (M12), every screen in light and dark: welcome, a project with no session, a new session, a session with a thread, the selection popover, the threads overview and queue tab, a failed turn, sign-in, search, settings and a review session. Pick a screen at the top (or link one as `target.html#review`). It is the reference for layout and the visual design.
 - `design-system.html` — the visual language (M12): type, color roles, surfaces, buttons, icons (Lucide), inputs, menus, rows, code and tool calls, spacing, radii and motion. Its tokens are the stylesheet's.
-- `depth.html` — the sheen and depth explorations (M12); option C, Gloss, was chosen and is the one `target.html` uses: the title bar and sidebar are the window's frame, the panes one sheet laid on it, light on raised things' top edges, pressed-in wells and a lacquered primary button.
-- `brand.html` — the brand explorations; `docs/BRAND.md` records what was decided.
+- Sheen and depth are defined in `target.html` and `design-system.html`: the title bar and sidebar are the window's frame, the panes one sheet laid on it, light on raised things' top edges, pressed-in wells and a lacquered primary button.
+- `docs/BRAND.md` records the approved brand.
 - `visual-feedback.html` — visual feedback (M16), interactive: the composer's Capture button, the region overlay on a fake desktop, the annotation canvas, the capture in the composer, and pins as anchors.
 
 
