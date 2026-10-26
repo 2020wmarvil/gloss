@@ -20,6 +20,7 @@ const props: ComponentProps<typeof StatusLine> = {
   queue: { items: [], paused: false }, onResumeQueue() {}, async onSetChoice() {}, onCommand
 }
 function mount(fetch: () => Promise<PlanUsage | null>, overrides: Partial<ComponentProps<typeof StatusLine>> = {}): void {
+  act(() => root?.unmount())
   window.gloss = { sessions: { planUsage: fetch } } as unknown as GlossApi
   const el = document.createElement('div')
   document.body.replaceChildren(el)
@@ -210,4 +211,56 @@ it('writes token counts in k and M', () => {
   expect(formatTokens(200_000)).toBe('200k')
   expect(formatTokens(1_000_000)).toBe('1M')
   expect(formatTokens(1_500_000)).toBe('1.5M')
+})
+
+describe('status bar keyboard shortcuts', () => {
+  function press(key: string, extra: KeyboardEventInit = {}): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', { key, ctrlKey: true, altKey: true, bubbles: true, cancelable: true, ...extra })
+    act(() => window.dispatchEvent(event))
+    return event
+  }
+
+  it('opens the current folder and vault once per press and shares launch errors', async () => {
+    mount(async () => null, { obsidianVault: 'Notes' })
+    const openFolder = vi.fn().mockResolvedValue(null)
+    const openObsidian = vi.fn().mockRejectedValue(new Error('missing vault'))
+    window.gloss.sessions.openFolder = openFolder
+    window.gloss.sessions.openObsidian = openObsidian
+    await act(async () => { expect(press('e').defaultPrevented).toBe(true); press('o') })
+    expect(openFolder).toHaveBeenCalledWith('s1')
+    expect(openObsidian).toHaveBeenCalledWith('s1')
+    expect(document.body.textContent).toContain("Couldn't open Obsidian: missing vault")
+    expect(openFolder).toHaveBeenCalledTimes(1)
+    press('e', { repeat: true })
+    expect(openFolder).toHaveBeenCalledTimes(1)
+    press('e', { altKey: false })
+    expect(openFolder).toHaveBeenCalledTimes(1)
+    press('e', { shiftKey: true })
+    expect(openFolder).toHaveBeenCalledTimes(1)
+    press('e', { isComposing: true })
+    expect(openFolder).toHaveBeenCalledTimes(1)
+    act(() => root!.render(<StatusLine {...props} session={{ ...props.session, id: 's2' }} />))
+    await act(async () => { press('E', { ctrlKey: false, metaKey: true }) })
+    expect(openFolder).toHaveBeenLastCalledWith('s2')
+    expect(press('o').defaultPrevented).toBe(false)
+    act(() => root!.unmount())
+    root = null
+    expect(press('e').defaultPrevented).toBe(false)
+  })
+
+  it('opens the branch and PR links only when available', () => {
+    mount(async () => null)
+    expect(press('b').defaultPrevented).toBe(false)
+    expect(press('p').defaultPrevented).toBe(false)
+    act(() => root!.render(<StatusLine {...props}
+      git={{ branch: 'dev', dirty: false, url: 'https://github.com/org/repo/tree/dev' }}
+      pr={{ number: 7, title: 'Change', url: 'https://github.com/org/repo/pull/7', state: 'open', checks: null, review: null, baseRef: 'main' }} />))
+    const opened: string[] = []
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('.status-place a')) {
+      link.addEventListener('click', (event) => { event.preventDefault(); opened.push(link.href) })
+    }
+    expect(press('b').defaultPrevented).toBe(true)
+    expect(press('p').defaultPrevented).toBe(true)
+    expect(opened).toEqual(['https://github.com/org/repo/tree/dev', 'https://github.com/org/repo/pull/7'])
+  })
 })

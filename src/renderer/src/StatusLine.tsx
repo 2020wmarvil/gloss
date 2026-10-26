@@ -5,6 +5,7 @@ import type { GitStatus, PullRequest } from '@shared/ipc'
 import { folderName } from '@shared/paths'
 import type { ConfigChoice, MessageQueue, ModelOption, RateLimit, Session, SessionLive, SessionModes, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
+import { modKey } from './shortcuts'
 import { Popover } from './Popover'
 import { UsagePanel } from './UsagePanel'
 import { Check, ChevronDown, Cpu, Gauge, Folder, GitBranch, Hand, Puzzle, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal } from 'lucide-react'
@@ -96,7 +97,7 @@ const CHECK_LABELS: Record<NonNullable<PullRequest['checks']>, string> = {
 
 /** The branch's pull request: "#12 open" colored by state, with a dot for its checks. Opens it on GitHub. */
 function PullRequestItem({ pr }: { pr: PullRequest }): React.JSX.Element {
-  const title = [`#${pr.number} ${pr.title}`, pr.checks && `${CHECK_LABELS[pr.checks]}.`, pr.review && `Review: ${pr.review}.`, 'Click to open on GitHub.']
+  const title = [`#${pr.number} ${pr.title}`, pr.checks && `${CHECK_LABELS[pr.checks]}.`, pr.review && `Review: ${pr.review}.`, `Click to open on GitHub (${modKey()}+Alt+P).`]
     .filter(Boolean)
     .join('\n')
   // External links open in the system browser (the main window's open handler).
@@ -290,6 +291,21 @@ function useFirstLineOnly(): React.RefObject<HTMLSpanElement | null> {
 export function StatusLine(props: Props): React.JSX.Element {
   const { session, live, git } = props
   const agentItems = useFirstLineOnly()
+  const place = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || !event.altKey || event.shiftKey || event.isComposing || event.getModifierState('AltGraph')) return
+      const selector = { e: 'button.folder', b: 'a.branch', p: 'a.pr', o: 'button.obsidian' }[event.key.toLowerCase()]
+      const target = selector ? place.current?.querySelector<HTMLElement>(selector) : null
+      if (!target) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (!event.repeat) target.click()
+    }
+    // Capture before an editor can consume the keys. Clicking shares the controls' error handling.
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
   const [choiceError, setChoiceError] = useState<string | null>(null)
   const [folderError, setFolderError] = useState<string | null>(null)
   const [obsidianError, setObsidianError] = useState<string | null>(null)
@@ -419,10 +435,10 @@ export function StatusLine(props: Props): React.JSX.Element {
       </span>
 
       {/* Where the session works, at the right end: folder, branch, pull request. Names shorten first. */}
-      <span className="status-place">
+      <span className="status-place" ref={place}>
         <button
           className="status-item folder"
-          title={`${session.cwd}\nClick to open the folder.`}
+          title={`${session.cwd}\nClick to open the folder (${modKey()}+Alt+E).`}
           onClick={() => {
             setFolderError(null)
             void window.gloss.sessions.openFolder(session.id).then(setFolderError, (err: unknown) => setFolderError(errorText(err)))
@@ -438,7 +454,7 @@ export function StatusLine(props: Props): React.JSX.Element {
               href={git.url}
               target="_blank"
               rel="noreferrer"
-              title={`${git.dirty ? 'Uncommitted changes' : 'Clean working tree'}. Click to open the branch on GitHub.`}
+              title={`${git.dirty ? 'Uncommitted changes' : 'Clean working tree'}. Click to open the branch on GitHub (${modKey()}+Alt+B).`}
             >
               <GitBranch className="status-icon" aria-hidden />
               <span className="status-name">{git.branch}</span>
@@ -453,7 +469,7 @@ export function StatusLine(props: Props): React.JSX.Element {
           ))}
         {props.pr && <PullRequestItem pr={props.pr} />}
         {props.obsidianVault?.trim() && (
-          <button className="status-item" title={`Open Obsidian vault: ${props.obsidianVault.trim()}`}
+          <button className="status-item obsidian" title={`Open Obsidian vault: ${props.obsidianVault.trim()} (${modKey()}+Alt+O)`}
             aria-label="Open Obsidian vault"
             onClick={() => {
               setObsidianError(null)
