@@ -1,5 +1,6 @@
 // The message log shared by the main view and the thread panel.
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { afterPaintIdle } from './idle'
 import { useScrollMemory, type ScrollAnchors } from './scrollMemory'
 import type { Message, Plan, ToolCall } from '@shared/types'
 import { threadToMainTag } from '@shared/wire'
@@ -92,12 +93,43 @@ const LOG_ANCHORS: ScrollAnchors = { item: '[data-message-id]', attr: 'data-mess
 export function Log({ footer, cwd, items, className, empty, renderAgent, reveal, systemLine, pins, scrollKey, onRevealMain }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
+  const groups = useMemo(() => groupTools(items), [items])
+  // Small logs mount as usual. Larger histories let the composer paint first,
+  // then mount recent entries followed by older ones in bounded batches.
+  const initial = groups.length > 12 ? groups.length : 0
+  const [history, setHistory] = useState({ key: scrollKey, remaining: initial })
+  if (history.key !== scrollKey) setHistory({ key: scrollKey, remaining: initial })
+  const remaining = reveal ? 0 : Math.min(history.key === scrollKey ? history.remaining : initial, groups.length)
+  const prepend = useRef<{ node: HTMLElement; top: number } | null>(null)
+  useEffect(() => {
+    if (reveal) {
+      setHistory((h) => h.remaining === 0 ? h : { ...h, remaining: 0 })
+      return
+    }
+    if (remaining === 0) return
+    return afterPaintIdle(() => {
+      const el = ref.current
+      if (el && !stickToBottom.current) {
+        const top = el.getBoundingClientRect().top
+        const node = [...el.querySelectorAll<HTMLElement>('[data-message-id]')].find((n) => n.getBoundingClientRect().bottom > top)
+        if (node) prepend.current = { node, top: node.getBoundingClientRect().top }
+      }
+      setHistory((h) => ({ ...h, remaining: Math.max(0, Math.min(h.remaining, groups.length) - 8) }))
+    })
+  }, [remaining, groups.length, scrollKey, reveal])
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useLayoutEffect(() => () => clearTimeout(scrollTimer.current), [])
   useLayoutEffect(() => {
+    stickToBottom.current = true
+    prepend.current = null
+  }, [scrollKey])
+  useLayoutEffect(() => {
     const el = ref.current
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
-  })
+    if (!el) return
+    if (stickToBottom.current) el.scrollTop = el.scrollHeight
+    else if (prepend.current?.node.isConnected) el.scrollTop += prepend.current.node.getBoundingClientRect().top - prepend.current.top
+    prepend.current = null
+  }, [remaining, scrollKey])
   // After the stick-to-bottom scroll above, so a position from another window wins.
   useScrollMemory(ref, scrollKey, LOG_ANCHORS, () => {
     stickToBottom.current = false
@@ -115,7 +147,8 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
       top = el.scrollTop
     }
     const observer = new ResizeObserver(() => {
-      el.scrollTop = stickToBottom.current ? el.scrollHeight : top + height - el.clientHeight
+      if (stickToBottom.current) el.scrollTop = el.scrollHeight
+      else if (el.clientHeight !== height) el.scrollTop = top + height - el.clientHeight
       height = el.clientHeight
       top = el.scrollTop
     })
@@ -164,7 +197,8 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
         <div className={footer ? 'log-layout' : undefined}>
           <div className={className}>
             {items.length === 0 && empty}
-            {groupTools(items).map((item) => {
+            {remaining > 0 && <p className="muted" role="status">Loading earlier messages…</p>}
+            {groups.slice(remaining).map((item) => {
               if (Array.isArray(item)) return <ToolGroup key={item[0].toolCall.id} tools={item} reveal={reveal} />
               switch (item.kind) {
                 case 'sentToMain':
@@ -313,7 +347,7 @@ const KIND_ICONS: Record<string, LucideIcon> = {
 }
 
 /** A turn's consecutive tool calls in one compact box, internal steps folded into its summary. */
-function ToolGroup({ tools, reveal }: { tools: ToolItem[]; reveal?: Reveal | null }): React.JSX.Element {
+const ToolGroup = memo(function ToolGroup({ tools, reveal }: { tools: ToolItem[]; reveal?: Reveal | null }): React.JSX.Element {
   const [showInternal, setShowInternal] = useState(false)
   const internal = tools.filter((t) => INTERNAL_TOOLS.has(t.toolCall.title))
   const shown = showInternal ? tools : tools.filter((t) => !INTERNAL_TOOLS.has(t.toolCall.title))
@@ -329,10 +363,10 @@ function ToolGroup({ tools, reveal }: { tools: ToolItem[]; reveal?: Reveal | nul
       )}
     </div>
   )
-}
+}, (a, b) => a.reveal === b.reveal && a.tools.length === b.tools.length && a.tools.every((t, i) => t.toolCall === b.tools[i].toolCall))
 
 /** A tool call: one line, expanding to what it did. Collapsed by default. */
-function ToolRow({ toolCall, revealed }: { toolCall: ToolCall; revealed: boolean }): React.JSX.Element {
+const ToolRow = memo(function ToolRow({ toolCall, revealed }: { toolCall: ToolCall; revealed: boolean }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   useLayoutEffect(() => { if (revealed) setOpen(true) }, [revealed])
   const expandable = hasDetails(toolCall)
@@ -367,7 +401,7 @@ function ToolRow({ toolCall, revealed }: { toolCall: ToolCall; revealed: boolean
       {open && <ToolDetails toolCall={toolCall} />}
     </div>
   )
-}
+})
 
 const PLAN_STATUS = { pending: 'to do', in_progress: 'in progress', completed: 'done' } as const
 

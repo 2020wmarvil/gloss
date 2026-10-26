@@ -1,0 +1,637 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-10-25T23:18:34.701Z",
+  "scope": "SessionManager.createSession through attached=true, then openSession snapshot; excludes renderer, IPC, inference and build time",
+  "coldDefinition": "Fresh ACP adapter process and connection, first session. OS caches and native credentials remain warm.",
+  "warmDefinition": "Next fresh session on the same connection, with the preceding empty session still attached.",
+  "environment": {
+    "platform": "win32",
+    "os": "10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i9-12900KS",
+    "node": "24.21.0",
+    "electron": "44.7.0",
+    "adapters": {
+      "claude": "0.89.1"
+    },
+    "cwd": "C:\\Users\\YDOG\\Desktop\\gloss",
+    "permissionMode": "bypass",
+    "glossMcpServers": 1,
+    "explicitGlossSettings": true,
+    "claudeCreationEffort": "medium"
+  },
+  "summaries": [
+    {
+      "agent": "claude",
+      "kind": "cold",
+      "successes": 10,
+      "failures": 0,
+      "medianMs": 978.4878000000008,
+      "p95Ms": 1045.299000000001,
+      "minMs": 953.4183999999987,
+      "maxMs": 1045.299000000001
+    },
+    {
+      "agent": "claude",
+      "kind": "warm",
+      "successes": 10,
+      "failures": 0,
+      "medianMs": 627.4449000000004,
+      "p95Ms": 676.1240999999991,
+      "minMs": 616.4436000000005,
+      "maxMs": 676.1240999999991
+    }
+  ],
+  "samples": [
+    {
+      "agent": "claude",
+      "round": 1,
+      "kind": "cold",
+      "ok": true,
+      "ms": 956.3697,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 286.59200000000004,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 629.9628000000001,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 28.85680000000002,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.2739999999998872,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 1,
+      "kind": "warm",
+      "ok": true,
+      "ms": 627.3306,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 590.8752999999999,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 30.337600000000066,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09830000000010841,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 2,
+      "kind": "cold",
+      "ok": true,
+      "ms": 1026.9386000000002,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 293.3765000000001,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 688.5329000000002,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 28.2216999999996,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.10750000000007276,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 2,
+      "kind": "warm",
+      "ok": true,
+      "ms": 650.1226000000001,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 617.6091000000001,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 26.52749999999969,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09349999999994907,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 3,
+      "kind": "cold",
+      "ok": true,
+      "ms": 955.6882,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 298.7687000000001,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 616.9273000000003,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 31.242099999999482,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.0955999999996493,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 3,
+      "kind": "warm",
+      "ok": true,
+      "ms": 627.4449000000004,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 590.3332,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 30.198999999999614,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09490000000005239,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 4,
+      "kind": "cold",
+      "ok": true,
+      "ms": 964.7429999999995,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 299.14980000000014,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 627.9901,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 29.740099999999984,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.0897000000004482,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 4,
+      "kind": "warm",
+      "ok": true,
+      "ms": 658.0481,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 624.2852999999996,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 28.29830000000038,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09330000000045402,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 5,
+      "kind": "cold",
+      "ok": true,
+      "ms": 984.8063000000002,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 298.71749999999975,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 647.849799999999,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 30.357600000001185,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.11859999999978754,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 5,
+      "kind": "warm",
+      "ok": true,
+      "ms": 616.4436000000005,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 580.0913,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 30.744399999999587,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09319999999934225,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 6,
+      "kind": "cold",
+      "ok": true,
+      "ms": 978.4878000000008,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 300.6852999999992,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 636.4727999999996,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 33.563100000001214,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.08899999999994179,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 6,
+      "kind": "warm",
+      "ok": true,
+      "ms": 631.1440999999995,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 594.8454999999994,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 30.78740000000107,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.08599999999933061,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 7,
+      "kind": "cold",
+      "ok": true,
+      "ms": 982.4557999999997,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 301.70859999999993,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 644.3484000000008,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 28.433000000000902,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.08770000000004075,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 7,
+      "kind": "warm",
+      "ok": true,
+      "ms": 676.1240999999991,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 641.7255999999998,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 28.853800000000774,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.08610000000044238,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 8,
+      "kind": "cold",
+      "ok": true,
+      "ms": 1045.299000000001,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 296.29689999999937,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 711.8351999999995,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 29.410299999999552,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09100000000034925,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 8,
+      "kind": "warm",
+      "ok": true,
+      "ms": 624.2707999999984,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 588.3776000000016,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 30.128600000000006,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.10159999999996217,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 9,
+      "kind": "cold",
+      "ok": true,
+      "ms": 953.4183999999987,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 292.6314000000002,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 620.2289000000001,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 32.42460000000028,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.22259999999914726,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 9,
+      "kind": "warm",
+      "ok": true,
+      "ms": 627.1662000000015,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 586.961800000001,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 34.39979999999923,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.08240000000114378,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 10,
+      "kind": "cold",
+      "ok": true,
+      "ms": 980.1995999999981,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 302.88630000000194,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 639.6389000000017,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 30.349600000001374,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09279999999853317,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 10,
+      "kind": "warm",
+      "ok": true,
+      "ms": 644.1536000000015,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 606.1072000000022,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 32.22409999999945,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.08299999999871943,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    }
+  ],
+  "cleanupWarnings": []
+}

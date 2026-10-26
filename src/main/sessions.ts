@@ -454,6 +454,21 @@ export class SessionManager {
     return this.deps.store.messageHistory()
   }
 
+  /** Opens a local conversation immediately; agent attachment runs while the user composes. */
+  startSession(cwd: string, agentId: string): Session {
+    this.deps.getAgentConfig(agentId)
+    const id = randomUUID()
+    const session: Session = {
+      id, agentId, acpSessionId: `gloss-new:${id}`, cwd,
+      title: folderName(cwd), createdAt: this.now()
+    }
+    this.deps.store.insertSession(session)
+    this.deps.store.addProject(cwd, this.now())
+    this.deps.emit({ type: 'session', session })
+    void this.resume(id)
+    return session
+  }
+
   /** `review`: a review session (SPEC → Review sessions), with its title. It starts as a draft. */
   async createSession(cwd: string, agentId: string, review?: ReviewRange & { title: string }): Promise<Session> {
     const servers = this.mcpServers(cwd)
@@ -796,7 +811,7 @@ export class SessionManager {
     if (rt.turn) await this.cancel(id)
     let warning: string | null = null
     try {
-      await this.withAgent(session.agentId, async (conn) => {
+      if (!session.acpSessionId.startsWith('gloss-new:')) await this.withAgent(session.agentId, async (conn) => {
         if (conn.canDeleteSessions) await this.deleteAgentSession(conn, session.agentId, session.acpSessionId)
       })
     } catch (err) {
@@ -1133,6 +1148,7 @@ export class SessionManager {
 
   /** Makes the session's ACP session live on `conn`. Concurrent callers share one attach. */
   private attach(sessionId: string, conn: AgentConnection): Promise<string> {
+    if (this.disposed || !this.deps.store.getSession(sessionId)) return Promise.reject(new SessionGoneError())
     const rt = this.runtime(sessionId)
     if (rt.attaching?.conn === conn) return rt.attaching.promise
     if (rt.attachedTo === conn) {
@@ -1163,6 +1179,7 @@ export class SessionManager {
     const session = this.session(sessionId)
     const servers = this.mcpServers(session.cwd)
     conn.validateMcp(servers)
+    if (session.acpSessionId.startsWith('gloss-new:')) return this.replaceAgentSession(sessionId, conn, false)
     if (session.acpSessionId.startsWith('gloss-rewind:')) return this.replaceAgentSession(sessionId, conn, false)
     if (!conn.canLoadSession && this.deps.store.rewindState(sessionId)?.context) return this.replaceAgentSession(sessionId, conn, false)
     if (!conn.canLoadSession) throw new Error('This agent cannot resume previous sessions. The conversation is preserved here. Create a new conversation to continue with this agent.')
@@ -1214,6 +1231,13 @@ export class SessionManager {
     const servers = this.mcpServers(session.cwd)
     const res = await conn.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', !!session.review), servers)
     const mode = await this.applyMode(session.agentId, session.cwd, session, conn, res.sessionId, res.modes)
+    // Deleting a conversation while startup is pending must not bring it back.
+    if (this.disposed || !this.deps.store.getSession(sessionId)) {
+      this.pendingLive.delete(res.sessionId)
+      if (conn.canCloseSessions) await conn.closeSession(res.sessionId).catch(() => {})
+      if (conn.canDeleteSessions) await this.deleteAgentSession(conn, session.agentId, res.sessionId).catch(() => {})
+      throw new SessionGoneError()
+    }
     this.byAcpId.delete(session.acpSessionId)
     this.deps.store.updateSession(session.id, { acpSessionId: res.sessionId, syncedAt: null })
     session = this.saveMode(session.id, mode)
@@ -1485,6 +1509,7 @@ export class SessionManager {
       }
     }
     choices = await this.settleEffort(conn, session.acpSessionId, choices, session.effort)
+    if (this.disposed || !this.deps.store.getSession(sessionId)) return
     this.setLive(sessionId, {
       attached: true,
       ...choices,

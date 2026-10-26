@@ -134,13 +134,16 @@ export function App(): React.JSX.Element {
   const agent = settings ? agents.find((a) => a.id === settings.global.defaultAgent) ?? agents[0] : undefined
 
   const refreshProjects = useCallback(async () => setProjects(await window.gloss.projects.list()), [])
+  const pendingDiscovery = useRef(new Set<string>())
 
   /** Lists every agent's own sessions in the project. */
   const loadAgentSessions = useCallback(
-    async (path: string) => {
+    async (path: string, only?: Set<string>) => {
       await Promise.all(
-        agents.filter((a) => a.available !== false).map(async (a) => {
+        agents.filter((a) => a.available !== false && (!only || only.has(a.id))).map(async (a) => {
           const key = agentSessionsKey(path, a.id)
+          if (pendingDiscovery.current.has(key)) return
+          pendingDiscovery.current.add(key)
           setAgentSessionErrors((all) => ({ ...all, [key]: null }))
           try {
             const list = await window.gloss.projects.agentSessions(path, a.id)
@@ -148,6 +151,8 @@ export function App(): React.JSX.Element {
           } catch (err) {
             setAgentSessionErrors((all) => ({ ...all, [key]: `Couldn't list ${a.name} sessions: ${errorText(err)}` }))
             setAgentSessions((all) => ({ ...all, [key]: [] }))
+          } finally {
+            pendingDiscovery.current.delete(key)
           }
         })
       )
@@ -272,9 +277,15 @@ export function App(): React.JSX.Element {
   }, [selectSession, setPoppedList])
 
   // The agent's sessions for the shown project, listed when it is shown.
+  const discovered = useRef<{ path: string | null; ids: Set<string> }>({ path: null, ids: new Set() })
   useEffect(() => {
-    if (projectPath) void loadAgentSessions(projectPath)
-  }, [projectPath, loadAgentSessions])
+    if (!projectPath) return
+    if (discovered.current.path !== projectPath) discovered.current = { path: projectPath, ids: new Set() }
+    const available = new Set(agents.filter((a) => a.available !== false).map((a) => a.id))
+    const added = new Set([...available].filter((id) => !discovered.current.ids.has(id)))
+    discovered.current.ids = available
+    if (added.size) void loadAgentSessions(projectPath, added)
+  }, [projectPath, loadAgentSessions, agents])
 
   // Back in the window: pick up what was done in the agent's CLI meanwhile (SPEC → Shared sessions).
   useEffect(() => {
@@ -701,7 +712,7 @@ export function App(): React.JSX.Element {
                   title={agent ? `New session with ${agent.name} (Ctrl+N)` : undefined}
                 >
                   {!creating && <Plus />}
-                  {creating ? 'Starting the agent…' : 'New session'}
+                  {creating ? 'Opening session…' : 'New session'}
                 </button>
               </>
             ) : (

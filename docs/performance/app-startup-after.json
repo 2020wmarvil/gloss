@@ -1,0 +1,4134 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-10-26T00:02:35.355Z",
+  "experiments": {
+    "after-largest": {
+      "schemaVersion": 1,
+      "measuredAt": "2026-10-25T23:59:30.393Z",
+      "environment": {
+        "cpu": "12th Gen Intel(R) Core(TM) i9-12900KS",
+        "os": "10.0.26200"
+      },
+      "scenario": "snapshot",
+      "mode": "built",
+      "selection": "largest",
+      "variant": "baseline",
+      "summaries": {
+        "windowShownMs": {
+          "count": 3,
+          "mean": 343.3333333333333,
+          "p50": 350,
+          "min": 319,
+          "max": 361
+        },
+        "composerMs": {
+          "count": 3,
+          "mean": 335.4000651041667,
+          "p50": 336.60009765625,
+          "min": 330.800048828125,
+          "max": 338.800048828125
+        },
+        "startupMaxLongTaskMs": {
+          "count": 3,
+          "mean": 0,
+          "p50": 0,
+          "min": 0,
+          "max": 0
+        },
+        "startupTotalLongTaskMs": {
+          "count": 3,
+          "mean": 0,
+          "p50": 0,
+          "min": 0,
+          "max": 0
+        },
+        "resizeFrameP95Ms": {
+          "count": 3,
+          "mean": 13.400000000001455,
+          "p50": 13.400000000001455,
+          "min": 13.400000000001455,
+          "max": 13.400000000001455
+        },
+        "resizeScriptMs": {
+          "count": 3,
+          "mean": 140.98966666666664,
+          "p50": 140.843,
+          "min": 140.25,
+          "max": 141.87599999999998
+        },
+        "resizeTaskMs": {
+          "count": 3,
+          "mean": 1318.7269999999999,
+          "p50": 1317.8909999999998,
+          "min": 1303.11,
+          "max": 1335.18
+        }
+      },
+      "samples": [
+        {
+          "environment": {
+            "electron": "44.7.0",
+            "node": "24.21.0",
+            "platform": "win32"
+          },
+          "ipc": [
+            {
+              "channel": "gloss:settings:get",
+              "enteredMs": 272,
+              "ms": 0.0257000000000005
+            },
+            {
+              "channel": "gloss:history",
+              "enteredMs": 272,
+              "ms": 0.32499999999998863
+            },
+            {
+              "channel": "gloss:agents:list",
+              "enteredMs": 273,
+              "ms": 1.4070000000000107
+            },
+            {
+              "channel": "gloss:windows:list",
+              "enteredMs": 276,
+              "ms": 0.036100000000004684
+            },
+            {
+              "channel": "gloss:projects:list",
+              "enteredMs": 276,
+              "ms": 4.551400000000001
+            },
+            {
+              "channel": "gloss:sessions:list",
+              "enteredMs": 280,
+              "ms": 0.24469999999996617
+            },
+            {
+              "channel": "gloss:sessions:open",
+              "enteredMs": 300,
+              "ms": 12.18199999999996
+            },
+            {
+              "channel": "gloss:sessions:refresh",
+              "enteredMs": 392,
+              "ms": 0.05480000000000018
+            },
+            {
+              "channel": "gloss:git:status",
+              "enteredMs": 315,
+              "ms": 148.62599999999998
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 352,
+              "ms": 459.20939999999996
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 353,
+              "ms": 549.9747
+            },
+            {
+              "channel": "gloss:git:pullRequest",
+              "enteredMs": 464,
+              "ms": 628.4913
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 699,
+              "ms": 427.7112000000001
+            }
+          ],
+          "phases": {
+            "mainModuleMs": 24.012100000000004,
+            "windowCreatedMs": 133,
+            "appReadyMs": 139,
+            "domReadyMs": 239,
+            "didFinishLoadMs": 240
+          },
+          "restored": {
+            "messages": 79,
+            "tools": 167,
+            "threads": 0,
+            "textChars": 44063,
+            "review": false
+          },
+          "windowShownMs": 350,
+          "composerMs": 336.60009765625,
+          "paints": [
+            {
+              "name": "first-paint",
+              "ms": 596
+            },
+            {
+              "name": "first-contentful-paint",
+              "ms": 596
+            }
+          ],
+          "domNodes": 4738,
+          "codeBlocks": 1,
+          "resources": [],
+          "startup": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 360,
+            "frames": 714,
+            "framesOver50Ms": 2,
+            "tasks": [],
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 9476.85100000006
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 234.87699999999992
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70845,
+                "ms": 73.92399999999999
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 7.456
+              },
+              {
+                "name": "requestAnimationFrame",
+                "line": 0,
+                "ms": 6.497999999999999
+              },
+              {
+                "name": "(anonymous)",
+                "line": 1,
+                "ms": 6.235
+              },
+              {
+                "name": "frame",
+                "line": 6,
+                "ms": 5.8500000000000005
+              },
+              {
+                "name": "collectExternalReferencesInRules",
+                "line": 17038,
+                "ms": 5.747
+              },
+              {
+                "name": "setProp",
+                "line": 11167,
+                "ms": 5.244999999999999
+              },
+              {
+                "name": "eq",
+                "line": 45791,
+                "ms": 4.748
+              },
+              {
+                "name": "setValueForAttribute",
+                "line": 1756,
+                "ms": 4.734999999999999
+              },
+              {
+                "name": "compile",
+                "line": 32761,
+                "ms": 4.661
+              },
+              {
+                "name": "buildLucideIconNode",
+                "line": 14289,
+                "ms": 4.648
+              },
+              {
+                "name": "completeWork",
+                "line": 6883,
+                "ms": 4.574
+              },
+              {
+                "name": "completeUnitOfWork",
+                "line": 10068,
+                "ms": 4.47
+              },
+              {
+                "name": "setInitialProperties",
+                "line": 11489,
+                "ms": 3.319
+              },
+              {
+                "name": "atext",
+                "line": 38009,
+                "ms": 3.2359999999999998
+              },
+              {
+                "name": "invoke",
+                "line": 2,
+                "ms": 3.16
+              },
+              {
+                "name": "decodeArray",
+                "line": 61169,
+                "ms": 3.132
+              },
+              {
+                "name": "doClone",
+                "line": 16164,
+                "ms": 3.112
+              },
+              {
+                "name": "commitLayoutEffectOnFiber",
+                "line": 7977,
+                "ms": 3.075
+              },
+              {
+                "name": "renderWithHooks",
+                "line": 4213,
+                "ms": 3.068
+              },
+              {
+                "name": "consume",
+                "line": 32303,
+                "ms": 3.028
+              },
+              {
+                "name": "main",
+                "line": 32284,
+                "ms": 2.943
+              },
+              {
+                "name": "reconcileChildrenArray",
+                "line": 3722,
+                "ms": 2.926
+              }
+            ]
+          },
+          "resize": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 13.599999999998545,
+            "frames": 293,
+            "framesOver50Ms": 0,
+            "wallMs": 3891.7677000000003,
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 2660.460999999992
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 1100.4870000000003
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 14.145999999999999
+              },
+              {
+                "name": "getBoundingClientRect",
+                "line": 0,
+                "ms": 9.424999999999999
+              },
+              {
+                "name": "Markdown2",
+                "line": 39629,
+                "ms": 6.157
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70863,
+                "ms": 6.096
+              },
+              {
+                "name": "visiblePixelRange",
+                "line": 50810,
+                "ms": 4.647
+              },
+              {
+                "name": "completeWork",
+                "line": 6883,
+                "ms": 4.587
+              },
+              {
+                "name": "jsxProd",
+                "line": 12,
+                "ms": 4.567
+              },
+              {
+                "name": "dispatchContinuousEvent",
+                "line": 13621,
+                "ms": 3.184
+              },
+              {
+                "name": "measure",
+                "line": 50997,
+                "ms": 3.1260000000000003
+              },
+              {
+                "name": "updateMemo",
+                "line": 4862,
+                "ms": 3.077
+              },
+              {
+                "name": "modKey",
+                "line": 39854,
+                "ms": 3.062
+              },
+              {
+                "name": "updateProperties",
+                "line": 11692,
+                "ms": 3.059
+              },
+              {
+                "name": "useState",
+                "line": 5333,
+                "ms": 3.058
+              },
+              {
+                "name": "coerceRef",
+                "line": 3496,
+                "ms": 3.058
+              },
+              {
+                "name": "Log",
+                "line": 70814,
+                "ms": 3.049
+              },
+              {
+                "name": "reconcileChildrenArray",
+                "line": 3722,
+                "ms": 3.042
+              },
+              {
+                "name": "commitHookEffectListUnmount",
+                "line": 7333,
+                "ms": 3.024
+              },
+              {
+                "name": "add",
+                "line": 0,
+                "ms": 1.806
+              },
+              {
+                "name": "setTimeout",
+                "line": 0,
+                "ms": 1.636
+              },
+              {
+                "name": "workLoopSync",
+                "line": 9885,
+                "ms": 1.61
+              },
+              {
+                "name": "Composer",
+                "line": 66538,
+                "ms": 1.606
+              },
+              {
+                "name": "commitMutationEffectsOnFiber",
+                "line": 8406,
+                "ms": 1.596
+              },
+              {
+                "name": "getActiveElementDeep",
+                "line": 2640,
+                "ms": 1.588
+              }
+            ],
+            "metrics": {
+              "LayoutCount": 324,
+              "RecalcStyleCount": 445,
+              "LayoutDuration": 0.269707,
+              "RecalcStyleDuration": 0.227872,
+              "ScriptDuration": 0.140843,
+              "TaskDuration": 1.30311
+            }
+          },
+          "rendererMemory": {
+            "workingSetSize": 308844,
+            "peakWorkingSetSize": 310812,
+            "privateBytes": 195616
+          }
+        },
+        {
+          "environment": {
+            "electron": "44.7.0",
+            "node": "24.21.0",
+            "platform": "win32"
+          },
+          "ipc": [
+            {
+              "channel": "gloss:settings:get",
+              "enteredMs": 261,
+              "ms": 0.02760000000000673
+            },
+            {
+              "channel": "gloss:history",
+              "enteredMs": 261,
+              "ms": 0.33969999999999345
+            },
+            {
+              "channel": "gloss:agents:list",
+              "enteredMs": 262,
+              "ms": 1.5508000000000095
+            },
+            {
+              "channel": "gloss:windows:list",
+              "enteredMs": 265,
+              "ms": 0.03469999999998663
+            },
+            {
+              "channel": "gloss:projects:list",
+              "enteredMs": 265,
+              "ms": 4.589500000000015
+            },
+            {
+              "channel": "gloss:sessions:list",
+              "enteredMs": 269,
+              "ms": 0.2815000000000225
+            },
+            {
+              "channel": "gloss:sessions:open",
+              "enteredMs": 289,
+              "ms": 11.560100000000034
+            },
+            {
+              "channel": "gloss:sessions:refresh",
+              "enteredMs": 390,
+              "ms": 0.14240000000000919
+            },
+            {
+              "channel": "gloss:git:status",
+              "enteredMs": 303,
+              "ms": 149.35500000000002
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 336,
+              "ms": 419.47270000000003
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 337,
+              "ms": 493.50299999999993
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 646,
+              "ms": 390.12
+            },
+            {
+              "channel": "gloss:git:pullRequest",
+              "enteredMs": 453,
+              "ms": 713.8332
+            }
+          ],
+          "phases": {
+            "mainModuleMs": 20.820499999999996,
+            "windowCreatedMs": 125,
+            "appReadyMs": 131,
+            "domReadyMs": 228,
+            "didFinishLoadMs": 228
+          },
+          "restored": {
+            "messages": 79,
+            "tools": 167,
+            "threads": 0,
+            "textChars": 44063,
+            "review": false
+          },
+          "windowShownMs": 361,
+          "composerMs": 338.800048828125,
+          "paints": [
+            {
+              "name": "first-paint",
+              "ms": 564
+            },
+            {
+              "name": "first-contentful-paint",
+              "ms": 564
+            }
+          ],
+          "domNodes": 4738,
+          "codeBlocks": 1,
+          "resources": [],
+          "startup": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 319.99999999999994,
+            "frames": 714,
+            "framesOver50Ms": 2,
+            "tasks": [],
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 9479.707000000006
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 249.00600000000009
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70845,
+                "ms": 66.52900000000001
+              },
+              {
+                "name": "(anonymous)",
+                "line": 1,
+                "ms": 10.798
+              },
+              {
+                "name": "eq",
+                "line": 45791,
+                "ms": 6.295
+              },
+              {
+                "name": "collectExternalReferencesInRules",
+                "line": 17038,
+                "ms": 6.193999999999999
+              },
+              {
+                "name": "Composer",
+                "line": 66538,
+                "ms": 5.452
+              },
+              {
+                "name": "renderWithHooks",
+                "line": 4213,
+                "ms": 4.759
+              },
+              {
+                "name": "completeWork",
+                "line": 6883,
+                "ms": 4.693
+              },
+              {
+                "name": "subtokenize",
+                "line": 30043,
+                "ms": 4.518
+              },
+              {
+                "name": "setProp",
+                "line": 11167,
+                "ms": 3.5970000000000004
+              },
+              {
+                "name": "go",
+                "line": 32300,
+                "ms": 3.3789999999999996
+              },
+              {
+                "name": "onScroll",
+                "line": 70896,
+                "ms": 3.2110000000000003
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 3.172
+              },
+              {
+                "name": "decodeArray",
+                "line": 61169,
+                "ms": 3.138
+              },
+              {
+                "name": "visit2",
+                "line": 34394,
+                "ms": 3.137
+              },
+              {
+                "name": "frame",
+                "line": 6,
+                "ms": 3.118
+              },
+              {
+                "name": "useSession",
+                "line": 69300,
+                "ms": 3.115
+              },
+              {
+                "name": "requestAnimationFrame",
+                "line": 0,
+                "ms": 3.113
+              },
+              {
+                "name": "cloneObj",
+                "line": 16183,
+                "ms": 3.0919999999999996
+              },
+              {
+                "name": "measure",
+                "line": 50997,
+                "ms": 3.0229999999999997
+              },
+              {
+                "name": "syntaxExtension",
+                "line": 28614,
+                "ms": 2.665
+              },
+              {
+                "name": "reconcileChildrenArray",
+                "line": 3722,
+                "ms": 2.576
+              },
+              {
+                "name": "fit",
+                "line": 41142,
+                "ms": 2.342
+              },
+              {
+                "name": "resolveAllAttention",
+                "line": 29132,
+                "ms": 2.278
+              }
+            ]
+          },
+          "resize": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 13.5,
+            "frames": 293,
+            "framesOver50Ms": 0,
+            "wallMs": 3873.6804999999986,
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 2596.111000000002
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 1125.2649999999976
+              },
+              {
+                "name": "getBoundingClientRect",
+                "line": 0,
+                "ms": 18.427
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70863,
+                "ms": 12.55
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 12.479
+              },
+              {
+                "name": "createWorkInProgress",
+                "line": 2824,
+                "ms": 7.853999999999999
+              },
+              {
+                "name": "reconcileChildrenArray",
+                "line": 3722,
+                "ms": 6.128
+              },
+              {
+                "name": "visiblePixelRange",
+                "line": 50810,
+                "ms": 6.112
+              },
+              {
+                "name": "react_production.createElement",
+                "line": 377,
+                "ms": 6.0969999999999995
+              },
+              {
+                "name": "buildLucideIconNode",
+                "line": 14289,
+                "ms": 6.071
+              },
+              {
+                "name": "logItems",
+                "line": 70788,
+                "ms": 4.612
+              },
+              {
+                "name": "updateProperties",
+                "line": 11692,
+                "ms": 4.606
+              },
+              {
+                "name": "measure",
+                "line": 52696,
+                "ms": 3.2640000000000002
+              },
+              {
+                "name": "App",
+                "line": 71932,
+                "ms": 3.138
+              },
+              {
+                "name": "setAttribute",
+                "line": 0,
+                "ms": 3.117
+              },
+              {
+                "name": "commitMutationEffectsOnFiber",
+                "line": 8406,
+                "ms": 3.094
+              },
+              {
+                "name": "modelLabel",
+                "line": 41037,
+                "ms": 3.074
+              },
+              {
+                "name": "updateSlot",
+                "line": 3645,
+                "ms": 3.0700000000000003
+              },
+              {
+                "name": "performUnitOfWork",
+                "line": 9987,
+                "ms": 3.069
+              },
+              {
+                "name": "normalizeShortcut",
+                "line": 41460,
+                "ms": 3.065
+              },
+              {
+                "name": "fit",
+                "line": 41142,
+                "ms": 3.061
+              },
+              {
+                "name": "bubbleProperties",
+                "line": 6871,
+                "ms": 3.061
+              },
+              {
+                "name": "updateSyncExternalStore",
+                "line": 4474,
+                "ms": 3.01
+              },
+              {
+                "name": "push2",
+                "line": 501,
+                "ms": 2.828
+              },
+              {
+                "name": "projectSettings",
+                "line": 68182,
+                "ms": 1.657
+              }
+            ],
+            "metrics": {
+              "LayoutCount": 324,
+              "RecalcStyleCount": 445,
+              "LayoutDuration": 0.282024,
+              "RecalcStyleDuration": 0.225894,
+              "ScriptDuration": 0.14024999999999999,
+              "TaskDuration": 1.33518
+            }
+          },
+          "rendererMemory": {
+            "workingSetSize": 305720,
+            "peakWorkingSetSize": 307528,
+            "privateBytes": 190892
+          }
+        },
+        {
+          "environment": {
+            "electron": "44.7.0",
+            "node": "24.21.0",
+            "platform": "win32"
+          },
+          "ipc": [
+            {
+              "channel": "gloss:settings:get",
+              "enteredMs": 258,
+              "ms": 0.039600000000007185
+            },
+            {
+              "channel": "gloss:history",
+              "enteredMs": 258,
+              "ms": 0.35020000000000095
+            },
+            {
+              "channel": "gloss:agents:list",
+              "enteredMs": 258,
+              "ms": 1.6961000000000013
+            },
+            {
+              "channel": "gloss:windows:list",
+              "enteredMs": 261,
+              "ms": 0.036100000000004684
+            },
+            {
+              "channel": "gloss:projects:list",
+              "enteredMs": 261,
+              "ms": 4.5700999999999965
+            },
+            {
+              "channel": "gloss:sessions:list",
+              "enteredMs": 266,
+              "ms": 0.245900000000006
+            },
+            {
+              "channel": "gloss:sessions:open",
+              "enteredMs": 287,
+              "ms": 11.11039999999997
+            },
+            {
+              "channel": "gloss:sessions:refresh",
+              "enteredMs": 324,
+              "ms": 0.07120000000003301
+            },
+            {
+              "channel": "gloss:sessions:refresh",
+              "enteredMs": 336,
+              "ms": 0.009699999999952524
+            },
+            {
+              "channel": "gloss:git:status",
+              "enteredMs": 300,
+              "ms": 147.09770000000003
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 325,
+              "ms": 435.0058
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 326,
+              "ms": 548.4744000000001
+            },
+            {
+              "channel": "gloss:git:pullRequest",
+              "enteredMs": 448,
+              "ms": 556.0356999999999
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 656,
+              "ms": 367.0928
+            }
+          ],
+          "phases": {
+            "mainModuleMs": 21.380700000000004,
+            "windowCreatedMs": 125,
+            "appReadyMs": 130,
+            "domReadyMs": 224,
+            "didFinishLoadMs": 225
+          },
+          "restored": {
+            "messages": 79,
+            "tools": 167,
+            "threads": 0,
+            "textChars": 44063,
+            "review": false
+          },
+          "windowShownMs": 319,
+          "composerMs": 330.800048828125,
+          "paints": [
+            {
+              "name": "first-paint",
+              "ms": 452
+            },
+            {
+              "name": "first-contentful-paint",
+              "ms": 452
+            }
+          ],
+          "domNodes": 4738,
+          "codeBlocks": 1,
+          "resources": [],
+          "startup": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000000546,
+            "maxFrameMs": 253.40000000000003,
+            "frames": 717,
+            "framesOver50Ms": 3,
+            "tasks": [],
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 9506.368000000037
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 223.224
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70845,
+                "ms": 66.054
+              },
+              {
+                "name": "collectExternalReferencesInRules",
+                "line": 17038,
+                "ms": 10.011999999999999
+              },
+              {
+                "name": "(anonymous)",
+                "line": 1,
+                "ms": 9.299999999999999
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 8.606
+              },
+              {
+                "name": "requestAnimationFrame",
+                "line": 0,
+                "ms": 6.366
+              },
+              {
+                "name": "set webkitSpeechRecognitionEvent",
+                "line": 0,
+                "ms": 4.855
+              },
+              {
+                "name": "eq",
+                "line": 45791,
+                "ms": 4.7940000000000005
+              },
+              {
+                "name": "measure",
+                "line": 50997,
+                "ms": 4.216
+              },
+              {
+                "name": "subtokenize",
+                "line": 30043,
+                "ms": 4.109
+              },
+              {
+                "name": "commitLayoutEffectOnFiber",
+                "line": 7977,
+                "ms": 3.431
+              },
+              {
+                "name": "start",
+                "line": 32388,
+                "ms": 3.271
+              },
+              {
+                "name": "setValueForAttribute",
+                "line": 1756,
+                "ms": 3.176
+              },
+              {
+                "name": "renderAgent",
+                "line": 71111,
+                "ms": 3.135
+              },
+              {
+                "name": "decodeArray",
+                "line": 61169,
+                "ms": 3.116
+              },
+              {
+                "name": "Composer",
+                "line": 66538,
+                "ms": 3.068
+              },
+              {
+                "name": "consume",
+                "line": 32303,
+                "ms": 3.0669999999999997
+              },
+              {
+                "name": "completeWork",
+                "line": 6883,
+                "ms": 3.0389999999999997
+              },
+              {
+                "name": "flowContinue",
+                "line": 29020,
+                "ms": 3.018
+              },
+              {
+                "name": "splice",
+                "line": 28573,
+                "ms": 2.854
+              },
+              {
+                "name": "gfmToMarkdown",
+                "line": 37929,
+                "ms": 2.839
+              },
+              {
+                "name": "enter",
+                "line": 32327,
+                "ms": 2.553
+              },
+              {
+                "name": "resolveAll",
+                "line": 29115,
+                "ms": 2.521
+              },
+              {
+                "name": "createWorkInProgress",
+                "line": 2824,
+                "ms": 2.435
+              }
+            ]
+          },
+          "resize": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 13.5,
+            "frames": 292,
+            "framesOver50Ms": 0,
+            "wallMs": 3862.5630999999994,
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 2617.5110000000027
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 1107.7999999999988
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70863,
+                "ms": 21.538
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 18.535
+              },
+              {
+                "name": "getBoundingClientRect",
+                "line": 0,
+                "ms": 16.880000000000003
+              },
+              {
+                "name": "renderWithHooks",
+                "line": 4213,
+                "ms": 7.742
+              },
+              {
+                "name": "visiblePixelRange",
+                "line": 50810,
+                "ms": 6.255000000000001
+              },
+              {
+                "name": "updateProperties",
+                "line": 11692,
+                "ms": 6.181
+              },
+              {
+                "name": "buildLucideIconNode",
+                "line": 14289,
+                "ms": 6.141
+              },
+              {
+                "name": "reconcileChildrenArray",
+                "line": 3722,
+                "ms": 4.606999999999999
+              },
+              {
+                "name": "queueMicrotask",
+                "line": 0,
+                "ms": 3.193
+              },
+              {
+                "name": "createWorkInProgress",
+                "line": 2824,
+                "ms": 3.159
+              },
+              {
+                "name": "updateWorkInProgressHook",
+                "line": 4308,
+                "ms": 3.072
+              },
+              {
+                "name": "(anonymous)",
+                "line": 14300,
+                "ms": 3.066
+              },
+              {
+                "name": "(anonymous)",
+                "line": 14437,
+                "ms": 3.057
+              },
+              {
+                "name": "logItems",
+                "line": 70788,
+                "ms": 3.043
+              },
+              {
+                "name": "(anonymous)",
+                "line": 3928,
+                "ms": 3.042
+              },
+              {
+                "name": "measure",
+                "line": 50997,
+                "ms": 3.032
+              },
+              {
+                "name": "(anonymous)",
+                "line": 66681,
+                "ms": 1.619
+              },
+              {
+                "name": "frame",
+                "line": 6,
+                "ms": 1.604
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70807,
+                "ms": 1.577
+              },
+              {
+                "name": "getComputedStyle",
+                "line": 0,
+                "ms": 1.557
+              },
+              {
+                "name": "removeAttribute",
+                "line": 0,
+                "ms": 1.55
+              },
+              {
+                "name": "(anonymous)",
+                "line": 10155,
+                "ms": 1.549
+              },
+              {
+                "name": "normalizeShortcut",
+                "line": 41460,
+                "ms": 1.549
+              }
+            ],
+            "metrics": {
+              "LayoutCount": 324,
+              "RecalcStyleCount": 445,
+              "LayoutDuration": 0.280142,
+              "RecalcStyleDuration": 0.220377,
+              "ScriptDuration": 0.14187599999999997,
+              "TaskDuration": 1.317891
+            }
+          },
+          "rendererMemory": {
+            "workingSetSize": 294544,
+            "peakWorkingSetSize": 296384,
+            "privateBytes": 180792
+          }
+        }
+      ]
+    },
+    "after-dev-largest": {
+      "schemaVersion": 1,
+      "measuredAt": "2026-10-26T00:00:25.938Z",
+      "environment": {
+        "cpu": "12th Gen Intel(R) Core(TM) i9-12900KS",
+        "os": "10.0.26200"
+      },
+      "scenario": "snapshot",
+      "mode": "dev",
+      "selection": "largest",
+      "variant": "baseline",
+      "summaries": {
+        "windowShownMs": {
+          "count": 3,
+          "mean": 1147.6666666666667,
+          "p50": 1148,
+          "min": 1103,
+          "max": 1192
+        },
+        "composerMs": {
+          "count": 3,
+          "mean": 1444.4666341145833,
+          "p50": 1446.599853515625,
+          "min": 1398.300048828125,
+          "max": 1488.5
+        },
+        "startupMaxLongTaskMs": {
+          "count": 3,
+          "mean": 70.66666666666667,
+          "p50": 70,
+          "min": 69,
+          "max": 73
+        },
+        "startupTotalLongTaskMs": {
+          "count": 3,
+          "mean": 70.66666666666667,
+          "p50": 70,
+          "min": 69,
+          "max": 73
+        },
+        "resizeFrameP95Ms": {
+          "count": 3,
+          "mean": 13.40000000000085,
+          "p50": 13.400000000001455,
+          "min": 13.399999999999636,
+          "max": 13.400000000001455
+        },
+        "resizeScriptMs": {
+          "count": 3,
+          "mean": 681.5436666666668,
+          "p50": 682.6910000000001,
+          "min": 668.0290000000001,
+          "max": 693.911
+        },
+        "resizeTaskMs": {
+          "count": 3,
+          "mean": 1930.5666666666666,
+          "p50": 1930.9270000000001,
+          "min": 1919.1189999999997,
+          "max": 1941.6539999999998
+        }
+      },
+      "samples": [
+        {
+          "environment": {
+            "electron": "44.7.0",
+            "node": "24.21.0",
+            "platform": "win32"
+          },
+          "ipc": [
+            {
+              "channel": "gloss:settings:get",
+              "enteredMs": 1198,
+              "ms": 0.03399999999987813
+            },
+            {
+              "channel": "gloss:history",
+              "enteredMs": 1198,
+              "ms": 0.44820000000004256
+            },
+            {
+              "channel": "gloss:agents:list",
+              "enteredMs": 1199,
+              "ms": 1.6919000000000324
+            },
+            {
+              "channel": "gloss:windows:list",
+              "enteredMs": 1202,
+              "ms": 0.08030000000007931
+            },
+            {
+              "channel": "gloss:projects:list",
+              "enteredMs": 1202,
+              "ms": 5.340400000000045
+            },
+            {
+              "channel": "gloss:sessions:list",
+              "enteredMs": 1208,
+              "ms": 0.2899999999999636
+            },
+            {
+              "channel": "gloss:settings:get",
+              "enteredMs": 1228,
+              "ms": 0.00680000000011205
+            },
+            {
+              "channel": "gloss:history",
+              "enteredMs": 1229,
+              "ms": 0.23600000000010368
+            },
+            {
+              "channel": "gloss:agents:list",
+              "enteredMs": 1229,
+              "ms": 0.5446999999999207
+            },
+            {
+              "channel": "gloss:windows:list",
+              "enteredMs": 1230,
+              "ms": 0.007600000000138607
+            },
+            {
+              "channel": "gloss:projects:list",
+              "enteredMs": 1230,
+              "ms": 0.36169999999992797
+            },
+            {
+              "channel": "gloss:sessions:list",
+              "enteredMs": 1230,
+              "ms": 0.16780000000017026
+            },
+            {
+              "channel": "gloss:sessions:open",
+              "enteredMs": 1233,
+              "ms": 12.109699999999975
+            },
+            {
+              "channel": "gloss:sessions:open",
+              "enteredMs": 1251,
+              "ms": 1.2666000000001532
+            },
+            {
+              "channel": "gloss:git:status",
+              "enteredMs": 1253,
+              "ms": 148.73000000000002
+            },
+            {
+              "channel": "gloss:git:status",
+              "enteredMs": 1270,
+              "ms": 143.95190000000002
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 1277,
+              "ms": 445.6557
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 1277,
+              "ms": 533.2037
+            },
+            {
+              "channel": "gloss:git:pullRequest",
+              "enteredMs": 1414,
+              "ms": 577.2229
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 1653,
+              "ms": 390.3551
+            },
+            {
+              "channel": "gloss:git:pullRequest",
+              "enteredMs": 1402,
+              "ms": 737.8048999999999
+            }
+          ],
+          "phases": {
+            "mainModuleMs": 20.7274,
+            "windowCreatedMs": 132,
+            "appReadyMs": 137,
+            "domReadyMs": 1136,
+            "didFinishLoadMs": 1149
+          },
+          "windowShownMs": 1148,
+          "restored": {
+            "messages": 79,
+            "tools": 167,
+            "threads": 0,
+            "textChars": 44063,
+            "review": false
+          },
+          "composerMs": 1446.599853515625,
+          "paints": [
+            {
+              "name": "first-paint",
+              "ms": 1092
+            },
+            {
+              "name": "first-contentful-paint",
+              "ms": 1320
+            }
+          ],
+          "domNodes": 4737,
+          "codeBlocks": 1,
+          "resources": [
+            {
+              "file": "Brand.tsx",
+              "startMs": 443.40000009536743,
+              "ms": 342,
+              "bytes": 8937
+            },
+            {
+              "file": "ShortcutSetting.tsx",
+              "startMs": 626.5,
+              "ms": 257.90000009536743,
+              "bytes": 17049
+            },
+            {
+              "file": "ThreadPanel.tsx",
+              "startMs": 635.9000000953674,
+              "ms": 257.2999999523163,
+              "bytes": 51177
+            },
+            {
+              "file": "EditorSetting.tsx",
+              "startMs": 626.5,
+              "ms": 257.10000002384186,
+              "bytes": 8727
+            },
+            {
+              "file": "reviewSources.ts",
+              "startMs": 635.8000000715256,
+              "ms": 256.5,
+              "bytes": 6283
+            },
+            {
+              "file": "AgentProfileSettings.tsx",
+              "startMs": 626.4000000953674,
+              "ms": 256.39999997615814,
+              "bytes": 54775
+            },
+            {
+              "file": "ReviewPanels.tsx",
+              "startMs": 635.8000000715256,
+              "ms": 255.19999992847443,
+              "bytes": 58791
+            },
+            {
+              "file": "wire.ts",
+              "startMs": 629.6000000238419,
+              "ms": 254.80000007152557,
+              "bytes": 16062
+            },
+            {
+              "file": "Conversation.tsx",
+              "startMs": 635.8000000715256,
+              "ms": 249.5,
+              "bytes": 35199
+            },
+            {
+              "file": "theme.ts",
+              "startMs": 635.1000000238419,
+              "ms": 249.20000004768372,
+              "bytes": 1966
+            },
+            {
+              "file": "OpenCodeSettings.tsx",
+              "startMs": 626.4000000953674,
+              "ms": 248.59999990463257,
+              "bytes": 14259
+            },
+            {
+              "file": "McpSettings.tsx",
+              "startMs": 626.4000000953674,
+              "ms": 248.5,
+              "bytes": 52059
+            },
+            {
+              "file": "settings.ts",
+              "startMs": 626.4000000953674,
+              "ms": 247.69999992847443,
+              "bytes": 18829
+            },
+            {
+              "file": "SelectionMenu.tsx",
+              "startMs": 626,
+              "ms": 247.30000007152557,
+              "bytes": 22263
+            },
+            {
+              "file": "lineSelect.ts",
+              "startMs": 626,
+              "ms": 246.90000009536743,
+              "bytes": 14927
+            }
+          ],
+          "startup": {
+            "longTasks": 1,
+            "totalLongTaskMs": 69,
+            "maxLongTaskMs": 69,
+            "frameP95Ms": 13.400000000000546,
+            "maxFrameMs": 226.70000000000005,
+            "frames": 717,
+            "framesOver50Ms": 4,
+            "tasks": [
+              {
+                "startMs": 1453,
+                "ms": 69
+              }
+            ],
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 9126.463000000027
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 256.7540000000001
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70,
+                "ms": 61.008
+              },
+              {
+                "name": "logComponentRender",
+                "line": 3400,
+                "ms": 58.03300000000001
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 21.423
+              },
+              {
+                "name": "ReactElement",
+                "line": 129,
+                "ms": 15.326
+              },
+              {
+                "name": "(anonymous)",
+                "line": 1,
+                "ms": 14.634
+              },
+              {
+                "name": "runWithFiberInDEV",
+                "line": 1129,
+                "ms": 13.814
+              },
+              {
+                "name": "exports.jsxDEV",
+                "line": 241,
+                "ms": 13.299999999999999
+              },
+              {
+                "name": "collectExternalReferencesInRules",
+                "line": 909,
+                "ms": 9.457999999999998
+              },
+              {
+                "name": "go",
+                "line": 1167,
+                "ms": 8.990000000000002
+              },
+              {
+                "name": "appendChild",
+                "line": 0,
+                "ms": 8.908
+              },
+              {
+                "name": "consume",
+                "line": 1175,
+                "ms": 8.845999999999998
+              },
+              {
+                "name": "prepareFreshStack",
+                "line": 13137,
+                "ms": 8.577
+              },
+              {
+                "name": "now",
+                "line": 0,
+                "ms": 7.468999999999999
+              },
+              {
+                "name": "exports.createElement",
+                "line": 802,
+                "ms": 7.4399999999999995
+              },
+              {
+                "name": "start",
+                "line": 1285,
+                "ms": 6.37
+              },
+              {
+                "name": "ReactElement",
+                "line": 168,
+                "ms": 5.824
+              },
+              {
+                "name": "visit",
+                "line": 139,
+                "ms": 5.813
+              },
+              {
+                "name": "debug2",
+                "line": 202,
+                "ms": 5.787
+              },
+              {
+                "name": "flushPassiveEffects",
+                "line": 14219,
+                "ms": 5.342
+              },
+              {
+                "name": "enter",
+                "line": 1211,
+                "ms": 5.279
+              },
+              {
+                "name": "react_stack_bottom_frame",
+                "line": 20255,
+                "ms": 5.204
+              },
+              {
+                "name": "nodeOffsets",
+                "line": 25,
+                "ms": 4.996
+              },
+              {
+                "name": "requestAnimationFrame",
+                "line": 0,
+                "ms": 4.842
+              }
+            ]
+          },
+          "resize": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.399999999999636,
+            "maxFrameMs": 39.899999999999636,
+            "frames": 294,
+            "framesOver50Ms": 0,
+            "wallMs": 3891.2101000000002,
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 2049.1089999999986
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 1164.448
+              },
+              {
+                "name": "run",
+                "line": 0,
+                "ms": 164.12199999999996
+              },
+              {
+                "name": "exports.jsxDEV",
+                "line": 241,
+                "ms": 48.095
+              },
+              {
+                "name": "prepareFreshStack",
+                "line": 13137,
+                "ms": 46.603
+              },
+              {
+                "name": "ReactElement",
+                "line": 129,
+                "ms": 41.69999999999999
+              },
+              {
+                "name": "addObjectDiffToProperties",
+                "line": 3291,
+                "ms": 20.561999999999998
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 20.122000000000003
+              },
+              {
+                "name": "exports.createElement",
+                "line": 802,
+                "ms": 20.084
+              },
+              {
+                "name": "getBoundingClientRect",
+                "line": 0,
+                "ms": 19.964000000000002
+              },
+              {
+                "name": "measure",
+                "line": 0,
+                "ms": 12.027000000000001
+              },
+              {
+                "name": "ReactElement",
+                "line": 168,
+                "ms": 10.901
+              },
+              {
+                "name": "runWithFiberInDEV",
+                "line": 1129,
+                "ms": 10.823
+              },
+              {
+                "name": "validateProperty",
+                "line": 2486,
+                "ms": 10.697
+              },
+              {
+                "name": "(anonymous)",
+                "line": 88,
+                "ms": 10.599
+              },
+              {
+                "name": "logComponentRender",
+                "line": 3400,
+                "ms": 9.308
+              },
+              {
+                "name": "buildLucideIconNode",
+                "line": 1982,
+                "ms": 7.8709999999999996
+              },
+              {
+                "name": "shouldSetTextContent",
+                "line": 17024,
+                "ms": 7.812
+              },
+              {
+                "name": "reconcileChildrenArray",
+                "line": 5190,
+                "ms": 7.693
+              },
+              {
+                "name": "validateProperties$2",
+                "line": 2469,
+                "ms": 6.827
+              },
+              {
+                "name": "updateProperties",
+                "line": 15908,
+                "ms": 6.297
+              },
+              {
+                "name": "createWorkInProgress",
+                "line": 3847,
+                "ms": 6.218
+              },
+              {
+                "name": "now",
+                "line": 0,
+                "ms": 6.21
+              },
+              {
+                "name": "validatePropertiesInDevelopment",
+                "line": 15215,
+                "ms": 6.129
+              },
+              {
+                "name": "(anonymous)",
+                "line": 2085,
+                "ms": 6.122
+              }
+            ],
+            "metrics": {
+              "LayoutCount": 324,
+              "RecalcStyleCount": 445,
+              "LayoutDuration": 0.28520799999999996,
+              "RecalcStyleDuration": 0.232636,
+              "ScriptDuration": 0.6826910000000002,
+              "TaskDuration": 1.9416539999999998
+            }
+          },
+          "rendererMemory": {
+            "workingSetSize": 422556,
+            "peakWorkingSetSize": 433736,
+            "privateBytes": 311088
+          }
+        },
+        {
+          "environment": {
+            "electron": "44.7.0",
+            "node": "24.21.0",
+            "platform": "win32"
+          },
+          "ipc": [
+            {
+              "channel": "gloss:settings:get",
+              "enteredMs": 1150,
+              "ms": 0.06380000000012842
+            },
+            {
+              "channel": "gloss:history",
+              "enteredMs": 1150,
+              "ms": 0.4794999999999163
+            },
+            {
+              "channel": "gloss:agents:list",
+              "enteredMs": 1151,
+              "ms": 2.9052999999998974
+            },
+            {
+              "channel": "gloss:windows:list",
+              "enteredMs": 1156,
+              "ms": 0.046500000000150976
+            },
+            {
+              "channel": "gloss:projects:list",
+              "enteredMs": 1156,
+              "ms": 4.946099999999888
+            },
+            {
+              "channel": "gloss:sessions:list",
+              "enteredMs": 1161,
+              "ms": 0.39160000000015316
+            },
+            {
+              "channel": "gloss:settings:get",
+              "enteredMs": 1182,
+              "ms": 0.008599999999887586
+            },
+            {
+              "channel": "gloss:history",
+              "enteredMs": 1182,
+              "ms": 0.26569999999992433
+            },
+            {
+              "channel": "gloss:agents:list",
+              "enteredMs": 1182,
+              "ms": 0.5425999999999931
+            },
+            {
+              "channel": "gloss:windows:list",
+              "enteredMs": 1183,
+              "ms": 0.007699999999886131
+            },
+            {
+              "channel": "gloss:projects:list",
+              "enteredMs": 1183,
+              "ms": 0.3455999999998767
+            },
+            {
+              "channel": "gloss:sessions:list",
+              "enteredMs": 1184,
+              "ms": 0.1612999999999829
+            },
+            {
+              "channel": "gloss:sessions:open",
+              "enteredMs": 1187,
+              "ms": 12.385400000000118
+            },
+            {
+              "channel": "gloss:sessions:open",
+              "enteredMs": 1205,
+              "ms": 1.2824000000000524
+            },
+            {
+              "channel": "gloss:git:status",
+              "enteredMs": 1208,
+              "ms": 153.71810000000005
+            },
+            {
+              "channel": "gloss:git:status",
+              "enteredMs": 1232,
+              "ms": 145.62110000000007
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 1238,
+              "ms": 459.5024999999998
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 1238,
+              "ms": 569.5694000000001
+            },
+            {
+              "channel": "gloss:git:pullRequest",
+              "enteredMs": 1362,
+              "ms": 564.2095999999999
+            },
+            {
+              "channel": "gloss:git:pullRequest",
+              "enteredMs": 1378,
+              "ms": 576.4987000000001
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 1618,
+              "ms": 378.0385000000001
+            }
+          ],
+          "phases": {
+            "mainModuleMs": 22.216299999999997,
+            "windowCreatedMs": 123,
+            "appReadyMs": 129,
+            "domReadyMs": 1086,
+            "didFinishLoadMs": 1104
+          },
+          "windowShownMs": 1103,
+          "restored": {
+            "messages": 79,
+            "tools": 167,
+            "threads": 0,
+            "textChars": 44063,
+            "review": false
+          },
+          "composerMs": 1398.300048828125,
+          "paints": [
+            {
+              "name": "first-paint",
+              "ms": 1064
+            },
+            {
+              "name": "first-contentful-paint",
+              "ms": 1280
+            }
+          ],
+          "domNodes": 4737,
+          "codeBlocks": 1,
+          "resources": [
+            {
+              "file": "Brand.tsx",
+              "startMs": 243.19999992847443,
+              "ms": 455,
+              "bytes": 8937
+            },
+            {
+              "file": "annotate.ts",
+              "startMs": 507.1999999284744,
+              "ms": 315.8000000715256,
+              "bytes": 16858
+            },
+            {
+              "file": "AnnotateDialog.tsx",
+              "startMs": 507.1999999284744,
+              "ms": 314.60000002384186,
+              "bytes": 84110
+            },
+            {
+              "file": "StatusLine.tsx",
+              "startMs": 495.09999990463257,
+              "ms": 313.60000002384186,
+              "bytes": 87068
+            },
+            {
+              "file": "Popover.tsx",
+              "startMs": 507.09999990463257,
+              "ms": 303.40000009536743,
+              "bytes": 7755
+            },
+            {
+              "file": "RewindDialog.tsx",
+              "startMs": 507.09999990463257,
+              "ms": 303.2000000476837,
+              "bytes": 26760
+            },
+            {
+              "file": "ComposerAttachments.tsx",
+              "startMs": 507.09999990463257,
+              "ms": 303.10000002384186,
+              "bytes": 22713
+            },
+            {
+              "file": "MarkdownEditor.tsx",
+              "startMs": 507,
+              "ms": 302.89999997615814,
+              "bytes": 50406
+            },
+            {
+              "file": "reviewSources.ts",
+              "startMs": 500.89999997615814,
+              "ms": 302.60000002384186,
+              "bytes": 6283
+            },
+            {
+              "file": "ThreadPanel.tsx",
+              "startMs": 500.89999997615814,
+              "ms": 302.60000002384186,
+              "bytes": 51177
+            },
+            {
+              "file": "ReviewPanels.tsx",
+              "startMs": 500.89999997615814,
+              "ms": 301.5,
+              "bytes": 58791
+            },
+            {
+              "file": "Conversation.tsx",
+              "startMs": 500.7999999523163,
+              "ms": 300.2999999523163,
+              "bytes": 35199
+            },
+            {
+              "file": "composerMention.ts",
+              "startMs": 507,
+              "ms": 298.6999999284744,
+              "bytes": 1678
+            },
+            {
+              "file": "shortcut.ts",
+              "startMs": 507,
+              "ms": 297.6999999284744,
+              "bytes": 14102
+            },
+            {
+              "file": "ShortcutSetting.tsx",
+              "startMs": 471.5,
+              "ms": 264.39999997615814,
+              "bytes": 17049
+            }
+          ],
+          "startup": {
+            "longTasks": 1,
+            "totalLongTaskMs": 70,
+            "maxLongTaskMs": 70,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 213.4000000000001,
+            "frames": 713,
+            "framesOver50Ms": 4,
+            "tasks": [
+              {
+                "startMs": 1403.5,
+                "ms": 70
+              }
+            ],
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 9054.674
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 309.77199999999993
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70,
+                "ms": 62.74299999999999
+              },
+              {
+                "name": "logComponentRender",
+                "line": 3400,
+                "ms": 55.149000000000015
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 29.865000000000002
+              },
+              {
+                "name": "exports.jsxDEV",
+                "line": 241,
+                "ms": 24.257
+              },
+              {
+                "name": "go",
+                "line": 1167,
+                "ms": 17.401
+              },
+              {
+                "name": "(anonymous)",
+                "line": 1,
+                "ms": 16.395
+              },
+              {
+                "name": "exports.createElement",
+                "line": 802,
+                "ms": 13.128999999999998
+              },
+              {
+                "name": "collectExternalReferencesInRules",
+                "line": 909,
+                "ms": 12.964000000000006
+              },
+              {
+                "name": "ReactElement",
+                "line": 129,
+                "ms": 11.161000000000001
+              },
+              {
+                "name": "runWithFiberInDEV",
+                "line": 1129,
+                "ms": 10.953999999999999
+              },
+              {
+                "name": "requestAnimationFrame",
+                "line": 0,
+                "ms": 10.841
+              },
+              {
+                "name": "react_stack_bottom_frame",
+                "line": 20255,
+                "ms": 10.208000000000002
+              },
+              {
+                "name": "consume",
+                "line": 1175,
+                "ms": 9.772
+              },
+              {
+                "name": "prepareFreshStack",
+                "line": 13137,
+                "ms": 9.585
+              },
+              {
+                "name": "ReactElement",
+                "line": 168,
+                "ms": 7.702
+              },
+              {
+                "name": "flushPassiveEffects",
+                "line": 14219,
+                "ms": 7.548
+              },
+              {
+                "name": "atBreak",
+                "line": 909,
+                "ms": 7.5200000000000005
+              },
+              {
+                "name": "createTask",
+                "line": 0,
+                "ms": 7.364
+              },
+              {
+                "name": "jsxDEVImpl",
+                "line": 170,
+                "ms": 6.0280000000000005
+              },
+              {
+                "name": "logComponentEffect",
+                "line": 3492,
+                "ms": 5.912999999999999
+              },
+              {
+                "name": "splice",
+                "line": 825,
+                "ms": 5.907
+              },
+              {
+                "name": "getTaskName",
+                "line": 83,
+                "ms": 5.757
+              },
+              {
+                "name": "measure",
+                "line": 0,
+                "ms": 5.09
+              }
+            ]
+          },
+          "resize": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 40,
+            "frames": 288,
+            "framesOver50Ms": 0,
+            "wallMs": 3819.6659,
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 2018.3089999999993
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 1131.4659999999985
+              },
+              {
+                "name": "run",
+                "line": 0,
+                "ms": 175.46699999999996
+              },
+              {
+                "name": "ReactElement",
+                "line": 129,
+                "ms": 58.26899999999999
+              },
+              {
+                "name": "prepareFreshStack",
+                "line": 13137,
+                "ms": 46.66900000000001
+              },
+              {
+                "name": "exports.jsxDEV",
+                "line": 241,
+                "ms": 46.46300000000001
+              },
+              {
+                "name": "getBoundingClientRect",
+                "line": 0,
+                "ms": 18.222
+              },
+              {
+                "name": "now",
+                "line": 0,
+                "ms": 17.102
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 15.697
+              },
+              {
+                "name": "exports.createElement",
+                "line": 802,
+                "ms": 15.444999999999999
+              },
+              {
+                "name": "addObjectDiffToProperties",
+                "line": 3291,
+                "ms": 13.869
+              },
+              {
+                "name": "(anonymous)",
+                "line": 88,
+                "ms": 12.163
+              },
+              {
+                "name": "runWithFiberInDEV",
+                "line": 1129,
+                "ms": 10.905000000000001
+              },
+              {
+                "name": "ReactElement",
+                "line": 168,
+                "ms": 9.293000000000001
+              },
+              {
+                "name": "updatedAncestorInfoDev",
+                "line": 2136,
+                "ms": 9.267
+              },
+              {
+                "name": "warnUnknownProperties",
+                "line": 2681,
+                "ms": 8.116
+              },
+              {
+                "name": "beginWork",
+                "line": 8726,
+                "ms": 7.816999999999999
+              },
+              {
+                "name": "buildLucideIconNode",
+                "line": 1982,
+                "ms": 7.7940000000000005
+              },
+              {
+                "name": "measure",
+                "line": 0,
+                "ms": 7.766
+              },
+              {
+                "name": "validateProperty",
+                "line": 2486,
+                "ms": 7.758
+              },
+              {
+                "name": "(anonymous)",
+                "line": 415,
+                "ms": 6.4239999999999995
+              },
+              {
+                "name": "(anonymous)",
+                "line": 1993,
+                "ms": 6.304
+              },
+              {
+                "name": "validatePropertiesInDevelopment",
+                "line": 15215,
+                "ms": 6.259
+              },
+              {
+                "name": "visiblePixelRange",
+                "line": 5914,
+                "ms": 6.2459999999999996
+              },
+              {
+                "name": "reconcileChildrenArray",
+                "line": 5190,
+                "ms": 6.243
+              }
+            ],
+            "metrics": {
+              "LayoutCount": 324,
+              "RecalcStyleCount": 446,
+              "LayoutDuration": 0.27936,
+              "RecalcStyleDuration": 0.236955,
+              "ScriptDuration": 0.693911,
+              "TaskDuration": 1.9191189999999998
+            }
+          },
+          "rendererMemory": {
+            "workingSetSize": 415612,
+            "peakWorkingSetSize": 425316,
+            "privateBytes": 304328
+          }
+        },
+        {
+          "environment": {
+            "electron": "44.7.0",
+            "node": "24.21.0",
+            "platform": "win32"
+          },
+          "ipc": [
+            {
+              "channel": "gloss:settings:get",
+              "enteredMs": 1242,
+              "ms": 0.03809999999998581
+            },
+            {
+              "channel": "gloss:history",
+              "enteredMs": 1242,
+              "ms": 0.36649999999985994
+            },
+            {
+              "channel": "gloss:agents:list",
+              "enteredMs": 1242,
+              "ms": 1.9552000000001044
+            },
+            {
+              "channel": "gloss:windows:list",
+              "enteredMs": 1246,
+              "ms": 0.05529999999998836
+            },
+            {
+              "channel": "gloss:projects:list",
+              "enteredMs": 1246,
+              "ms": 5.23090000000002
+            },
+            {
+              "channel": "gloss:sessions:list",
+              "enteredMs": 1252,
+              "ms": 0.29960000000005493
+            },
+            {
+              "channel": "gloss:settings:get",
+              "enteredMs": 1274,
+              "ms": 0.007799999999861029
+            },
+            {
+              "channel": "gloss:history",
+              "enteredMs": 1274,
+              "ms": 0.32769999999982247
+            },
+            {
+              "channel": "gloss:agents:list",
+              "enteredMs": 1274,
+              "ms": 0.5631000000000768
+            },
+            {
+              "channel": "gloss:windows:list",
+              "enteredMs": 1275,
+              "ms": 0.00860000000011496
+            },
+            {
+              "channel": "gloss:projects:list",
+              "enteredMs": 1275,
+              "ms": 0.39000000000010004
+            },
+            {
+              "channel": "gloss:sessions:list",
+              "enteredMs": 1276,
+              "ms": 0.1771000000001095
+            },
+            {
+              "channel": "gloss:sessions:open",
+              "enteredMs": 1279,
+              "ms": 13.133800000000065
+            },
+            {
+              "channel": "gloss:sessions:open",
+              "enteredMs": 1297,
+              "ms": 1.2117000000000644
+            },
+            {
+              "channel": "gloss:git:status",
+              "enteredMs": 1298,
+              "ms": 153.2074
+            },
+            {
+              "channel": "gloss:git:status",
+              "enteredMs": 1318,
+              "ms": 143.79089999999997
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 1325,
+              "ms": 449.1531
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 1325,
+              "ms": 545.0754000000002
+            },
+            {
+              "channel": "gloss:git:pullRequest",
+              "enteredMs": 1463,
+              "ms": 597.4683
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 1701,
+              "ms": 371.2764000000002
+            },
+            {
+              "channel": "gloss:git:pullRequest",
+              "enteredMs": 1452,
+              "ms": 641.8383999999999
+            }
+          ],
+          "phases": {
+            "mainModuleMs": 20.914399999999997,
+            "windowCreatedMs": 121,
+            "appReadyMs": 126,
+            "domReadyMs": 1178,
+            "didFinishLoadMs": 1193
+          },
+          "windowShownMs": 1192,
+          "restored": {
+            "messages": 79,
+            "tools": 167,
+            "threads": 0,
+            "textChars": 44063,
+            "review": false
+          },
+          "composerMs": 1488.5,
+          "paints": [
+            {
+              "name": "first-paint",
+              "ms": 1156
+            },
+            {
+              "name": "first-contentful-paint",
+              "ms": 1368
+            }
+          ],
+          "domNodes": 4737,
+          "codeBlocks": 1,
+          "resources": [
+            {
+              "file": "Brand.tsx",
+              "startMs": 227.60000002384186,
+              "ms": 485.39999997615814,
+              "bytes": 8937
+            },
+            {
+              "file": "ShortcutSetting.tsx",
+              "startMs": 471.5,
+              "ms": 408.5,
+              "bytes": 17049
+            },
+            {
+              "file": "EditorSetting.tsx",
+              "startMs": 471.5,
+              "ms": 407.8000000715256,
+              "bytes": 8727
+            },
+            {
+              "file": "AgentProfileSettings.tsx",
+              "startMs": 471.5,
+              "ms": 407.60000002384186,
+              "bytes": 54775
+            },
+            {
+              "file": "OpenCodeSettings.tsx",
+              "startMs": 471.5,
+              "ms": 407,
+              "bytes": 14259
+            },
+            {
+              "file": "SelectionMenu.tsx",
+              "startMs": 468.2000000476837,
+              "ms": 405,
+              "bytes": 22263
+            },
+            {
+              "file": "McpSettings.tsx",
+              "startMs": 471.40000009536743,
+              "ms": 404.1999999284744,
+              "bytes": 52059
+            },
+            {
+              "file": "lineSelect.ts",
+              "startMs": 468.2000000476837,
+              "ms": 403.60000002384186,
+              "bytes": 14927
+            },
+            {
+              "file": "StatusLine.tsx",
+              "startMs": 468.2000000476837,
+              "ms": 402.7000000476837,
+              "bytes": 87068
+            },
+            {
+              "file": "RangePicker.tsx",
+              "startMs": 468.2000000476837,
+              "ms": 401.7000000476837,
+              "bytes": 31239
+            },
+            {
+              "file": "diffContext.ts",
+              "startMs": 468.2000000476837,
+              "ms": 401.10000002384186,
+              "bytes": 11088
+            },
+            {
+              "file": "ThreadsOverview.tsx",
+              "startMs": 432.8000000715256,
+              "ms": 360.6999999284744,
+              "bytes": 50120
+            },
+            {
+              "file": "scrollMemory.ts",
+              "startMs": 443.3000000715256,
+              "ms": 352.10000002384186,
+              "bytes": 16415
+            },
+            {
+              "file": "wire.ts",
+              "startMs": 443.3000000715256,
+              "ms": 351.6999999284744,
+              "bytes": 16062
+            },
+            {
+              "file": "review.ts",
+              "startMs": 443.3000000715256,
+              "ms": 350.89999997615814,
+              "bytes": 38740
+            }
+          ],
+          "startup": {
+            "longTasks": 1,
+            "totalLongTaskMs": 73,
+            "maxLongTaskMs": 73,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 213.20000000000005,
+            "frames": 714,
+            "framesOver50Ms": 4,
+            "tasks": [
+              {
+                "startMs": 1493.7001953125,
+                "ms": 73
+              }
+            ],
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 9094.936000000036
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 272.71299999999997
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70,
+                "ms": 64.39500000000001
+              },
+              {
+                "name": "logComponentRender",
+                "line": 3400,
+                "ms": 59.12399999999998
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 17.737
+              },
+              {
+                "name": "ReactElement",
+                "line": 129,
+                "ms": 14.728999999999997
+              },
+              {
+                "name": "go",
+                "line": 1167,
+                "ms": 13.869
+              },
+              {
+                "name": "(anonymous)",
+                "line": 1,
+                "ms": 11.985
+              },
+              {
+                "name": "react_stack_bottom_frame",
+                "line": 20255,
+                "ms": 10.966000000000001
+              },
+              {
+                "name": "runWithFiberInDEV",
+                "line": 1129,
+                "ms": 10.397
+              },
+              {
+                "name": "prepareFreshStack",
+                "line": 13137,
+                "ms": 9.152
+              },
+              {
+                "name": "collectExternalReferencesInRules",
+                "line": 909,
+                "ms": 8.638
+              },
+              {
+                "name": "eq",
+                "line": 891,
+                "ms": 6.859
+              },
+              {
+                "name": "exit",
+                "line": 1222,
+                "ms": 6.857
+              },
+              {
+                "name": "createTask",
+                "line": 0,
+                "ms": 6.372
+              },
+              {
+                "name": "subtokenize",
+                "line": 1307,
+                "ms": 6.278
+              },
+              {
+                "name": "requestAnimationFrame",
+                "line": 0,
+                "ms": 6.265000000000001
+              },
+              {
+                "name": "addObjectDiffToProperties",
+                "line": 3291,
+                "ms": 6.162999999999999
+              },
+              {
+                "name": "exports.createElement",
+                "line": 802,
+                "ms": 6.156
+              },
+              {
+                "name": "consume",
+                "line": 1175,
+                "ms": 6.152
+              },
+              {
+                "name": "frame",
+                "line": 6,
+                "ms": 5.819999999999999
+              },
+              {
+                "name": "jsxDEVImpl",
+                "line": 170,
+                "ms": 5.7379999999999995
+              },
+              {
+                "name": "set webkitSpeechRecognitionEvent",
+                "line": 0,
+                "ms": 5.322000000000001
+              },
+              {
+                "name": "atext",
+                "line": 1804,
+                "ms": 5.104
+              },
+              {
+                "name": "subcontent",
+                "line": 1377,
+                "ms": 5.077
+              }
+            ]
+          },
+          "resize": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 26.700000000000728,
+            "frames": 292,
+            "framesOver50Ms": 0,
+            "wallMs": 3862.4632999999994,
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 2013.9180000000033
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 1181.984999999999
+              },
+              {
+                "name": "run",
+                "line": 0,
+                "ms": 142.401
+              },
+              {
+                "name": "ReactElement",
+                "line": 129,
+                "ms": 58.268
+              },
+              {
+                "name": "prepareFreshStack",
+                "line": 13137,
+                "ms": 46.37100000000001
+              },
+              {
+                "name": "exports.jsxDEV",
+                "line": 241,
+                "ms": 46.34199999999999
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 26.813999999999993
+              },
+              {
+                "name": "addObjectDiffToProperties",
+                "line": 3291,
+                "ms": 25.291999999999998
+              },
+              {
+                "name": "ReactElement",
+                "line": 168,
+                "ms": 21.860999999999997
+              },
+              {
+                "name": "updateProperties",
+                "line": 15908,
+                "ms": 17.141000000000002
+              },
+              {
+                "name": "exports.createElement",
+                "line": 802,
+                "ms": 15.47
+              },
+              {
+                "name": "(anonymous)",
+                "line": 88,
+                "ms": 14.751000000000001
+              },
+              {
+                "name": "validateProperty",
+                "line": 2486,
+                "ms": 12.644
+              },
+              {
+                "name": "createWorkInProgress",
+                "line": 3847,
+                "ms": 12.452
+              },
+              {
+                "name": "getBoundingClientRect",
+                "line": 0,
+                "ms": 12.356
+              },
+              {
+                "name": "runWithFiberInDEV",
+                "line": 1129,
+                "ms": 10.942
+              },
+              {
+                "name": "measure",
+                "line": 0,
+                "ms": 7.744999999999999
+              },
+              {
+                "name": "now",
+                "line": 0,
+                "ms": 7.679999999999999
+              },
+              {
+                "name": "Markdown2",
+                "line": 305,
+                "ms": 7.593999999999999
+              },
+              {
+                "name": "validateProperties$2",
+                "line": 2469,
+                "ms": 6.757
+              },
+              {
+                "name": "logComponentRender",
+                "line": 3400,
+                "ms": 6.2620000000000005
+              },
+              {
+                "name": "(anonymous)",
+                "line": 1993,
+                "ms": 6.142999999999999
+              },
+              {
+                "name": "mergeClasses",
+                "line": 1961,
+                "ms": 4.632
+              },
+              {
+                "name": "visiblePixelRange",
+                "line": 5914,
+                "ms": 4.625
+              },
+              {
+                "name": "(anonymous)",
+                "line": 2085,
+                "ms": 4.62
+              }
+            ],
+            "metrics": {
+              "LayoutCount": 324,
+              "RecalcStyleCount": 445,
+              "LayoutDuration": 0.289261,
+              "RecalcStyleDuration": 0.23865299999999998,
+              "ScriptDuration": 0.6680290000000001,
+              "TaskDuration": 1.930927
+            }
+          },
+          "rendererMemory": {
+            "workingSetSize": 416076,
+            "peakWorkingSetSize": 426320,
+            "privateBytes": 302632
+          }
+        }
+      ]
+    },
+    "after-latest": {
+      "schemaVersion": 1,
+      "measuredAt": "2026-10-26T00:01:31.965Z",
+      "environment": {
+        "cpu": "12th Gen Intel(R) Core(TM) i9-12900KS",
+        "os": "10.0.26200"
+      },
+      "scenario": "snapshot",
+      "mode": "built",
+      "selection": "latest",
+      "variant": "baseline",
+      "summaries": {
+        "windowShownMs": {
+          "count": 3,
+          "mean": 337,
+          "p50": 338,
+          "min": 333,
+          "max": 340
+        },
+        "composerMs": {
+          "count": 3,
+          "mean": 344.10009765625,
+          "p50": 352.800048828125,
+          "min": 324.60009765625,
+          "max": 354.900146484375
+        },
+        "startupMaxLongTaskMs": {
+          "count": 3,
+          "mean": 0,
+          "p50": 0,
+          "min": 0,
+          "max": 0
+        },
+        "startupTotalLongTaskMs": {
+          "count": 3,
+          "mean": 0,
+          "p50": 0,
+          "min": 0,
+          "max": 0
+        },
+        "resizeFrameP95Ms": {
+          "count": 3,
+          "mean": 13.40000000000085,
+          "p50": 13.400000000001455,
+          "min": 13.399999999999636,
+          "max": 13.400000000001455
+        },
+        "resizeScriptMs": {
+          "count": 3,
+          "mean": 115.03699999999999,
+          "p50": 114.85199999999998,
+          "min": 114.83399999999999,
+          "max": 115.425
+        },
+        "resizeTaskMs": {
+          "count": 3,
+          "mean": 956.1393333333334,
+          "p50": 960.696,
+          "min": 935.798,
+          "max": 971.9239999999999
+        }
+      },
+      "samples": [
+        {
+          "environment": {
+            "electron": "44.7.0",
+            "node": "24.21.0",
+            "platform": "win32"
+          },
+          "ipc": [
+            {
+              "channel": "gloss:settings:get",
+              "enteredMs": 254,
+              "ms": 0.0257000000000005
+            },
+            {
+              "channel": "gloss:history",
+              "enteredMs": 254,
+              "ms": 0.3434000000000026
+            },
+            {
+              "channel": "gloss:agents:list",
+              "enteredMs": 254,
+              "ms": 1.6884000000000015
+            },
+            {
+              "channel": "gloss:windows:list",
+              "enteredMs": 258,
+              "ms": 0.03969999999998208
+            },
+            {
+              "channel": "gloss:projects:list",
+              "enteredMs": 258,
+              "ms": 4.645999999999987
+            },
+            {
+              "channel": "gloss:sessions:list",
+              "enteredMs": 262,
+              "ms": 0.21199999999998909
+            },
+            {
+              "channel": "gloss:sessions:open",
+              "enteredMs": 282,
+              "ms": 11.455700000000036
+            },
+            {
+              "channel": "gloss:sessions:refresh",
+              "enteredMs": 352,
+              "ms": 0.07749999999998636
+            },
+            {
+              "channel": "gloss:git:status",
+              "enteredMs": 297,
+              "ms": 133.152
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 339,
+              "ms": 458.09380000000004
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 638,
+              "ms": 343.0294
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 350,
+              "ms": 667.8024
+            },
+            {
+              "channel": "gloss:git:pullRequest",
+              "enteredMs": 430,
+              "ms": 1323.3385
+            }
+          ],
+          "phases": {
+            "mainModuleMs": 20.599900000000005,
+            "windowCreatedMs": 124,
+            "appReadyMs": 129,
+            "domReadyMs": 221,
+            "didFinishLoadMs": 221
+          },
+          "restored": {
+            "messages": 31,
+            "tools": 132,
+            "threads": 0,
+            "textChars": 14975,
+            "review": false
+          },
+          "windowShownMs": 338,
+          "composerMs": 324.60009765625,
+          "paints": [
+            {
+              "name": "first-paint",
+              "ms": 616
+            },
+            {
+              "name": "first-contentful-paint",
+              "ms": 616
+            }
+          ],
+          "domNodes": 2270,
+          "codeBlocks": 0,
+          "resources": [],
+          "startup": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 346.7,
+            "frames": 716,
+            "framesOver50Ms": 2,
+            "tasks": [],
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 9538.773000000057
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 294.246
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70845,
+                "ms": 30.902999999999995
+              },
+              {
+                "name": "(anonymous)",
+                "line": 1,
+                "ms": 9.317
+              },
+              {
+                "name": "renderWithHooks",
+                "line": 4213,
+                "ms": 8.01
+              },
+              {
+                "name": "collectExternalReferencesInRules",
+                "line": 17038,
+                "ms": 6.870999999999999
+              },
+              {
+                "name": "requestAnimationFrame",
+                "line": 0,
+                "ms": 4.7620000000000005
+              },
+              {
+                "name": "eq",
+                "line": 45791,
+                "ms": 4.7509999999999994
+              },
+              {
+                "name": "syntaxExtension",
+                "line": 28614,
+                "ms": 4.484999999999999
+              },
+              {
+                "name": "completeWork",
+                "line": 6883,
+                "ms": 3.885
+              },
+              {
+                "name": "cloneObj",
+                "line": 16183,
+                "ms": 3.193
+              },
+              {
+                "name": "isCustomElement",
+                "line": 2003,
+                "ms": 3.174
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 3.09
+              },
+              {
+                "name": "collectExternalReferencesInTopLevelRepositoryRule",
+                "line": 17016,
+                "ms": 3.067
+              },
+              {
+                "name": "decodeArray",
+                "line": 61169,
+                "ms": 3.0140000000000002
+              },
+              {
+                "name": "consume",
+                "line": 32303,
+                "ms": 2.415
+              },
+              {
+                "name": "cloneArray",
+                "line": 16176,
+                "ms": 2.306
+              },
+              {
+                "name": "atBreak",
+                "line": 32031,
+                "ms": 2.196
+              },
+              {
+                "name": "enter",
+                "line": 32327,
+                "ms": 1.9819999999999998
+              },
+              {
+                "name": "beginWork",
+                "line": 6488,
+                "ms": 1.742
+              },
+              {
+                "name": "performWorkUntilDeadline",
+                "line": 571,
+                "ms": 1.666
+              },
+              {
+                "name": "EditorView",
+                "line": 52464,
+                "ms": 1.661
+              },
+              {
+                "name": "go",
+                "line": 32300,
+                "ms": 1.632
+              },
+              {
+                "name": "appendChild",
+                "line": 0,
+                "ms": 1.632
+              },
+              {
+                "name": "executor",
+                "line": 35913,
+                "ms": 1.631
+              }
+            ]
+          },
+          "resize": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 13.5,
+            "frames": 291,
+            "framesOver50Ms": 0,
+            "wallMs": 3859.6278999999995,
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 2936.4469999999947
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 837.6809999999992
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 7.764999999999999
+              },
+              {
+                "name": "visiblePixelRange",
+                "line": 50810,
+                "ms": 4.631
+              },
+              {
+                "name": "reconcileChildrenArray",
+                "line": 3722,
+                "ms": 4.577999999999999
+              },
+              {
+                "name": "renderWithHooks",
+                "line": 4213,
+                "ms": 4.525
+              },
+              {
+                "name": "Markdown2",
+                "line": 39629,
+                "ms": 3.1189999999999998
+              },
+              {
+                "name": "updateProperties",
+                "line": 11692,
+                "ms": 3.077
+              },
+              {
+                "name": "shouldSetTextContent",
+                "line": 12027,
+                "ms": 3.074
+              },
+              {
+                "name": "StatusLine",
+                "line": 41169,
+                "ms": 3.074
+              },
+              {
+                "name": "setMeasuredHeight",
+                "line": 50365,
+                "ms": 3.059
+              },
+              {
+                "name": "(anonymous)",
+                "line": 10849,
+                "ms": 3.049
+              },
+              {
+                "name": "createWorkInProgress",
+                "line": 2824,
+                "ms": 3.046
+              },
+              {
+                "name": "requestAnimationFrame",
+                "line": 0,
+                "ms": 3.042
+              },
+              {
+                "name": "measure",
+                "line": 50997,
+                "ms": 3.041
+              },
+              {
+                "name": "updateSlot",
+                "line": 3645,
+                "ms": 2.8600000000000003
+              },
+              {
+                "name": "getActiveElementDeep",
+                "line": 2640,
+                "ms": 1.713
+              },
+              {
+                "name": "pendingRecords",
+                "line": 52035,
+                "ms": 1.623
+              },
+              {
+                "name": "isScrolledToBottom",
+                "line": 45892,
+                "ms": 1.617
+              },
+              {
+                "name": "scrollableParents",
+                "line": 45765,
+                "ms": 1.61
+              },
+              {
+                "name": "measure",
+                "line": 52696,
+                "ms": 1.577
+              },
+              {
+                "name": "prepareFreshStack",
+                "line": 9779,
+                "ms": 1.573
+              },
+              {
+                "name": "isCustomElement",
+                "line": 2003,
+                "ms": 1.561
+              },
+              {
+                "name": "postMessage",
+                "line": 0,
+                "ms": 1.55
+              },
+              {
+                "name": "(anonymous)",
+                "line": 51811,
+                "ms": 1.547
+              }
+            ],
+            "metrics": {
+              "LayoutCount": 240,
+              "RecalcStyleCount": 653,
+              "LayoutDuration": 0.153331,
+              "RecalcStyleDuration": 0.13792500000000002,
+              "ScriptDuration": 0.11485199999999998,
+              "TaskDuration": 0.960696
+            }
+          },
+          "rendererMemory": {
+            "workingSetSize": 268980,
+            "peakWorkingSetSize": 270452,
+            "privateBytes": 154764
+          }
+        },
+        {
+          "environment": {
+            "electron": "44.7.0",
+            "node": "24.21.0",
+            "platform": "win32"
+          },
+          "ipc": [
+            {
+              "channel": "gloss:settings:get",
+              "enteredMs": 279,
+              "ms": 0.039199999999993906
+            },
+            {
+              "channel": "gloss:history",
+              "enteredMs": 279,
+              "ms": 0.35599999999999454
+            },
+            {
+              "channel": "gloss:agents:list",
+              "enteredMs": 279,
+              "ms": 1.6709999999999923
+            },
+            {
+              "channel": "gloss:windows:list",
+              "enteredMs": 282,
+              "ms": 0.04110000000002856
+            },
+            {
+              "channel": "gloss:projects:list",
+              "enteredMs": 283,
+              "ms": 4.66519999999997
+            },
+            {
+              "channel": "gloss:sessions:list",
+              "enteredMs": 287,
+              "ms": 0.254099999999994
+            },
+            {
+              "channel": "gloss:sessions:open",
+              "enteredMs": 308,
+              "ms": 10.987599999999986
+            },
+            {
+              "channel": "gloss:sessions:refresh",
+              "enteredMs": 342,
+              "ms": 0.0765999999999849
+            },
+            {
+              "channel": "gloss:sessions:refresh",
+              "enteredMs": 359,
+              "ms": 0.011699999999962074
+            },
+            {
+              "channel": "gloss:git:status",
+              "enteredMs": 322,
+              "ms": 129.54180000000002
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 347,
+              "ms": 451.0867999999999
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 358,
+              "ms": 532.0849000000001
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 666,
+              "ms": 357.2297
+            },
+            {
+              "channel": "gloss:git:pullRequest",
+              "enteredMs": 452,
+              "ms": 1143.2441000000001
+            }
+          ],
+          "phases": {
+            "mainModuleMs": 20.678099999999997,
+            "windowCreatedMs": 119,
+            "appReadyMs": 125,
+            "domReadyMs": 246,
+            "didFinishLoadMs": 246
+          },
+          "restored": {
+            "messages": 31,
+            "tools": 132,
+            "threads": 0,
+            "textChars": 14975,
+            "review": false
+          },
+          "windowShownMs": 340,
+          "composerMs": 354.900146484375,
+          "paints": [
+            {
+              "name": "first-paint",
+              "ms": 280
+            },
+            {
+              "name": "first-contentful-paint",
+              "ms": 280
+            }
+          ],
+          "domNodes": 2270,
+          "codeBlocks": 0,
+          "resources": [],
+          "startup": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000000546,
+            "maxFrameMs": 346.6,
+            "frames": 714,
+            "framesOver50Ms": 2,
+            "tasks": [],
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 9517.174
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 291.1890000000001
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70845,
+                "ms": 33.25300000000001
+              },
+              {
+                "name": "collectExternalReferencesInRules",
+                "line": 17038,
+                "ms": 11.039000000000001
+              },
+              {
+                "name": "requestAnimationFrame",
+                "line": 0,
+                "ms": 10.864
+              },
+              {
+                "name": "(anonymous)",
+                "line": 1,
+                "ms": 7.882
+              },
+              {
+                "name": "frame",
+                "line": 6,
+                "ms": 7.808999999999999
+              },
+              {
+                "name": "eq",
+                "line": 45791,
+                "ms": 6.159000000000001
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 5.231
+              },
+              {
+                "name": "completeWork",
+                "line": 6883,
+                "ms": 3.817
+              },
+              {
+                "name": "performUnitOfWork",
+                "line": 9987,
+                "ms": 3.12
+              },
+              {
+                "name": "buildLucideIconForReact",
+                "line": 14337,
+                "ms": 3.109
+              },
+              {
+                "name": "App",
+                "line": 71932,
+                "ms": 3.081
+              },
+              {
+                "name": "setInitialProperties",
+                "line": 11489,
+                "ms": 3.051
+              },
+              {
+                "name": "flowContinue",
+                "line": 29020,
+                "ms": 3.036
+              },
+              {
+                "name": "renderWithHooks",
+                "line": 4213,
+                "ms": 2.824
+              },
+              {
+                "name": "decodeArray",
+                "line": 61169,
+                "ms": 2.442
+              },
+              {
+                "name": "atBreak",
+                "line": 32031,
+                "ms": 2.151
+              },
+              {
+                "name": "factory",
+                "line": 34376,
+                "ms": 2.003
+              },
+              {
+                "name": "update",
+                "line": 52525,
+                "ms": 1.715
+              },
+              {
+                "name": "MarkdownParser",
+                "line": 59517,
+                "ms": 1.69
+              },
+              {
+                "name": "recursivelyTraverseMutationEffects",
+                "line": 8367,
+                "ms": 1.663
+              },
+              {
+                "name": "norm",
+                "line": 15446,
+                "ms": 1.636
+              },
+              {
+                "name": "focusPreventScroll",
+                "line": 45824,
+                "ms": 1.63
+              },
+              {
+                "name": "collectExternalReferencesInTopLevelRepositoryRule",
+                "line": 17016,
+                "ms": 1.623
+              }
+            ]
+          },
+          "resize": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.399999999999636,
+            "maxFrameMs": 13.5,
+            "frames": 292,
+            "framesOver50Ms": 0,
+            "wallMs": 3871.0282000000007,
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 2928.810000000005
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 825.9809999999994
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 7.756
+              },
+              {
+                "name": "App",
+                "line": 71932,
+                "ms": 7.692
+              },
+              {
+                "name": "updateProperties",
+                "line": 11692,
+                "ms": 6.134
+              },
+              {
+                "name": "frame",
+                "line": 6,
+                "ms": 6.089
+              },
+              {
+                "name": "getBoundingClientRect",
+                "line": 0,
+                "ms": 4.602
+              },
+              {
+                "name": "Log",
+                "line": 70814,
+                "ms": 4.598
+              },
+              {
+                "name": "buildLucideIconNode",
+                "line": 14289,
+                "ms": 4.598
+              },
+              {
+                "name": "dispatchContinuousEvent",
+                "line": 13621,
+                "ms": 4.587999999999999
+              },
+              {
+                "name": "commitBeforeMutationEffects",
+                "line": 7823,
+                "ms": 3.0940000000000003
+              },
+              {
+                "name": "Markdown2",
+                "line": 39629,
+                "ms": 3.08
+              },
+              {
+                "name": "shouldSetTextContent",
+                "line": 12027,
+                "ms": 3.065
+              },
+              {
+                "name": "URL",
+                "line": 0,
+                "ms": 3.065
+              },
+              {
+                "name": "performUnitOfWork",
+                "line": 9987,
+                "ms": 3.051
+              },
+              {
+                "name": "commitMutationEffectsOnFiber",
+                "line": 8406,
+                "ms": 3.0389999999999997
+              },
+              {
+                "name": "createWorkInProgress",
+                "line": 2824,
+                "ms": 3.038
+              },
+              {
+                "name": "completeWork",
+                "line": 6883,
+                "ms": 3.032
+              },
+              {
+                "name": "setProp",
+                "line": 11167,
+                "ms": 3.0279999999999996
+              },
+              {
+                "name": "(anonymous)",
+                "line": 72360,
+                "ms": 2.979
+              },
+              {
+                "name": "requestAnimationFrame",
+                "line": 0,
+                "ms": 1.609
+              },
+              {
+                "name": "(anonymous)",
+                "line": 71023,
+                "ms": 1.599
+              },
+              {
+                "name": "forceFlush",
+                "line": 52028,
+                "ms": 1.598
+              },
+              {
+                "name": "(anonymous)",
+                "line": 10849,
+                "ms": 1.582
+              },
+              {
+                "name": "add",
+                "line": 0,
+                "ms": 1.575
+              }
+            ],
+            "metrics": {
+              "LayoutCount": 240,
+              "RecalcStyleCount": 653,
+              "LayoutDuration": 0.16059800000000002,
+              "RecalcStyleDuration": 0.133138,
+              "ScriptDuration": 0.11483399999999999,
+              "TaskDuration": 0.9719239999999999
+            }
+          },
+          "rendererMemory": {
+            "workingSetSize": 269196,
+            "peakWorkingSetSize": 270780,
+            "privateBytes": 155576
+          }
+        },
+        {
+          "environment": {
+            "electron": "44.7.0",
+            "node": "24.21.0",
+            "platform": "win32"
+          },
+          "ipc": [
+            {
+              "channel": "gloss:settings:get",
+              "enteredMs": 279,
+              "ms": 0.025300000000015643
+            },
+            {
+              "channel": "gloss:history",
+              "enteredMs": 279,
+              "ms": 0.35009999999999764
+            },
+            {
+              "channel": "gloss:agents:list",
+              "enteredMs": 279,
+              "ms": 1.595899999999972
+            },
+            {
+              "channel": "gloss:windows:list",
+              "enteredMs": 282,
+              "ms": 0.04899999999997817
+            },
+            {
+              "channel": "gloss:projects:list",
+              "enteredMs": 282,
+              "ms": 4.677000000000021
+            },
+            {
+              "channel": "gloss:sessions:list",
+              "enteredMs": 287,
+              "ms": 0.28799999999995407
+            },
+            {
+              "channel": "gloss:sessions:open",
+              "enteredMs": 306,
+              "ms": 11.30340000000001
+            },
+            {
+              "channel": "gloss:sessions:refresh",
+              "enteredMs": 341,
+              "ms": 0.10120000000000573
+            },
+            {
+              "channel": "gloss:sessions:refresh",
+              "enteredMs": 356,
+              "ms": 0.008500000000026375
+            },
+            {
+              "channel": "gloss:git:status",
+              "enteredMs": 334,
+              "ms": 130.4762
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 346,
+              "ms": 457.05520000000007
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 356,
+              "ms": 468.48349999999994
+            },
+            {
+              "channel": "gloss:projects:agentSessions",
+              "enteredMs": 677,
+              "ms": 344.9048
+            },
+            {
+              "channel": "gloss:git:pullRequest",
+              "enteredMs": 464,
+              "ms": 1204.8256000000001
+            }
+          ],
+          "phases": {
+            "mainModuleMs": 20.9757,
+            "windowCreatedMs": 120,
+            "appReadyMs": 126,
+            "domReadyMs": 245,
+            "didFinishLoadMs": 245
+          },
+          "restored": {
+            "messages": 31,
+            "tools": 132,
+            "threads": 0,
+            "textChars": 14975,
+            "review": false
+          },
+          "windowShownMs": 333,
+          "composerMs": 352.800048828125,
+          "paints": [
+            {
+              "name": "first-paint",
+              "ms": 488
+            },
+            {
+              "name": "first-contentful-paint",
+              "ms": 488
+            }
+          ],
+          "domNodes": 2270,
+          "codeBlocks": 0,
+          "resources": [],
+          "startup": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 253.49999999999997,
+            "frames": 715,
+            "framesOver50Ms": 3,
+            "tasks": [],
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 9490.236000000052
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 318.95299999999986
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70845,
+                "ms": 33.185
+              },
+              {
+                "name": "requestAnimationFrame",
+                "line": 0,
+                "ms": 9.432
+              },
+              {
+                "name": "renderWithHooks",
+                "line": 4213,
+                "ms": 9.27
+              },
+              {
+                "name": "collectExternalReferencesInRules",
+                "line": 17038,
+                "ms": 8.310999999999998
+              },
+              {
+                "name": "(anonymous)",
+                "line": 1,
+                "ms": 7.72
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 6.85
+              },
+              {
+                "name": "eq",
+                "line": 45791,
+                "ms": 6.368
+              },
+              {
+                "name": "createElementNS",
+                "line": 0,
+                "ms": 3.261
+              },
+              {
+                "name": "(anonymous)",
+                "line": 0,
+                "ms": 3.207
+              },
+              {
+                "name": "mergeClasses",
+                "line": 14272,
+                "ms": 3.157
+              },
+              {
+                "name": "Markdown2",
+                "line": 39629,
+                "ms": 3.084
+              },
+              {
+                "name": "doClone",
+                "line": 16164,
+                "ms": 3.082
+              },
+              {
+                "name": "compile",
+                "line": 32761,
+                "ms": 2.7270000000000003
+              },
+              {
+                "name": "reconcileChildFibersImpl",
+                "line": 3804,
+                "ms": 2.567
+              },
+              {
+                "name": "resolveAllText",
+                "line": 32051,
+                "ms": 2.222
+              },
+              {
+                "name": "completeUnitOfWork",
+                "line": 10068,
+                "ms": 2.0100000000000002
+              },
+              {
+                "name": "cloneObj",
+                "line": 16183,
+                "ms": 1.85
+              },
+              {
+                "name": "extension",
+                "line": 33363,
+                "ms": 1.695
+              },
+              {
+                "name": "(anonymous)",
+                "line": 65551,
+                "ms": 1.634
+              },
+              {
+                "name": "peek2",
+                "line": 511,
+                "ms": 1.625
+              },
+              {
+                "name": "(anonymous)",
+                "line": 53183,
+                "ms": 1.621
+              },
+              {
+                "name": "EditorView",
+                "line": 52464,
+                "ms": 1.618
+              },
+              {
+                "name": "find$1",
+                "line": 21169,
+                "ms": 1.615
+              }
+            ]
+          },
+          "resize": {
+            "longTasks": 0,
+            "totalLongTaskMs": 0,
+            "maxLongTaskMs": 0,
+            "frameP95Ms": 13.400000000001455,
+            "maxFrameMs": 13.699999999998909,
+            "frames": 293,
+            "framesOver50Ms": 0,
+            "wallMs": 3886.4300000000003,
+            "cpu": [
+              {
+                "name": "(idle)",
+                "line": 0,
+                "ms": 2985.128999999999
+              },
+              {
+                "name": "(program)",
+                "line": 0,
+                "ms": 800.1889999999992
+              },
+              {
+                "name": "(garbage collector)",
+                "line": 0,
+                "ms": 6.27
+              },
+              {
+                "name": "getBoundingClientRect",
+                "line": 0,
+                "ms": 4.665
+              },
+              {
+                "name": "createWorkInProgress",
+                "line": 2824,
+                "ms": 4.5969999999999995
+              },
+              {
+                "name": "jsxProd",
+                "line": 12,
+                "ms": 4.58
+              },
+              {
+                "name": "frame",
+                "line": 6,
+                "ms": 4.545
+              },
+              {
+                "name": "onScroll",
+                "line": 70896,
+                "ms": 3.689
+              },
+              {
+                "name": "react_production.createElement",
+                "line": 377,
+                "ms": 3.1109999999999998
+              },
+              {
+                "name": "(anonymous)",
+                "line": 3928,
+                "ms": 3.109
+              },
+              {
+                "name": "visiblePixelRange",
+                "line": 50810,
+                "ms": 3.1029999999999998
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70907,
+                "ms": 3.059
+              },
+              {
+                "name": "scrollableParents",
+                "line": 45765,
+                "ms": 3.057
+              },
+              {
+                "name": "commitMutationEffectsOnFiber",
+                "line": 8406,
+                "ms": 3.056
+              },
+              {
+                "name": "reconcileChildrenArray",
+                "line": 3722,
+                "ms": 3.052
+              },
+              {
+                "name": "Markdown2",
+                "line": 39629,
+                "ms": 3.0519999999999996
+              },
+              {
+                "name": "commitRoot",
+                "line": 10141,
+                "ms": 3.05
+              },
+              {
+                "name": "attrsFromFacet",
+                "line": 53397,
+                "ms": 3.048
+              },
+              {
+                "name": "App",
+                "line": 71932,
+                "ms": 3.043
+              },
+              {
+                "name": "dispatchContinuousEvent",
+                "line": 13621,
+                "ms": 3.0300000000000002
+              },
+              {
+                "name": "completeWork",
+                "line": 6883,
+                "ms": 2.9610000000000003
+              },
+              {
+                "name": "scheduleImmediateRootScheduleTask",
+                "line": 10597,
+                "ms": 1.682
+              },
+              {
+                "name": "SessionPane",
+                "line": 71731,
+                "ms": 1.61
+              },
+              {
+                "name": "SpanCursor",
+                "line": 44765,
+                "ms": 1.594
+              },
+              {
+                "name": "(anonymous)",
+                "line": 70863,
+                "ms": 1.593
+              }
+            ],
+            "metrics": {
+              "LayoutCount": 240,
+              "RecalcStyleCount": 654,
+              "LayoutDuration": 0.15271600000000002,
+              "RecalcStyleDuration": 0.134406,
+              "ScriptDuration": 0.115425,
+              "TaskDuration": 0.935798
+            }
+          },
+          "rendererMemory": {
+            "workingSetSize": 270752,
+            "peakWorkingSetSize": 272444,
+            "privateBytes": 157344
+          }
+        }
+      ]
+    }
+  }
+}

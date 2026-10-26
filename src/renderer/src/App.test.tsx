@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
+import { EditorView } from '@codemirror/view'
+import type { GlossEvent } from '@shared/ipc'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 vi.hoisted(() => {
@@ -13,6 +15,46 @@ vi.mock('./chime', () => ({ playChime: vi.fn() }))
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 let root: Root | undefined
 afterEach(() => { act(() => root?.unmount()); vi.unstubAllGlobals() })
+
+it('focuses a new composer before the agent attaches and preserves typing when it becomes ready', async () => {
+  const session = { id: 'instant-session', acpSessionId: 'gloss-new:instant-session', title: 'project', cwd: '/project', agentId: 'claude', createdAt: 1 }
+  const live = { attached: false, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false }
+  const listeners: ((event: GlossEvent) => void)[] = []
+  const discovery = vi.fn<typeof window.gloss.projects.agentSessions>().mockResolvedValue([])
+  let finishDiscovery!: () => void
+  discovery.mockImplementationOnce(() => new Promise((resolve) => { finishDiscovery = () => resolve([]) }))
+  window.gloss = {
+    history: async () => [],
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'opencode', name: 'OpenCode', available: false }] },
+    projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: discovery },
+    sessions: {
+      list: async () => [], create: async () => session, refresh: async () => {},
+      open: async () => ({ session, messages: [], toolCalls: [], plans: [], threads: [], turn: null, live, queue: { items: [], paused: false }, requests: [] })
+    },
+    git: { status: async () => null, pullRequest: async () => null },
+    onEvent: (listener: (event: GlossEvent) => void) => { listeners.push(listener); return () => {} }
+  } as unknown as typeof window.gloss
+  const el = document.createElement('div')
+  document.body.replaceChildren(el)
+  root = createRoot(el)
+  await act(async () => root!.render(<App />))
+  await act(async () => (el.querySelector('.new-session') as HTMLButtonElement).click())
+  const editor = EditorView.findFromDOM(el.querySelector<HTMLElement>('.cm-editor')!)!
+  expect(editor.hasFocus).toBe(true)
+  act(() => editor.dispatch({ changes: { from: 0, insert: 'typing while starting' }, selection: { anchor: 21 } }))
+  await act(async () => {
+    for (const listener of listeners) listener({ type: 'live', sessionId: session.id, live: { ...live, attached: true } })
+    window.dispatchEvent(new Event('focus'))
+    for (const listener of listeners) listener({ type: 'agents', agents: [{ id: 'claude', name: 'Claude Code' }, { id: 'opencode', name: 'OpenCode', available: true }] })
+  })
+  expect(discovery.mock.calls.filter((args) => args[1] === 'claude')).toHaveLength(1)
+  expect(discovery.mock.calls.filter((args) => args[1] === 'opencode')).toHaveLength(1)
+  await act(async () => finishDiscovery())
+  expect(EditorView.findFromDOM(el.querySelector<HTMLElement>('.cm-editor')!)).toBe(editor)
+  expect(editor.state.doc.toString()).toBe('typing while starting')
+  expect(editor.hasFocus).toBe(true)
+})
 
 it("starts sessions with the default agent or one from the menu, and lists every agent's external sessions", async () => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))

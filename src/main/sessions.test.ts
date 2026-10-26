@@ -25,6 +25,7 @@ type Script = (ctx: {
 
 /** State shared by every connection to the fake agent, like a real agent's disk state. */
 type FakeAgent = {
+  beforeNew?(): Promise<void>
   loadSession: boolean
   authMethods: acp.AuthMethod[]
   signedIn: boolean
@@ -232,6 +233,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       return {}
     })
     .onRequest(acp.methods.agent.session.new, async (ctx) => {
+      await state.beforeNew?.()
       const sessionId = `acp-${state.connections}-${next++}`
       state.metas.push({ method: 'new', meta: ctx.params._meta })
       state.mcpRequests.push({ method: 'new', servers: ctx.params.mcpServers })
@@ -380,6 +382,54 @@ describe('SessionManager', () => {
   afterEach(async () => {
     await manager.dispose()
     store.close()
+  })
+
+  it('opens locally while startup is blocked and sends only after the shared attachment is configured', async () => {
+    state.loadSession = false
+    let ready!: () => void
+    state.beforeNew = () => new Promise<void>((resolve) => { ready = resolve })
+    state.modes = MODES
+    const session = manager.startSession('/project', 'claude')
+    expect(manager.openSession(session.id).live.attached).toBe(false)
+    const sent = manager.send(session.id, 'sent during startup', null)
+    await vi.waitFor(() => expect(ready).toBeTypeOf('function'))
+    expect(state.prompts).toEqual([])
+    expect(store.listMessages(session.id)[0].text).toBe('sent during startup')
+    ready()
+    await sent
+    expect(state.metas.filter((m) => m.method === 'new')).toHaveLength(1)
+    expect(state.loads).toEqual([])
+    expect(state.modeChanges).toEqual([`${store.getSession(session.id)!.acpSessionId}:bypass`])
+    expect(manager.openSession(session.id).live.attached).toBe(true)
+    expect(store.listMessages(session.id).filter((m) => m.role === 'user')).toHaveLength(1)
+  })
+
+  it('cleans up a session deleted while agent creation is pending', async () => {
+    let ready!: () => void
+    state.beforeNew = () => new Promise<void>((resolve) => { ready = resolve })
+    state.canClose = true
+    state.canDelete = true
+    const session = manager.startSession('/project', 'claude')
+    await vi.waitFor(() => expect(ready).toBeTypeOf('function'))
+    await manager.deleteSession(session.id)
+    ready()
+    await vi.waitFor(() => expect(state.deleted).toHaveLength(1))
+    expect(state.closes).toEqual(state.deleted)
+    expect(store.getSession(session.id)).toBeUndefined()
+    expect(events.filter((e) => e.type === 'session' && e.session.id === session.id)).toHaveLength(1)
+  })
+
+  it('preserves a local conversation after startup fails and retries on send', async () => {
+    state.beforeNew = async () => { throw acp.RequestError.internalError(undefined, 'startup failed') }
+    const session = manager.startSession('/project', 'claude')
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'notice' && e.sessionId === session.id)).toBe(true))
+    expect(store.getSession(session.id)).toBeDefined()
+    await manager.dispose()
+    manager = makeManager()
+    state.beforeNew = undefined
+    await manager.send(session.id, 'try again', null)
+    expect(state.prompts).toHaveLength(1)
+    expect(manager.openSession(session.id).live.attached).toBe(true)
   })
 
   it('rewinds conversation history, restores retained attachments, and keeps the prefix on replay', async () => {
