@@ -542,6 +542,10 @@ export function App(): React.JSX.Element {
     } else if (e.key.toLowerCase() === 'n' && !e.shiftKey && !e.altKey) {
       e.preventDefault()
       void newSession()
+    } else if (e.key.toLowerCase() === 'w' && !e.shiftKey && !e.altKey) {
+      e.preventDefault()
+      const id = openId.current
+      if (id && !showSettings && !e.repeat) void leaveSession(id)
     } else if (e.key.toLowerCase() === 'd' && e.shiftKey && !e.altKey) {
       e.preventDefault()
       void toggleReview()

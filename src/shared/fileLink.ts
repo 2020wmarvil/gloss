@@ -1,3 +1,8 @@
+/** HTML previews open in the browser instead of the configured source editor. */
+export function isHtmlFile(path: string): boolean {
+  return /\.html?$/i.test(path)
+}
+
 /** Parse absolute local Markdown destinations without accepting network paths or other schemes. */
 export function fileLink(href: string): { path: string; line: number } | null {
   let path = href

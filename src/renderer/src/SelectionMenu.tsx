@@ -1,11 +1,14 @@
 // The context menu for text selected in a main-view agent message: right-clicking the
 // selection, or right-clicking (and dragging over) lines to select them, opens it.
-import { useCallback, useEffect, useState, type RefObject } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
+import { Copy, CornerDownLeft, type LucideIcon } from 'lucide-react'
 import type { Message } from '@shared/types'
 import { rangeToSource } from './selection'
 import { renderedText } from './source'
-import { useRightButtonLines, visualLineAt, type LineBounds } from './lineSelect'
+import { useRightButtonLines, visualLineAt } from './lineSelect'
 import { modKey } from './shortcuts'
+import { menuPosition } from './menuPosition'
 
 export type SourceSelection = { start: number; end: number; text: string }
 
@@ -25,11 +28,28 @@ function isEditable(target: EventTarget | null): boolean {
   )
 }
 
-export type MenuItem = { label: string; keys?: string; run(): void }
+export type MenuItem = { label: string; icon: LucideIcon; primary?: boolean; separatorBefore?: boolean; keys?: string; disabledReason?: string; run(): void }
 
 /** A menu at the pointer that keeps the selection while choosing; clicks elsewhere, scrolling and Escape close it. */
 export function SelectionContextMenu(props: { x: number; y: number; items: MenuItem[]; onClose(): void }): React.JSX.Element {
   const { onClose } = props
+  const element = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState({ left: props.x, top: props.y })
+  useLayoutEffect(() => {
+    const menu = element.current
+    if (!menu) return
+    const selection = window.getSelection()
+    const range = selection && !selection.isCollapsed && selection.rangeCount ? selection.getRangeAt(0) : null
+    const rects = [...(range?.getClientRects?.() ?? [])]
+    // Keep the rest of the selected paragraph or code row readable too.
+    for (const node of range ? [range.startContainer, range.endContainer] : []) {
+      const el = node instanceof Element ? node : node.parentElement
+      const block = el?.closest('p, pre, li, blockquote, tr')
+      if (block) rects.push(block.getBoundingClientRect())
+    }
+    setPosition(menuPosition(props.x, props.y, menu.offsetWidth, menu.offsetHeight,
+      { width: window.innerWidth, height: window.innerHeight, top: document.querySelector('.title-bar')?.getBoundingClientRect().bottom ?? 0 }, rects))
+  }, [props.x, props.y, props.items.length])
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
@@ -37,19 +57,22 @@ export function SelectionContextMenu(props: { x: number; y: number; items: MenuI
     window.addEventListener('mousedown', onClose)
     window.addEventListener('blur', onClose)
     window.addEventListener('wheel', onClose)
+    window.addEventListener('resize', onClose)
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('mousedown', onClose)
       window.removeEventListener('blur', onClose)
       window.removeEventListener('wheel', onClose)
+      window.removeEventListener('resize', onClose)
       window.removeEventListener('keydown', onKey)
     }
   }, [onClose])
-  return (
+  return createPortal(
     <div
+      ref={element}
       className="menu file-menu selection-menu"
       role="menu"
-      style={{ left: Math.min(props.x, window.innerWidth - 208), top: Math.min(props.y, window.innerHeight - 8 - 36 * props.items.length) }}
+      style={position}
       onMouseDown={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -57,20 +80,26 @@ export function SelectionContextMenu(props: { x: number; y: number; items: MenuI
       onContextMenu={(e) => e.preventDefault()}
     >
       {props.items.map((item) => (
-        <button
-          key={item.label}
-          role="menuitem"
-          aria-keyshortcuts={item.keys}
-          onClick={() => {
-            onClose()
-            item.run()
-          }}
-        >
-          <span>{item.label}</span>
-          {item.keys && <kbd>{item.keys}</kbd>}
-        </button>
+        <Fragment key={item.label}>
+          {item.separatorBefore && <hr role="separator" />}
+          <button
+            className={item.primary ? 'selection-menu-primary' : undefined}
+            role="menuitem"
+            aria-keyshortcuts={item.disabledReason ? undefined : item.keys}
+            aria-disabled={item.disabledReason ? true : undefined}
+            title={item.disabledReason}
+            onClick={() => {
+              if (item.disabledReason) return
+              onClose()
+              item.run()
+            }}
+          >
+            <item.icon size={16} strokeWidth={1.6} aria-hidden="true" />
+            <span>{item.label}</span>
+          </button>
+        </Fragment>
       ))}
-    </div>
+    </div>, document.body
   )
 }
 
@@ -87,7 +116,7 @@ function agentRoot(node: Node, scope: HTMLElement | null, messages: Message[]): 
 }
 
 export function SelectionMenu({ scope, messages, onReply }: Props): React.JSX.Element | null {
-  const [menu, setMenu] = useState<{ x: number; y: number; current: Current } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; current: Current | null } | null>(null)
 
   const read = useCallback((): Current | null => {
     const s = window.getSelection()
@@ -102,12 +131,12 @@ export function SelectionMenu({ scope, messages, onReply }: Props): React.JSX.El
   }, [scope, messages])
 
   const lineAt = useCallback(
-    (x: number, y: number, first: LineBounds | null) => {
-      const line = visualLineAt(x, y, (n) => agentRoot(n, scope.current, messages))
-      // A drag stays in the message it started in.
-      return line && (!first || first.el === line.el) ? line : null
-    },
-    [scope, messages]
+    (x: number, y: number) => visualLineAt(x, y, (node) => {
+      const el = node instanceof Element ? node : node.parentElement
+      const root = el?.closest<HTMLElement>('[data-message-id]')
+      return root && scope.current?.contains(root) ? root : null
+    }),
+    [scope]
   )
 
   useRightButtonLines({
@@ -115,7 +144,8 @@ export function SelectionMenu({ scope, messages, onReply }: Props): React.JSX.El
     lineAt,
     onMenu: (x, y, first) => {
       const current = read()
-      if (current) setMenu({ x, y, current })
+      const selection = window.getSelection()
+      if (current || (selection && !selection.isCollapsed && selection.toString().trim())) setMenu({ x, y, current })
       // A line with nothing to quote (a blank line, a button) isn't left selected.
       else if (first) window.getSelection()?.removeAllRanges()
     }
@@ -145,14 +175,19 @@ export function SelectionMenu({ scope, messages, onReply }: Props): React.JSX.El
 
   const close = useCallback(() => setMenu(null), [])
   if (!menu) return null
+  const current = menu.current
   return (
     <SelectionContextMenu
       x={menu.x}
       y={menu.y}
       onClose={close}
       items={[
-        { label: 'Reply to selection', keys: 'R', run: () => reply(menu.current) },
-        { label: 'Copy', keys: `${modKey()}+C`, run: copySelection }
+        {
+          label: 'Reply to selection', icon: CornerDownLeft, primary: true, keys: 'R',
+          disabledReason: current ? undefined : 'Replying requires text from a single agent message.',
+          run: () => { if (current) reply(current) }
+        },
+        { label: 'Copy', icon: Copy, separatorBefore: true, keys: `${modKey()}+C`, run: copySelection }
       ]}
     />
   )

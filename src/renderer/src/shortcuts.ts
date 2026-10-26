@@ -15,6 +15,7 @@ export const SHORTCUTS: readonly ShortcutGroup[] = [
     shortcuts: [
       { keys: [['Mod', 'Shift', 'F']], action: 'Search conversations' },
       { keys: [['Mod', 'N']], action: 'New session' },
+      { keys: [['Mod', 'W']], action: 'Close the current session view; keep its history' },
       { keys: [['Mod', 'Shift', 'D']], action: "Review the branch's changes with the default agent; in the open review, leave it" },
       { keys: [['Mod', 'Tab']], action: 'Next session in the project' },
       { keys: [['Mod', 'Shift', 'Tab']], action: 'Previous session in the project' },

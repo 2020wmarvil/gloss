@@ -15,8 +15,9 @@ import { StatusLine } from './StatusLine'
 import { threadSummaries } from './ThreadsOverview'
 import { modKey } from './shortcuts'
 import { useRightButtonLines, type LineBounds } from './lineSelect'
+import { useReviewFileSelection } from './reviewSelection'
 import { copySelection, SelectionContextMenu, type MenuItem } from './SelectionMenu'
-import { ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronUp, Columns2, MessageSquare, MessageSquareOff, PanelLeft, RotateCcw, Rows2, ScanSearch } from 'lucide-react'
+import { ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronUp, Columns2, Copy, CornerDownLeft, ExternalLink, MessageSquare, MessageSquareOff, PanelLeft, RotateCcw, Rows2, ScanSearch } from 'lucide-react'
 
 export type DiffState = { diff: ReviewDiff | null; error: string | null }
 
@@ -538,8 +539,9 @@ function DiffSelectionMenu(props: {
   onOpenFile(path: string, how: 'editor', line: number): void
 }): React.JSX.Element | null {
   const { scope, diff, sources, layout, onReply, onOpenFile } = props
+  useReviewFileSelection(scope)
   /** The menu on a selection: its lines, and where it opened. */
-  const [menu, setMenu] = useState<{ anchor: LineAnchor; x: number; y: number } | null>(null)
+  const [menu, setMenu] = useState<{ anchor: LineAnchor | null; x: number; y: number } | null>(null)
 
   /** The lines the selection anchors to; `side` overrides the side it started on. */
   const selected = useCallback((sideOf?: Side): LineAnchor | null => {
@@ -595,7 +597,9 @@ function DiffSelectionMenu(props: {
     onMenu: (x, y, first) => {
       // Lines selected with the right button are on the side they were selected on.
       const anchor = selected(first && layout === 'split' ? (first.el.dataset.side as Side) : undefined)
-      if (anchor) setMenu({ anchor, x, y })
+      const selection = window.getSelection()
+      const text = selection?.toString().split(EMPTY_LINE).join('').trim()
+      if (anchor || (selection && !selection.isCollapsed && text)) setMenu({ anchor, x, y })
       // A blank line has nothing to quote.
       else if (first) window.getSelection()?.removeAllRanges()
     }
@@ -626,12 +630,13 @@ function DiffSelectionMenu(props: {
 
   const close = useCallback(() => setMenu(null), [])
   if (!menu) return null
-  const file = diff.files.find((f) => f.path === menu.anchor.file)
+  const anchor = menu.anchor
+  const file = anchor && diff.files.find((f) => f.path === anchor.file)
   const items: MenuItem[] = [
-    { label: 'Reply to selection', keys: 'R', run: () => reply(menu.anchor) },
-    { label: 'Copy', keys: `${modKey()}+C`, run: copySelection }
+    ...(anchor ? [{ label: 'Reply to selection', icon: CornerDownLeft, primary: true, keys: 'R', run: () => reply(anchor) }] : []),
+    { label: 'Copy', icon: Copy, separatorBefore: anchor !== null, keys: `${modKey()}+C`, run: copySelection }
   ]
-  if (file && file.status !== 'deleted')
-    items.push({ label: 'Open in external editor', run: () => onOpenFile(file.path, 'editor', newLineOf(file, menu.anchor.side, menu.anchor.start)) })
+  if (anchor && file && file.status !== 'deleted')
+    items.push({ label: 'Open in external editor', icon: ExternalLink, separatorBefore: true, run: () => onOpenFile(file.path, 'editor', newLineOf(file, anchor.side, anchor.start)) })
   return <SelectionContextMenu x={menu.x} y={menu.y} items={items} onClose={close} />
 }

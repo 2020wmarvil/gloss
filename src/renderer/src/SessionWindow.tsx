@@ -61,7 +61,11 @@ export function SessionWindow({ sessionId }: { sessionId: string }): React.JSX.E
       e.preventDefault()
       window.gloss.windows.toMain(action)
     }
-    if (e.shiftKey && key === 'f') toMain({ kind: 'search' })
+    if (!e.shiftKey && key === 'w') {
+      e.preventDefault()
+      if (!e.repeat) window.close()
+    }
+    else if (e.shiftKey && key === 'f') toMain({ kind: 'search' })
     else if (!e.shiftKey && key === 'n') toMain({ kind: 'newSession' })
     else if (e.shiftKey && key === 'd') {
       // Out of a review closes its window (a draft is kept, as when closing it by hand).

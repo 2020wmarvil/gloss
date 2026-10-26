@@ -3991,14 +3991,6 @@ button.thread-find {
   background: currentColor;
 }
 
-/* The context menu on a selection, each action with its key. */
-.selection-menu button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-}
-
 .selection-quote {
   margin: 0;
 }
@@ -4710,6 +4702,58 @@ kbd {
   min-width: 200px;
 }
 
+.selection-menu {
+  min-width: min(216px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - var(--title-bar-height) - 16px);
+  padding: 5px;
+  border-radius: 11px;
+  background: var(--raised);
+  box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line-strong), inset 0 1px 0 var(--edge);
+  overflow: auto;
+}
+
+.selection-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  line-height: 18px;
+}
+
+.selection-menu button svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.selection-menu .selection-menu-primary {
+  font-weight: 500;
+}
+
+.selection-menu .selection-menu-primary svg {
+  color: var(--accent);
+}
+
+.selection-menu button[aria-disabled='true'] {
+  color: var(--muted);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.selection-menu button[aria-disabled='true']:hover {
+  background: transparent;
+}
+
+.selection-menu button[aria-disabled='true'] svg {
+  color: inherit;
+}
+
+.selection-menu hr {
+  border-top-color: var(--line-strong);
+  margin: 0 8px;
+}
+
 .diff-open {
   flex: none;
   display: inline-flex;
@@ -4794,6 +4838,7 @@ kbd {
 }
 
 .diff-hunk {
+  user-select: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -4952,6 +4997,12 @@ kbd {
 
 .diff-body[data-sel='old'] .code[data-side='new'],
 .diff-body[data-sel='new'] .code[data-side='old'] {
+  user-select: none;
+}
+
+/* Lock other files before native left-drag selection can reach them. */
+.review-file-selecting .diff-file:not(.review-selection-origin),
+.review-file-selecting .diff-file:not(.review-selection-origin) * {
   user-select: none;
 }
 
