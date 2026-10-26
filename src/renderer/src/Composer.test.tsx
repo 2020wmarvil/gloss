@@ -218,8 +218,9 @@ describe('Composer history', () => {
     expect(text(view)).toBe('/review XYZ')
     press(view, 'ArrowDown')
     expect(text(view)).toBe('')
-    // Back on the empty composer, Down does nothing.
-    expect(press(view, 'ArrowDown')).toBe(false)
+    // CodeMirror may handle the arrow for caret movement, but history stays empty.
+    press(view, 'ArrowDown')
+    expect(text(view)).toBe('')
   })
 
   it('only starts in an empty composer, and stops cycling on an edit', () => {
@@ -228,12 +229,12 @@ describe('Composer history', () => {
     // Even with the caret at the start of a one-line draft.
     type(view, 'draft')
     act(() => view.dispatch({ selection: EditorSelection.cursor(0) }))
-    expect(press(view, 'ArrowUp')).toBe(false)
+    press(view, 'ArrowUp')
     expect(text(view)).toBe('draft')
     type(view, '')
     press(view, 'ArrowUp')
     type(view, '/review ABC')
-    expect(press(view, 'ArrowDown')).toBe(false)
+    press(view, 'ArrowDown')
     expect(text(view)).toBe('/review ABC')
     press(view, 'Enter')
     expect(onSend).toHaveBeenCalledWith('/review ABC', [])
@@ -245,15 +246,16 @@ describe('Composer history', () => {
     expect(text(view)).toBe('/review XYZ')
     // The caret is already at the end: Right moves nothing, but still means "edit this one".
     press(view, 'ArrowRight')
-    expect(press(view, 'ArrowUp')).toBe(false)
-    expect(press(view, 'ArrowDown')).toBe(false)
+    press(view, 'ArrowUp')
+    expect(text(view)).toBe('/review XYZ')
+    press(view, 'ArrowDown')
     expect(text(view)).toBe('/review XYZ')
     // Until the composer is cleared.
     type(view, '')
     press(view, 'ArrowUp')
     expect(text(view)).toBe('/review XYZ')
     press(view, 'ArrowLeft')
-    expect(press(view, 'ArrowUp')).toBe(false)
+    press(view, 'ArrowUp')
     expect(text(view)).toBe('/review XYZ')
   })
 
@@ -264,8 +266,9 @@ describe('Composer history', () => {
     expect(text(view)).toBe('line one\nline two')
     // A click (or Left, Home…) moves the caret: the arrows are the editor's again.
     act(() => view.dispatch({ selection: EditorSelection.cursor('line one\nli'.length) }))
-    expect(press(view, 'ArrowDown')).toBe(false)
-    expect(press(view, 'ArrowUp')).toBe(false)
+    press(view, 'ArrowDown')
+    expect(text(view)).toBe('line one\nline two')
+    press(view, 'ArrowUp')
     expect(text(view)).toBe('line one\nline two')
   })
 })
