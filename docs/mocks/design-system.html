@@ -70,7 +70,6 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 400 var(--t-14
 h2 { margin: 48px 0 4px; font-size: var(--t-20); font-weight: 600; letter-spacing: -.01em; }
 h3 { margin: 22px 0 8px; font-size: var(--t-14); font-weight: 600; }
 .lede, .hint { color: var(--muted); margin: 12px 0 18px; max-width: 800px; }
-.fixes { display: inline-block; margin-left: 8px; font-size: var(--t-12); font-weight: 500; color: var(--muted); }
 .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .grid { display: grid; gap: 14px; }
 .g2 { grid-template-columns: 1fr 1fr; } .g3 { grid-template-columns: repeat(3, 1fr); }
@@ -225,10 +224,10 @@ kbd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; b
   <div class="segmented" id="fontSeg"><button data-v="inter" aria-pressed="true">Inter</button><button data-v="system" aria-pressed="false">System font</button></div>
 </div>
 <div class="page">
-  <p class="lede">A proposal for M12's design system, answering the visual-language problems in <code>docs/ux-review/README.md</code> (items 9 to 16, plus the tool rows and sidebar markers from 17 and 19). Everything on this page is built from the tokens at the top of its stylesheet, which become <code>styles.css</code>'s tokens in Phase 2. Toggle the theme and font above. Reply with section numbers and what to change.</p>
+  <p class="lede">The approved M12 design system: visual language, tool rows and sidebar markers. Everything on this page is built from the tokens at the top of its stylesheet, shared with <code>styles.css</code>. Toggle the theme and font above.</p>
 
   <!-- 1. Type -->
-  <h2>1. Type <span class="fixes">fixes 12</span></h2>
+  <h2>1. Type</h2>
   <p class="hint">One UI font. Inter (already bundled for the wordmark) makes Gloss look the same on every OS and has tabular numbers for counts and times; the alternative is the system font (Segoe UI on Windows), toggled above. Eight sizes replace the thirteen in the stylesheet today. <b>Monospace is only for code</b>: code blocks, inline code, commands, paths, diffs and branch names. Not for agent names, labels, commit subjects or placeholders.</p>
   <div class="box">
     <div class="type-row"><span class="tk">24 / 600</span><span style="font-size:24px;font-weight:600;letter-spacing:-.015em">Review: feature/namespaced-keys</span><span class="use">Display: empty states, dialogs' main title</span></div>
@@ -243,7 +242,7 @@ kbd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; b
   </div>
 
   <!-- 2. Color -->
-  <h2>2. Color and roles <span class="fixes">fixes 10, 16</span></h2>
+  <h2>2. Color and roles</h2>
   <p class="hint">Every color gets one job. <b>The gradient</b> is the one primary action on a surface. <b>Pink</b> means "you are here / this is yours": the focus ring, the current row's bar, text selection and thread anchors (the core feature). Nothing else is pink: counts, meters, links, toggles and file badges go neutral. <b>States</b> have their own colors, used the same way everywhere. Failed moves from crimson to vermilion so it can't be mistaken for the brand pink.</p>
   <div class="grid g2">
     <div class="box"><div class="cap">Brand and accent</div>
@@ -280,7 +279,7 @@ kbd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; b
   <p class="rule">In dark the steps are now clearly apart (frame #0c0b0a, sunken #0f0e0d, background #141312, surface #1c1b19, raised #262522), so panels separate without borders doing all the work.</p>
 
   <!-- 3. Buttons -->
-  <h2>3. Buttons <span class="fixes">fixes 9</span></h2>
+  <h2>3. Buttons</h2>
   <p class="hint">Four kinds and one size scale. <b>Primary</b> (gradient) is the single main action of a surface. <b>Secondary</b> (a light neutral fill) is a real alternative. <b>Ghost</b> is for everything quieter, including Cancel. <b>Danger</b> only confirms destruction. Links are inline text only, underlined in ink. Disabled is neutral for every kind, not a faded gradient.</p>
   <div class="grid g2">
     <div class="box"><div class="cap">Kinds</div>
@@ -301,7 +300,7 @@ kbd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; b
       <div class="composer" style="margin:0 0 4px"><button class="icon-btn sm"><span data-i="paperclip"></span></button><span class="ed" style="color:var(--ink)">Should sweep() be public?</span><button class="btn primary"><span data-i="clock"></span>Queue</button></div>
       <div class="mode" style="margin:0"><span class="state s-queued"><span class="dot"></span></span>The agent is busy in “walk the Map…”. This runs when it's done.</div>
     </div>
-    <div class="box"><div class="cap">Thread composer: secondary actions move into a menu, so the editor keeps its width (fixes 1)</div>
+    <div class="box"><div class="cap">Thread composer: secondary actions move into a menu, so the editor keeps its width</div>
       <div class="composer" style="margin:0 0 12px"><button class="icon-btn sm"><span data-i="paperclip"></span></button><span class="ed">Reply in thread</span><button class="icon-btn sm" title="More: Send to main"><span data-i="ellipsis"></span></button><button class="btn primary" disabled><span data-i="arrow-up"></span>Send</button></div>
       <div class="composer" style="margin:0"><button class="icon-btn sm"><span data-i="paperclip"></span></button><span class="ed" style="color:var(--ink)">Also, how would you test…</span><button class="btn ghost"><span data-i="square"></span>Stop</button><button class="icon-btn sm"><span data-i="ellipsis"></span></button><button class="btn primary"><span data-i="corner-down-right"></span>Steer</button></div>
       <p class="rule">The label says what Send will do (Send, Steer or Queue) with a matching icon, and one line under the composer explains it. The wire format line (<code>sent as: [re: …]</code>) moves into the tooltip of the thread's quote.</p>
@@ -309,7 +308,7 @@ kbd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; b
   </div>
 
   <!-- 4. Icons -->
-  <h2>4. Icons <span class="fixes">fixes 11</span></h2>
+  <h2>4. Icons</h2>
   <p class="hint">One icon set, <b>Lucide</b> (ISC license, the <code>lucide-react</code> package), at 16px with a 1.75 stroke, in place of text glyphs and the hand-drawn SVGs. Icon buttons are one size (32px, 26px small), ghost by default, with a neutral pressed state instead of pink. Related tools sit in a sunken group.</p>
   <div class="grid g2">
     <div class="box"><div class="cap">Glyphs and today's icons → Lucide</div>
@@ -343,7 +342,7 @@ kbd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; b
   </div>
 
   <!-- 5. Inputs -->
-  <h2>5. Inputs and controls <span class="fixes">fixes 13, 14</span></h2>
+  <h2>5. Inputs and controls</h2>
   <p class="hint">One field style for text, search and selects; selects open the standard menu (section 6) instead of the OS dropdown. Checkboxes become switches. Segmented controls replace pill tabs and filter chips. The focus ring is the same everywhere: a pink 3px halo.</p>
   <div class="grid g3">
     <div class="box"><div class="cap">Fields</div>
@@ -365,11 +364,11 @@ kbd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; b
   <h3>Scrollbars</h3>
   <div class="grid g2">
     <div class="scroll-demo">Thin overlay thumbs, no arrow buttons, in the ink color at low opacity, darker on hover. They apply to the log, code blocks, the diff and every list.<br><br>Line<br>Line<br>Line<br>Line<br>Line<br>Line<br>Line<br>Line<br>Line<br>Line</div>
-    <p class="rule" style="margin:0">Today: the classic Windows scrollbar with arrow buttons in the log, code blocks and the diff (review items 13, 15, 20).</p>
+    <p class="rule" style="margin:0">Today: the classic Windows scrollbar with arrow buttons in the log, code blocks and the diff.</p>
   </div>
 
   <!-- 6. Menus, chips, rows -->
-  <h2>6. Menus, chips and rows <span class="fixes">fixes 19, 23, and the pink counts in 10</span></h2>
+  <h2>6. Menus, chips and rows</h2>
   <div class="grid g3">
     <div class="menu">
       <div class="sec">Model</div>
@@ -406,7 +405,7 @@ kbd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; b
   </div>
 
   <!-- 7. Code and tools -->
-  <h2>7. Code surfaces and tool calls <span class="fixes">fixes 15, 17</span></h2>
+  <h2>7. Code surfaces and tool calls</h2>
   <p class="hint">One code surface everywhere: sunken, 8px radius, mono 13. A command and its output share one block, with the command as its header. Tool calls of a turn sit in one compact group, one 34px row each, with an icon for the kind, no "completed" text (the check means done; a spinner means running; red means failed), and internal tools like ToolSearch folded into the summary.</p>
   <div class="grid g2">
     <div>
@@ -442,13 +441,13 @@ kbd { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; b
       <span style="width:34px;height:34px;border-radius:4px;background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line-strong)"></span><span style="width:34px;height:34px;border-radius:6px;background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line-strong)"></span><span style="width:34px;height:34px;border-radius:8px;background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line-strong)"></span><span style="width:34px;height:34px;border-radius:12px;background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line-strong)"></span><span style="width:50px;height:34px;border-radius:999px;background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line-strong)"></span></div>
       <p class="rule">4 tags and keys · 6 small controls · 8 buttons, fields, code · 12 cards, popovers, dialogs · pill for counts and switches.</p></div>
     <div class="box"><div class="cap">Depth and motion</div>
-      <p class="rule" style="margin-top:0">Panes lie as one sheet on the window's frame, with light on raised things' top edges and pressed-in wells (<code>depth.html</code>, option C). <b>Shadow 2</b> for menus and popovers. <b>Shadow 3</b> for dialogs. Finding cards drop their shadow and sit flat in the diff.</p>
+      <p class="rule" style="margin-top:0">Panes lie as one sheet on the window's frame, with light on raised things' top edges and pressed-in wells (the approved depth treatment). <b>Shadow 2</b> for menus and popovers. <b>Shadow 3</b> for dialogs. Finding cards drop their shadow and sit flat in the diff.</p>
       <p class="rule"><b>120ms</b> hover, <b>180ms</b> popovers, <b>240ms</b> panels, one ease-out curve. Reduced motion turns transitions and the working pulse off.</p></div>
   </div>
 
   <!-- 9. Composite -->
   <h2>9. Put together</h2>
-  <p class="hint">A session with a thread open, using only the parts above. Compare with <code>docs/ux-review/screens/16-thread-done-light.webp</code> and <code>23-queued-from-thread-light.webp</code>. This is only the visual language; <code>target.html</code> has the full layout, with the sheen and depth chosen in <code>depth.html</code>.</p>
+  <p class="hint">A session with a thread open, using only the parts above. This is the visual language; <code>target.html</code> has the full layout, including the approved sheen and depth.</p>
   <div class="app">
     <div class="side">
       <div class="field select" style="min-width:0;height:auto;padding:7px 10px;align-items:flex-start"><div><div style="font-weight:600;font-size:13px">project</div><div style="font-size:12px;color:var(--muted)">glossux</div></div><span data-i="chevron-down"></span></div>

@@ -525,8 +525,8 @@ While any turn runs, Gloss keeps the computer from going to sleep (Electron's `p
 See `docs/mocks/`:
 - `target.html` — the target interface (M12), every screen in light and dark: welcome, a project with no session, a new session, a session with a thread, the selection popover, the threads overview and queue tab, a failed turn, sign-in, search, settings and a review session. Pick a screen at the top (or link one as `target.html#review`). It is the reference for layout and the visual design.
 - `design-system.html` — the visual language (M12): type, color roles, surfaces, buttons, icons (Lucide), inputs, menus, rows, code and tool calls, spacing, radii and motion. Its tokens are the stylesheet's.
-- `depth.html` — the sheen and depth explorations (M12); option C, Gloss, was chosen and is the one `target.html` uses: the title bar and sidebar are the window's frame, the panes one sheet laid on it, light on raised things' top edges, pressed-in wells and a lacquered primary button.
-- `brand.html` — the brand explorations; `docs/BRAND.md` records what was decided.
+- Sheen and depth are defined in `target.html` and `design-system.html`: the title bar and sidebar are the window's frame, the panes one sheet laid on it, light on raised things' top edges, pressed-in wells and a lacquered primary button.
+- `docs/BRAND.md` records the approved brand.
 - `visual-feedback.html` — visual feedback (M16), interactive: the composer's Capture button, the region overlay on a fake desktop, the annotation canvas, the capture in the composer, and pins as anchors.
 
 

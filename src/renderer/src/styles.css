@@ -117,7 +117,7 @@
   --kind-you: var(--paused);
   --kind-resolved: var(--faint);
 
-  /* Depth (docs/mocks/depth.html, option C): the title bar and sidebar are the window's
+  /* Depth (docs/mocks/design-system.html): the title bar and sidebar are the window's
      frame; the panes are one sheet laid on it. Light catches raised things' top edges
      (--edge), lifts are short (--lift-*), wells are pressed in (--sink), panes carry a
      faint top sheen, and the primary button is lacquered (--gloss). */
