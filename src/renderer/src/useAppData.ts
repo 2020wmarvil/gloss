@@ -2,7 +2,7 @@
 // message history, sign-in requests and the full-screen hint.
 import { useCallback, useEffect, useState } from 'react'
 import type { GlossEvent, SettingsPatch, SettingsState } from '@shared/ipc'
-import type { AgentInfo, AuthMethodInfo } from '@shared/types'
+import type { AgentInfo, AuthMethodInfo, RateLimit } from '@shared/types'
 import { CAPTURE } from './Composer'
 import { applyTheme } from './theme'
 
@@ -11,6 +11,8 @@ export type SignInRequest = { agentId: string; agentName: string; methods: AuthM
 export function useAppData() {
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [agents, setAgents] = useState<AgentInfo[]>([])
+  /** Each agent's plan limits, as far as Gloss has seen them since it started. */
+  const [rateLimits, setRateLimits] = useState<Record<string, RateLimit[]>>({})
   /** Messages sent in every session, newest first, each once (SPEC → Composer → History). */
   const [sent, setSent] = useState<string[]>([])
   const [signIn, setSignIn] = useState<SignInRequest | null>(null)
@@ -21,6 +23,7 @@ export function useAppData() {
     void window.gloss.settings.get().then(setSettings)
     void window.gloss.history().then(setSent)
     void window.gloss.agents.list().then(setAgents)
+    void window.gloss.agents.rateLimits().then(setRateLimits)
   }, [])
 
   useEffect(
@@ -29,6 +32,9 @@ export function useAppData() {
         switch (event.type) {
           case 'agents':
             setAgents(event.agents)
+            break
+          case 'rateLimits':
+            setRateLimits((all) => ({ ...all, [event.agentId]: event.limits }))
             break
           case 'message': {
             const { role, text } = event.message
@@ -65,5 +71,5 @@ export function useAppData() {
     if (patch.global && ('opencodeExecutable' in patch.global || 'agentProfiles' in patch.global)) setAgents(await window.gloss.agents.list())
   }, [])
 
-  return { settings, agents, sent, signIn, fullScreenHint, updateSettings }
+  return { settings, agents, rateLimits, sent, signIn, fullScreenHint, updateSettings }
 }

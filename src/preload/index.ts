@@ -15,6 +15,7 @@ const api: GlossApi = {
   search: (request) => ipcRenderer.invoke(IPC.search, request),
   agents: {
     list: () => ipcRenderer.invoke(IPC.agentsList),
+    rateLimits: () => ipcRenderer.invoke(IPC.agentsRateLimits),
     testOpenCode: (executable) => ipcRenderer.invoke(IPC.agentsTestOpenCode, executable),
     testProfile: (profile) => ipcRenderer.invoke(IPC.agentsTestProfile, profile)
   },

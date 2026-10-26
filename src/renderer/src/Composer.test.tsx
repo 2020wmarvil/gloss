@@ -17,6 +17,7 @@ function mount(
     primary?: boolean
     onInterrupt?: () => void
     sessionId?: string
+    agent?: { id: string; name: string }
     onSend?: (text: string) => void
     onSteer?: (text: string) => void
     onSendToMain?: (text: string) => void
@@ -37,6 +38,7 @@ function mount(
         primary={opts.primary}
         onInterrupt={opts.onInterrupt}
         sessionId={opts.sessionId}
+        agent={opts.agent}
         draftKey={draftKey}
         className="composer"
         placeholder="Message the agent"
@@ -608,6 +610,25 @@ describe('Escape and rewind shortcuts', () => {
       press(view, 'Escape')
       expect(rewindPoints).not.toHaveBeenCalled()
     } finally { clock.mockRestore() }
+  })
+
+  it("says the agent doesn't support rewind instead of offering it", async () => {
+    vi.useFakeTimers()
+    const rewindPoints = vi.fn().mockResolvedValue([])
+    Object.defineProperty(window, 'gloss', { configurable: true, value: { sessions: { rewindPoints } } })
+    try {
+      const view = mount('escape-no-rewind', { sessionId: 's', agent: { id: 'opencode', name: 'OpenCode' } })
+      type(view, '/re')
+      expect(document.querySelector('.slash-menu')?.textContent ?? '').not.toContain('rewind')
+      type(view, '')
+      press(view, 'Escape')
+      press(view, 'Escape')
+      expect(rewindPoints).not.toHaveBeenCalled()
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+      expect(document.querySelector('.rewind-note')?.textContent).toBe("OpenCode doesn't support rewind.")
+      act(() => { vi.advanceTimersByTime(3000) })
+      expect(document.querySelector('.rewind-note')).toBeNull()
+    } finally { vi.useRealTimers() }
   })
 })
 

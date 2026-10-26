@@ -4,14 +4,17 @@ import { modKey } from './shortcuts'
 import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import type { SessionOrder } from '@shared/settings'
-import type { AgentInfo, AgentSession, Project, Session } from '@shared/types'
-import { AppWindow, ChevronDown, ChevronsUpDown, CircleAlert, Ellipsis, GitCompare, Info, List, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
+import type { AgentInfo, AgentSession, Project, RateLimit, Session } from '@shared/types'
+import { formatReset } from './StatusLine'
+import { AppWindow, ChevronDown, ChevronsUpDown, CircleAlert, Ellipsis, GitCompare, Info, List, MessageSquare, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
 
 type Props = {
   agents: AgentInfo[]
   /** The starred agent: new sessions use it unless another is picked from the menu. */
   defaultAgent: string
   onSetDefaultAgent(id: string): void
+  /** Each agent's plan limits as far as known: a reached one shows in the ▾ menu. */
+  rateLimits: Record<string, RateLimit[]>
   /** Width the user dragged it to; null = the CSS default. */
   width: number | null
   projects: Project[]
@@ -45,8 +48,8 @@ type Props = {
   onSelect(id: string): void
   /** Starts a session with the given agent, or the default one. */
   onNew(agentId?: string): void
-  /** Starts a review of the project's branch with the default agent (SPEC → Review sessions). */
-  onReview(): void
+  /** Starts a review of the project's branch with the given agent, or the default one (SPEC → Review sessions). */
+  onReview(agentId?: string): void
   onImport(session: ListedAgentSession): void
   onRename(id: string, title: string): void
   onDelete(id: string): void
@@ -105,6 +108,9 @@ export function Sidebar(props: Props): React.JSX.Element {
   const { project, openId, running, agentSessions } = props
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
+  /** What the ▾ menu's agents start: kept from the last pick. */
+  const [newKind, setNewKind] = useState<'session' | 'review'>('session')
+  const agentMenu = useRef<HTMLDivElement>(null)
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<{ project: Project; sessions: number } | null>(null)
@@ -128,6 +134,43 @@ export function Sidebar(props: Props): React.JSX.Element {
       window.removeEventListener('keydown', onKey)
     }
   }, [switcherOpen, agentMenuOpen, menuFor])
+
+  // The menu opens with the default agent focused.
+  useEffect(() => {
+    if (!agentMenuOpen) return
+    const items = [...(agentMenu.current?.querySelectorAll<HTMLButtonElement>('button[data-agent]:not(:disabled)') ?? [])]
+    ;(items.find((b) => b.dataset.agent === props.defaultAgent) ?? items[0])?.focus()
+    // Only on opening, not when the default changes from the menu's stars.
+  }, [agentMenuOpen])
+
+  /** In the ▾ menu: Tab switches between session and review, the arrows move between agents. */
+  function onAgentMenuKey(e: React.KeyboardEvent): void {
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      setNewKind((k) => (k === 'session' ? 'review' : 'session'))
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const items = [...(agentMenu.current?.querySelectorAll<HTMLButtonElement>('button[data-agent]:not(:disabled)') ?? [])]
+      if (!items.length) return
+      const at = items.indexOf(document.activeElement as HTMLButtonElement)
+      const step = e.key === 'ArrowDown' ? 1 : items.length - 1
+      items[at === -1 ? 0 : (at + step) % items.length].focus()
+    }
+  }
+
+  /** "Limit · 3:40 PM" on an agent whose plan limit is reached, until the window resets. */
+  const limitNote = (agentId: string): React.JSX.Element | null => {
+    const reached = (props.rateLimits[agentId] ?? []).filter((l) => l.status === 'rejected')
+    if (!reached.length) return null
+    // Usable again once every reached window has reset.
+    const resets = reached.every((l) => l.resetsAt !== undefined) ? Math.max(...reached.map((l) => l.resetsAt ?? 0)) : null
+    const at = resets === null ? null : formatReset(resets)
+    return (
+      <span className="agent-limit" title={`Plan limit reached${at ? `; resets ${at}` : ''}`}>
+        {at ? `Limit · ${at}` : 'Limit reached'}
+      </span>
+    )
+  }
 
   const agentName = (id: string): string => props.agents.find((a) => a.id === id)?.name ?? id
   const defaultName = agentName(props.defaultAgent)
@@ -338,7 +381,8 @@ export function Sidebar(props: Props): React.JSX.Element {
           </button>
           <button
             className="secondary new-session-agents"
-            aria-label="New session with another agent"
+            aria-label="New session or review with any agent"
+            title={`Session or review with any agent (review with ${defaultName}: Ctrl+Shift+D)`}
             aria-haspopup="menu"
             aria-expanded={agentMenuOpen}
             disabled={props.creating}
@@ -352,18 +396,46 @@ export function Sidebar(props: Props): React.JSX.Element {
             <ChevronDown className="caret" />
           </button>
           {agentMenuOpen && (
-            <div className="menu agent-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+            <div className="menu agent-menu" role="menu" ref={agentMenu} onClick={(e) => e.stopPropagation()} onKeyDown={onAgentMenuKey}>
+              <div className="segmented new-kind" role="radiogroup" aria-label="Start a">
+                <button role="radio" aria-checked={newKind === 'session'} tabIndex={-1} onClick={() => setNewKind('session')}>
+                  <MessageSquare />
+                  Session
+                </button>
+                <button
+                  role="radio"
+                  aria-checked={newKind === 'review'}
+                  tabIndex={-1}
+                  title="Review this branch's changes: its pull request's, else everything since it left the default branch, committed or not"
+                  onClick={() => setNewKind('review')}
+                >
+                  <GitCompare />
+                  Review
+                </button>
+              </div>
               {props.agents.map((a) => (
                 <div key={a.id} className="agent-item">
-                  <button role="menuitem" disabled={a.available === false} title={a.setupMessage} onClick={() => (setAgentMenuOpen(false), props.onNew(a.id))}>
+                  <button
+                    role="menuitem"
+                    data-agent={a.id}
+                    disabled={a.available === false}
+                    title={a.setupMessage}
+                    onClick={() => {
+                      setAgentMenuOpen(false)
+                      if (newKind === 'review') props.onReview(a.id)
+                      else props.onNew(a.id)
+                    }}
+                  >
                     {a.name}
                     {a.available === false && <small> (set up in Settings)</small>}
+                    {limitNote(a.id)}
                   </button>
                   <button
                     className={a.id === props.defaultAgent ? 'agent-star on' : 'agent-star'}
                     role="menuitemradio"
                     aria-checked={a.id === props.defaultAgent}
                     aria-label={`Make ${a.name} the default agent`}
+                    tabIndex={-1}
                     disabled={a.available === false}
                     title={a.id === props.defaultAgent ? 'Default agent' : 'Make default'}
                     onClick={() => props.onSetDefaultAgent(a.id)}
@@ -379,17 +451,6 @@ export function Sidebar(props: Props): React.JSX.Element {
         <button className="secondary new-session" onClick={props.onOpenProject}>
           <Plus />
           Open project…
-        </button>
-      )}
-      {project && (
-        <button
-          className="ghost review-changes"
-          onClick={props.onReview}
-          disabled={props.creating || props.agents.find((a) => a.id === props.defaultAgent)?.available === false}
-          title="View this branch's changes: its pull request's, else everything since it left the default branch, committed or not"
-        >
-          {reviewIcon}
-          View changes
         </button>
       )}
       {props.note && (

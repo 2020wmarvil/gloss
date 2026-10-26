@@ -8,6 +8,7 @@ vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', { writable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) })
 })
 import { App } from './App'
+import { formatReset } from './StatusLine'
 import { playChime } from './chime'
 
 vi.mock('./chime', () => ({ playChime: vi.fn() }))
@@ -26,7 +27,7 @@ it('focuses a new composer before the agent attaches and preserves typing when i
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
-    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'opencode', name: 'OpenCode', available: false }] },
+    agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'opencode', name: 'OpenCode', available: false }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: discovery },
     sessions: {
       list: async () => [], create: async () => session, refresh: async () => {},
@@ -61,14 +62,19 @@ it("starts sessions with the default agent or one from the menu, and lists every
   const list = vi.fn(async (_path: string, agentId: string) => [{ acpSessionId: 'same-id', title: `${agentId} external` }])
   const create = vi.fn(async () => { throw new Error('creation observed') })
   const importSession = vi.fn(async () => { throw new Error('import observed') })
+  const createReview = vi.fn(async () => { throw new Error('review observed') })
+  const resetsAt = new Date(2026, 9, 26, 15, 40).getTime()
   const state = { global: { defaultAgent: 'codex', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }
   const update = vi.fn(async (patch: { global: object }) => ({ ...state, global: { ...state.global, ...patch.global } }))
   window.gloss = {
     history: async () => [],
     settings: { get: async () => state, update },
-    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'codex', name: 'Codex' }, { id: 'opencode', name: 'OpenCode', available: false, setupMessage: 'Install OpenCode' }] },
+    agents: {
+      rateLimits: async () => ({ claude: [{ window: 'five_hour', status: 'rejected', resetsAt }, { window: 'seven_day', status: 'allowed' }] }),
+      list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'codex', name: 'Codex' }, { id: 'opencode', name: 'OpenCode', available: false, setupMessage: 'Install OpenCode' }]
+    },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: list },
-    sessions: { list: async () => [], create, import: importSession },
+    sessions: { list: async () => [], create, createReview, import: importSession },
     onEvent: () => () => {}
   } as unknown as typeof window.gloss
   const el = document.createElement('div')
@@ -90,8 +96,25 @@ it("starts sessions with the default agent or one from the menu, and lists every
   expect(stars.map((b) => b.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false'])
   expect(stars[2].disabled).toBe(true)
   expect([...el.querySelectorAll<HTMLButtonElement>('.agent-item [role="menuitem"]')][2].disabled).toBe(true)
-  await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.agent-item [role="menuitem"]')][0].click())
+  // A reached plan limit shows on its agent, with when it resets.
+  const items = (): HTMLButtonElement[] => [...el.querySelectorAll<HTMLButtonElement>('.agent-item [role="menuitem"]')]
+  expect(items()[0].querySelector('.agent-limit')!.textContent).toBe(`Limit · ${formatReset(resetsAt)}`)
+  expect(items()[1].querySelector('.agent-limit')).toBeNull()
+  await act(async () => items()[0].click())
   expect(create).toHaveBeenLastCalledWith('/project', 'claude')
+
+  // Review, then an agent: a review with that agent, not the default.
+  await openMenu()
+  await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.new-kind [role="radio"]')][1].click())
+  await act(async () => items()[0].click())
+  expect(createReview).toHaveBeenLastCalledWith('/project', 'claude', undefined, null)
+  // The menu keeps the kind picked last.
+  await openMenu()
+  expect(el.querySelector('.new-kind [aria-checked="true"]')!.textContent).toBe('Review')
+  await act(async () => el.querySelector('.new-session-agents')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  // Ctrl+Shift+D: a review with the default agent.
+  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'D', ctrlKey: true, shiftKey: true })))
+  expect(createReview).toHaveBeenLastCalledWith('/project', 'codex', undefined, null)
 
   await openMenu()
   await act(async () => el.querySelectorAll<HTMLButtonElement>('.agent-star')[0].click())
@@ -115,7 +138,7 @@ it('goes back and forward through the sessions and settings visited with the mou
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
-    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
+    agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: { list: async () => [session('a'), session('b')], open: opened, refresh: async () => {} },
     git: { status: async () => null, pullRequest: async () => null },
@@ -165,7 +188,7 @@ it('shows where the agent works and what waits, jumps there, and lists the queue
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
-    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
+    agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
       list: async () => [session],
@@ -271,7 +294,7 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
-    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
+    agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
       list: async () => [session('a', 3), session('b', 2), session('c', 1)],
@@ -338,7 +361,7 @@ it('opens search anywhere and reveals matches in another session, its thread, or
   window.gloss = {
     search, history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
-    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
+    agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: { list: async () => [session('a'), session('b')], open: opened, refresh: async () => {} },
     git: { status: async () => null, pullRequest: async () => null }, onEvent: () => () => {}
@@ -371,7 +394,7 @@ it("finds a thread's anchor in the main conversation from the thread panel", asy
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
-    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
+    agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
       list: async () => [session],
@@ -409,7 +432,7 @@ it("marks, badges and chimes a turn that finishes where the user isn't looking",
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global, projects: {}, error: null, path: '/settings.json' }) },
-    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
+    agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
       list: async () => [session('a', 2), session('b', 1)],
@@ -495,7 +518,7 @@ it('keeps background completions and syncs from taking focus or closing settings
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, turnEndSound: false, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
-    agents: { list: async () => [{ id: 'claude', name: 'Claude Code' }] },
+    agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
       list: async () => [session('a'), session('b')], refresh: async () => {},

@@ -612,7 +612,7 @@ button.new-session {
   justify-content: flex-start;
 }
 
-/* New session, and a caret for its agent menu (star = the default agent). */
+/* New session, and a caret for its menu: session or review, then the agent (star = the default agent). */
 .new-session-split {
   position: relative;
   display: flex;
@@ -650,6 +650,22 @@ button.new-session-agents {
   top: 36px;
 }
 
+/* What the menu's agents start, a session or a review. */
+.menu .new-kind {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 6px;
+}
+
+.menu .new-kind button {
+  justify-content: center;
+}
+
+.menu .new-kind svg {
+  width: 14px;
+  height: 14px;
+}
+
 .agent-item {
   display: flex;
   align-items: center;
@@ -659,6 +675,18 @@ button.new-session-agents {
 .agent-item button[role='menuitem'] {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* A reached plan limit, and when it resets. */
+.agent-limit {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: var(--t-11);
+  color: var(--warn);
 }
 
 .menu .agent-star {
@@ -2192,6 +2220,16 @@ button.settings-button.on {
   font-size: var(--t-12);
 }
 .editor-status { margin: 6px 0; color: var(--muted); font-size: var(--t-12); }
+.rewind-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--t-12);
+  animation: rewind-note-fade 3s ease-in forwards;
+}
+@keyframes rewind-note-fade {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
 .command-mode .md-editor {
   padding: 2px 12px;
   background: var(--code-bg);
@@ -4226,20 +4264,11 @@ kbd {
 
 /* Review sessions (docs/mocks/target.html#review) */
 
-button.review-changes {
-  justify-content: flex-start;
-}
-
 .review-icon {
   flex: none;
   color: var(--faint);
   vertical-align: -2px;
 }
-
-.review-changes .review-icon {
-  color: inherit;
-}
-
 
 .count-pill {
   flex: none;

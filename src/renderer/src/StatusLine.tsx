@@ -47,7 +47,8 @@ const WINDOW_LABELS: Record<string, [short: string, long: string]> = {
   overage: ['Extra usage', 'extra usage']
 }
 
-function formatReset(ms: number): string {
+/** "3:40 PM" today, else "Tue 3:40 PM". */
+export function formatReset(ms: number): string {
   const d = new Date(ms)
   const sameDay = d.toDateString() === new Date().toDateString()
   const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })

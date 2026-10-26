@@ -22,3 +22,11 @@ export type RewindPoint = {
 }
 
 export type RewindDraft = { text: string; attachments: Attachment[] }
+
+/**
+ * Agents whose adapters fork a session at a message (SPEC → Rewind). ACP's `session/fork`
+ * capability alone copies the whole session, so support is per agent.
+ */
+export function canRewind(agentId: string): boolean {
+  return agentId === 'claude' || agentId === 'codex'
+}

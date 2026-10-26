@@ -89,6 +89,8 @@ type FakeAgent = {
   turnEnding: boolean
   /** What the client advertised in its last initialize. */
   clientCapabilities?: acp.ClientCapabilities
+  /** Forks made: session/fork's source and fork point, and Claude's through the Agent SDK. */
+  forks: { sessionId: string; messageId: string }[]
   script: Script
 }
 
@@ -130,6 +132,7 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
     steering: false,
     steers: [],
     turnEnding: false,
+    forks: [],
     script: async ({ say }) => {
       await say('Hello')
       await say(' world')
@@ -164,6 +167,26 @@ function userChunks(prompt: acp.ContentBlock[], messageId: string): acp.SessionU
     }
     return [chunk(b)]
   })
+}
+
+const idOf = (u: acp.SessionUpdate): string | undefined => (u as { messageId?: string | null }).messageId ?? undefined
+
+/** A new saved session with `updates` as its history. Claude gives user messages new ids. */
+function forkInto(state: FakeAgent, source: string, updates: acp.SessionUpdate[], newUserIds: boolean): string {
+  const id = `fork-${state.forks.length}`
+  state.sessions.add(id)
+  state.cwds.set(id, state.cwds.get(source) ?? '')
+  save(state, id, ...updates.map((u) => (newUserIds && u.sessionUpdate === 'user_message_chunk' ? { ...u, messageId: `f${state.forks.length}-${idOf(u)}` } : u)))
+  return id
+}
+
+/** The Agent SDK fork Gloss uses for Claude: the history before the user message `uuid`. */
+async function forkClaude(state: FakeAgent, sessionId: string, uuid: string): Promise<string | null> {
+  state.forks.push({ sessionId, messageId: uuid })
+  const transcript = state.transcripts.get(sessionId) ?? []
+  const at = transcript.findIndex((u) => u.sessionUpdate === 'user_message_chunk' && idOf(u) === uuid)
+  if (at < 0) throw new Error(`Message ${uuid} not found`)
+  return at === 0 ? null : forkInto(state, sessionId, transcript.slice(0, at), true)
 }
 
 function agentApp(state: FakeAgent): acp.AgentApp {
@@ -207,6 +230,19 @@ function agentApp(state: FakeAgent): acp.AgentApp {
         .filter((id) => state.sessions.has(id) && !state.listed.some((s) => s.sessionId === id))
         .map((id): acp.SessionInfo => ({ sessionId: id, cwd: state.cwds.get(id) ?? '', updatedAt: state.updatedAt.get(id) }))
       return { sessions: [...state.listed, ...saved].filter((s) => s.cwd === ctx.params.cwd) }
+    })
+    .onRequest(acp.methods.agent.session.fork, (ctx) => {
+      // Codex's: everything up to the end of the turn of the item named.
+      const { sessionId } = ctx.params
+      const messageId = (ctx.params._meta as { jetbrains?: { air?: { fork?: { messageId?: string } } } } | undefined)?.jetbrains?.air?.fork?.messageId ?? ''
+      state.forks.push({ sessionId, messageId })
+      const transcript = state.transcripts.get(sessionId) ?? []
+      const at = transcript.findLastIndex((u) => idOf(u) === messageId)
+      if (at < 0) throw acp.RequestError.invalidParams({ messageId }, `Fork point message ${messageId} was not found`)
+      const prompt = transcript.slice(0, at + 1).findLast((u) => u.sessionUpdate === 'user_message_chunk')
+      let end = at + 1
+      while (end < transcript.length && !(transcript[end].sessionUpdate === 'user_message_chunk' && idOf(transcript[end]) !== idOf(prompt!))) end++
+      return { sessionId: forkInto(state, sessionId, transcript.slice(0, end), false) }
     })
     .onRequest(acp.methods.agent.session.close, (ctx) => {
       state.closes.push(ctx.params.sessionId)
@@ -363,7 +399,8 @@ describe('SessionManager', () => {
       runInTerminal: runInTerminal as never,
       now: () => 1000,
       mcpServers: () => servers,
-      permissionMode: () => permissionMode
+      permissionMode: () => permissionMode,
+      forkClaude: (sessionId, _cwd, uuid) => forkClaude(state, sessionId, uuid)
     })
   }
 
@@ -432,77 +469,74 @@ describe('SessionManager', () => {
     expect(manager.openSession(session.id).live.attached).toBe(true)
   })
 
-  it('rewinds conversation history, restores retained attachments, and keeps the prefix on replay', async () => {
+  it('rewinds a Claude session by forking its saved history before the message', async () => {
+    state.canClose = true
     state.promptCapabilities = { embeddedContext: true, image: true }
     const session = await manager.createSession('/project', 'claude')
     const image = { kind: 'image' as const, name: 'keep.png', mimeType: 'image/png', data: 'iVBOR' }
     await manager.send(session.id, 'keep this context', null, [{ kind: 'file', name: 'notes.txt', text: 'retained file context' }, image])
-    const keep = store.listMessages(session.id)
+    const keep = store.listMessages(session.id).map((m) => m.id)
     await manager.send(session.id, 'remove this secret turn', null)
+    const source = store.getSession(session.id)!.acpSessionId
+    const saved = state.transcripts.get(source)
     const target = store.listMessages(session.id).find((m) => m.text === 'remove this secret turn')!
     const removedThread = manager.createThread(session.id, store.listMessages(session.id).at(-1)!.id, { kind: 'selection', start: 0, end: 5, text: 'Hello' })
     await manager.rewindSession(session.id, target.id)
-    expect(store.listMessages(session.id)).toEqual(keep)
+    expect(store.listMessages(session.id).map((m) => m.id)).toEqual(keep)
     expect(store.getThread(removedThread.id)).toBeUndefined()
-    const replacement = store.getSession(session.id)!
-    expect(replacement.acpSessionId).not.toBe(session.acpSessionId)
-    expect(state.prompts).toHaveLength(2)
+    const fork = store.getSession(session.id)!.acpSessionId
+    expect(fork).toMatch(/^fork-/)
+    // The message sent live had no agent id; a replay of the source gave it one.
+    expect(state.forks).toEqual([{ sessionId: source, messageId: expect.stringMatching(/^u-/) }])
+    expect(state.transcripts.get(source)).toEqual(saved)
     expect(events.some((e) => e.type === 'sessionRewound')).toBe(true)
+
     await manager.send(session.id, 'continue here', null)
-    expect(state.prompts.at(-1)).toContain('keep this context')
-    expect(state.prompts.at(-1)).toContain('retained file context')
-    expect(state.prompts.at(-1)).not.toContain('remove this secret turn')
-    expect(state.promptBlocks.at(-1)).toContainEqual({ type: 'image', mimeType: 'image/png', data: 'iVBOR' })
-    expect(store.rewindState(session.id)?.context).toBeNull()
+    expect(state.loads.at(-1)).toBe(fork)
+    // The agent has the history itself: no transcript or images are resent.
+    expect(state.promptBlocks.at(-1)).toEqual([{ type: 'text', text: 'continue here' }])
+    const log = store.listMessages(session.id)
+    expect(log.map((m) => m.text)).toEqual(['keep this context', 'Hello world', 'continue here', 'Hello world'])
+    expect(log.slice(0, 2).map((m) => m.id)).toEqual(keep)
+    expect(log[0].attachments).toHaveLength(2)
+    // The fork's replay gave the retained user message its new id.
+    expect(log[0].acpMessageId).toMatch(/^f1-u-/)
+
     await manager.dispose()
     manager = makeManager()
-    const before = store.listMessages(session.id)
     await manager.send(session.id, 'after reconnect', null)
-    expect(store.listMessages(session.id).slice(0, before.length)).toEqual(before)
-    expect(state.prompts.at(-1)).toBe('after reconnect')
+    expect(store.listMessages(session.id).map((m) => m.text)).toEqual(['keep this context', 'Hello world', 'continue here', 'Hello world', 'after reconnect', 'Hello world'])
   })
 
-  it('preserves a pending rewind across reconnect even if the agent never saved the fresh session', async () => {
-    const session = await manager.createSession('/project', 'claude')
-    await manager.send(session.id, 'keep before restart', null)
-    await manager.send(session.id, 'remove before restart', null)
-    const target = store.listMessages(session.id).find((m) => m.text === 'remove before restart')!
-    await manager.rewindSession(session.id, target.id)
-    const fresh = store.getSession(session.id)!.acpSessionId
-    await manager.dispose()
-    state.sessions.delete(fresh)
-    state.transcripts.delete(fresh)
-    manager = makeManager()
-    expect((await manager.send(session.id, 'resume rewind', null)).error).toBeUndefined()
-    expect(store.getSession(session.id)).toBeDefined()
-    expect(store.listMessages(session.id)[0].text).toBe('keep before restart')
-    expect(state.prompts.at(-1)).toContain('keep before restart')
-    expect(state.prompts.at(-1)).not.toContain('remove before restart')
+  it('rewinds a Codex session by forking at the turn before the message', async () => {
+    state.script = async ({ say, text }) => { await say(`re: ${text}`, `msg-${text}`); return 'end_turn' }
+    const session = await manager.createSession('/project', 'codex')
+    await manager.send(session.id, 'one', null)
+    await manager.send(session.id, 'two', null)
+    await manager.send(session.id, 'three', null)
+    const source = store.getSession(session.id)!.acpSessionId
+    await manager.rewindSession(session.id, store.listMessages(session.id).find((m) => m.text === 'two')!.id)
+    // The agent message's id is known live, so no replay was needed.
+    expect(state.forks).toEqual([{ sessionId: source, messageId: 'msg-one' }])
+    expect(state.loads).toEqual([])
+    expect(store.listMessages(session.id).map((m) => m.text)).toEqual(['one', 're: one'])
+    await manager.send(session.id, 'four', null)
+    expect(state.prompts.at(-1)).toBe('four')
+    expect(store.listMessages(session.id).map((m) => m.text)).toEqual(['one', 're: one', 'four', 're: four'])
   })
 
-  it('commits rewind without agent startup and preserves context if later startup fails', async () => {
-    const session = await manager.createSession('/project', 'claude')
-    await manager.send(session.id, 'retained context', null)
-    const keep = store.listMessages(session.id)
-    await manager.send(session.id, 'remove this turn', null)
-    const target = store.listMessages(session.id).find((m) => m.text === 'remove this turn')!
-    const spy = vi.spyOn(AgentConnection.prototype, 'newSession').mockRejectedValueOnce(new Error('Cannot start agent'))
-    try {
-      await manager.rewindSession(session.id, target.id)
-      expect(spy).not.toHaveBeenCalled()
-      expect(store.listMessages(session.id)).toEqual(keep)
-      expect(store.getSession(session.id)?.acpSessionId).toMatch(/^gloss-rewind:/)
-      expect(events.some((e) => e.type === 'sessionRewound')).toBe(true)
-      expect((await manager.send(session.id, 'continue after rewind', null)).error).toContain('Cannot start agent')
-      expect(store.rewindState(session.id)?.context?.text).toContain('retained context')
-      const failed = store.listMessages(session.id).find((m) => m.text === 'continue after rewind')!
-      expect((await manager.retry(session.id, failed.id)).error).toBeUndefined()
-      expect(state.prompts.at(-1)).toContain('retained context')
-      expect(state.prompts.at(-1)).not.toContain('remove this turn')
-    } finally { spy.mockRestore() }
+  it('names the prompt of the turn before when that turn has no agent message', async () => {
+    state.canClose = true
+    state.script = async () => 'cancelled'
+    const session = await manager.createSession('/project', 'codex')
+    await manager.send(session.id, 'one', null)
+    await manager.send(session.id, 'two', null)
+    await manager.rewindSession(session.id, store.listMessages(session.id).find((m) => m.text === 'two')!.id)
+    expect(state.forks).toEqual([{ sessionId: expect.any(String), messageId: expect.stringMatching(/^u-/) }])
+    expect(store.listMessages(session.id).map((m) => m.text)).toEqual(['one'])
   })
 
-  it('does not wait for old agent session cleanup before returning the rewound log', async () => {
+  it('starts a new agent session when rewinding to the first message, without waiting for cleanup', async () => {
     state.canClose = true
     const session = await manager.createSession('/project', 'claude')
     await manager.send(session.id, 'remove immediately', null)
@@ -513,8 +547,84 @@ describe('SessionManager', () => {
       await manager.rewindSession(session.id, target.id)
       expect(close).toHaveBeenCalledWith(session.acpSessionId)
       expect(store.listMessages(session.id)).toEqual([])
-      expect(store.rewindState(session.id)?.context).not.toBeNull()
+      expect(store.getSession(session.id)?.acpSessionId).toMatch(/^gloss-new:/)
     } finally { release(); close.mockRestore() }
+    await manager.send(session.id, 'fresh start', null)
+    expect(state.prompts.at(-1)).toBe('fresh start')
+    expect(store.listMessages(session.id).map((m) => m.text)).toEqual(['fresh start', 'Hello world'])
+  })
+
+  it('leaves the conversation as it was when the agent cannot fork it', async () => {
+    state.script = async ({ say, text }) => { await say(`re: ${text}`, `msg-${text}`); return 'end_turn' }
+    const session = await manager.createSession('/project', 'codex')
+    await manager.send(session.id, 'one', null)
+    await manager.send(session.id, 'two', null)
+    const before = store.listMessages(session.id)
+    const acpSessionId = store.getSession(session.id)!.acpSessionId
+    state.transcripts.set(acpSessionId, [])
+    await expect(manager.rewindSession(session.id, before[2].id)).rejects.toThrow('was not found')
+    expect(store.listMessages(session.id)).toEqual(before)
+    expect(store.getSession(session.id)?.acpSessionId).toBe(acpSessionId)
+    expect(events.some((e) => e.type === 'sessionRewound')).toBe(false)
+  })
+
+  it('rewinds again before the fork is loaded', async () => {
+    const session = await manager.createSession('/project', 'claude')
+    for (const text of ['one', 'two', 'three']) await manager.send(session.id, text, null)
+    await manager.rewindSession(session.id, store.listMessages(session.id).find((m) => m.text === 'three')!.id)
+    const fork = store.getSession(session.id)!.acpSessionId
+    await manager.rewindSession(session.id, store.listMessages(session.id).find((m) => m.text === 'two')!.id)
+    // The first fork was loaded for its ids, then forked in turn.
+    expect(state.forks.at(-1)).toEqual({ sessionId: fork, messageId: expect.stringMatching(/^f1-/) })
+    await manager.send(session.id, 'four', null)
+    expect(store.listMessages(session.id).map((m) => m.text)).toEqual(['one', 'Hello world', 'four', 'Hello world'])
+  })
+
+  it('keeps the fork to retry when loading it fails', async () => {
+    const session = await manager.createSession('/project', 'claude')
+    await manager.send(session.id, 'keep', null)
+    await manager.send(session.id, 'remove', null)
+    await manager.rewindSession(session.id, store.listMessages(session.id).find((m) => m.text === 'remove')!.id)
+    const fork = store.getSession(session.id)!.acpSessionId
+    state.failLoad = true
+    expect((await manager.send(session.id, 'continue', null)).error).toContain('transcript unreadable')
+    state.failLoad = false
+    const failed = store.listMessages(session.id).find((m) => m.text === 'continue')!
+    expect((await manager.retry(session.id, failed.id)).error).toBeUndefined()
+    expect(store.getSession(session.id)?.acpSessionId).toBe(fork)
+    expect(state.prompts.at(-1)).toBe('continue')
+    expect(store.listMessages(session.id).map((m) => m.text)).toEqual(['keep', 'Hello world', 'continue', 'Hello world'])
+  })
+
+  it('offers rewind only on agents that fork, and not to steered messages or before an older reconstruction', async () => {
+    const other = await manager.createSession('/project', 'opencode')
+    expect(() => manager.rewindPoints(other.id)).toThrow("Fake Agent doesn't support rewind.")
+    await expect(manager.rewindSession(other.id, 'x')).rejects.toThrow("Fake Agent doesn't support rewind.")
+    const session = await manager.createSession('/project', 'claude')
+    const add = (seq: number, text: string, steered?: true): void =>
+      store.insertMessage({ id: text, sessionId: session.id, seq, role: 'user', text, threadId: null, ...(steered ? { steered } : {}) })
+    add(0, 'old one')
+    add(1, 'old two')
+    store.rewindLog(session.id, 2, 2, null)
+    add(2, 'carried the transcript')
+    add(3, 'after')
+    add(4, 'steered', true)
+    add(5, 'latest')
+    expect(manager.rewindPoints(session.id).map((p) => p.text)).toEqual(['latest', 'after'])
+    await expect(manager.rewindSession(session.id, 'carried the transcript')).rejects.toThrow('no longer exists')
+  })
+
+  it('still sends the transcript of a rewind an older Gloss saved but never sent', async () => {
+    const session = await manager.createSession('/project', 'claude')
+    store.insertMessage({ id: 'old', sessionId: session.id, seq: 0, role: 'user', text: 'old', threadId: null })
+    store.rewindLog(session.id, 1, 1, { text: 'retained transcript\n', images: [] })
+    store.updateSession(session.id, { acpSessionId: 'gloss-rewind:legacy' })
+    await manager.dispose()
+    manager = makeManager()
+    await manager.send(session.id, 'next', null)
+    expect(state.prompts.at(-1)).toBe('retained transcript\nnext')
+    expect(store.rewindState(session.id)?.context).toBeNull()
+    expect(store.listMessages(session.id).map((m) => m.text)).toEqual(['old', 'next', 'Hello world'])
   })
 
   it('finishes cancellation without waiting for agent session listing', async () => {
@@ -2090,6 +2200,9 @@ describe('SessionManager', () => {
       const limits = [{ window: 'five_hour', status: 'warning', utilization: 90 }]
       expect(manager.openSession(second.id).live.rateLimits).toEqual(limits)
       expect(events).toContainEqual({ type: 'live', sessionId: second.id, live: expect.objectContaining({ rateLimits: limits }) })
+      // The renderer gets them per agent too, for the New session menu.
+      expect(events).toContainEqual({ type: 'rateLimits', agentId: 'fake', limits })
+      expect(manager.rateLimits()).toEqual({ fake: limits })
       // A session opened later starts with them too.
       const third = await manager.createSession('/w', 'fake')
       expect(manager.openSession(third.id).live.rateLimits).toEqual(limits)

@@ -1,7 +1,7 @@
 // Owns agent connections, session attachment, turns and sign-in.
 // The agent sees one linear ACP session per Gloss session. When the agent can load
 // its sessions, its copy is the source of truth for the log (SPEC → Shared sessions).
-import { rewindSeed } from './rewind'
+import { forkClaude } from './rewind'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import type * as acp from '@agentclientprotocol/sdk'
@@ -27,6 +27,7 @@ import type {
   ToolCall,
   TurnOutcome
 } from '../shared/types'
+import { canRewind, type RewindPoint } from '../shared/composer'
 import { AGENT_INSTRUCTIONS, pinAnchor, wireText, withPins } from '../shared/wire'
 import {
   findingsBlocks,
@@ -48,7 +49,7 @@ import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, ty
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
 import { samePath } from './settings'
-import { isLogUpdate, matchReplay, parseReplay, placeUserMessage, type CachedEntry } from './sync'
+import { isLogUpdate, matchReplay, parseReplay, placeUserMessage, type CachedEntry, type ReplayEntry } from './sync'
 import type { TerminalRunner } from './terminal'
 import { originRepoUrl, pullRequest } from './git'
 import { currentBranch, defaultBranch, mergeBase, pullRequestBase, readReviewDiff, readReviewFile, reviewCommits, workingFilePath } from './review'
@@ -68,6 +69,8 @@ export type SessionManagerDeps = {
   permissionMode?(cwd: string): PermissionModeSetting
   /** Git for review sessions; the real one by default. */
   git?: ReviewGit
+  /** Forks a Claude Code session before a user message (see forkClaude); the Agent SDK by default. */
+  forkClaude?(acpSessionId: string, cwd: string, targetUuid: string): Promise<string | null>
 }
 
 /** What review sessions need from git (SPEC → Review sessions). */
@@ -326,11 +329,17 @@ export class SessionManager {
     for (const id of this.runtimes.keys()) {
       if (this.deps.store.getSession(id)?.agentId === agentId) this.setLive(id, { rateLimits: slot.rateLimits })
     }
+    this.deps.emit({ type: 'rateLimits', agentId, limits: slot.rateLimits })
     const resets = slot.rateLimits.flatMap((l) => (l.resetsAt === undefined ? [] : [l.resetsAt]))
     if (resets.length > 0) {
       const delay = Math.min(Math.max(0, Math.min(...resets) - this.now()), 2 ** 31 - 1)
       slot.rateLimitTimer = setTimeout(() => this.setRateLimits(agentId, this.slot(agentId).rateLimits), delay)
     }
+  }
+
+  /** Each agent's plan limits, as `setRateLimits` keeps them. */
+  rateLimits(): Record<string, RateLimit[]> {
+    return Object.fromEntries([...this.agents].map(([id, slot]) => [id, slot.rateLimits]))
   }
 
   /** Stops the agent's process if no prompt is in flight. The next request starts a fresh one. */
@@ -894,30 +903,63 @@ export class SessionManager {
     }
   }
 
-  /** Rewind the whole linear conversation, rebuilding the agent context on the next prompt. */
+  /**
+   * The user messages a rewind can go back to (SPEC → Rewind), newest first. Not steered
+   * messages: the agents fork between turns. In a conversation an older Gloss rewound by
+   * resending its transcript, not the messages before that or the one that carried it:
+   * the agent's own history doesn't have them.
+   */
+  rewindPoints(id: string): RewindPoint[] {
+    const session = this.session(id)
+    if (!canRewind(session.agentId)) throw new Error(`${this.deps.getAgentConfig(session.agentId).name} doesn't support rewind.`)
+    const messages = this.deps.store.listMessages(id)
+    const eligible = new Set(this.rewindable(id, messages).map((m) => m.id))
+    return messages.flatMap((m, index) => eligible.has(m.id)
+      ? [{ id: m.id, text: m.text.slice(0, 500), threadId: m.threadId, createdAt: m.createdAt, laterMessages: messages.length - index - 1, sessionTitle: session.title, outcome: m.outcome }]
+      : []).reverse()
+  }
+
+  private rewindable(id: string, messages: Message[]): Message[] {
+    const { store } = this.deps
+    const prefix = store.rewindState(id)?.prefixEntries ?? 0
+    const users = messages.filter((m) => m.role === 'user' && !m.steered)
+    if (!prefix) return users
+    const seqs = [...messages.map((m) => m.seq), ...store.listToolCalls(id).map((t) => t.messageSeq), ...store.listPlans(id).map((p) => p.seq)].sort((a, b) => a - b)
+    const end = seqs[prefix] ?? Infinity
+    return users.filter((m) => m.seq >= end).slice(1)
+  }
+
+  /**
+   * Rewinds the conversation to before a user message (SPEC → Rewind): the agent forks
+   * its own session at the end of the turn before it, and the log drops the message and
+   * everything after it. Nothing changes until the fork exists; loading it is left to
+   * the next attach.
+   */
   async rewindSession(id: string, messageId: string): Promise<void> {
     const original = this.session(id)
     const rt = this.runtime(id)
+    if (!canRewind(original.agentId)) throw new Error(`${this.deps.getAgentConfig(original.agentId).name} doesn't support rewind.`)
     if (rt.rewinding || rt.resetting || rt.turn || rt.queue.items.length) throw new Error('Finish or cancel the running turn and clear queued messages before rewinding.')
     rt.rewinding = true
     try {
       await rt.attaching?.promise.catch(() => {})
-      const target = this.deps.store.listMessages(id).find((m) => m.id === messageId && m.role === 'user')
-      if (!target) throw new Error('That rewind point no longer exists.')
-      const messages = this.deps.store.listMessages(id).filter((m) => m.seq < target.seq)
-      const tools = this.deps.store.listToolCalls(id).filter((t) => t.messageSeq < target.seq)
-      const plans = this.deps.store.listPlans(id).filter((p) => p.seq < target.seq)
-      // Persist the retained context before changing the visible log. Agent startup
-      // belongs to attach, so it never holds the rewind UI or restored draft hostage.
-      const seed = rewindSeed(messages, tools, this.deps.store.listThreads(id))
-      const pendingId = `gloss-rewind:${randomUUID()}`
+      const findTarget = (): Message | undefined => this.rewindable(id, this.deps.store.listMessages(id)).find((m) => m.id === messageId)
+      if (!findTarget()) throw new Error('That rewind point no longer exists.')
+      const forkId = await this.withAgent(original.agentId, (conn) => this.forkBefore(id, conn, messageId))
+      const target = findTarget()
+      const session = this.deps.store.getSession(id)
+      if (!target || !session) {
+        if (forkId) await this.discardFork(original.agentId, forkId)
+        throw new Error('That rewind point no longer exists.')
+      }
       this.deps.store.transaction(() => {
-        this.deps.store.rewindLog(id, target.seq, messages.length + tools.length + plans.length, seed, target.createdAt)
-        this.deps.store.updateSession(id, { acpSessionId: pendingId, syncedAt: null })
-        this.deps.store.addDeletedAgentSession(original.agentId, original.acpSessionId)
+        this.deps.store.truncateLog(id, target.seq, target.createdAt)
+        // Nothing kept: the next attach starts a new agent session.
+        this.deps.store.updateSession(id, { acpSessionId: forkId ?? `gloss-new:${randomUUID()}`, syncedAt: null })
+        this.deps.store.addDeletedAgentSession(original.agentId, session.acpSessionId)
       })
       const conn = rt.attachedTo
-      this.byAcpId.delete(original.acpSessionId)
+      this.byAcpId.delete(session.acpSessionId)
       rt.attachedTo = undefined
       rt.mcpFingerprint = undefined
       rt.failures?.clear()
@@ -925,8 +967,60 @@ export class SessionManager {
       this.setLive(id, { usage: null, attached: false })
       this.deps.emit({ type: 'session', session: this.session(id) })
       this.deps.emit({ type: 'sessionRewound', sessionId: id })
-      if (conn?.canCloseSessions) void conn.closeSession(original.acpSessionId).catch(() => {})
+      if (conn?.canCloseSessions) void conn.closeSession(session.acpSessionId).catch(() => {})
     } finally { rt.rewinding = false }
+  }
+
+  /**
+   * Forks the session's agent copy before the user message `messageId`. Returns the
+   * fork's id, or null when the message starts the agent's history.
+   */
+  private async forkBefore(id: string, conn: AgentConnection, messageId: string): Promise<string | null> {
+    // After a rewind the log still has the source's ids until the fork's replay.
+    if (this.runtime(id).attachedTo !== conn) await this.attach(id, conn)
+    // Undefined when a message it needs has no agent id yet (one sent live); a replay gives it one.
+    const forkPoint = (): (() => Promise<string | null>) | null | undefined => {
+      const session = this.session(id)
+      const messages = this.deps.store.listMessages(id)
+      const index = messages.findIndex((m) => m.id === messageId)
+      if (index < 0) throw new Error('That rewind point no longer exists.')
+      if (session.agentId === 'claude') {
+        const uuid = messages[index].acpMessageId
+        return uuid ? () => (this.deps.forkClaude ?? forkClaude)(session.acpSessionId, session.cwd, uuid) : undefined
+      }
+      // Codex forks whole turns, keeping the turn of the item it's given: name one of the
+      // turn before. Steered messages are part of their turn.
+      const before = messages.slice(0, index)
+      const prompt = before.findLastIndex((m) => m.role === 'user' && !m.steered)
+      if (prompt < 0) return null
+      const item = before.slice(prompt + 1).findLast((m) => m.role === 'agent' && m.acpMessageId)?.acpMessageId ?? before[prompt].acpMessageId
+      return item ? () => conn.forkSession(session.acpSessionId, session.cwd, item, this.mcpServers(session.cwd)) : undefined
+    }
+    let point = forkPoint()
+    if (point === undefined) {
+      await this.reload(id, conn)
+      point = forkPoint()
+    }
+    if (point === undefined) throw new Error("Couldn't find that message in the agent's history.")
+    return point ? point() : null
+  }
+
+  /** Replays the session's agent copy into the log. */
+  private async reload(id: string, conn: AgentConnection): Promise<void> {
+    // Claude's adapter replays a session it holds without restarting it.
+    await this.reattach(id, conn, this.session(id).agentId !== 'claude' && conn.canCloseSessions)
+  }
+
+  /** Removes a fork a rewind ended up not using. */
+  private async discardFork(agentId: string, forkId: string): Promise<void> {
+    try {
+      await this.withAgent(agentId, async (conn) => {
+        if (conn.canCloseSessions) await conn.closeSession(forkId).catch(() => {})
+        if (conn.canDeleteSessions) await this.deleteAgentSession(conn, agentId, forkId)
+      })
+    } catch (err) {
+      console.warn('[gloss] could not delete an unused fork:', errorMessage(err))
+    }
   }
 
   /** Picks the session's model or effort via the agent's config option, and saves it on the session. */
@@ -1300,13 +1394,13 @@ export class SessionManager {
    * session the agent holds replays the new history but keeps its running copy,
    * whose model doesn't see it.
    */
-  private reattach(sessionId: string, conn: AgentConnection): Promise<string> {
+  private reattach(sessionId: string, conn: AgentConnection, close = true): Promise<string> {
     const rt = this.runtime(sessionId)
     if (rt.attaching?.conn === conn) return rt.attaching.promise
     const acpSessionId = this.session(sessionId).acpSessionId
     rt.attachedTo = undefined
     const promise = (async () => {
-      await conn.closeSession(acpSessionId)
+      if (close) await conn.closeSession(acpSessionId)
       return this.doAttach(sessionId, conn)
     })().finally(() => {
       if (rt.attaching?.promise === promise) rt.attaching = undefined
@@ -1352,6 +1446,7 @@ export class SessionManager {
         if (seqOf(item.cached) !== i) return true
         const r = item.replay
         if (r?.type === 'agent' && item.cached.type === 'message') return r.text !== item.cached.message.text
+        if (r?.type === 'user' && item.cached.type === 'message') return newUserId(item.cached.message, r)
         if (r?.type === 'tool' && item.cached.type === 'toolCall') return toolStatus(item.cached.toolCall, r.toolCall) !== null
         return false
       })
@@ -1377,6 +1472,8 @@ export class SessionManager {
             if (threadId) active.set(threadId, i)
           }
           if (r?.type === 'agent' && r.text !== c.message.text) store.updateMessageText(c.message.id, r.text)
+          // A fork gives retained user messages new ids, which a later rewind names.
+          if (r?.type === 'user' && newUserId(c.message, r)) store.updateMessageAcpId(c.message.id, r.acpMessageId!)
           return { kind: 'message', id: c.message.id }
         }
         if (c?.type === 'toolCall') {
@@ -2341,6 +2438,11 @@ function planEntry(e: acp.PlanEntry): PlanEntry {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/** The replay names a cached user message by an id it doesn't have yet. */
+function newUserId(cached: Message, replayed: Extract<ReplayEntry, { type: 'user' }>): boolean {
+  return replayed.acpMessageId !== undefined && replayed.acpMessageId !== cached.acpMessageId
 }
 
 function seqOf(c: CachedEntry): number {

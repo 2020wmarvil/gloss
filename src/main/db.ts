@@ -567,14 +567,23 @@ export class Store {
   }
 
   /** Remove the selected user message and everything after it, including anchored threads. */
-  rewindLog(sessionId: string, seq: number, prefixEntries: number, seed: RewindSeed | null, at?: number): void {
+  truncateLog(sessionId: string, seq: number, at?: number): void {
     this.db.prepare('DELETE FROM plans WHERE session_id = ? AND seq >= ?').run(sessionId, seq)
     this.db.prepare('DELETE FROM tool_calls WHERE session_id = ? AND message_seq >= ?').run(sessionId, seq)
     this.db.prepare('DELETE FROM messages WHERE session_id = ? AND seq >= ?').run(sessionId, seq)
     if (at !== undefined) this.db.prepare('DELETE FROM threads WHERE session_id = ? AND anchor_message_id IS NULL AND created_at > ?').run(sessionId, at)
+  }
+
+  /** Records a rewind made by an older Gloss (see RewindSeed); for tests of those sessions. */
+  rewindLog(sessionId: string, seq: number, prefixEntries: number, seed: RewindSeed | null, at?: number): void {
+    this.truncateLog(sessionId, seq, at)
     this.db.prepare(`INSERT INTO session_rewinds (session_id, prefix_entries, context) VALUES (?, ?, ?)
       ON CONFLICT(session_id) DO UPDATE SET prefix_entries = excluded.prefix_entries, context = excluded.context`)
       .run(sessionId, prefixEntries, seed ? JSON.stringify(seed) : null)
+  }
+
+  updateMessageAcpId(id: string, acpMessageId: string): void {
+    this.db.prepare('UPDATE messages SET acp_message_id = ? WHERE id = ?').run(acpMessageId, id)
   }
 
   rewindState(sessionId: string): { prefixEntries: number; context: RewindSeed | null } | null {
