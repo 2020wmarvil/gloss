@@ -77,6 +77,31 @@ async function render(node: React.ReactNode): Promise<HTMLElement> {
 const key = (init: KeyboardEventInit): Promise<void> => act(async () => void window.dispatchEvent(new KeyboardEvent('keydown', init)))
 const row = (el: HTMLElement, title: string): HTMLElement => [...el.querySelectorAll<HTMLElement>('.session-row')].find((r) => r.title === title)!
 
+it('closes the current session view with Ctrl+W while keeping it available in the sidebar', async () => {
+  const { opened } = fakeGloss()
+  const el = await render(<App />)
+  await act(async () => row(el, 'b').click())
+  expect(opened).toHaveBeenLastCalledWith('b')
+  await key({ key: 'w', ctrlKey: true, repeat: true })
+  expect(el.querySelector('.session-row.on')!.getAttribute('title')).toBe('b')
+  await key({ key: 'w', ctrlKey: true })
+  expect(el.querySelector('.session-row.on')!.getAttribute('title')).toBe('a')
+  expect(row(el, 'b')).toBeDefined()
+  await act(async () => row(el, 'b').click())
+  expect(opened).toHaveBeenLastCalledWith('b')
+})
+
+it('closes a separate session window with Ctrl+W', async () => {
+  fakeGloss()
+  const close = vi.spyOn(window, 'close').mockImplementation(() => {})
+  await render(<SessionWindow sessionId="b" />)
+  await key({ key: 'w', ctrlKey: true, shiftKey: true })
+  await key({ key: 'w', ctrlKey: true, repeat: true })
+  expect(close).not.toHaveBeenCalled()
+  await key({ key: 'w', ctrlKey: true })
+  expect(close).toHaveBeenCalledOnce()
+})
+
 it('pops the open session out with what it shows and goes back to the session before it', async () => {
   const { emit, opened, windows } = await (async () => fakeGloss())()
   const el = await render(<App />)

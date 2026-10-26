@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerSaveBlocker, screen, shell, type WebContents } from 'electron'
 import { IPC, type AppBadge, type GlossEvent, type MainAction, type OpenCodeStatus, type PaneState } from '../shared/ipc'
 import type { Anchor, Attachment, Pin } from '../shared/types'
@@ -16,7 +17,7 @@ import { SessionManager } from './sessions'
 import { BADGE_LABEL, BADGE_SIZE, badgePixels } from './badge'
 import { patchArg, SettingsFile } from './settings'
 import { editorArgs, launchEditor } from './openFile'
-import { fileLink } from '../shared/fileLink'
+import { fileLink, isHtmlFile } from '../shared/fileLink'
 import { readMarkdownImage } from './markdownImage'
 import { registerComposerIpc } from './composerIpc'
 import { takeForeground } from './foreground'
@@ -627,9 +628,10 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     const link = fileLink(str(href, 'href'))
     if (!link || !isAbsolute(link.path)) throw new Error('Expected an absolute local file path.')
     if (!(await stat(link.path)).isFile()) throw new Error('This link does not point to a file.')
+    if (isHtmlFile(link.path)) return shell.openExternal(pathToFileURL(link.path).href)
     const args = editorArgs(settingsFile.state().global.externalEditor, link.path, link.line)
     if (args.length > 0) return launchEditor(args, link.path)
-    // Never execute a linked file through its default app association.
+    // Other linked files stay in the editor or file manager.
     shell.showItemInFolder(link.path)
   })
   ipcMain.handle(IPC.search, (_e, request: SearchRequest) => store!.search(request))

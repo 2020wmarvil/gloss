@@ -34,9 +34,17 @@ export function visualLineAt(x: number, y: number, root: (node: Node) => HTMLEle
     s.modify('move', direction, 'lineboundary')
     return s.focusNode ? { node: s.focusNode, offset: s.focusOffset } : null
   }
-  const start = at('backward')
-  const end = at('forward')
-  return start && end ? { start, end, el } : null
+  const { anchorNode, anchorOffset, focusNode, focusOffset } = s
+  try {
+    const start = at('backward')
+    const end = at('forward')
+    return start && end ? { start, end, el } : null
+  } finally {
+    // Probing a line must not collapse the highlight, even if the caller
+    // rejects that line (for example, outside the allowed review side).
+    if (anchorNode && focusNode) s.setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset)
+    else s.removeAllRanges()
+  }
 }
 
 type Options = {
@@ -66,6 +74,10 @@ export function useRightButtonLines({ scope, lineAt, onMenu }: Options): void {
     const onDown = (e: MouseEvent): void => {
       press = null
       if (e.button !== 2 || !inScope(e)) return
+      // preventDefault keeps the old editor active. On window activation its
+      // delayed focus handling can then replace our selection with its caret.
+      const active = document.activeElement
+      if (active instanceof HTMLElement) active.blur()
       if (overSelection(e.clientX, e.clientY)) {
         // Finding the line moves the selection, so it is put back.
         const s = window.getSelection()
