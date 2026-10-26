@@ -1,0 +1,1348 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-10-25T23:18:09.094Z",
+  "scope": "SessionManager.createSession through attached=true, then openSession snapshot; excludes renderer, IPC, inference and build time",
+  "coldDefinition": "Fresh ACP adapter process and connection, first session. OS caches and native credentials remain warm.",
+  "warmDefinition": "Next fresh session on the same connection, with the preceding empty session still attached.",
+  "environment": {
+    "platform": "win32",
+    "os": "10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i9-12900KS",
+    "node": "24.21.0",
+    "electron": "44.7.0",
+    "adapters": {
+      "claude": "0.89.1",
+      "codex": "2.2.2"
+    },
+    "cwd": "C:\\Users\\YDOG\\Desktop\\gloss",
+    "permissionMode": "bypass",
+    "glossMcpServers": 1,
+    "explicitGlossSettings": true,
+    "claudeCreationEffort": null
+  },
+  "summaries": [
+    {
+      "agent": "claude",
+      "kind": "cold",
+      "successes": 10,
+      "failures": 0,
+      "medianMs": 1015.6792999999998,
+      "p95Ms": 1077.4356999999982,
+      "minMs": 967.9366000000009,
+      "maxMs": 1077.4356999999982
+    },
+    {
+      "agent": "claude",
+      "kind": "warm",
+      "successes": 10,
+      "failures": 0,
+      "medianMs": 683.7196000000004,
+      "p95Ms": 857.4648000000016,
+      "minMs": 629.6034,
+      "maxMs": 857.4648000000016
+    },
+    {
+      "agent": "codex",
+      "kind": "cold",
+      "successes": 10,
+      "failures": 0,
+      "medianMs": 714.3397999999997,
+      "p95Ms": 1043.3584,
+      "minMs": 668.2490999999991,
+      "maxMs": 1043.3584
+    },
+    {
+      "agent": "codex",
+      "kind": "warm",
+      "successes": 10,
+      "failures": 0,
+      "medianMs": 174.58080000000155,
+      "p95Ms": 186.36039999999957,
+      "minMs": 155.8068999999996,
+      "maxMs": 186.36039999999957
+    }
+  ],
+  "samples": [
+    {
+      "agent": "claude",
+      "round": 1,
+      "kind": "cold",
+      "ok": true,
+      "ms": 1018.9448000000001,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 287.2395,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 647.7433,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 26.366100000000188,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 48.308500000000095,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.29129999999986467,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 1,
+      "kind": "warm",
+      "ok": true,
+      "ms": 675.2053000000001,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 589.3620000000001,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 28.86130000000003,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 51.136600000000044,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.18709999999987303,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 1,
+      "kind": "cold",
+      "ok": true,
+      "ms": 1043.3584,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 192.2194000000004,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 842.1014999999998,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.7730999999998858,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.1170999999999367,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 1,
+      "kind": "warm",
+      "ok": true,
+      "ms": 170.50070000000005,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 164.66420000000016,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.4101999999998043,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.14750000000003638,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 2,
+      "kind": "cold",
+      "ok": true,
+      "ms": 815.5012999999994,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 178.9368000000004,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 619.8749000000003,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.6093000000000757,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09550000000035652,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 2,
+      "kind": "warm",
+      "ok": true,
+      "ms": 183.19670000000042,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 177.04889999999978,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.5200000000004366,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.17599999999947613,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 2,
+      "kind": "cold",
+      "ok": true,
+      "ms": 990.5423000000001,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 286.9214000000002,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 619.9081000000006,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 25.69329999999991,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 49.765300000000025,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.24430000000029395,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 2,
+      "kind": "warm",
+      "ok": true,
+      "ms": 685.0533999999998,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 598.1952000000001,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 27.03479999999945,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 54.10570000000007,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.17929999999978463,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 3,
+      "kind": "cold",
+      "ok": true,
+      "ms": 1015.6792999999998,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 298.02970000000005,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 634.4966000000004,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 27.882399999999507,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 47.29140000000007,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.2114000000001397,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 3,
+      "kind": "warm",
+      "ok": true,
+      "ms": 673.0832999999993,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 586.9793000000009,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 29.42749999999978,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 50.897799999998824,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.18870000000060827,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 3,
+      "kind": "cold",
+      "ok": true,
+      "ms": 750.3486000000012,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 191.38990000000013,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 542.7700000000004,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.6201000000000931,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.08990000000085274,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 3,
+      "kind": "warm",
+      "ok": true,
+      "ms": 174.58080000000155,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 169.32459999999992,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.30420000000049185,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09350000000085856,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 4,
+      "kind": "cold",
+      "ok": true,
+      "ms": 668.2490999999991,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 170.51419999999962,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 486.9859000000015,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.6141000000006898,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09859999999935098,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 4,
+      "kind": "warm",
+      "ok": true,
+      "ms": 178.6787000000004,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 173.28570000000036,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.32189999999900465,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.08870000000024447,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 4,
+      "kind": "cold",
+      "ok": true,
+      "ms": 967.9366000000009,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 294.2536,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 584.0608000000011,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 32.54579999999987,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 49.147899999999936,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.22229999999944994,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 4,
+      "kind": "warm",
+      "ok": true,
+      "ms": 629.6034,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 555.9898999999987,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 28.80199999999968,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 39.30320000000029,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.17079999999987194,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 5,
+      "kind": "cold",
+      "ok": true,
+      "ms": 1023.8349999999991,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 296.9878000000008,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 638.2039000000004,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 29.423499999998967,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 51.35620000000017,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.17770000000018626,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 5,
+      "kind": "warm",
+      "ok": true,
+      "ms": 684.0679999999993,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 597.9627,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 29.21049999999923,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 51.34989999999925,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.18130000000019209,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 5,
+      "kind": "cold",
+      "ok": true,
+      "ms": 714.3397999999997,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 187.64250000000175,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 518.932499999999,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.9381000000012136,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.10269999999945867,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 5,
+      "kind": "warm",
+      "ok": true,
+      "ms": 186.36039999999957,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 181.4321,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.36229999999886786,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09219999999913853,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 6,
+      "kind": "cold",
+      "ok": true,
+      "ms": 676.1178999999993,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 172.60620000000017,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 495.1077000000005,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 1.0351000000009662,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09499999999934516,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 6,
+      "kind": "warm",
+      "ok": true,
+      "ms": 180.4418999999998,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 174.9979000000003,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.299300000000585,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.08690000000024156,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 6,
+      "kind": "cold",
+      "ok": true,
+      "ms": 991.2626999999993,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 290.8551000000007,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 611.8639000000003,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 30.806000000000495,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 49.83179999999993,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.1775999999990745,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 6,
+      "kind": "warm",
+      "ok": true,
+      "ms": 857.4648000000016,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 577.3876000000018,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 29.53989999999976,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 43.38249999999971,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.1820000000006985,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 7,
+      "kind": "cold",
+      "ok": true,
+      "ms": 1077.4356999999982,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 297.7881000000016,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 652.5053000000007,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 29.899899999996705,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 88.79490000000078,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.18950000000040745,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 7,
+      "kind": "warm",
+      "ok": true,
+      "ms": 752.7294999999976,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 644.4140000000007,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 38.06620000000112,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 64.72479999999996,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.1775999999990745,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 7,
+      "kind": "cold",
+      "ok": true,
+      "ms": 725.1296000000002,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 188.35859999999957,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 528.9022000000004,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.6189000000013039,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.14539999999760767,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 7,
+      "kind": "warm",
+      "ok": true,
+      "ms": 179.20910000000003,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 173.35769999999684,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.5590999999985797,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.1224000000001979,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 8,
+      "kind": "cold",
+      "ok": true,
+      "ms": 677.1628000000019,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 184.41050000000178,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 475.8822999999975,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.67870000000039,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.08979999999792199,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 8,
+      "kind": "warm",
+      "ok": true,
+      "ms": 155.8068999999996,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 150.39480000000185,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.3176999999996042,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09809999999924912,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 8,
+      "kind": "cold",
+      "ok": true,
+      "ms": 972.3876000000018,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 283.66240000000107,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 611.343200000003,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 28.23359999999957,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 41.08950000000186,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.17980000000170548,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 8,
+      "kind": "warm",
+      "ok": true,
+      "ms": 662.859800000002,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 569.8473999999987,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 34.48829999999725,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 53.4477999999981,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.1735000000007858,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 9,
+      "kind": "cold",
+      "ok": true,
+      "ms": 1037.6196000000018,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 303.0577999999987,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 652.1939999999995,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 28.617299999998068,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 46.37960000000021,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.17450000000098953,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 9,
+      "kind": "warm",
+      "ok": true,
+      "ms": 683.7196000000004,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 584.2726000000002,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 34.79910000000018,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 59.099300000001676,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.18660000000090804,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 9,
+      "kind": "cold",
+      "ok": true,
+      "ms": 670.7188999999998,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 207.6803,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 454.7517000000007,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.5947999999989406,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.08950000000186265,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 9,
+      "kind": "warm",
+      "ok": true,
+      "ms": 161.23029999999926,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 154.8722999999991,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.5738000000019383,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.17870000000039,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 10,
+      "kind": "cold",
+      "ok": true,
+      "ms": 949.487799999999,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 188.83729999999923,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 465.8553000000029,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.60740000000078,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.22660000000178115,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "codex",
+      "round": 10,
+      "kind": "warm",
+      "ok": true,
+      "ms": 166.12980000000243,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 160.47220000000016,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 0.28879999999844586,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.09690000000045984,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "agent-full-access",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 10,
+      "kind": "cold",
+      "ok": true,
+      "ms": 1040.1613999999972,
+      "phases": [
+        {
+          "name": "connect (spawn + initialize)",
+          "ms": 290.1883999999991,
+          "ok": true
+        },
+        {
+          "name": "newSession",
+          "ms": 662.9565000000002,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 26.775799999999435,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 51.84530000000086,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.20100000000093132,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    },
+    {
+      "agent": "claude",
+      "round": 10,
+      "kind": "warm",
+      "ok": true,
+      "ms": 694.6468000000023,
+      "phases": [
+        {
+          "name": "newSession",
+          "ms": 601.4676,
+          "ok": true
+        },
+        {
+          "name": "setMode",
+          "ms": 28.07719999999972,
+          "ok": true
+        },
+        {
+          "name": "setConfigOption (effort)",
+          "ms": 59.499400000000605,
+          "ok": true
+        },
+        {
+          "name": "openSession snapshot",
+          "ms": 0.1709000000009837,
+          "ok": true
+        }
+      ],
+      "attached": true,
+      "mode": "bypassPermissions",
+      "effort": "medium"
+    }
+  ],
+  "cleanupWarnings": []
+}

@@ -2,7 +2,7 @@
 // web/mail links and absolute local file links (opened through the main
 // process), and local raster images loaded through the main process.
 // Code blocks are highlighted and have a copy button.
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import { fileLink } from '../../shared/fileLink'
 import { imageLink } from '../../shared/imageLink'
@@ -123,8 +123,8 @@ export type MessageAnchors = {
 
 const replyIcon = <MessageSquare size={12} />
 
-function anchorComponents(text: string, anchors: MessageAnchors, listItemReplies: boolean): Components {
-  const byStart = new Map((listItemReplies ? listItemSpans(text) : []).map((s) => [s.start, s]))
+function anchorComponents(spans: ListItemSpan[], anchors: MessageAnchors): Components {
+  const byStart = new Map(spans.map((s) => [s.start, s]))
   return {
     ...baseComponents,
     li: ({ node, children }) => {
@@ -203,10 +203,46 @@ function anchorComponents(text: string, anchors: MessageAnchors, listItemReplies
   }
 }
 
+type MarkdownProps = { text: string; anchors?: MessageAnchors; breaks?: boolean; listItemReplies?: boolean }
+type AnchorState = Pick<MessageAnchors, 'activeIndex' | 'runningIndex' | 'runningThread' | 'marks'> & {
+  itemCounts: [number, number][]
+  threadCounts: [string, number][]
+}
+
 /** `breaks`: a newline is a line break (the user's messages, typed as chat), not a space. */
-export function Markdown({ text, anchors, breaks, listItemReplies = true }: { text: string; anchors?: MessageAnchors; breaks?: boolean; listItemReplies?: boolean }): React.JSX.Element {
-  // Re-render when highlighting for more languages becomes available.
-  useHighlighting()
+export const Markdown = memo(function Markdown({ text, anchors, breaks, listItemReplies = true }: MarkdownProps): React.JSX.Element {
+  const version = useHighlighting()
+  const actions = useRef(anchors)
+  actions.current = anchors
+  const hasAnchors = anchors !== undefined
+  const spans = useMemo(() => hasAnchors && listItemReplies ? listItemSpans(text) : [], [text, hasAnchors, listItemReplies])
+  // Callbacks are fresh as the conversation updates. Only their visible results
+  // belong in the parse cache; event handlers always use the latest callbacks.
+  const state: AnchorState | null = anchors ? {
+    activeIndex: anchors.activeIndex, runningIndex: anchors.runningIndex,
+    runningThread: anchors.runningThread, marks: anchors.marks,
+    itemCounts: spans.map((s) => [s.index, anchors.replyCount(s.index)]),
+    threadCounts: [...new Set(anchors.marks.flatMap((m) => m.threadId === null ? [] : [m.threadId]))].map((id) => [id, anchors.threadCount(id)])
+  } : null
+  const stateKey = JSON.stringify(state)
+  const stableAnchors = useMemo((): MessageAnchors | undefined => {
+    const snapshot = JSON.parse(stateKey) as AnchorState | null
+    if (!snapshot) return undefined
+    const items = new Map(snapshot.itemCounts)
+    const threads = new Map(snapshot.threadCounts)
+    return {
+      ...snapshot,
+      replyCount: (index) => items.get(index) ?? 0,
+      threadCount: (id) => threads.get(id) ?? 0,
+      onOpenItem: (span) => actions.current?.onOpenItem(span),
+      onOpenThread: (id) => actions.current?.onOpenThread(id)
+    }
+  }, [stateKey])
+  return <ParsedMarkdown text={text} anchors={stableAnchors} breaks={breaks} listItemReplies={listItemReplies} spans={spans} version={version} />
+})
+
+/** Retain the parsed React tree until content, annotations or highlighting changes. */
+const ParsedMarkdown = memo(function ParsedMarkdown({ text, anchors, breaks, listItemReplies, spans }: MarkdownProps & { spans: ListItemSpan[]; version: number }): React.JSX.Element {
   return (
     <div className={anchors && listItemReplies ? 'md with-anchors' : 'md'}>
       <ReactMarkdown
@@ -217,10 +253,10 @@ export function Markdown({ text, anchors, breaks, listItemReplies = true }: { te
           remarkHtmlAsText,
           [remarkSourceSpans, { marks: anchors?.marks ?? [], colors: codeColors }]
         ]}
-        components={anchors ? anchorComponents(text, anchors, listItemReplies) : baseComponents}
+        components={anchors ? anchorComponents(spans, anchors) : baseComponents}
       >
         {text}
       </ReactMarkdown>
     </div>
   )
-}
+})

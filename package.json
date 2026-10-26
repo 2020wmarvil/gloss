@@ -15,6 +15,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "probe:opencode": "node scripts/probe-opencode.mjs",
+    "bench:new-session": "node scripts/bench-new-session.mjs",
+    "bench:app-startup": "node scripts/bench-app-startup.mjs",
     "postinstall": "patch-package",
     "icons": "electron scripts/make-icons.mjs"
   },

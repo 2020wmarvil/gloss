@@ -61,6 +61,8 @@ Search covers history already loaded into Gloss. Open an agent session from the 
 | `npm run typecheck` | Type-check main/preload and renderer |
 | `npm run lint` | ESLint |
 | `npm test` | Unit tests (Vitest), including a fake ACP agent |
+| `npm run bench:new-session` | Measure cold and warm real-agent session startup; [method and results](docs/performance/new-session-latency.md) |
+| `npm run bench:app-startup` | Profile application startup and resize using a database snapshot; [method and results](docs/performance/app-startup.md) |
 
 ## Layout
 

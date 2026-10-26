@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerSaveBlocker, screen, shell, type WebContents } from 'electron'
-import { IPC, type AppBadge, type GlossEvent, type MainAction, type PaneState } from '../shared/ipc'
+import { IPC, type AppBadge, type GlossEvent, type MainAction, type OpenCodeStatus, type PaneState } from '../shared/ipc'
 import type { Anchor, Attachment, Pin } from '../shared/types'
 import type { AnswerValue, RequestAnswer } from '../shared/requests'
 import { AgentConnection } from './acp'
@@ -29,6 +29,7 @@ import { obsidianUri } from '../shared/obsidian'
 import { previewMcpImport } from './mcp-import'
 import { OpenCodeSupport } from './opencode'
 import { AgentProfileSupport } from './agentProfiles'
+import { AgentAvailability } from './agentAvailability'
 import { profileError, type AgentProfile } from '../shared/agentProfiles'
 import { boundsArg, placeSessionWindow, type Rect } from './windowPlacement'
 import { createCloseGuard } from './closeGuard'
@@ -39,6 +40,7 @@ let mainWindow: BrowserWindow | undefined
 let store: Store | undefined
 let sessions: SessionManager | undefined
 let settings: SettingsFile | undefined
+let quitting = false
 let openCode: OpenCodeSupport
 let openCodeRestartPending = false
 let profileSupport: AgentProfileSupport
@@ -575,23 +577,31 @@ async function pickFolder(): Promise<string | null> {
 }
 
 function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void {
-  ipcMain.handle(IPC.agentsList, async () => {
-    const status = await openCode.check(settingsFile.state().global.opencodeExecutable)
+  const agentEntries = (status?: OpenCodeStatus) => {
     const builtins = listAgents().map((agent) => agent.id === 'opencode'
-      ? { ...agent, available: status.available, setupMessage: status.error ?? undefined }
+      ? { ...agent, available: status?.available ?? false, setupMessage: status ? status.error ?? undefined : 'Checking OpenCode availability…' }
       : agent)
     const profiles = settingsFile.state().global.agentProfiles ?? []
     const missing = new Set(manager.listSessions().map((s) => s.agentId).filter((id) => id.startsWith('custom:') && !profiles.some((p) => p.id === id)))
     const defaultId = settingsFile.state().global.defaultAgent
     if (defaultId.startsWith('custom:') && !profiles.some((p) => p.id === defaultId)) missing.add(defaultId)
     return [...builtins, ...profiles.map((p) => ({ id: p.id, name: p.name })), ...[...missing].map((id) => ({ id, name: id, available: false, setupMessage: 'Restore this profile with the same ID in Settings > Agents to resume its conversations.' }))]
+  }
+  const availability = new AgentAvailability((key) => openCode.check(key), (key, status) => {
+    if (!quitting && (settingsFile.state().global.opencodeExecutable ?? '') === key) emit({ type: 'agents', agents: agentEntries(status) })
   })
+  ipcMain.handle(IPC.agentsList, () => agentEntries(availability.get(settingsFile.state().global.opencodeExecutable ?? '')))
   ipcMain.handle(IPC.agentsTestProfile, (_e, profile: unknown) => {
     const error = profileError(profile)
     if (error) throw new Error(error)
     return profileSupport.check(profile as AgentProfile)
   })
-  ipcMain.handle(IPC.agentsTestOpenCode, (_e, executable: unknown) => openCode.check(str(executable, 'executable'), true))
+  ipcMain.handle(IPC.agentsTestOpenCode, async (_e, executable: unknown) => {
+    const key = str(executable, 'executable')
+    const status = await openCode.check(key, true)
+    availability.set(key, status)
+    return status
+  })
   ipcMain.handle(IPC.projectsList, () => manager.listProjects())
   ipcMain.handle(IPC.projectsOpen, async () => {
     const path = await pickFolder()
@@ -649,7 +659,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     })
   })
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
-    manager.createSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
+    manager.startSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
   )
   ipcMain.handle(IPC.sessionsCreateReview, (_e, cwd: unknown, agentId: unknown, baseRef: unknown, headRef: unknown) =>
     manager.createReview(
@@ -983,6 +993,7 @@ app.on('will-quit', () => globalShortcut.unregisterAll())
 
 app.on('before-quit', (event) => {
   if (!guardClose(event, () => app.quit())) return
+  quitting = true
   settings?.close()
   void sessions?.dispose()
   store?.close()

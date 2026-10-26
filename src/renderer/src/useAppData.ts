@@ -27,6 +27,9 @@ export function useAppData() {
     () =>
       window.gloss.onEvent((event: GlossEvent) => {
         switch (event.type) {
+          case 'agents':
+            setAgents(event.agents)
+            break
           case 'message': {
             const { role, text } = event.message
             if (role === 'user' && text) setSent((h) => (h[0] === text ? h : [text, ...h.filter((t) => t !== text)]))

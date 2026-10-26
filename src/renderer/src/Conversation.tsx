@@ -1,5 +1,5 @@
 // The main thread: messages and tool calls with threadId == null.
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { Clock } from 'lucide-react'
 import { folderName } from '@shared/paths'
 import type { GitStatus, PullRequest } from '@shared/ipc'
@@ -60,6 +60,7 @@ export function Conversation(props: Props): React.JSX.Element {
   const { session } = open
   const running = runningThread !== undefined
   const mainRef = useRef<HTMLElement>(null)
+  const items = useMemo(() => logItems(open, notices, null), [open.messages, open.toolCalls, open.plans, open.threads, open.requests, notices])
 
   const replyCounts = new Map<string, number>()
   for (const m of open.messages) {
@@ -133,7 +134,7 @@ export function Conversation(props: Props): React.JSX.Element {
         cwd={open.session.cwd}
         className="log"
         scrollKey={`${open.session.id}:main`}
-        items={logItems(open, notices, null)}
+        items={items}
         empty={<h2 className="new-hint">What should {agentName} do in {folderName(session.cwd)}?</h2>}
         renderAgent={renderAgent}
         reveal={props.reveal}

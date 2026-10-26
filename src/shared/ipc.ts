@@ -96,6 +96,7 @@ export type AgentProfileStatus = {
 }
 
 export type GlossEvent =
+  | { type: 'agents'; agents: AgentInfo[] }
   | { type: 'confirmClose'; requestId: string; working: number }
   | { type: 'session'; session: Session }
   /** `deletedOutside`: the agent no longer had it, so Gloss deleted it too (SPEC → Shared sessions). */
