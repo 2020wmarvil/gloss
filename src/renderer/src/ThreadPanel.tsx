@@ -13,6 +13,7 @@ import { PinCrop, pinAnchorsFor } from './CaptureFigure'
 import { ArrowLeft, Locate, PanelRight } from 'lucide-react'
 
 type Props = {
+  agentName: string
   /** Width the user dragged it to; null = the CSS default. */
   width: number | null
   open: OpenSession
@@ -137,6 +138,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         footer={<>
           <Composer
             sessionId={open.session.id}
+            agent={{ id: open.session.agentId, name: props.agentName }}
             key={`${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
             draftKey={`${open.session.id}:${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
             className="thread-composer"
@@ -237,6 +239,7 @@ function LineThreadPanel(
         footer={<>
           <Composer
             sessionId={open.session.id}
+            agent={{ id: open.session.agentId, name: props.agentName }}
             key={`${open.session.id}:${JSON.stringify(panel.anchor)}`}
             draftKey={`${open.session.id}:line:${JSON.stringify(panel.anchor)}`}
             className="thread-composer"

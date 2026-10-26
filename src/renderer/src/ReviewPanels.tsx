@@ -208,6 +208,7 @@ function GeneralMessage(props: { message: Message; open: OpenSession; onOpenThre
 
 /** The general conversation in the side panel: the session's main thread and its composer. */
 export function GeneralPanel(props: {
+  agentName: string
   width: number | null
   open: OpenSession
   notices: Notice[]
@@ -260,6 +261,7 @@ export function GeneralPanel(props: {
         footer={<>
           <Composer
             sessionId={open.session.id}
+            agent={{ id: open.session.agentId, name: props.agentName }}
             draftKey={open.session.id}
             className="thread-composer"
             placeholder="Message about the whole change"

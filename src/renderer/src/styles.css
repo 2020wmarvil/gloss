@@ -2220,6 +2220,16 @@ button.settings-button.on {
   font-size: var(--t-12);
 }
 .editor-status { margin: 6px 0; color: var(--muted); font-size: var(--t-12); }
+.rewind-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--t-12);
+  animation: rewind-note-fade 3s ease-in forwards;
+}
+@keyframes rewind-note-fade {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
 .command-mode .md-editor {
   padding: 2px 12px;
   background: var(--code-bg);

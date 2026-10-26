@@ -1,32 +1,52 @@
-import type { Attachment, Message, Thread, ToolCall } from '../shared/types'
-import { threadTag } from '../shared/wire'
+import type { Attachment } from '../shared/types'
 
+/**
+ * Retained context of a conversation rewound by an older Gloss, which started a fresh
+ * agent session and sent the transcript with the next prompt. Kept so such a rewind
+ * that hasn't been sent yet still is; Gloss no longer makes them.
+ */
 export type RewindSeed = { text: string; images: Extract<Attachment, { kind: 'image' }>[] }
 
-/** A transcript snapshot for an explicitly requested rewind, sent at user level. */
-export function rewindSeed(messages: Message[], tools: ToolCall[], threads: Thread[]): RewindSeed {
-  const images: RewindSeed['images'] = []
-  const entries = [
-    ...messages.map((message) => ({ seq: message.seq, message })),
-    ...tools.map((tool) => ({ seq: tool.messageSeq, tool }))
-  ].sort((a, b) => a.seq - b.seq)
-  const parts = entries.map((entry) => {
-    if ('tool' in entry) return `Tool: ${entry.tool.title} (${entry.tool.status})\n${JSON.stringify(entry.tool.content ?? [])}`
-    const m = entry.message
-    const thread = m.threadId ? threads.find((t) => t.id === m.threadId) : undefined
-    const attached = (m.attachments ?? []).map((a) => {
-      if (a.kind === 'file') return `Attached file: ${a.name}\n${a.text}`
-      images.push(a)
-      return `Retained image ${images.length}: ${a.name}${a.pins ? `\nPins: ${JSON.stringify(a.pins)}` : ''}`
-    })
-    return `${m.role === 'user' ? 'User' : 'Agent'}${thread ? ` ${threadTag(thread.anchor)}` : ''}:\n${m.text}\n${attached.join('\n\n')}`
-  })
-  const seed = {
-    text: `The user rewound this conversation. The following is the retained conversation transcript, supplied as historical context. Project files were not rolled back and reflect their current on-disk state. Retained images are included with this message in the numbered order below.\n\n<retained-conversation>\n${parts.join('\n\n')}\n</retained-conversation>\n\nThe user's new message follows:\n`,
-    images
+type Entry = { type: string; uuid?: string; parentUuid?: string | null; isSidechain?: boolean }
+
+/**
+ * The transcript entry a fork of a Claude session ends on so that it drops `targetUuid`
+ * and everything after it: the nearest user or assistant entry the target follows on its
+ * branch. This keeps a cancelled turn's tool result and interrupt marker, and reaches
+ * past a compaction (the active history starts at the summary). Null when nothing
+ * precedes the target.
+ */
+export function claudeForkBoundary(entries: Entry[], targetUuid: string): string | null {
+  const byUuid = new Map(entries.flatMap((e) => (e.uuid ? [[e.uuid, e] as const] : [])))
+  const target = byUuid.get(targetUuid)
+  if (!target) throw new Error("Couldn't find that message in the agent's history.")
+  const seen = new Set<string>()
+  let cursor = target.parentUuid
+  while (cursor && !seen.has(cursor)) {
+    seen.add(cursor)
+    const entry = byUuid.get(cursor)
+    if (!entry) break
+    if ((entry.type === 'user' || entry.type === 'assistant') && entry.isSidechain !== true) return cursor
+    cursor = entry.parentUuid
   }
-  if (Buffer.byteLength(seed.text) > 1024 * 1024 || Buffer.byteLength(JSON.stringify(seed)) > 25 * 1024 * 1024) {
-    throw new Error('The retained conversation is too large to restore (1 MB of text or 25 MB including images). Choose an earlier rewind point.')
-  }
-  return seed
+  return null
+}
+
+/**
+ * Forks a Claude Code session before the user message `targetUuid`, through the Agent SDK
+ * the Claude adapter uses for `session/fork`. The adapter takes only agent message ids or
+ * active-history entries, which can't name a cancelled turn's last entry or a point
+ * before a compaction. Returns the new session's id, or null when nothing would be kept.
+ */
+export async function forkClaude(acpSessionId: string, cwd: string, targetUuid: string): Promise<string | null> {
+  const { forkSession, importSessionToStore } = await import('@anthropic-ai/claude-agent-sdk')
+  // Every branch, not just the active one: a compaction leaves the earlier history off it.
+  const entries: Entry[] = []
+  await importSessionToStore(acpSessionId, {
+    append: async (_key, batch) => { entries.push(...(batch as Entry[])) },
+    load: async () => null
+  }, { dir: cwd, includeSubagents: false })
+  const boundary = claudeForkBoundary(entries, targetUuid)
+  if (!boundary) return null
+  return (await forkSession(acpSessionId, { dir: cwd, upToMessageId: boundary })).sessionId
 }

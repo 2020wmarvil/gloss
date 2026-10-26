@@ -153,6 +153,7 @@ export function Conversation(props: Props): React.JSX.Element {
           />
           <Composer
             sessionId={open.session.id}
+            agent={{ id: open.session.agentId, name: agentName }}
             draftKey={session.id}
             className="composer"
             placeholder="Message the agent"

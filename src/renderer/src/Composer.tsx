@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { normalizeShortcut, shortcutLabel } from '@shared/shortcut'
-import type { ContextItem } from '@shared/composer'
+import { canRewind, type ContextItem } from '@shared/composer'
 import type { Attachment, QueuedMessage, SlashCommand } from '@shared/types'
 import { errorText } from './errors'
 import { composerMention, mentionPrefix } from './composerMention'
@@ -24,6 +24,8 @@ export type ComposerQueue = {
 
 type Props = {
   sessionId?: string
+  /** The session's agent: rewind is offered only where it forks sessions (SPEC → Rewind). */
+  agent?: { id: string; name: string }
   /** Which composer this is (session, and thread anchor), so its unsent draft survives switching away. */
   draftKey: string
   className: string
@@ -143,8 +145,12 @@ async function toAttachment(file: File, accepts: Props['accepts']): Promise<Atta
   return { kind: 'file', name, text, ...(path ? { path } : {}), ...(file.type ? { mimeType: file.type } : {}) }
 }
 
+/** How long the note that an agent can't rewind stays; it fades over the end (styles.css). */
+const REWIND_NOTE_MS = 3000
+
 export function Composer({
   sessionId,
+  agent,
   draftKey,
   className,
   placeholder,
@@ -167,6 +173,14 @@ export function Composer({
   const [attachments, setAttachments] = useState<Attachment[]>(() => drafts.get(draftKey)?.attachments ?? [])
   const [shell, setShell] = useState<ShellState>(() => shellStates.get(draftKey) ?? { running: false })
   const [rewindOpen, setRewindOpen] = useState(false)
+  /** Counts double Escapes on an agent without rewind; each shows the note again. */
+  const [rewindNote, setRewindNote] = useState(0)
+  const rewindable = Boolean(sessionId) && (!agent || canRewind(agent.id))
+  useEffect(() => {
+    if (!rewindNote) return
+    const timer = setTimeout(() => setRewindNote(0), REWIND_NOTE_MS)
+    return () => clearTimeout(timer)
+  }, [rewindNote])
   const [caret, setCaret] = useState(0)
   const contextMenu = useRef<HTMLUListElement>(null)
   const [contexts, setContexts] = useState<ContextItem[]>([])
@@ -294,7 +308,7 @@ export function Composer({
   const localCommands: SlashCommand[] = [
     { name: 'stash', description: 'Stash or swap the current draft' },
     { name: 'editor', description: 'Edit the prompt in your external editor' },
-    ...(sessionId ? [{ name: 'rewind', description: 'Remove a message and later conversation history' }] : [])
+    ...(rewindable ? [{ name: 'rewind', description: 'Remove a message and later conversation history' }] : [])
   ].filter((c) => !commands.some((agent) => agent.name === c.name))
   const availableCommands = [...commands, ...localCommands]
   const slash = /^\/(\S*)$/.exec(text)
@@ -388,7 +402,8 @@ export function Composer({
         setText('')
         setAttachments([])
         leave()
-      } else setRewindOpen(true)
+      } else if (rewindable) setRewindOpen(true)
+      else setRewindNote((n) => n + 1)
       return true
     }
     lastEscape.current = now
@@ -737,6 +752,7 @@ export function Composer({
         <span>Running shell command. Esc to stop.</span>
       </div>}
       {shell.error && <p className="composer-error" role="alert">{shell.error}</p>}
+      {rewindNote > 0 && agent && <p key={rewindNote} className="rewind-note" role="status">{agent.name} doesn't support rewind.</p>}
       {rewindOpen && sessionId && <RewindDialog sessionId={sessionId} running={running} onRewind={(draft) => {
         // Rewind closes thread panels, so restore into the session's main composer.
         const key = sessionId

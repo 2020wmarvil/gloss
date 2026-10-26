@@ -186,6 +186,7 @@ export function SessionPane(props: Props): React.JSX.Element {
           />
           {isReview && s.general && !panel ? (
             <GeneralPanel
+              agentName={agentName}
               width={threadWidth}
               open={shown}
               notices={sessionNotices}
@@ -204,6 +205,7 @@ export function SessionPane(props: Props): React.JSX.Element {
             />
           ) : panel ? (
             <ThreadPanel
+              agentName={agentName}
               location={panel.threadId !== null ? lineLocations.get(panel.threadId) : undefined}
               onResolve={(threadId, resolved) =>
                 void window.gloss.threads.resolve(id, threadId, resolved).catch((err: unknown) => s.addNotice(id, threadId, errorText(err)))

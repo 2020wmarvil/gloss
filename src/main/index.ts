@@ -702,11 +702,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   )
   ipcMain.handle(IPC.sessionsRewindPoints, (e, id: unknown) => {
     if (!isGlossSender(e.sender)) throw new Error('Only a Gloss window can rewind.')
-    const sessionId = str(id, 'id')
-    const session = store!.getSession(sessionId)
-    if (!session) throw new Error('Session no longer exists.')
-    const messages = store!.listMessages(sessionId)
-    return messages.flatMap((m, index) => m.role === 'user' ? [{ id: m.id, text: m.text.slice(0, 500), threadId: m.threadId, createdAt: m.createdAt, laterMessages: messages.length - index - 1, sessionTitle: session.title, outcome: m.outcome }] : []).reverse()
+    return manager.rewindPoints(str(id, 'id'))
   })
   ipcMain.handle(IPC.sessionsRewind, async (e, id: unknown, messageId: unknown) => {
     if (!isGlossSender(e.sender)) throw new Error('Only a Gloss window can rewind.')
