@@ -11,3 +11,8 @@ CLAUDE.md
 CLAUDE.local.md
 AGENTS.md
 .claude/
+
+# Local research output
+reports/
+research_notes/
+docs/mocks/
