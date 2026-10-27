@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { fileLink } from './fileLink'
+import { fileLink, isMediaFile } from './fileLink'
+
+describe('media files', () => {
+  it.each(['C:/a/shot.PNG', '/tmp/clip.mp4', '/tmp/song.flac', '/tmp/x.jpeg'])('treats %s as media', (path) => {
+    expect(isMediaFile(path)).toBe(true)
+  })
+
+  it.each(['/tmp/icon.svg', '/tmp/a.ts', '/tmp/run.exe', '/tmp/png', '/tmp/a.png.lnk'])('leaves %s to the editor', (path) => {
+    expect(isMediaFile(path)).toBe(false)
+  })
+})
 
 describe('local file links', () => {
   it.each([
