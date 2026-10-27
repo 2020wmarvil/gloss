@@ -3,6 +3,11 @@ export function isHtmlFile(path: string): boolean {
   return /\.html?$/i.test(path)
 }
 
+/** Images, video and audio open in the system's default app instead of the source editor. SVG stays in the editor. */
+export function isMediaFile(path: string): boolean {
+  return /\.(png|jpe?g|gif|webp|bmp|tiff?|ico|avif|heic|heif|mp4|m4v|mov|mkv|webm|avi|wmv|flv|mpe?g|mp3|wav|flac|ogg|oga|opus|m4a|aac|wma|aiff?)$/i.test(path)
+}
+
 /** Parse absolute local Markdown destinations without accepting network paths or other schemes. */
 export function fileLink(href: string): { path: string; line: number } | null {
   let path = href

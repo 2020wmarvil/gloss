@@ -17,7 +17,7 @@ import { SessionManager } from './sessions'
 import { BADGE_LABEL, BADGE_SIZE, badgePixels } from './badge'
 import { patchArg, SettingsFile } from './settings'
 import { editorArgs, launchEditor } from './openFile'
-import { fileLink, isHtmlFile } from '../shared/fileLink'
+import { fileLink, isHtmlFile, isMediaFile } from '../shared/fileLink'
 import { readMarkdownImage } from './markdownImage'
 import { registerComposerIpc } from './composerIpc'
 import { takeForeground } from './foreground'
@@ -629,6 +629,12 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     if (!link || !isAbsolute(link.path)) throw new Error('Expected an absolute local file path.')
     if (!(await stat(link.path)).isFile()) throw new Error('This link does not point to a file.')
     if (isHtmlFile(link.path)) return shell.openExternal(pathToFileURL(link.path).href)
+    if (isMediaFile(link.path)) {
+      // Only media extensions reach openPath, so it never runs a linked program.
+      const error = await shell.openPath(link.path)
+      if (error) throw new Error(error)
+      return
+    }
     const args = editorArgs(settingsFile.state().global.externalEditor, link.path, link.line)
     if (args.length > 0) return launchEditor(args, link.path)
     // Other linked files stay in the editor or file manager.

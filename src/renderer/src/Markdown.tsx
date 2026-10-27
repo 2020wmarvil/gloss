@@ -4,7 +4,7 @@
 // Code blocks are highlighted and have a copy button.
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
-import { fileLink, isHtmlFile } from '../../shared/fileLink'
+import { fileLink, isHtmlFile, isMediaFile } from '../../shared/fileLink'
 import { imageLink } from '../../shared/imageLink'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
@@ -56,7 +56,10 @@ const SAFE_LINK = /^(https?:|mailto:)/i
 
 function FileLink({ href, children }: { href: string; children: React.ReactNode }): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
-  const action = isHtmlFile(fileLink(href)?.path ?? '') ? 'Open in default browser' : 'Open in external editor, or show in folder'
+  const path = fileLink(href)?.path ?? ''
+  const action = isHtmlFile(path) ? 'Open in default browser'
+    : isMediaFile(path) ? 'Open in default app'
+    : 'Open in external editor, or show in folder'
   return (
     <>
       <a href={href} title={`${action}: ${href}`} onClick={(event) => {
