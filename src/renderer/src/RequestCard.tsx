@@ -263,7 +263,6 @@ function QuestionCard({ request, pending, error, onAnswer }: CardProps<Question>
             other={other}
             values={values}
             disabled={pending}
-            numbered={f === active}
             onFocus={() => f.kind === 'choice' && setActiveKey(f.key)}
             onChange={set}
           />
@@ -277,7 +276,6 @@ function QuestionCard({ request, pending, error, onAnswer }: CardProps<Question>
           title={problem ?? 'Press Enter.'}
         >
           Submit
-          <Key>Enter</Key>
         </button>
         <button
           type="button"
@@ -287,7 +285,6 @@ function QuestionCard({ request, pending, error, onAnswer }: CardProps<Question>
           onClick={() => onAnswer({ kind: 'question', action: 'decline' })}
         >
           Decline
-          <Key>Esc</Key>
         </button>
 
       </div>
@@ -301,8 +298,6 @@ function FieldInput(props: {
   other?: QuestionField
   values: Values
   disabled: boolean
-  /** Number keys pick in this choice: show them. */
-  numbered: boolean
   onFocus(): void
   onChange(key: string, value: AnswerValue | undefined): void
 }): React.JSX.Element {
@@ -323,7 +318,7 @@ function FieldInput(props: {
         <fieldset className="request-field" disabled={disabled} onFocus={props.onFocus}>
           {head}
           <div className="request-options" role={field.multiple ? 'group' : 'radiogroup'}>
-            {field.options.map((o, i) => {
+            {field.options.map((o) => {
               const on = picked.includes(o.value)
               return (
                 <label key={o.value} className={on ? 'request-option on' : 'request-option'}>
@@ -341,7 +336,6 @@ function FieldInput(props: {
                     <span>{o.title}</span>
                     {o.description && <span className="muted">{o.description}</span>}
                   </span>
-                  {props.numbered && i < 9 && <Key>{String(i + 1)}</Key>}
                 </label>
               )
             })}

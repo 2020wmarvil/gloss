@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { act, useContext } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { Log, type LogItem } from './Log'
+import { LogToBottom } from './logToBottom'
 
 const idle = vi.hoisted(() => [] as { run(): void; cancelled: boolean }[])
 vi.mock('./idle', () => ({ afterPaintIdle: (run: () => void) => {
@@ -81,6 +82,8 @@ it('preserves the visible message when older entries are prepended above a scrol
     Object.defineProperties(scroller, { clientHeight: { get: () => 300 }, scrollHeight: { get: () => 800 } })
     scroller.getBoundingClientRect = () => ({ top: 100 } as DOMRect)
     anchor.getBoundingClientRect = () => ({ top: addedOlder ? 420 : 120, bottom: addedOlder ? 440 : 140 } as DOMRect)
+    scroller.scrollTop = 500
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })))
     scroller.scrollTop = 40
     act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })))
     act(() => idle.find((t) => !t.cancelled)!.run())
@@ -100,5 +103,87 @@ it('does not measure scroll height on unrelated rerenders', () => {
     Object.defineProperty(el.querySelector('.log-scroll'), 'scrollHeight', { get: read })
     render('metadata update')
     expect(read).not.toHaveBeenCalled()
+  } finally { act(() => root.unmount()) }
+})
+
+it('shows Jump to latest while scrolled up, marks output that arrives meanwhile, and scrolls back down', () => {
+  const el = document.createElement('div')
+  document.body.replaceChildren(el)
+  const root = createRoot(el)
+  const render = (entries: LogItem[]) => act(() => root.render(<Log scrollKey="jump:main" items={entries} className="log" empty={null} renderAgent={(m) => m.text} footer="composer" />))
+  const recent = items.slice(-4)
+  try {
+    render(recent)
+    const scroller = el.querySelector<HTMLElement>('.log-scroll')!
+    Object.defineProperties(scroller, { clientHeight: { get: () => 300 }, scrollHeight: { get: () => 800 } })
+    const scrollTo = vi.fn()
+    scroller.scrollTo = scrollTo
+    expect(el.querySelector('.jump-latest')).toBeNull()
+    scroller.scrollTop = 500
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })))
+    scroller.scrollTop = 100
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })))
+    const jump = el.querySelector<HTMLButtonElement>('.jump-latest')!
+    expect(jump.textContent).toBe('Jump to latest')
+    expect(el.querySelector('.log-fade')).not.toBeNull()
+    render([...recent])
+    expect(jump.textContent).toBe('Jump to latest')
+    const next: LogItem = { kind: 'message', seq: 24, message: { ...(items[23] as Extract<LogItem, { kind: 'message' }>).message, id: 'new', seq: 24, text: 'live' } }
+    render([...recent, next])
+    expect(jump.textContent).toBe('New output')
+    expect(jump.className).toContain('fresh')
+    act(() => jump.click())
+    expect(scrollTo).toHaveBeenCalledWith({ top: 800, behavior: 'smooth' })
+    scroller.scrollTop = 500
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })))
+    expect(el.querySelector('.jump-latest')).toBeNull()
+  } finally { act(() => root.unmount()) }
+})
+
+it('scrolls to the bottom and sticks there when the composer sends', () => {
+  const el = document.createElement('div')
+  document.body.replaceChildren(el)
+  const root = createRoot(el)
+  const Send = (): React.JSX.Element => <button className="send" onClick={useContext(LogToBottom)} />
+  try {
+    act(() => root.render(<Log scrollKey="send:main" items={items.slice(-4)} className="log" empty={null} renderAgent={(m) => m.text} footer={<Send />} />))
+    const scroller = el.querySelector<HTMLElement>('.log-scroll')!
+    let height = 800
+    Object.defineProperties(scroller, { clientHeight: { get: () => 300 }, scrollHeight: { get: () => height } })
+    scroller.scrollTop = 100
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })))
+    act(() => el.querySelector<HTMLButtonElement>('.send')!.click())
+    expect(scroller.scrollTop).toBe(800)
+    height = 900
+    act(() => root.render(<Log scrollKey="send:main" items={items.slice(-5)} className="log" empty={null} renderAgent={(m) => m.text} footer={<Send />} />))
+    act(() => scroller.dispatchEvent(new Event('load')))
+    expect(scroller.scrollTop).toBe(900)
+  } finally { act(() => root.unmount()) }
+})
+
+it('keeps following when output lands before the event of its own scroll, and lets go only on scrolling up', () => {
+  const el = document.createElement('div')
+  document.body.replaceChildren(el)
+  const root = createRoot(el)
+  try {
+    act(() => root.render(<Log scrollKey="race:main" items={items.slice(-4)} className="log" empty={null} renderAgent={(m) => m.text} footer="composer" />))
+    const scroller = el.querySelector<HTMLElement>('.log-scroll')!
+    let height = 800
+    Object.defineProperties(scroller, { clientHeight: { get: () => 300 }, scrollHeight: { get: () => height } })
+    const scroll = (top: number): void => {
+      scroller.scrollTop = top
+      act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })))
+    }
+    scroll(500)
+    // A big message grows the log before the event for Gloss's own scroll arrives.
+    height = 1200
+    scroll(500)
+    expect(el.querySelector('.jump-latest')).toBeNull()
+    scroll(450)
+    expect(el.querySelector('.jump-latest')).not.toBeNull()
+    scroll(600)
+    expect(el.querySelector('.jump-latest')).not.toBeNull()
+    scroll(900)
+    expect(el.querySelector('.jump-latest')).toBeNull()
   } finally { act(() => root.unmount()) }
 })

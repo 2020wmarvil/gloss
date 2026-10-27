@@ -8,9 +8,9 @@ import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor'
 import { ArrowUp, Clock, CornerDownRight, Ellipsis, Paperclip, Pencil, Scan, Square, Trash } from 'lucide-react'
 import { ComposerAttachments } from './ComposerAttachments'
 import { RewindDialog } from './RewindDialog'
+import { LogToBottom } from './logToBottom'
 import { Popover } from './Popover'
 import { modKey } from './shortcuts'
-import { AnnotateDialog } from './AnnotateDialog'
 import { loadImage, type Annotation } from './capture/annotate'
 
 /** The session's queue as one composer sees it: the messages queued from its thread. */
@@ -198,10 +198,9 @@ export function Composer({
   /** The history entry shown (0 = newest); null when not browsing. */
   const browsing = useRef<number | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  /** The capture being annotated, and which attachment it replaces (Edit) or null for a new one. */
-  const [annotating, setAnnotating] = useState<{ annotation: Annotation; index: number | null; attached?: boolean } | null>(null)
   const startCapture = useRef<() => void>(() => {})
   const captureKeys = normalizeShortcut(useContext(CaptureShortcut))
+  const toBottom = useContext(LogToBottom)
 
   useEffect(() => {
     const update = (event: Event): void => {
@@ -269,7 +268,6 @@ export function Composer({
 
   /** Captures the screen and opens the annotation canvas on it (SPEC → Visual feedback). */
   async function capture(): Promise<void> {
-    if (annotating) return
     if (!accepts.image) {
       setError("The agent doesn't accept images.")
       return
@@ -277,20 +275,36 @@ export function Composer({
     setError(null)
     try {
       const c = await window.gloss.capture.start()
-      if (c) setAnnotating({ annotation: { capture: c, shapes: [], pins: [] }, index: null })
+      if (c) await annotate({ capture: c, shapes: [], pins: [] }, null, true)
     } catch (err) {
       setError(errorText(err))
     }
   }
   startCapture.current = () => void capture()
 
+  /**
+   * Opens the annotation canvas in its own window, so this composer stays usable. What is added
+   * goes into this composer's draft, in place of `replaces` (Edit) if it is still there, even
+   * when the composer has closed meanwhile.
+   */
+  async function annotate(annotation: Annotation, replaces: Attachment | null, retake: boolean): Promise<void> {
+    const key = draftKey
+    const result = await window.gloss.annotate.open({ annotation, retake })
+    if (!result) return
+    annotations.set(result.image, result.annotation)
+    const draft = drafts.get(key) ?? { text: '', attachments: [] }
+    const at = replaces ? draft.attachments.indexOf(replaces) : -1
+    const list = at < 0 ? [...draft.attachments, result.image] : draft.attachments.map((a, i) => (i === at ? result.image : a))
+    drafts.set(key, { ...draft, attachments: list })
+    window.dispatchEvent(new CustomEvent(DRAFT_CHANGED, { detail: { key, focus: true } }))
+  }
+
   /** Opens the annotation canvas on an attached image; adding replaces it with the annotated one. */
-  async function annotateImage(image: Extract<Attachment, { kind: 'image' }>, index: number): Promise<void> {
-    if (annotating) return
+  async function annotateImage(image: Extract<Attachment, { kind: 'image' }>): Promise<void> {
     try {
       const capture = { data: image.data, mimeType: image.mimeType, width: 0, height: 0, source: image.name }
       const img = await loadImage(capture)
-      setAnnotating({ annotation: { capture: { ...capture, width: img.naturalWidth, height: img.naturalHeight }, shapes: [], pins: [] }, index, attached: true })
+      await annotate({ capture: { ...capture, width: img.naturalWidth, height: img.naturalHeight }, shapes: [], pins: [] }, image, false)
     } catch (err) {
       setError(errorText(err))
     }
@@ -492,6 +506,8 @@ export function Composer({
     if (contextBusy || editorBusy) return
     const trimmed = text.trim()
     if (!trimmed && attachments.length === 0) return
+    // What was sent shows at the bottom of this log; Send to main goes to the other one.
+    if (how !== 'main') toBottom()
     if (trimmed.startsWith('!')) { void runShell(); return }
     if (attachments.length === 0 && /^\/[^\s]+$/.test(trimmed) && runLocalCommand(trimmed.slice(1))) return
     if (how !== 'main' && steer) steer(trimmed, attachments)
@@ -667,10 +683,10 @@ export function Composer({
         {attachments.length > 0 && <ComposerAttachments
           attachments={attachments}
           canEditImage={(image) => annotations.has(image) || !image.pins}
-          onEditImage={(image, index) => {
+          onEditImage={(image) => {
             const annotation = annotations.get(image)
-            if (annotation) setAnnotating({ annotation, index })
-            else void annotateImage(image, index)
+            if (annotation) annotate(annotation, image, true).catch((err: unknown) => setError(errorText(err)))
+            else void annotateImage(image)
           }}
           onRemove={(index) => setAttachments((list) => list.filter((_, i) => i !== index))}
         />}
@@ -765,23 +781,6 @@ export function Composer({
       {editor.error && <p className="composer-error" role="alert">{editor.error}</p>}
       {error && <p className="composer-error">{error}</p>}
       {footer}
-      {annotating && (
-        <AnnotateDialog
-          initial={annotating.annotation}
-          onRetake={annotating.attached ? undefined : () => window.gloss.capture.start()}
-          onCancel={() => {
-            setAnnotating(null)
-            ref.current?.focus()
-          }}
-          onAdd={(image, annotation) => {
-            annotations.set(image, annotation)
-            const index = annotating.index
-            setAttachments((list) => (index === null ? [...list, image] : list.map((a, i) => (i === index ? image : a))))
-            setAnnotating(null)
-            ref.current?.focus()
-          }}
-        />
-      )}
     </div>
   )
 }

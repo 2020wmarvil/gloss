@@ -1,5 +1,7 @@
 // Screen capture for visual feedback (SPEC → Visual feedback): the contract between the main
-// process, the region overlay and the main window. Type-only, plus channel names.
+// process, the region overlay, the annotation window and the window that asked. Type-only, plus
+// channel names.
+import type { Attachment, Pin } from './types'
 
 /** A rectangle in a display's pixels (physical, not DIPs), from its top left. */
 export type CaptureRect = { x: number; y: number; width: number; height: number }
@@ -32,6 +34,20 @@ export type Capture = {
   /** What was captured, for the canvas's header: "Region", "Display" or "Window: <title>". */
   source: string
 }
+
+/** A drawn mark, in the capture's pixels. */
+export type Shape =
+  | { type: 'pen' | 'highlighter'; color: string; points: [number, number][] }
+  | { type: 'box' | 'arrow'; color: string; x1: number; y1: number; x2: number; y2: number }
+
+/** A capture being annotated, kept so the composer can reopen it (Edit) until it is sent. */
+export type Annotation = { capture: Capture; shapes: Shape[]; pins: Pin[] }
+
+/** What an annotation window opens with: `retake` offers Retake (a capture, not an attached image). */
+export type AnnotateRequest = { annotation: Annotation; retake: boolean }
+
+/** What the annotation window hands back: the flattened image and its annotation; null if closed. */
+export type AnnotateResult = { image: Extract<Attachment, { kind: 'image' }>; annotation: Annotation } | null
 
 /** The overlay's preload API. */
 export type CaptureOverlayApi = {

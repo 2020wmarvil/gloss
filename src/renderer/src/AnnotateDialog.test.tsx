@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnnotateDialog } from './AnnotateDialog'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -19,6 +19,11 @@ beforeEach(() => {
     onAdd={() => {}} onCancel={() => {}}
   />))
 })
+
+/** The pins column starts closed; most tests type in its notes. */
+function showPins(): void {
+  act(() => document.querySelector<HTMLButtonElement>('button[title="Show pins"]')!.click())
+}
 afterEach(() => {
   act(() => root.unmount())
   vi.restoreAllMocks()
@@ -30,6 +35,7 @@ function button(name: string): HTMLButtonElement {
 }
 
 function placePin(): HTMLTextAreaElement {
+  if (!document.querySelector('.annotate-pins')) showPins()
   act(() => button('Pin').click())
   const canvas = document.querySelector('canvas')!
   canvas.setPointerCapture = vi.fn()
@@ -42,6 +48,12 @@ function undo(target: HTMLElement, init: KeyboardEventInit = {}): KeyboardEvent 
   act(() => target.dispatchEvent(event))
   return event
 }
+
+it('opens with the pins column closed, even after it was shown', () => {
+  expect(document.querySelector('.annotate-pins')).toBeNull()
+  showPins()
+  expect(document.querySelector('.annotate-pins')).not.toBeNull()
+})
 
 it('starts with pencil selected and lists pin after the drawing tools', () => {
   const names = [...document.querySelectorAll('.annotate-tools button')].map((b) => b.getAttribute('aria-label'))
@@ -76,6 +88,7 @@ it('preserves native text undo and redo for note editing', () => {
   expect(document.querySelector('textarea')).toBeNull()
 })
 it('keeps keyboard focus through repeated undo of three pins and a drawing', async () => {
+  showPins()
   const canvas = document.querySelector('canvas')!
   canvas.setPointerCapture = vi.fn()
   const pointer = (type: string, x: number): void => {
@@ -102,4 +115,30 @@ it('keeps keyboard focus through repeated undo of three pins and a drawing', asy
   expect(button('Undo').disabled).toBe(true)
   for (let i = 0; i < 4; i++) undo(document.activeElement as HTMLElement, { shiftKey: true })
   expect(document.querySelectorAll('textarea')).toHaveLength(3)
+})
+
+describe('maximizing or restoring the window', () => {
+  /** Renders with the window `maximized` and the stage at `size` (jsdom has no layout). */
+  function show(maximized: boolean, size: [number, number]): HTMLCanvasElement {
+    const stage = document.querySelector<HTMLElement>('.annotate-stage')!
+    Object.defineProperties(stage, { clientWidth: { configurable: true, get: () => size[0] }, clientHeight: { configurable: true, get: () => size[1] } })
+    act(() => root.render(<AnnotateDialog
+      initial={{ capture: { data: '', width: 100, height: 100, source: 'Test' }, shapes: [], pins: [] }}
+      onAdd={() => {}} onCancel={() => {}} maximized={maximized}
+    />))
+    return document.querySelector('canvas')!
+  }
+
+  it('fits a fitted capture to the new size, centered', () => {
+    show(false, [0, 0])
+    const canvas = show(true, [500, 400])
+    expect([canvas.style.width, canvas.style.left, canvas.style.top]).toEqual(['100px', '200px', '150px'])
+  })
+
+  it('centers a zoomed capture at its zoom', () => {
+    show(false, [0, 0])
+    act(() => button('Zoom in').click())
+    const canvas = show(true, [500, 400])
+    expect([canvas.style.width, canvas.style.left, canvas.style.top]).toEqual(['6.25px', '246.875px', '196.875px'])
+  })
 })

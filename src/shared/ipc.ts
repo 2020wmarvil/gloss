@@ -138,6 +138,8 @@ export type GlossEvent =
   | { type: 'notice'; sessionId: string; threadId: string | null; text: string }
   /** The window went full screen (F11): show how to leave it. */
   | { type: 'fullScreen' }
+  /** Annotation window: it was maximized or restored, for its maximize button. */
+  | { type: 'annotateMaximized'; maximized: boolean }
   | { type: 'authRequired'; agentId: string; agentName: string; methods: AuthMethodInfo[] }
   | { type: 'authResolved'; agentId: string }
   | { type: 'settings'; state: SettingsState }
@@ -330,6 +332,18 @@ export type GlossApi = {
     /** Lets the settings screen record a new shortcut without the current one taking the keys. */
     pauseShortcut(paused: boolean): Promise<void>
   }
+  /** The annotation canvas, in its own window (SPEC → Visual feedback → Annotation canvas). */
+  annotate: {
+    /** Opens an annotation window; resolves with what was added, or null once it closes without. */
+    open(request: import('./capture').AnnotateRequest): Promise<import('./capture').AnnotateResult>
+    /** Annotation window: what it opens with. */
+    initial(): Promise<import('./capture').AnnotateRequest | null>
+    /** Annotation window: hands the result to the window that asked, and closes. */
+    finish(result: import('./capture').AnnotateResult): Promise<void>
+    /** Annotation window: its own minimize and maximize buttons (it has no title bar). */
+    minimize(): void
+    toggleMaximize(): void
+  }
   /** Session windows (SPEC → Session windows). */
   windows: {
     /** Main window: pops the session out into its own window, or brings its window forward. */
@@ -418,6 +432,11 @@ export const IPC = {
   captureStart: 'gloss:capture:start',
   captureShortcutStatus: 'gloss:capture:shortcutStatus',
   capturePauseShortcut: 'gloss:capture:pauseShortcut',
+  annotateOpen: 'gloss:annotate:open',
+  annotateInitial: 'gloss:annotate:initial',
+  annotateFinish: 'gloss:annotate:finish',
+  annotateMinimize: 'gloss:annotate:minimize',
+  annotateToggleMaximize: 'gloss:annotate:toggleMaximize',
   windowsPopOut: 'gloss:windows:popOut',
   windowsPopIn: 'gloss:windows:popIn',
   windowsFocus: 'gloss:windows:focus',

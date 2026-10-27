@@ -1,8 +1,8 @@
 // The annotation canvas (SPEC → Visual feedback, docs/mocks/visual-feedback.html#annotate):
 // numbered pins with a note each, and pen, highlighter, box and arrow marks over a capture.
-// The right column shows exactly the text that goes with the image.
+// The right column shows exactly the text that goes with the image. It fills its own window
+// (AnnotateWindow), below the title bar.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { Crop, Highlighter, MapPin, MoveUpRight, PanelRightClose, Pencil, Redo2, Square, Trash2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { ResizeHandle, useStoredWidth } from './resize'
 import type { Capture } from '@shared/capture'
@@ -28,6 +28,10 @@ type Props = {
   onCancel(): void
   /** Opens the region overlay again; null if the user cancelled there. Absent for an attached image. */
   onRetake?(): Promise<Capture | null>
+  /** The window's own controls, before Cancel: its window has no title bar. */
+  windowControls?: React.ReactNode
+  /** Whether the window is maximized: maximizing or restoring it recenters the capture. */
+  maximized?: boolean
 }
 
 const TOOLS: { tool: Tool; key: string; name: string; icon: React.JSX.Element }[] = [
@@ -48,12 +52,11 @@ const ZOOM_STEP = 1.25
 const STAGE_PAD = 20
 /** The pins panel's width when dragged; its default is the stylesheet's. */
 const PINS_LIMITS = { min: 220, max: 560 }
-const PINS_SHOWN_KEY = 'gloss:annotatePinsShown'
 
 /** The color picked last, kept for the next capture while Gloss runs. */
 let lastColor = MARK_COLORS[0]
 
-export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): React.JSX.Element {
+export function AnnotateDialog({ initial, onAdd, onCancel, onRetake, windowControls, maximized }: Props): React.JSX.Element {
   const [capture, setCapture] = useState(initial.capture)
   const [marks, setMarks] = useState<Marks>({ shapes: initial.shapes, pins: initial.pins })
   const [past, setPast] = useState<Marks[]>([])
@@ -73,13 +76,9 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
   const pan = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  /** The pins panel: collapsible and resizable, remembered like the app's other panes. */
+  /** The pins panel: closed when the canvas opens, so it covers none of the capture; its width is remembered. */
   const [pinsWidth, setPinsWidth] = useStoredWidth('gloss:annotatePinsWidth')
-  const [pinsShown, setPinsShownState] = useState(() => localStorage.getItem(PINS_SHOWN_KEY) !== 'false')
-  const setPinsShown = (on: boolean): void => {
-    setPinsShownState(on)
-    localStorage.setItem(PINS_SHOWN_KEY, String(on))
-  }
+  const [pinsShown, setPinsShown] = useState(false)
   const canvas = useRef<HTMLCanvasElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const root = useRef<HTMLDivElement>(null)
@@ -138,6 +137,36 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
 
   /** Between fit and actual size: the zoom button, and 0 and 1. */
   const fitted = (): boolean => Math.abs(scale - fitScale()) < 0.005
+
+  /** Whether the capture was fitted to the stage when the view last changed (not since resized). */
+  const wasFitted = useRef(true)
+  useEffect(() => {
+    wasFitted.current = fitted()
+  }, [view])
+
+  // Maximizing or restoring the window recenters the capture as the stage takes its new size:
+  // fitted again if it was fitted, else centered at the zoom the user chose.
+  const shownMaximized = useRef(maximized)
+  useEffect(() => {
+    if (shownMaximized.current === maximized) return
+    shownMaximized.current = maximized
+    const el = stage.current
+    if (!el) return
+    const refit = wasFitted.current
+    const recenter = (): void => {
+      if (refit) fitView()
+      else setView((v) => ({ ...v, x: (el.clientWidth - width * v.scale) / 2, y: (el.clientHeight - height * v.scale) / 2 }))
+    }
+    recenter()
+    // The window may not have its new size yet, or get it in more than one step.
+    const observer = new ResizeObserver(recenter)
+    observer.observe(el)
+    const timer = setTimeout(() => observer.disconnect(), 1000)
+    return () => {
+      observer.disconnect()
+      clearTimeout(timer)
+    }
+  }, [maximized])
 
   // The wheel zooms at the cursor. Not passive, so the page doesn't scroll too.
   useEffect(() => {
@@ -323,7 +352,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
   }
 
   function onKeyDown(e: React.KeyboardEvent): void {
-    // The dialog is modal: the app's shortcuts wait until it closes.
+    // Its keys are its own.
     e.stopPropagation()
     const mod = e.ctrlKey || e.metaKey
     const typing = e.target instanceof HTMLTextAreaElement
@@ -355,36 +384,36 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
 
 
 
-  return createPortal(
-    <div className="dialog-backdrop">
-      <div
-        ref={root}
-        className="annotate"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="annotate-title"
-        tabIndex={-1}
-        onKeyDown={onKeyDown}
-      >
-        <header className="annotate-head">
-          <h2 id="annotate-title">Annotate</h2>
-          <span className="muted">
-            {capture.source} · {width} × {height}
-          </span>
-          <span className="grow" />
-          <div className="annotate-tools" role="toolbar" aria-label="Tools">
-            {TOOLS.map((t) => (
-              <button
-                key={t.tool}
-                className={tool === t.tool ? 'on' : undefined}
-                aria-pressed={tool === t.tool}
-                title={`${t.name} (${t.key.toUpperCase()})`}
-                aria-label={t.name}
-                onClick={() => setTool(t.tool)}
-              >
-                {t.icon}
-              </button>
-            ))}
+  return (
+    <div
+      ref={root}
+      className="annotate"
+      role="dialog"
+      aria-labelledby="annotate-title"
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+    >
+      <header className="annotate-head">
+        <h2 id="annotate-title">Annotate</h2>
+        <span className="muted">
+          {capture.source} · {width} × {height}
+        </span>
+        <span className="grow" />
+        <div className="annotate-tools" role="toolbar" aria-label="Tools">
+          {TOOLS.map((t) => (
+            <button
+              key={t.tool}
+              className={tool === t.tool ? 'on' : undefined}
+              aria-pressed={tool === t.tool}
+              title={`${t.name} (${t.key.toUpperCase()})`}
+              aria-label={t.name}
+              onClick={() => setTool(t.tool)}
+            >
+              {t.icon}
+            </button>
+          ))}
+          {/* Narrow windows hide the zoom first (wheel, 0 and 1), then undo and redo (Ctrl+Z, Ctrl+Y), then the colors. */}
+          <span className="annotate-group-colors">
             <span className="annotate-sep" />
             {MARK_COLORS.map((c) => (
               <button
@@ -398,6 +427,8 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
                 <i style={{ background: c }} />
               </button>
             ))}
+          </span>
+          <span className="annotate-group-history">
             <span className="annotate-sep" />
             <button title="Undo (Ctrl+Z)" aria-label="Undo" disabled={past.length === 0} onClick={undo}>
               <Undo2 />
@@ -405,6 +436,8 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
             <button title="Redo (Ctrl+Y)" aria-label="Redo" disabled={future.length === 0} onClick={redo}>
               <Redo2 />
             </button>
+          </span>
+          <span className="annotate-group-zoom">
             <span className="annotate-sep" />
             <button title="Zoom out" aria-label="Zoom out" disabled={scale <= MIN_ZOOM} onClick={() => zoomTo(scale / ZOOM_STEP)}>
               <ZoomOut />
@@ -420,106 +453,104 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
             <button title="Zoom in" aria-label="Zoom in" disabled={scale >= MAX_ZOOM} onClick={() => zoomTo(scale * ZOOM_STEP)}>
               <ZoomIn />
             </button>
-          </div>
-          <span className="grow" />
-          {onRetake && (
-            <button className="ghost sm" onClick={() => void retake()}>
-              <Crop size={14} />
-              Retake
-            </button>
-          )}
-          <button className="icon-button" title="Cancel (Esc)" aria-label="Cancel" onClick={onCancel}>
-            <X />
-          </button>
-        </header>
-        <div className="annotate-body">
-        <div
-          ref={stage}
-          className={`annotate-stage${panning ? ' panning' : ''}`}
-          onPointerDownCapture={onStagePointerDown}
-          onPointerMoveCapture={onStagePointerMove}
-          onPointerUpCapture={onStagePointerUp}
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          <canvas
-            ref={canvas}
-            className={[tool === 'pin' && 'pin-tool', scale >= 2 && 'pixels'].filter(Boolean).join(' ') || undefined}
-            width={width}
-            height={height}
-            style={{ left: view.x, top: view.y, width: width * scale, height: height * scale }}
-            aria-label="The capture: click to place a pin, or drag to draw"
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-          />
+          </span>
         </div>
-        {pinsShown && (
-          <ResizeHandle
-            label="Resize the pins panel"
-            pane="after"
-            limits={PINS_LIMITS}
-            value={pinsWidth}
-            onResize={setPinsWidth}
-            onReset={() => setPinsWidth(null)}
-          />
-        )}
-        {!pinsShown && (
-          <div className="side-rail">
-            <button className="rail-button" title="Show pins" aria-label={`Show ${marks.pins.length} pins`} onClick={() => setPinsShown(true)}>
-              <MapPin />
-              {marks.pins.length > 0 && <span className="count rail-count">{marks.pins.length}</span>}
-            </button>
-          </div>
-        )}
-        {pinsShown && (
-        <aside className="annotate-pins" style={pinsWidth === null ? undefined : { flexBasis: pinsWidth }}>
-          <div className="annotate-pins-head">
-            Pins <span className="count">{marks.pins.length}</span>
-            <span className="grow" />
-            <button className="icon-button" title="Hide pins" aria-label="Hide pins" onClick={() => setPinsShown(false)}>
-              <PanelRightClose />
-            </button>
-          </div>
-          <div ref={notes} className="annotate-pin-list">
-            {marks.pins.map((p, i) => (
-                <div
-                  key={i}
-                  className={`annotate-pin${lit === i ? ' lit' : ''}`}
-                  onMouseEnter={() => setLit(i)}
-                  onMouseLeave={() => setLit(-1)}
-                >
-                  <span className="pin-number">{i + 1}</span>
-                  <textarea
-                    rows={1}
-                    placeholder="What about it?"
-                    aria-label={`Note for pin ${i + 1}`}
-                    value={p.note}
-                    onChange={(e) => setNote(i, e.target.value)}
-                  />
-                  <button className="icon-button" title="Delete pin" aria-label={`Delete pin ${i + 1}`} onClick={() => removePin(i)}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-          </div>
-        </aside>
-        )}
-        </div>
-        <footer className="annotate-foot">
-          {error && <span className="dialog-error">{error}</span>}
-          <span className="grow" />
-          <button className="ghost" onClick={onCancel}>
-            Cancel
+        <span className="grow" />
+        {onRetake && (
+          <button className="icon-button" title="Retake" aria-label="Retake" onClick={() => void retake()}>
+            <Crop />
           </button>
-          <button className="primary" disabled={busy || !image} onClick={() => void add()}>
-            Add to message <kbd>Ctrl</kbd>
-            <kbd>Enter</kbd>
-          </button>
-        </footer>
+        )}
+        {windowControls}
+        <button className="icon-button" title="Cancel (Esc)" aria-label="Cancel" onClick={onCancel}>
+          <X />
+        </button>
+      </header>
+      <div className="annotate-body">
+      <div
+        ref={stage}
+        className={`annotate-stage${panning ? ' panning' : ''}`}
+        onPointerDownCapture={onStagePointerDown}
+        onPointerMoveCapture={onStagePointerMove}
+        onPointerUpCapture={onStagePointerUp}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <canvas
+          ref={canvas}
+          className={[tool === 'pin' && 'pin-tool', scale >= 2 && 'pixels'].filter(Boolean).join(' ') || undefined}
+          width={width}
+          height={height}
+          style={{ left: view.x, top: view.y, width: width * scale, height: height * scale }}
+          aria-label="The capture: click to place a pin, or drag to draw"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+        />
       </div>
-    </div>,
-    document.body
+      {pinsShown && (
+        <ResizeHandle
+          label="Resize the pins panel"
+          pane="after"
+          limits={PINS_LIMITS}
+          value={pinsWidth}
+          onResize={setPinsWidth}
+          onReset={() => setPinsWidth(null)}
+        />
+      )}
+      {!pinsShown && (
+        <div className="side-rail">
+          <button className="rail-button" title="Show pins" aria-label={`Show ${marks.pins.length} pins`} onClick={() => setPinsShown(true)}>
+            <MapPin />
+            {marks.pins.length > 0 && <span className="count rail-count">{marks.pins.length}</span>}
+          </button>
+        </div>
+      )}
+      {pinsShown && (
+      <aside className="annotate-pins" style={pinsWidth === null ? undefined : { flexBasis: pinsWidth }}>
+        <div className="annotate-pins-head">
+          Pins <span className="count">{marks.pins.length}</span>
+          <span className="grow" />
+          <button className="icon-button" title="Hide pins" aria-label="Hide pins" onClick={() => setPinsShown(false)}>
+            <PanelRightClose />
+          </button>
+        </div>
+        <div ref={notes} className="annotate-pin-list">
+          {marks.pins.map((p, i) => (
+              <div
+                key={i}
+                className={`annotate-pin${lit === i ? ' lit' : ''}`}
+                onMouseEnter={() => setLit(i)}
+                onMouseLeave={() => setLit(-1)}
+              >
+                <span className="pin-number">{i + 1}</span>
+                <textarea
+                  rows={1}
+                  placeholder="What about it?"
+                  aria-label={`Note for pin ${i + 1}`}
+                  value={p.note}
+                  onChange={(e) => setNote(i, e.target.value)}
+                />
+                <button className="icon-button" title="Delete pin" aria-label={`Delete pin ${i + 1}`} onClick={() => removePin(i)}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+        </div>
+      </aside>
+      )}
+      </div>
+      <footer className="annotate-foot">
+        {error && <span className="dialog-error">{error}</span>}
+        <span className="grow" />
+        <button className="ghost" onClick={onCancel}>
+          Cancel
+        </button>
+        <button className="primary" title="Ctrl+Enter" disabled={busy || !image} onClick={() => void add()}>
+          Add to message
+        </button>
+      </footer>
+    </div>
   )
 }
 
