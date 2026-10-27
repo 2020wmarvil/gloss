@@ -4,7 +4,7 @@ Build in order, from M18 through M25 (Marketing). Stop at the end of each milest
 
 M1 through M17 and failed-turn actions are done. Next is remote and mobile access, followed by shared skills and plugins, worktrees, sub-agent threads, performance improvements and per-turn file checkpoints before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
-## M18: Remote and mobile (next)
+## M18: Remote and mobile
 Drive Gloss from a phone while the desktop app runs the agents. The desktop stays the only place agents, ACP and the database live; the phone is another client of the main process. Adds a section to `SPEC.md` (update it in this milestone).
 
 - **Bridge in the main process:** off by default, turned on in Settings. Serves the same API the preload exposes (requests and the event stream) over an authenticated WebSocket, plus a mobile web client. No new agent-facing logic: the phone's calls go through `SessionManager` like the renderer's, so a turn started on the phone shows live on the desktop and the reverse.
@@ -17,20 +17,28 @@ Drive Gloss from a phone while the desktop app runs the agents. The desktop stay
 
 **Done when:** you can pair a phone by scanning a QR code, see the same sessions as the desktop, start and steer a turn in a thread from the phone while watching it stream on both, and a revoked phone can no longer connect.
 
-## M19: Shared skills and plugin marketplaces (future)
-Build on M13's global MCP settings and reviewed one-time imports. Start with shared skills, then add plugin discovery, marketplace search and installation. Update `SPEC.md` and design the library, search results and import/install previews before implementation.
+## M19: Shared plugin library and marketplaces
+Build on M13's global MCP settings and M14's agent profiles. Plugins are the top-level units in the library; skills, tools and other capabilities are components inside them. Use [Skills Manager](https://github.com/xingkongliang/skills-manager) as a reference for library management and per-agent availability, adapted to this plugin-first model. Update `SPEC.md` and design the library, plugin details and management/install previews before implementation.
 
-- **Global skill library:** one Gloss-managed library available to Claude Code and Codex across projects. List skills with their description, source and agent compatibility, with Add, Edit and Remove actions. Verify how each installed agent discovers skills and refreshes them before choosing the storage and delivery mechanism.
-- **One-time skill import:** discover native user and known-project skills from either agent. Preview the instructions and supporting files, select what to copy, and resolve name collisions before saving. Preserve relative references and bundled resources. Original files stay unchanged; later edits are managed in Gloss without ongoing synchronization.
-- **Compatibility is explicit:** detect agent-specific tools, paths and conventions. Explain any required adaptation before import; do not claim a skill works with both agents just because its instructions were copied. Show when a new session or agent restart is required to pick up a change.
-- **Plugin discovery:** list native plugins and their components, including skills, MCP servers, hooks and agent-specific features. Preview which components can be shared and which remain available only through their original agent.
-- **Search plugin libraries and marketplaces:** browse and search supported agent catalogs from Gloss, and let the user add a marketplace source where supported. Show the source, publisher, description, version and agent compatibility in results, with a detail view of the plugin's components and requirements. Verify available catalog and installation APIs before choosing the initial sources; identify unsupported sources and unavailable results clearly.
-- **Add plugins from search:** select a result, review its components, dependencies, requested access and installation destination, then install through the supported agent mechanism. Make clear whether the plugin is available to one agent or both, and offer importing compatible components into Gloss's shared library where appropriate. Report progress, authentication requirements, failures and any required restart. Track installed source/version and provide a remove action; preserve pre-existing native installations and shared components when removing a Gloss-added plugin.
-- **Import compatible plugin components:** copy selected portable skills into the global library and supported MCP definitions into M13's global list, with the same duplicate and compatibility checks. Do not silently transfer hooks, installation scripts or unsupported features, or modify the source plugin. Importing a component does not install or execute the whole plugin.
+**Skill compatibility groundwork (Windows, 2026-10-26):** tested Claude ACP 0.89.1 with its bundled Claude 2.1.293, Codex ACP 2.2.2 with CLI 0.160.1, and OpenCode 2.0.32 against a local mock provider. All discovered junction and copied skill deployments. Claude required a new session for edits to the junction target; Codex loaded edited instructions but needed a restart for its command description; OpenCode loaded edited skills and supporting files. OpenCode also discovered Claude/shared skill roots, so removing its own link did not disable a skill; a native per-skill deny rule hid it and rejected loading. A custom OpenCode profile loaded a configured skill directory. Codex's supporting-file tool check was unverified because the mock did not implement its automatic-review response format. These checks validate skill delivery, not whole-plugin portability. Plugin packaging/lifecycle, other platforms and production transfer/recovery behavior remain to be verified.
 
-**Done when:** a user can review and import a skill once, use it with both agents where compatible, search a supported marketplace, and install and remove a selected plugin from Gloss. Plugin previews identify what can be shared and what stays agent-specific. Imports leave original agent files unchanged, installations use the reviewed destination, and shared skills and installed-plugin records survive restart.
+**Design proposal:** the local [plugin-library mock](mocks/plugins.html) uses plugin entries with nested skill editing, tool connections and per-agent component support. Management/install previews keep the package together and identify partial support. The mock uses sample data and is awaiting review; native package compatibility is not established by its illustrative states.
 
-## M20: Git worktrees (future)
+- **Shared plugin library:** one library across projects, available to compatible configured agents including Claude Code, Codex, OpenCode and custom ACP profiles. A plugin can contain a single skill, several skills, MCP tools/connections and supported agent-specific components. Keep related instructions and the tools they require together. Library entries show purpose, component summary, ownership and per-agent compatibility/availability.
+- **Personal plugins stay simple:** users or agents can create a local plugin containing just one skill and edit its instructions, scripts and references directly. A plugin does not require publication, a marketplace, known upstream provenance, version management or an update subscription. Several related skills can belong to the same plugin; do not impose a one-plugin-per-skill rule.
+- **Per-agent availability:** enable the plugin as a unit for selected agents. Its details show which skills, tools and other components are available, need setup, or are unsupported on each agent. Distinguish full availability from partial support or missing requirements; never imply the complete workflow works merely because its skill files were deployed. Disabling a plugin for one agent is separate from deleting it from the library.
+- **Agent integrations and package format:** verify the installed agents' native plugin formats, discovery paths and refresh behavior before selecting the library's package representation and per-agent delivery. Use native plugin loading where supported; a reviewed component mapping may expose supported skills and MCP tools elsewhere, with limitations explicit. Custom profiles may configure a skill directory when they support SKILL.md, but that alone establishes only skill-component support, not whole-plugin support. Show tested, user-configured, unsupported or unknown support. ACP connectivity is not proof of plugin capability.
+- **Manual maintenance:** the Gloss-managed library is the authoritative version for personal and adopted plugins. Edits by the user or an agent become available to selected compatible agents without maintaining independent versions. Keep supporting files with their skills. Explain when existing sessions retain earlier instructions or require refresh; finish active turns before any connection restart. Upstream tracking, update checks, automatic downloads and merging upstream changes are outside M19, with a separate exploratory milestone below. Retain native installation records needed to install or remove marketplace plugins.
+- **Manage existing content:** discover existing native plugins and standalone skills from known user and project locations. Preview complete plugin contents, dependencies, affected locations and agent availability, then resolve naming conflicts before taking ownership. Bring a standalone skill into a simple personal plugin, preserving its supporting resources. This is one manage-and-share flow, with no separate independent-copy mode. Preserve original contents on failed transfers. Native plugin caches stay under their original manager unless a supported ownership transfer is explicitly chosen.
+- **Preserve component relationships:** importing or adapting a plugin must account for the tools and other components its skills require. Any intentional partial import is reviewed as a new local plugin with missing functionality explained, rather than silently extracting loose skills. Do not execute installation scripts or transfer hooks and other unsupported features merely by importing content. Integrate supported MCP definitions with M13's global list while tracking which plugins use them; removing a plugin must preserve pre-existing or independently used connections and components.
+- **Storage and deployment:** keep the authoritative library outside automatic agent discovery roots. Verify native plugin loading and, where component deployment is needed, links/junctions or tracked copies. Detect divergence and failures without silently overwriting edits. Inspect actual native state as well as Gloss records, including inherited availability through other agents' roots. Removing a deployment preserves the shared plugin and unrelated native installations.
+- **Library interface:** one searchable plugin library with agent filters, per-plugin availability controls, and details showing its purpose, skills, tools, other components and compatibility. Edit a skill and inspect its supporting files within its plugin. Management/install previews review the complete package and what each selected agent will receive. Keep presets, separate workspace dashboards and multi-device backup outside this milestone.
+- **Marketplace discovery and installation:** browse/search supported catalogs, with add-source support where available. Show publisher, source, description, version, components and agent requirements. Review dependencies, requested access and destinations before native installation. Report progress, authentication requirements, failures and refresh needs. Track source/version and installation ownership for removal, preserving existing native installations and independently used components. Verify catalog and installation APIs before choosing initial sources; identify unsupported sources clearly.
+- **Verify before implementation:** extend the skill probe to native plugin packages and per-agent mappings. Exercise a personal one-skill plugin and a plugin containing related skills plus an MCP dependency, including full/partial support, authentication/setup needs, component naming, enable/disable, edits, refresh, removal and restart. Test known agents and one concrete custom-profile integration, documenting unsupported cases. During implementation, verify collisions, failed ownership transfers, shared-dependency preservation and copy reconciliation with scratch content.
+
+**Done when:** a user can create a personal plugin from an existing skill, enable it for compatible configured agents, edit the skill and supporting files once, and verify the selected agents pick up changes after any required refresh. Exercise Claude Code, Codex, OpenCode and a custom profile with explicit support limits. A multi-component plugin keeps its skills and tool requirements together and clearly reports setup needs or partial support per agent. A user can search a supported marketplace and install/remove a plugin. Disabling it for one agent preserves the library item and other deployments; removing it preserves independently used components. Ownership changes affect only reviewed locations, and the library, component relationships and installation/deployment state survive restart.
+
+## M20: Git worktrees
 Run independent coding tasks in separate checkouts while keeping their sessions together under one project. Worktrees are optional per session; conversation threads stay in their session's checkout. Update `SPEC.md` and design the creation, project grouping and cleanup flows before implementation.
 
 - **Project identity and session folder:** separate the shared project identity from each session's working directory. Discover related checkouts through Git's common directory and worktree metadata, including worktrees created outside Gloss. Non-Git folders keep their existing behavior. Migrate existing sessions and project settings without losing history, threads or overrides; resolve conflicting settings explicitly when existing projects become one group.
@@ -43,7 +51,7 @@ Run independent coding tasks in separate checkouts while keeping their sessions 
 
 **Done when:** you can start two sessions for one repository in different worktrees, make independent edits, find both under one project, restart Gloss and resume each in the correct checkout, review each checkout's changes, and explicitly remove a clean, idle worktree without deleting its conversation or branch. Existing externally created worktrees are usable through the same flow.
 
-## M21: Sub-agent threads (future)
+## M21: Sub-agent threads
 An opt-in alternative to view-only threads: a thread runs its own agent session instead of being tagged into the main one. Changes the core idea in `SPEC.md` (update it in this milestone).
 
 - **Thread mode setting** (M6 settings, global with a per-project override): `view-only` (default, today's behavior), `fresh` or `fork`.
@@ -57,7 +65,7 @@ An opt-in alternative to view-only threads: a thread runs its own agent session 
 
 **Done when:** with either mode on, a thread runs as its own agent, can run while the main thread works, and resolving it brings its summary into the main session.
 
-## M22: Performance (future)
+## M22: Performance
 Measure first, then fix what the numbers show. Keep the app's behavior unchanged, and don't optimize anything the measurements don't point at.
 
 - **Latency needs attention:** application startup until the UI is responsive, starting and opening sessions, and opening, navigating and scrolling large diffs in the diff viewer. Measure these paths and reduce the delays.
@@ -73,7 +81,7 @@ Measure first, then fix what the numbers show. Keep the app's behavior unchanged
 
 **Done when:** the benchmark runs from one command, each fixed hotspot shows a measured improvement and has a deterministic test that would catch it coming back, typing and scrolling while streaming a long answer into a large, image-heavy session stay smooth (no long tasks over 50 ms in the renderer), and the numbers are recorded for the next comparison.
 
-## M23: Checkpoints and undo per turn (future)
+## M23: Checkpoints and undo per turn
 Extend M17's conversation-only rewind with a separate way to inspect and undo a turn's file changes. Snapshot the working tree before each turn without adding commits to the user's history, using a hidden shadow repository or dedicated snapshot refs. Update `SPEC.md` and design the inspection and restore flows before implementation.
 
 - **Per-turn snapshots:** associate each turn with its checkout and before/after file state, including cancelled and failed turns. Preserve pre-existing local changes and define coverage for untracked files, ignored files and non-Git folders explicitly.
@@ -104,12 +112,21 @@ Present Gloss to people who haven't used it. Comes after Shipping, so every link
 
 **Done when:** someone landing on the repository understands what Gloss does from the README's first screen, can install it from the release link, find the docs for their agent, and watch the demo reel.
 
+## Exploratory milestone: Package-manager-style skill updates
+Unscheduled exploration outside the M18-M25 delivery sequence. Revisit only if maintaining externally sourced skills becomes a useful workflow; M19's manually maintained shared library does not depend on it.
+
+- Investigate optional source and version tracking for skills that have an upstream repository or package. User-authored skills and skills with unknown origins must continue to work without this metadata.
+- Explore explicit update checks and previews, version pinning, recovery, and handling local edits when upstream files change. Evaluate whether automatic updates are useful as a separate opt-in decision.
+- Distinguish upstream updates from making manual library edits available to agents, which belongs in M19.
+
+**Done when:** the exploration records concrete use cases, evaluates existing tooling, and recommends whether to proceed, with a proposed scope and update/conflict flow if warranted. Implementing an updater is not required to complete this exploration.
+
 ## Design passes needed
 - ~~**M14:** agent profiles and connection testing, guided open source/local-model setup, capability indicators, and actionable launch or model-server errors.~~ Done.
 - ~~**M15:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.~~ Done.
 - ~~**M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.~~ Done: `docs/mocks/visual-feedback.html`.
 - **M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.
-- **M19:** the global skill library, skill import preview and conflict resolution, marketplace search and source management, and plugin compatibility, installation and removal.
+- **M19:** the plugin library, component details and skill editing, per-agent full/partial availability, management/install previews and name conflicts, shared dependencies, refresh behavior, marketplace discovery and removal.
 - **M20:** the checkout picker and new-worktree form, project grouping with branch indicators, missing-checkout recovery, and explicit cleanup with affected sessions visible.
 - **M21:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 - **M23:** per-turn diff inspection, checkpoint restore preview, conflicts and retention controls.
