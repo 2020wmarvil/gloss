@@ -1,6 +1,7 @@
 // The message log shared by the main view and the thread panel.
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { afterPaintIdle } from './idle'
+import { LogToBottom } from './logToBottom'
 import { useScrollMemory, type ScrollAnchors } from './scrollMemory'
 import type { Message, Plan, ToolCall } from '@shared/types'
 import { threadToMainTag } from '@shared/wire'
@@ -93,6 +94,7 @@ const LOG_ANCHORS: ScrollAnchors = { item: '[data-message-id]', attr: 'data-mess
 export function Log({ footer, cwd, items, className, empty, renderAgent, reveal, systemLine, pins, scrollKey, onRevealMain }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
+  const lastTop = useRef(0)
   // Scrolled away from the bottom, and whether output arrived since: shows Jump to latest.
   const [away, setAway] = useState(false)
   const [fresh, setFresh] = useState(false)
@@ -191,8 +193,16 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
     target.classList.add('revealed')
   }, [reveal])
 
+  const toBottom = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    stickToBottom.current = true
+    el.scrollTop = el.scrollHeight
+  }, [])
+
   return (
     <MarkdownImageDirectory value={cwd}>
+      <LogToBottom.Provider value={toBottom}>
       <div
         className="log-scroll"
         ref={ref}
@@ -202,7 +212,11 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
         }}
         onScroll={(e) => {
           const el = e.currentTarget
-          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+          // Only scrolling up lets go of the bottom. Measured alone, the distance also counts
+          // output that arrived after a scroll Gloss made itself, before its event came.
+          if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) stickToBottom.current = true
+          else if (el.scrollTop < lastTop.current) stickToBottom.current = false
+          lastTop.current = el.scrollTop
           setAway(!stickToBottom.current)
           if (stickToBottom.current) setFresh(false)
           el.classList.add('scrolling')
@@ -304,6 +318,7 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
           )}
         </div>
       </div>
+      </LogToBottom.Provider>
     </MarkdownImageDirectory>
   )
 }

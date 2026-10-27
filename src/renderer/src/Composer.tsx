@@ -8,6 +8,7 @@ import { MarkdownEditor, type MarkdownEditorHandle } from './MarkdownEditor'
 import { ArrowUp, Clock, CornerDownRight, Ellipsis, Paperclip, Pencil, Scan, Square, Trash } from 'lucide-react'
 import { ComposerAttachments } from './ComposerAttachments'
 import { RewindDialog } from './RewindDialog'
+import { LogToBottom } from './logToBottom'
 import { Popover } from './Popover'
 import { modKey } from './shortcuts'
 import { loadImage, type Annotation } from './capture/annotate'
@@ -199,6 +200,7 @@ export function Composer({
   const fileInput = useRef<HTMLInputElement>(null)
   const startCapture = useRef<() => void>(() => {})
   const captureKeys = normalizeShortcut(useContext(CaptureShortcut))
+  const toBottom = useContext(LogToBottom)
 
   useEffect(() => {
     const update = (event: Event): void => {
@@ -504,6 +506,8 @@ export function Composer({
     if (contextBusy || editorBusy) return
     const trimmed = text.trim()
     if (!trimmed && attachments.length === 0) return
+    // What was sent shows at the bottom of this log; Send to main goes to the other one.
+    if (how !== 'main') toBottom()
     if (trimmed.startsWith('!')) { void runShell(); return }
     if (attachments.length === 0 && /^\/[^\s]+$/.test(trimmed) && runLocalCommand(trimmed.slice(1))) return
     if (how !== 'main' && steer) steer(trimmed, attachments)
