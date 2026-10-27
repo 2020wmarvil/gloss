@@ -92,7 +92,9 @@ function titleBarOverlay(): Electron.TitleBarOverlayOptions {
 }
 
 function updateTitleBar(): void {
-  if (process.platform !== 'darwin') for (const win of glossWindows()) win.setTitleBarOverlay(titleBarOverlay())
+  if (process.platform !== 'darwin') {
+    for (const win of glossWindows()) if (!annotateWindows.has(win.webContents.id)) win.setTitleBarOverlay(titleBarOverlay())
+  }
 }
 
 /** Session id → the window it is popped out into (SPEC → Session windows). */
@@ -100,8 +102,7 @@ const sessionWindows = new Map<string, BrowserWindow>()
 /** Each session window's session and the state it opened with, by its webContents id. */
 const windowStates = new Map<number, { sessionId: string; state: PaneState }>()
 /** Annotation windows by webContents id: what each opened with, and how it answers the window that asked. */
-const annotateWindows = new Map<number, { win: BrowserWindow; request: AnnotateRequest; finish(result: AnnotateResult): void }>()
-/** The Gloss window focused last (not an annotation window): its composer used last takes a capture. */
+const annotateWindows = new Map<number, { win: BrowserWindow; request: AnnotateRequest; finish(result: AnnotateResult): void }>()/** The Gloss window focused last (not an annotation window): its composer used last takes a capture. */
 let lastFocused: BrowserWindow | undefined
 
 /** The main window, the session windows and the annotation windows (not capture overlays). */
@@ -126,14 +127,22 @@ function bringForward(win: BrowserWindow): void {
   win.focus()
 }
 
-/** A Gloss window: the title bar, icon, security settings and navigation guards every one has. */
-function newWindow(bounds: Partial<Rect> & { width: number; height: number }): BrowserWindow {
+/**
+ * A Gloss window: the title bar, icon, security settings and navigation guards every one has.
+ * A frameless one (the annotation window) has no title bar or window controls: the page has its
+ * own buttons and is its drag area, and the system still resizes it by its edges.
+ */
+function newWindow(bounds: Partial<Rect> & { width: number; height: number }, frameless = false): BrowserWindow {
   const win = new BrowserWindow({
     title: 'Gloss',
-    titleBarStyle: 'hidden',
-    // On macOS `true` only turns on the titlebar-area CSS variables the title bar lays out with.
-    titleBarOverlay: process.platform === 'darwin' ? true : titleBarOverlay(),
-    trafficLightPosition: { x: 14, y: 13 },
+    ...(frameless
+      ? { frame: false, fullscreenable: false }
+      : {
+          titleBarStyle: 'hidden',
+          // On macOS `true` only turns on the titlebar-area CSS variables the title bar lays out with.
+          titleBarOverlay: process.platform === 'darwin' ? true : titleBarOverlay(),
+          trafficLightPosition: { x: 14, y: 13 }
+        }),
     // Windows takes every size from the .ico; macOS uses the app bundle's icon instead.
     icon: process.platform === 'win32' ? iconIco : iconPng,
     ...bounds,
@@ -268,7 +277,7 @@ function openAnnotateWindow(opener: BrowserWindow, request: AnnotateRequest): Pr
       screen.getAllDisplays().map((d) => d.workArea),
       screen.getDisplayMatching(opener.getBounds()).workArea
     )
-    const win = newWindow(bounds)
+    const win = newWindow(bounds, true)
     const contentsId = win.webContents.id
     let done = false
     const finish = (result: AnnotateResult): void => {
@@ -283,6 +292,11 @@ function openAnnotateWindow(opener: BrowserWindow, request: AnnotateRequest): Pr
     annotateWindows.set(contentsId, { win, request, finish })
     opener.once('closed', closeWithOpener)
     trackBounds(win, 'annotate-window.json')
+    const sendMaximized = (): void => {
+      win.webContents.send(IPC.event, { type: 'annotateMaximized', maximized: win.isMaximized() } satisfies GlossEvent)
+    }
+    win.on('maximize', sendMaximized)
+    win.on('unmaximize', sendMaximized)
     win.on('closed', () => {
       annotateWindows.delete(contentsId)
       if (!opener.isDestroyed()) opener.removeListener('closed', closeWithOpener)
@@ -727,18 +741,43 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.annotateFinish, (e, result: unknown) => {
     annotateWindows.get(e.sender.id)?.finish(annotateResultArg(result))
   })
-  ipcMain.handle(IPC.captureStart, (e) => {
+  ipcMain.on(IPC.annotateMinimize, (e) => annotateWindows.get(e.sender.id)?.win.minimize())
+  ipcMain.on(IPC.annotateToggleMaximize, (e) => {
+    const win = annotateWindows.get(e.sender.id)?.win
+    if (!win) return
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+  })
+  ipcMain.handle(IPC.captureStart, async (e) => {
     const win = glossWindows().find((w) => w.webContents === e.sender)
     if (!win) throw new Error('Only a Gloss window can start a capture.')
-    return startCapture({
-      preload: join(__dirname, '../preload/capture.js'),
-      load: (overlay) => loadPage(overlay, 'capture.html'),
-      // Started from another app (the global shortcut), the canvas needs its window in front.
-      // An overlay has the focus now, so Windows lets Gloss take it.
-      onPicked: () => {
-        if (!win.isDestroyed()) bringForward(win)
+    // Retake: the annotation window vanishes at once (made transparent first, as hide() alone
+    // can fade out on Windows), is left out of the capture without waiting for the screen to
+    // redraw, and, hidden, out of the windows the overlay offers.
+    const retake = annotateWindows.has(e.sender.id)
+    if (retake) {
+      win.setOpacity(0)
+      win.setContentProtection(true)
+      win.hide()
+    }
+    try {
+      return await startCapture({
+        preload: join(__dirname, '../preload/capture.js'),
+        load: (overlay) => loadPage(overlay, 'capture.html'),
+        // Started from another app (the global shortcut), the canvas needs its window in front.
+        // An overlay has the focus now, so Windows lets Gloss take it.
+        onPicked: () => {
+          if (!win.isDestroyed()) bringForward(win)
+        }
+      })
+    } finally {
+      // Back once something is picked, or the overlay is cancelled.
+      if (retake && !win.isDestroyed()) {
+        win.setContentProtection(false)
+        win.setOpacity(1)
+        bringForward(win)
       }
-    })
+    }
   })
   ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
     manager.startSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))

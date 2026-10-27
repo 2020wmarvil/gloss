@@ -5782,6 +5782,45 @@ kbd {
   min-width: 0;
 }
 
+/* The window is frameless: no title bar, so it is dragged by its header. */
+.annotate-window {
+  padding-top: 0;
+}
+
+.annotate-head {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.annotate-head button {
+  -webkit-app-region: no-drag;
+}
+
+/* Toolbar groups a narrow window hides: the zoom first (wheel, 0 and 1 remain), then undo and
+   redo (Ctrl+Z, Ctrl+Y), then the colors. Each goes when the header can't fit it, the title, the
+   tools, the window buttons and about 100px of the source (60px before the colors). */
+.annotate-head {
+  container-type: inline-size;
+}
+
+.annotate-group-colors,
+.annotate-group-history,
+.annotate-group-zoom {
+  display: contents;
+}
+
+@container (max-width: 888px) {
+  .annotate-group-zoom { display: none; }
+}
+
+@container (max-width: 771px) {
+  .annotate-group-history { display: none; }
+}
+
+@container (max-width: 664px) {
+  .annotate-group-colors { display: none; }
+}
+
 .annotate-head h2 {
   margin: 0;
   font-size: var(--t-15);
@@ -6001,13 +6040,6 @@ kbd {
   gap: 8px;
   padding: 0 14px 0 18px;
   border-top: 1px solid var(--line);
-}
-
-.annotate-foot button.primary kbd {
-  height: 18px;
-  background: rgba(255, 255, 255, 0.35);
-  box-shadow: none;
-  color: var(--on-brand);
 }
 
 /* The composer's Attach menu opens upward from its left edge. */

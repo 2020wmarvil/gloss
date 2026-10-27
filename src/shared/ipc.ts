@@ -138,6 +138,8 @@ export type GlossEvent =
   | { type: 'notice'; sessionId: string; threadId: string | null; text: string }
   /** The window went full screen (F11): show how to leave it. */
   | { type: 'fullScreen' }
+  /** Annotation window: it was maximized or restored, for its maximize button. */
+  | { type: 'annotateMaximized'; maximized: boolean }
   | { type: 'authRequired'; agentId: string; agentName: string; methods: AuthMethodInfo[] }
   | { type: 'authResolved'; agentId: string }
   | { type: 'settings'; state: SettingsState }
@@ -338,6 +340,9 @@ export type GlossApi = {
     initial(): Promise<import('./capture').AnnotateRequest | null>
     /** Annotation window: hands the result to the window that asked, and closes. */
     finish(result: import('./capture').AnnotateResult): Promise<void>
+    /** Annotation window: its own minimize and maximize buttons (it has no title bar). */
+    minimize(): void
+    toggleMaximize(): void
   }
   /** Session windows (SPEC → Session windows). */
   windows: {
@@ -430,6 +435,8 @@ export const IPC = {
   annotateOpen: 'gloss:annotate:open',
   annotateInitial: 'gloss:annotate:initial',
   annotateFinish: 'gloss:annotate:finish',
+  annotateMinimize: 'gloss:annotate:minimize',
+  annotateToggleMaximize: 'gloss:annotate:toggleMaximize',
   windowsPopOut: 'gloss:windows:popOut',
   windowsPopIn: 'gloss:windows:popIn',
   windowsFocus: 'gloss:windows:focus',

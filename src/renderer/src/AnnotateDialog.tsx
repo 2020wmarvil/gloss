@@ -28,6 +28,10 @@ type Props = {
   onCancel(): void
   /** Opens the region overlay again; null if the user cancelled there. Absent for an attached image. */
   onRetake?(): Promise<Capture | null>
+  /** The window's own controls, before Cancel: its window has no title bar. */
+  windowControls?: React.ReactNode
+  /** Whether the window is maximized: maximizing or restoring it recenters the capture. */
+  maximized?: boolean
 }
 
 const TOOLS: { tool: Tool; key: string; name: string; icon: React.JSX.Element }[] = [
@@ -52,7 +56,7 @@ const PINS_LIMITS = { min: 220, max: 560 }
 /** The color picked last, kept for the next capture while Gloss runs. */
 let lastColor = MARK_COLORS[0]
 
-export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): React.JSX.Element {
+export function AnnotateDialog({ initial, onAdd, onCancel, onRetake, windowControls, maximized }: Props): React.JSX.Element {
   const [capture, setCapture] = useState(initial.capture)
   const [marks, setMarks] = useState<Marks>({ shapes: initial.shapes, pins: initial.pins })
   const [past, setPast] = useState<Marks[]>([])
@@ -133,6 +137,36 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
 
   /** Between fit and actual size: the zoom button, and 0 and 1. */
   const fitted = (): boolean => Math.abs(scale - fitScale()) < 0.005
+
+  /** Whether the capture was fitted to the stage when the view last changed (not since resized). */
+  const wasFitted = useRef(true)
+  useEffect(() => {
+    wasFitted.current = fitted()
+  }, [view])
+
+  // Maximizing or restoring the window recenters the capture as the stage takes its new size:
+  // fitted again if it was fitted, else centered at the zoom the user chose.
+  const shownMaximized = useRef(maximized)
+  useEffect(() => {
+    if (shownMaximized.current === maximized) return
+    shownMaximized.current = maximized
+    const el = stage.current
+    if (!el) return
+    const refit = wasFitted.current
+    const recenter = (): void => {
+      if (refit) fitView()
+      else setView((v) => ({ ...v, x: (el.clientWidth - width * v.scale) / 2, y: (el.clientHeight - height * v.scale) / 2 }))
+    }
+    recenter()
+    // The window may not have its new size yet, or get it in more than one step.
+    const observer = new ResizeObserver(recenter)
+    observer.observe(el)
+    const timer = setTimeout(() => observer.disconnect(), 1000)
+    return () => {
+      observer.disconnect()
+      clearTimeout(timer)
+    }
+  }, [maximized])
 
   // The wheel zooms at the cursor. Not passive, so the page doesn't scroll too.
   useEffect(() => {
@@ -378,49 +412,56 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
               {t.icon}
             </button>
           ))}
-          <span className="annotate-sep" />
-          {MARK_COLORS.map((c) => (
-            <button
-              key={c}
-              className={`swatch${color === c ? ' on' : ''}`}
-              aria-pressed={color === c}
-              title="Color for marks"
-              aria-label={`Color ${c}`}
-              onClick={() => setColor(c)}
-            >
-              <i style={{ background: c }} />
+          {/* Narrow windows hide the zoom first (wheel, 0 and 1), then undo and redo (Ctrl+Z, Ctrl+Y), then the colors. */}
+          <span className="annotate-group-colors">
+            <span className="annotate-sep" />
+            {MARK_COLORS.map((c) => (
+              <button
+                key={c}
+                className={`swatch${color === c ? ' on' : ''}`}
+                aria-pressed={color === c}
+                title="Color for marks"
+                aria-label={`Color ${c}`}
+                onClick={() => setColor(c)}
+              >
+                <i style={{ background: c }} />
+              </button>
+            ))}
+          </span>
+          <span className="annotate-group-history">
+            <span className="annotate-sep" />
+            <button title="Undo (Ctrl+Z)" aria-label="Undo" disabled={past.length === 0} onClick={undo}>
+              <Undo2 />
             </button>
-          ))}
-          <span className="annotate-sep" />
-          <button title="Undo (Ctrl+Z)" aria-label="Undo" disabled={past.length === 0} onClick={undo}>
-            <Undo2 />
-          </button>
-          <button title="Redo (Ctrl+Y)" aria-label="Redo" disabled={future.length === 0} onClick={redo}>
-            <Redo2 />
-          </button>
-          <span className="annotate-sep" />
-          <button title="Zoom out" aria-label="Zoom out" disabled={scale <= MIN_ZOOM} onClick={() => zoomTo(scale / ZOOM_STEP)}>
-            <ZoomOut />
-          </button>
-          <button
-            className="annotate-zoom"
-            title={fitted() ? 'Actual size (1)' : 'Fit (0)'}
-            aria-label={fitted() ? 'Zoom to actual size' : 'Zoom to fit'}
-            onClick={() => (fitted() ? zoomTo(1) : fitView())}
-          >
-            {`${Math.round(scale * 100)}%`}
-          </button>
-          <button title="Zoom in" aria-label="Zoom in" disabled={scale >= MAX_ZOOM} onClick={() => zoomTo(scale * ZOOM_STEP)}>
-            <ZoomIn />
-          </button>
+            <button title="Redo (Ctrl+Y)" aria-label="Redo" disabled={future.length === 0} onClick={redo}>
+              <Redo2 />
+            </button>
+          </span>
+          <span className="annotate-group-zoom">
+            <span className="annotate-sep" />
+            <button title="Zoom out" aria-label="Zoom out" disabled={scale <= MIN_ZOOM} onClick={() => zoomTo(scale / ZOOM_STEP)}>
+              <ZoomOut />
+            </button>
+            <button
+              className="annotate-zoom"
+              title={fitted() ? 'Actual size (1)' : 'Fit (0)'}
+              aria-label={fitted() ? 'Zoom to actual size' : 'Zoom to fit'}
+              onClick={() => (fitted() ? zoomTo(1) : fitView())}
+            >
+              {`${Math.round(scale * 100)}%`}
+            </button>
+            <button title="Zoom in" aria-label="Zoom in" disabled={scale >= MAX_ZOOM} onClick={() => zoomTo(scale * ZOOM_STEP)}>
+              <ZoomIn />
+            </button>
+          </span>
         </div>
         <span className="grow" />
         {onRetake && (
-          <button className="ghost sm" onClick={() => void retake()}>
-            <Crop size={14} />
-            Retake
+          <button className="icon-button" title="Retake" aria-label="Retake" onClick={() => void retake()}>
+            <Crop />
           </button>
         )}
+        {windowControls}
         <button className="icon-button" title="Cancel (Esc)" aria-label="Cancel" onClick={onCancel}>
           <X />
         </button>
@@ -505,9 +546,8 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake }: Props): R
         <button className="ghost" onClick={onCancel}>
           Cancel
         </button>
-        <button className="primary" disabled={busy || !image} onClick={() => void add()}>
-          Add to message <kbd>Ctrl</kbd>
-          <kbd>Enter</kbd>
+        <button className="primary" title="Ctrl+Enter" disabled={busy || !image} onClick={() => void add()}>
+          Add to message
         </button>
       </footer>
     </div>

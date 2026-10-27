@@ -77,7 +77,9 @@ const api: GlossApi = {
   annotate: {
     open: (request) => ipcRenderer.invoke(IPC.annotateOpen, request),
     initial: () => ipcRenderer.invoke(IPC.annotateInitial),
-    finish: (result) => ipcRenderer.invoke(IPC.annotateFinish, result)
+    finish: (result) => ipcRenderer.invoke(IPC.annotateFinish, result),
+    minimize: () => ipcRenderer.send(IPC.annotateMinimize),
+    toggleMaximize: () => ipcRenderer.send(IPC.annotateToggleMaximize)
   },
   requests: {
     answer: (sessionId, requestId, answer) => ipcRenderer.invoke(IPC.requestsAnswer, sessionId, requestId, answer)
