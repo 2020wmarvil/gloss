@@ -102,3 +102,35 @@ it('does not measure scroll height on unrelated rerenders', () => {
     expect(read).not.toHaveBeenCalled()
   } finally { act(() => root.unmount()) }
 })
+
+it('shows Jump to latest while scrolled up, marks output that arrives meanwhile, and scrolls back down', () => {
+  const el = document.createElement('div')
+  document.body.replaceChildren(el)
+  const root = createRoot(el)
+  const render = (entries: LogItem[]) => act(() => root.render(<Log scrollKey="jump:main" items={entries} className="log" empty={null} renderAgent={(m) => m.text} footer="composer" />))
+  const recent = items.slice(-4)
+  try {
+    render(recent)
+    const scroller = el.querySelector<HTMLElement>('.log-scroll')!
+    Object.defineProperties(scroller, { clientHeight: { get: () => 300 }, scrollHeight: { get: () => 800 } })
+    const scrollTo = vi.fn()
+    scroller.scrollTo = scrollTo
+    expect(el.querySelector('.jump-latest')).toBeNull()
+    scroller.scrollTop = 100
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })))
+    const jump = el.querySelector<HTMLButtonElement>('.jump-latest')!
+    expect(jump.textContent).toBe('Jump to latest')
+    expect(el.querySelector('.log-fade')).not.toBeNull()
+    render([...recent])
+    expect(jump.textContent).toBe('Jump to latest')
+    const next: LogItem = { kind: 'message', seq: 24, message: { ...(items[23] as Extract<LogItem, { kind: 'message' }>).message, id: 'new', seq: 24, text: 'live' } }
+    render([...recent, next])
+    expect(jump.textContent).toBe('New output')
+    expect(jump.className).toContain('fresh')
+    act(() => jump.click())
+    expect(scrollTo).toHaveBeenCalledWith({ top: 800, behavior: 'smooth' })
+    scroller.scrollTop = 500
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })))
+    expect(el.querySelector('.jump-latest')).toBeNull()
+  } finally { act(() => root.unmount()) }
+})

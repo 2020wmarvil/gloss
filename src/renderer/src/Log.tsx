@@ -10,7 +10,7 @@ import { RequestCard } from './RequestCard'
 import { CaptureFigure, type PinAnchors } from './CaptureFigure'
 import type { UserRequest } from '@shared/requests'
 import { hasDetails, ToolDetails } from './ToolDetails'
-import { Brain, Check, ChevronDown, ChevronRight, CircleAlert, FilePen, FileText, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
+import { ArrowDown, Brain, Check, ChevronDown, ChevronRight, CircleAlert, FilePen, FileText, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
 
 /** A transient, client-side note shown in a log (not part of the conversation). */
 export type Notice = { id: string; threadId: string | null; text: string; afterSeq: number; tone?: 'failed'; action?: { label: string; run(): Promise<unknown> } }
@@ -93,6 +93,9 @@ const LOG_ANCHORS: ScrollAnchors = { item: '[data-message-id]', attr: 'data-mess
 export function Log({ footer, cwd, items, className, empty, renderAgent, reveal, systemLine, pins, scrollKey, onRevealMain }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
+  // Scrolled away from the bottom, and whether output arrived since: shows Jump to latest.
+  const [away, setAway] = useState(false)
+  const [fresh, setFresh] = useState(false)
   const groups = useMemo(() => groupTools(items), [items])
   // Small logs mount as usual. Larger histories let the composer paint first,
   // then mount recent entries followed by older ones in bounded batches.
@@ -122,7 +125,18 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
   useLayoutEffect(() => {
     stickToBottom.current = true
     prepend.current = null
+    setAway(false)
+    setFresh(false)
   }, [scrollKey])
+  // Changes when output arrives: a new entry, streamed text or a tool call's progress.
+  const tail = items.at(-1)
+  const output = `${items.length}:${tail?.kind === 'message' ? tail.message.text.length : tail?.kind === 'tool' ? tail.toolCall.status : ''}`
+  const lastOutput = useRef(output)
+  useEffect(() => {
+    if (lastOutput.current === output) return
+    lastOutput.current = output
+    if (!stickToBottom.current) setFresh(true)
+  }, [output])
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
@@ -189,6 +203,8 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
         onScroll={(e) => {
           const el = e.currentTarget
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+          setAway(!stickToBottom.current)
+          if (stickToBottom.current) setFresh(false)
           el.classList.add('scrolling')
           clearTimeout(scrollTimer.current)
           scrollTimer.current = setTimeout(() => el.classList.remove('scrolling'), 900)
@@ -269,7 +285,23 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
               }
             })}
           </div>
-          {footer && <div className="log-footer">{footer}</div>}
+          {footer && (
+            <div className="log-footer">
+              {away && items.length > 0 && (
+                <>
+                  <div className="log-fade" aria-hidden="true" />
+                  <button
+                    className={fresh ? 'jump-latest fresh' : 'jump-latest'}
+                    onClick={() => ref.current?.scrollTo?.({ top: ref.current.scrollHeight, behavior: 'smooth' })}
+                  >
+                    <ArrowDown aria-hidden />
+                    {fresh ? 'New output' : 'Jump to latest'}
+                  </button>
+                </>
+              )}
+              {footer}
+            </div>
+          )}
         </div>
       </div>
     </MarkdownImageDirectory>
