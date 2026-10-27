@@ -204,7 +204,6 @@ describe('keyboard', () => {
     const form = document.querySelector('form')!
     expect(document.activeElement).toBe(form)
     // Number keys work in the first choice until another one is focused.
-    expect([...document.querySelectorAll('.request-field')[0].querySelectorAll('.request-key')].map((k) => k.textContent)).toEqual(['1', '2'])
     key(form, { key: '2' })
     const extras = document.querySelectorAll('.request-field')[1]
     act(() => extras.querySelector<HTMLInputElement>('input')!.focus())

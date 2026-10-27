@@ -5759,11 +5759,6 @@ kbd {
   margin: 0 2px;
 }
 
-.request-option .request-key {
-  margin-left: auto;
-  align-self: center;
-}
-
 /* Visual feedback (SPEC → Visual feedback, docs/mocks/visual-feedback.html) */
 
 /* The annotation canvas: a large dialog with the capture, its pins' notes and what is sent. */
