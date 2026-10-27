@@ -23,6 +23,7 @@ import { registerComposerIpc } from './composerIpc'
 import { takeForeground } from './foreground'
 import { runInTerminal } from './terminal'
 import { registerCaptureIpc, startCapture } from './capture'
+import type { AnnotateRequest, AnnotateResult } from '../shared/capture'
 import { normalizeShortcut, shortcutLabel } from '../shared/shortcut'
 import { UsageSource } from './usage'
 import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
@@ -98,12 +99,15 @@ function updateTitleBar(): void {
 const sessionWindows = new Map<string, BrowserWindow>()
 /** Each session window's session and the state it opened with, by its webContents id. */
 const windowStates = new Map<number, { sessionId: string; state: PaneState }>()
-/** The Gloss window focused last: its composer used last takes a capture. */
+/** Annotation windows by webContents id: what each opened with, and how it answers the window that asked. */
+const annotateWindows = new Map<number, { win: BrowserWindow; request: AnnotateRequest; finish(result: AnnotateResult): void }>()
+/** The Gloss window focused last (not an annotation window): its composer used last takes a capture. */
 let lastFocused: BrowserWindow | undefined
 
-/** The main window and the session windows (not capture overlays). */
+/** The main window, the session windows and the annotation windows (not capture overlays). */
 function glossWindows(): BrowserWindow[] {
-  return [mainWindow, ...sessionWindows.values()].filter((w): w is BrowserWindow => w !== undefined && !w.isDestroyed())
+  return [mainWindow, ...sessionWindows.values(), ...[...annotateWindows.values()].map((a) => a.win)]
+    .filter((w): w is BrowserWindow => w !== undefined && !w.isDestroyed())
 }
 
 function isGlossSender(sender: WebContents): boolean {
@@ -145,7 +149,7 @@ function newWindow(bounds: Partial<Rect> & { width: number; height: number }): B
   })
   win.once('ready-to-show', () => win.show())
   win.on('focus', () => {
-    lastFocused = win
+    if (!annotateWindows.has(win.webContents.id)) lastFocused = win
   })
   // The renderer shows how to leave full screen; macOS shows its own controls.
   if (process.platform !== 'darwin') {
@@ -181,31 +185,40 @@ function createWindow(): void {
     if (mainWindow === win) mainWindow = undefined
     // Closing the main window quits Gloss, session windows included.
     for (const w of sessionWindows.values()) if (!w.isDestroyed()) w.close()
+    for (const { win: w } of annotateWindows.values()) if (!w.isDestroyed()) w.close()
   })
   loadPage(win, 'index.html')
 }
 
-/** The last session window's size and position (SPEC → Session windows → Restart). */
-function boundsFile(): string {
-  return join(app.getPath('userData'), 'session-window.json')
-}
+/**
+ * Where the last window of a kind was, by its file in userData: session windows
+ * (SPEC → Session windows → Restart) and annotation windows.
+ */
+type BoundsFile = 'session-window.json' | 'annotate-window.json'
 
-function savedBounds(): Rect | null {
+function savedBounds(file: BoundsFile): Rect | null {
   try {
-    return boundsArg(JSON.parse(readFileSync(boundsFile(), 'utf8')))
+    return boundsArg(JSON.parse(readFileSync(join(app.getPath('userData'), file), 'utf8')))
   } catch {
     return null
   }
 }
 
-let boundsTimer: ReturnType<typeof setTimeout> | undefined
-function saveBounds(win: BrowserWindow, now = false): void {
+const boundsTimers = new Map<BoundsFile, ReturnType<typeof setTimeout>>()
+function saveBounds(win: BrowserWindow, file: BoundsFile, now = false): void {
   if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return
   const bounds = win.getNormalBounds()
-  clearTimeout(boundsTimer)
-  const write = (): void => void writeFile(boundsFile(), JSON.stringify(bounds)).catch(() => {})
+  clearTimeout(boundsTimers.get(file))
+  const write = (): void => void writeFile(join(app.getPath('userData'), file), JSON.stringify(bounds)).catch(() => {})
   if (now) write()
-  else boundsTimer = setTimeout(write, 500)
+  else boundsTimers.set(file, setTimeout(write, 500))
+}
+
+/** Remembers where the user leaves the window. */
+function trackBounds(win: BrowserWindow, file: BoundsFile): void {
+  win.on('moved', () => saveBounds(win, file))
+  win.on('resized', () => saveBounds(win, file))
+  win.on('close', () => saveBounds(win, file, true))
 }
 
 /** Tells every window which sessions are popped out, and whose window is focused. */
@@ -220,7 +233,7 @@ function openSessionWindow(sessionId: string, state: PaneState): void {
     ? screen.getDisplayMatching(mainWindow.getBounds()).workArea
     : screen.getPrimaryDisplay().workArea
   const bounds = placeSessionWindow(
-    savedBounds(),
+    savedBounds('session-window.json'),
     [...sessionWindows.values()].filter((w) => !w.isDestroyed()).map((w) => w.getBounds()),
     screen.getAllDisplays().map((d) => d.workArea),
     home
@@ -231,9 +244,7 @@ function openSessionWindow(sessionId: string, state: PaneState): void {
   windowStates.set(contentsId, { sessionId, state })
   win.on('focus', sendWindows)
   win.on('blur', sendWindows)
-  win.on('moved', () => saveBounds(win))
-  win.on('resized', () => saveBounds(win))
-  win.on('close', () => saveBounds(win, true))
+  trackBounds(win, 'session-window.json')
   win.on('closed', () => {
     windowStates.delete(contentsId)
     if (sessionWindows.get(sessionId) === win) sessionWindows.delete(sessionId)
@@ -242,6 +253,59 @@ function openSessionWindow(sessionId: string, state: PaneState): void {
   })
   loadPage(win, 'index.html', { session: sessionId })
   sendWindows()
+}
+
+/**
+ * Opens the annotation canvas in its own window (SPEC → Visual feedback → Annotation canvas),
+ * where the user left the last one, else centered on the display of the window that asked.
+ * Resolves with what was added, or null once it closes without; it closes with that window.
+ */
+function openAnnotateWindow(opener: BrowserWindow, request: AnnotateRequest): Promise<AnnotateResult> {
+  return new Promise((resolve) => {
+    const bounds = placeSessionWindow(
+      savedBounds('annotate-window.json'),
+      [...annotateWindows.values()].filter((a) => !a.win.isDestroyed()).map((a) => a.win.getBounds()),
+      screen.getAllDisplays().map((d) => d.workArea),
+      screen.getDisplayMatching(opener.getBounds()).workArea
+    )
+    const win = newWindow(bounds)
+    const contentsId = win.webContents.id
+    let done = false
+    const finish = (result: AnnotateResult): void => {
+      if (done) return
+      done = true
+      resolve(result)
+      if (!win.isDestroyed()) win.close()
+    }
+    const closeWithOpener = (): void => {
+      if (!win.isDestroyed()) win.close()
+    }
+    annotateWindows.set(contentsId, { win, request, finish })
+    opener.once('closed', closeWithOpener)
+    trackBounds(win, 'annotate-window.json')
+    win.on('closed', () => {
+      annotateWindows.delete(contentsId)
+      if (!opener.isDestroyed()) opener.removeListener('closed', closeWithOpener)
+      finish(null)
+    })
+    loadPage(win, 'index.html', { annotate: '1' })
+  })
+}
+
+function annotateRequestArg(value: unknown): AnnotateRequest {
+  const r = (typeof value === 'object' && value !== null ? value : {}) as Partial<AnnotateRequest>
+  const a = r.annotation
+  const c = a?.capture
+  if (!a || !c || typeof c.data !== 'string' || typeof c.width !== 'number' || typeof c.height !== 'number' ||
+    !Array.isArray(a.shapes) || !Array.isArray(a.pins)) throw new Error('Invalid annotation')
+  return { annotation: a, retake: r.retake === true }
+}
+
+function annotateResultArg(value: unknown): AnnotateResult {
+  if (value === null) return null
+  const r = (typeof value === 'object' ? value : {}) as Partial<NonNullable<AnnotateResult>>
+  if (r.image?.kind !== 'image' || typeof r.image.data !== 'string' || !r.annotation) throw new Error('Invalid annotation result')
+  return { image: r.image, annotation: r.annotation }
 }
 
 /** Loads one of the renderer's pages: from the dev server in development, else from the build. */
@@ -653,6 +717,15 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     if (e.sender !== mainWindow?.webContents) return
     capture.paused = paused === true
     setCaptureShortcut(capture.setting)
+  })
+  ipcMain.handle(IPC.annotateOpen, (e, request: unknown) => {
+    const opener = glossWindows().find((w) => w.webContents === e.sender)
+    if (!opener || annotateWindows.has(e.sender.id)) throw new Error('Only a Gloss window can open the annotation canvas.')
+    return openAnnotateWindow(opener, annotateRequestArg(request))
+  })
+  ipcMain.handle(IPC.annotateInitial, (e) => annotateWindows.get(e.sender.id)?.request ?? null)
+  ipcMain.handle(IPC.annotateFinish, (e, result: unknown) => {
+    annotateWindows.get(e.sender.id)?.finish(annotateResultArg(result))
   })
   ipcMain.handle(IPC.captureStart, (e) => {
     const win = glossWindows().find((w) => w.webContents === e.sender)

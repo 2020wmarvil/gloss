@@ -19,6 +19,11 @@ beforeEach(() => {
     onAdd={() => {}} onCancel={() => {}}
   />))
 })
+
+/** The pins column starts closed; most tests type in its notes. */
+function showPins(): void {
+  act(() => document.querySelector<HTMLButtonElement>('button[title="Show pins"]')!.click())
+}
 afterEach(() => {
   act(() => root.unmount())
   vi.restoreAllMocks()
@@ -30,6 +35,7 @@ function button(name: string): HTMLButtonElement {
 }
 
 function placePin(): HTMLTextAreaElement {
+  if (!document.querySelector('.annotate-pins')) showPins()
   act(() => button('Pin').click())
   const canvas = document.querySelector('canvas')!
   canvas.setPointerCapture = vi.fn()
@@ -42,6 +48,12 @@ function undo(target: HTMLElement, init: KeyboardEventInit = {}): KeyboardEvent 
   act(() => target.dispatchEvent(event))
   return event
 }
+
+it('opens with the pins column closed, even after it was shown', () => {
+  expect(document.querySelector('.annotate-pins')).toBeNull()
+  showPins()
+  expect(document.querySelector('.annotate-pins')).not.toBeNull()
+})
 
 it('starts with pencil selected and lists pin after the drawing tools', () => {
   const names = [...document.querySelectorAll('.annotate-tools button')].map((b) => b.getAttribute('aria-label'))
@@ -76,6 +88,7 @@ it('preserves native text undo and redo for note editing', () => {
   expect(document.querySelector('textarea')).toBeNull()
 })
 it('keeps keyboard focus through repeated undo of three pins and a drawing', async () => {
+  showPins()
   const canvas = document.querySelector('canvas')!
   canvas.setPointerCapture = vi.fn()
   const pointer = (type: string, x: number): void => {

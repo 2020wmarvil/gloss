@@ -365,35 +365,34 @@ describe('screen capture', () => {
     expect(document.querySelector('button[title="Attach"]')).toBeNull()
   })
 
-  it('opens the annotation canvas on the capture, and the capture shortcut goes to the composer used last', async () => {
-    // jsdom has neither layout nor canvas: the dialog still opens, without drawing.
-    vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} })
-    const start = vi.fn(async () => ({ data: 'iVBOR', width: 40, height: 30, source: 'Region' }))
-    window.gloss = { capture: { start } } as unknown as typeof window.gloss
+  it('opens the annotation window on the capture, adds what comes back, and the capture shortcut goes to the composer used last', async () => {
+    const capture = { data: 'iVBOR', width: 40, height: 30, source: 'Region' }
+    const start = vi.fn(async () => capture)
+    const image = { kind: 'image', name: 'capture.png', mimeType: 'image/png', data: 'iVBOR', pins: [] }
+    const open = vi.fn()
+      .mockResolvedValueOnce({ image, annotation: { capture, shapes: [], pins: [] } })
+      .mockResolvedValueOnce(null)
+    window.gloss = { capture: { start }, annotate: { open } } as unknown as typeof window.gloss
     const view = mount('capture-on', { accepts: { image: true, file: false } })
     const item = captureItem()
     await act(async () => {
       item.click()
     })
     expect(start).toHaveBeenCalledTimes(1)
-    expect(document.querySelector('[role="dialog"] h2')?.textContent).toBe('Annotate')
-    expect(document.querySelector('.annotate-head .muted')?.textContent).toBe('Region · 40 × 30')
-    expect(document.querySelector('.annotate-pins-head')?.textContent).toContain('Pins')
-    await act(async () => {
-      document.querySelector<HTMLButtonElement>('.annotate-foot button.ghost')!.click()
-    })
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(open).toHaveBeenCalledWith({ annotation: { capture, shapes: [], pins: [] }, retake: true })
+    // The canvas is another window: nothing covers the session.
+    expect(document.querySelector('.annotate')).toBeNull()
+    expect(document.querySelectorAll('.attachment').length).toBe(1)
 
     act(() => view.focus())
     await act(async () => {
       window.dispatchEvent(new Event('gloss:capture'))
     })
     expect(start).toHaveBeenCalledTimes(2)
-    vi.unstubAllGlobals()
+    expect(document.querySelectorAll('.attachment').length).toBe(1)
   })
 
-  it('opens the annotation canvas on an attached image, without Retake', async () => {
-    vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} })
+  it('opens the annotation window on an attached image, without Retake, and replaces it', async () => {
     // jsdom decodes no images: this one loads at once with a size.
     vi.stubGlobal(
       'Image',
@@ -407,7 +406,9 @@ describe('screen capture', () => {
       }
     )
     const start = vi.fn()
-    window.gloss = { capture: { start } } as unknown as typeof window.gloss
+    const annotated = { kind: 'image', name: 'photo.jpg', mimeType: 'image/png', data: 'AAAA', pins: [{ x: 1, y: 1, note: 'here' }] }
+    const open = vi.fn(async (request: { annotation: unknown }) => ({ image: annotated, annotation: request.annotation }))
+    window.gloss = { capture: { start }, annotate: { open } } as unknown as typeof window.gloss
     mount('attached-image', { accepts: { image: true, file: false } })
     const drop = new Event('drop', { bubbles: true, cancelable: true })
     Object.defineProperty(drop, 'dataTransfer', { value: { files: [new File([new Uint8Array([1, 2, 3])], 'photo.jpg', { type: 'image/jpeg' })] } })
@@ -419,9 +420,12 @@ describe('screen capture', () => {
       document.querySelector<HTMLButtonElement>('.attachment .capture-edit')!.click()
       await new Promise((r) => setTimeout(r, 10))
     })
-    expect(document.querySelector('.annotate-head .muted')?.textContent).toBe('photo.jpg · 64 × 48')
-    expect([...document.querySelectorAll('[role="dialog"] button')].some((b) => b.textContent?.includes('Retake'))).toBe(false)
+    expect(open).toHaveBeenCalledWith({
+      annotation: { capture: expect.objectContaining({ width: 64, height: 48, source: 'photo.jpg' }), shapes: [], pins: [] },
+      retake: false
+    })
     expect(start).not.toHaveBeenCalled()
+    expect(document.querySelectorAll('.attachment').length).toBe(1)
     vi.unstubAllGlobals()
   })
 })

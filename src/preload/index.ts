@@ -74,6 +74,11 @@ const api: GlossApi = {
     shortcutStatus: () => ipcRenderer.invoke(IPC.captureShortcutStatus),
     pauseShortcut: (paused) => ipcRenderer.invoke(IPC.capturePauseShortcut, paused)
   },
+  annotate: {
+    open: (request) => ipcRenderer.invoke(IPC.annotateOpen, request),
+    initial: () => ipcRenderer.invoke(IPC.annotateInitial),
+    finish: (result) => ipcRenderer.invoke(IPC.annotateFinish, result)
+  },
   requests: {
     answer: (sessionId, requestId, answer) => ipcRenderer.invoke(IPC.requestsAnswer, sessionId, requestId, answer)
   },

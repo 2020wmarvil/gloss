@@ -1,17 +1,11 @@
 // The annotation canvas's drawing (SPEC → Visual feedback): pins and marks over a capture, and
 // the flattened image that is sent.
-import type { Capture } from '@shared/capture'
+import type { Annotation, Capture, Shape } from '@shared/capture'
 import type { Attachment, Pin } from '@shared/types'
 
+export type { Annotation, Shape }
+
 export type Tool = 'pin' | 'pen' | 'highlighter' | 'box' | 'arrow'
-
-/** A drawn mark, in the capture's pixels. */
-export type Shape =
-  | { type: 'pen' | 'highlighter'; color: string; points: [number, number][] }
-  | { type: 'box' | 'arrow'; color: string; x1: number; y1: number; x2: number; y2: number }
-
-/** A capture being annotated, kept so the composer can reopen it (Edit) until it is sent. */
-export type Annotation = { capture: Capture; shapes: Shape[]; pins: Pin[] }
 
 /** Pins are always Gloss's pink, so they read as anchors; the colors are for marks. */
 export const PIN_COLOR = '#e0157f'
