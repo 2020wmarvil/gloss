@@ -27,13 +27,15 @@ type Props = {
   state: SettingsState
   /** The initially selected project folder, if any. */
   projectPath: string | null
+  /** The section it opens on; General by default. */
+  initialSection?: SettingsSection
   projects: Project[]
   onUpdate(patch: SettingsPatch): Promise<void>
   onOpenFile(): Promise<string | null>
   onClose(): void
 }
 
-export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenFile, onClose }: Props): React.JSX.Element {
+export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenFile, onClose, initialSection }: Props): React.JSX.Element {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
 
@@ -61,7 +63,7 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
     setOpenError(await onOpenFile())
   }
 
-  const [section, setSection] = useState<SettingsSection>('general')
+  const [section, setSection] = useState<SettingsSection>(initialSection ?? 'general')
   const [selectedProject, setSelectedProject] = useState(projectPath)
   const settingsProject = projects.find((p) => selectedProject !== null && sameFolder(p.path, selectedProject))
     ?? projects.find((p) => projectPath !== null && sameFolder(p.path, projectPath)) ?? projects[0]

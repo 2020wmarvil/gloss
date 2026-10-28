@@ -3,10 +3,12 @@ import { modKey } from './shortcuts'
 // the project's sessions, Gloss's and the agent's own (SPEC → Projects and sessions).
 import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
+import { projectOf } from '@shared/worktree'
 import type { SessionOrder } from '@shared/settings'
 import type { AgentInfo, AgentSession, Project, RateLimit, Session } from '@shared/types'
 import { formatReset } from './StatusLine'
-import { AppWindow, ChevronDown, ChevronsUpDown, CircleAlert, Ellipsis, GitCompare, Info, List, MessageSquare, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
+import { AppWindow, ChevronDown, ChevronRight, ChevronsUpDown, CircleAlert, Ellipsis, Folder, FolderGit2, GitBranch, GitCompare, Info, List, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
+import { folderName } from '@shared/paths'
 
 type Props = {
   agents: AgentInfo[]
@@ -46,10 +48,17 @@ type Props = {
   onOpenProject(): void
   onDeleteProject(path: string): void
   onSelect(id: string): void
-  /** Starts a session with the given agent, or the default one. */
-  onNew(agentId?: string): void
-  /** Starts a review of the project's branch with the given agent, or the default one (SPEC → Review sessions). */
-  onReview(agentId?: string): void
+  /** Starts a session with the given agent and place, or the defaults (SPEC → Worktrees). */
+  onNew(agentId?: string, place?: string): void
+  /** Where New session starts in this project: `folder`, `worktree` (a new one) or an existing worktree's path. */
+  place: string
+  /** The branch of the starred existing worktree, for its row. */
+  placeBranch?: string | null
+  /** Stars a place: New session starts there. */
+  onSetPlace(place: string): void
+  /** Opens the Worktrees screen. */
+  onWorktrees(): void
+  worktreesOpen: boolean
   onImport(session: ListedAgentSession): void
   onRename(id: string, title: string): void
   onDelete(id: string): void
@@ -108,8 +117,9 @@ export function Sidebar(props: Props): React.JSX.Element {
   const { project, openId, running, agentSessions } = props
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
-  /** What the ▾ menu's agents start: kept from the last pick. */
-  const [newKind, setNewKind] = useState<'session' | 'review'>('session')
+  /** What the ▾ menu will start: picked rows, starting on the defaults each time it opens. */
+  const [pickPlace, setPickPlace] = useState(props.place)
+  const [pickAgent, setPickAgent] = useState(props.defaultAgent)
   const agentMenu = useRef<HTMLDivElement>(null)
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -135,28 +145,39 @@ export function Sidebar(props: Props): React.JSX.Element {
     }
   }, [switcherOpen, agentMenuOpen, menuFor])
 
-  // The menu opens with the default agent focused.
+  // The menu opens on the defaults (picked by the button that opens it), with Start focused, so Enter does what New session does.
   useEffect(() => {
-    if (!agentMenuOpen) return
-    const items = [...(agentMenu.current?.querySelectorAll<HTMLButtonElement>('button[data-agent]:not(:disabled)') ?? [])]
-    ;(items.find((b) => b.dataset.agent === props.defaultAgent) ?? items[0])?.focus()
-    // Only on opening, not when the default changes from the menu's stars.
+    if (agentMenuOpen) agentMenu.current?.querySelector<HTMLButtonElement>('.new-start button')?.focus()
   }, [agentMenuOpen])
 
-  /** In the ▾ menu: Tab switches between session and review, the arrows move between agents. */
+  /** In the ▾ menu: the arrows move between the rows of a list, Enter starts. */
   function onAgentMenuKey(e: React.KeyboardEvent): void {
-    if (e.key === 'Tab') {
+    if (e.key === 'Enter' && !(e.target as HTMLElement).classList.contains('agent-star')) {
       e.preventDefault()
-      setNewKind((k) => (k === 'session' ? 'review' : 'session'))
+      start()
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      const items = [...(agentMenu.current?.querySelectorAll<HTMLButtonElement>('button[data-agent]:not(:disabled)') ?? [])]
+      const group = (e.target as HTMLElement).closest('[role="radiogroup"]') ?? agentMenu.current?.querySelector('[role="radiogroup"]')
+      const items = [...(group?.querySelectorAll<HTMLButtonElement>('button[role="menuitemradio"]:not(:disabled)') ?? [])]
       if (!items.length) return
       const at = items.indexOf(document.activeElement as HTMLButtonElement)
       const step = e.key === 'ArrowDown' ? 1 : items.length - 1
-      items[at === -1 ? 0 : (at + step) % items.length].focus()
+      const next = items[at === -1 ? 0 : (at + step) % items.length]
+      next.focus()
+      next.click()
     }
   }
+
+  function start(): void {
+    setAgentMenuOpen(false)
+    props.onNew(pickAgent, pickPlace)
+  }
+
+  const existing = props.place !== 'folder' && props.place !== 'worktree' ? props.place : null
+  /** The starred place's shortcut: New session with the default agent. */
+  const keysFor = (place: string): string => (place === props.place ? ` (${modKey()}+N)` : '')
+  const placeName = (place: string): string =>
+    place === 'folder' ? 'the project folder' : place === 'worktree' ? 'a new worktree' : (props.placeBranch ?? folderName(place))
 
   /** "Limit · 3:40 PM" on an agent whose plan limit is reached, until the window resets. */
   const limitNote = (agentId: string): React.JSX.Element | null => {
@@ -174,9 +195,9 @@ export function Sidebar(props: Props): React.JSX.Element {
 
   const agentName = (id: string): string => props.agents.find((a) => a.id === id)?.name ?? id
   const defaultName = agentName(props.defaultAgent)
-  const sessions = project ? props.sessions.filter((s) => sameFolder(s.cwd, project.path)) : []
+  const sessions = project ? props.sessions.filter((s) => sameFolder(projectOf(s), project.path)) : []
   const projectBadges = (p: Project): React.JSX.Element => {
-    const list = props.sessions.filter((s) => sameFolder(s.cwd, p.path))
+    const list = props.sessions.filter((s) => sameFolder(projectOf(s), p.path))
     const waiting = list.some((s) => (props.waiting?.[s.id]?.length ?? 0) > 0)
     const working = list.some((s) => s.id in running)
     const failed = list.some((s) => props.unseen[s.id] === 'failed')
@@ -346,7 +367,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                       e.stopPropagation()
                       setConfirmDelete({
                         project: p,
-                        sessions: props.sessions.filter((s) => sameFolder(s.cwd, p.path)).length
+                        sessions: props.sessions.filter((s) => sameFolder(projectOf(s), p.path)).length
                       })
                     }}
                   >
@@ -372,22 +393,34 @@ export function Sidebar(props: Props): React.JSX.Element {
             className="secondary new-session"
             onClick={() => props.onNew()}
             disabled={props.creating || props.agents.find((a) => a.id === props.defaultAgent)?.available === false}
-            title={`New session with ${defaultName} (Ctrl+N)`}
+            title={`New session with ${defaultName} in ${placeName(props.place)} (Ctrl+N)`}
           >
             {!props.creating && <Plus />}
             <span className="new-session-label">{props.creating ? 'Starting agent…' : 'New session'}</span>
             {/* The agent's first word ("Claude" for Claude Code) keeps the button on one line. */}
-            {!props.creating && <span className="new-session-agent">{defaultName.split(' ')[0]}</span>}
+            {!props.creating && (
+              <span className="new-session-agent">
+                {props.place !== 'folder' && <GitBranch className="new-session-place" aria-label={placeName(props.place)} />}
+                {existing && `${(props.placeBranch ?? folderName(existing)).replace(/^gloss\//, '')} · `}
+                {defaultName.split(' ')[0]}
+              </span>
+            )}
           </button>
           <button
             className="secondary new-session-agents"
-            aria-label="New session or review with any agent"
-            title={`Session or review with any agent (review with ${defaultName}: Ctrl+Shift+D)`}
+            aria-label="New session with any agent, anywhere"
+            title="New session with any agent, in the project folder or a worktree"
             aria-haspopup="menu"
             aria-expanded={agentMenuOpen}
             disabled={props.creating}
             onClick={(e) => {
               e.stopPropagation()
+              // Opens on the defaults, set before it shows so its first frame isn't the last pick.
+              if (!agentMenuOpen) {
+                setPickPlace(props.place)
+                const usable = props.agents.find((a) => a.id === props.defaultAgent && a.available !== false) ?? props.agents.find((a) => a.available !== false)
+                setPickAgent(usable?.id ?? props.defaultAgent)
+              }
               setAgentMenuOpen((o) => !o)
               setSwitcherOpen(false)
               setMenuFor(null)
@@ -397,34 +430,59 @@ export function Sidebar(props: Props): React.JSX.Element {
           </button>
           {agentMenuOpen && (
             <div className="menu agent-menu" role="menu" ref={agentMenu} onClick={(e) => e.stopPropagation()} onKeyDown={onAgentMenuKey}>
-              <div className="segmented new-kind" role="radiogroup" aria-label="Start a">
-                <button role="radio" aria-checked={newKind === 'session'} tabIndex={-1} onClick={() => setNewKind('session')}>
-                  <MessageSquare />
-                  Session
-                </button>
-                <button
-                  role="radio"
-                  aria-checked={newKind === 'review'}
-                  tabIndex={-1}
-                  title="Review this branch's changes: its pull request's, else everything since it left the default branch, committed or not"
-                  onClick={() => setNewKind('review')}
-                >
-                  <GitCompare />
-                  Review
-                </button>
+              <div className="menu-label">Where</div>
+              <div role="radiogroup" aria-label="Where">
+                {[
+                  { value: 'folder', icon: <Folder />, label: 'Project folder', title: `Works in the project folder, with the other sessions there${keysFor('folder')}` },
+                  { value: 'worktree', icon: <GitBranch />, label: 'New worktree', title: `Works on a new branch in its own folder, so it doesn't touch other sessions' files${keysFor('worktree')}` },
+                  ...(existing ? [{ value: existing, icon: <GitBranch />, label: props.placeBranch ?? folderName(existing), title: `${existing}${keysFor(existing)}`, sub: 'existing' }] : [])
+                ].map((p) => (
+                  <div key={p.value} className="agent-item">
+                    <button
+                      role="menuitemradio"
+                      aria-checked={pickPlace === p.value}
+                      className={pickPlace === p.value ? 'picked' : undefined}
+                      tabIndex={pickPlace === p.value ? 0 : -1}
+                      title={p.title}
+                      onClick={() => setPickPlace(p.value)}
+                    >
+                      {p.icon}
+                      {p.label}
+                      {'sub' in p && <small className="menu-sub">{p.sub}</small>}
+                    </button>
+                    <button
+                      className={p.value === props.place ? 'agent-star on' : 'agent-star'}
+                      role="menuitemcheckbox"
+                      aria-checked={p.value === props.place}
+                      aria-label={`Start new sessions in ${p.label}`}
+                      tabIndex={-1}
+                      title={p.value === props.place ? 'New session starts here' : 'Make default'}
+                      onClick={() => props.onSetPlace(p.value === props.place && p.value !== 'folder' ? 'folder' : p.value)}
+                    >
+                      <Star fill={p.value === props.place ? 'currentColor' : 'none'} />
+                    </button>
+                  </div>
+                ))}
               </div>
+              <button className="menu-link" onClick={() => (setAgentMenuOpen(false), props.onWorktrees())}>
+                <FolderGit2 />
+                Existing worktree…
+                <ChevronRight className="menu-link-end" />
+              </button>
+              <hr />
+              <div className="menu-label">Agent</div>
+              <div role="radiogroup" aria-label="Agent">
               {props.agents.map((a) => (
                 <div key={a.id} className="agent-item">
                   <button
-                    role="menuitem"
+                    role="menuitemradio"
+                    aria-checked={pickAgent === a.id}
+                    className={pickAgent === a.id ? 'picked' : undefined}
+                    tabIndex={pickAgent === a.id ? 0 : -1}
                     data-agent={a.id}
                     disabled={a.available === false}
                     title={a.setupMessage}
-                    onClick={() => {
-                      setAgentMenuOpen(false)
-                      if (newKind === 'review') props.onReview(a.id)
-                      else props.onNew(a.id)
-                    }}
+                    onClick={() => setPickAgent(a.id)}
                   >
                     {a.name}
                     {a.available === false && <small> (set up in Settings)</small>}
@@ -444,6 +502,12 @@ export function Sidebar(props: Props): React.JSX.Element {
                   </button>
                 </div>
               ))}
+              </div>
+              <div className="new-start">
+                <button className="primary" onClick={start} disabled={props.agents.find((a) => a.id === pickAgent)?.available === false}>
+                  Start in {placeName(pickPlace)}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -505,6 +569,12 @@ export function Sidebar(props: Props): React.JSX.Element {
           <Search />
           Search
         </button>
+        {project && (
+          <button className={props.worktreesOpen ? 'ghost settings-button on' : 'ghost settings-button'} onClick={props.onWorktrees} title="Worktrees">
+            <FolderGit2 />
+            Worktrees
+          </button>
+        )}
         <button
           className={props.settingsOpen ? 'ghost settings-button on' : 'ghost settings-button'}
           onClick={props.onSettings}

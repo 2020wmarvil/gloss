@@ -2,12 +2,13 @@
 // threads full screen, the composer with queue and steer, questions and approvals, and the status sheet.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft, ArrowUp, Check, ChevronDown, ChevronRight, Clock, CornerDownRight, Folder, Hand, Lock,
+  ArrowLeft, ArrowUp, Check, ChevronDown, ChevronRight, Clock, CornerDownRight, Folder, GitBranch, Hand, Lock,
   MessageSquare, MessageSquareReply, Pencil, Plus, Shield, Square, Trash2, WifiOff, X
 } from 'lucide-react'
 import type { Anchor, Attachment, Message, Plan, PlanUsage, Session, Thread, ToolCall } from '@shared/types'
 import { lineLabel } from '@shared/review'
 import { truncate } from '@shared/wire'
+import { projectOf } from '@shared/worktree'
 import { errorText } from '../src/errors'
 import { logItems, type LogItem, type Notice } from '../src/Log'
 import { Markdown } from '../src/Markdown'
@@ -121,18 +122,21 @@ function Sessions({ phone, onOpen }: { phone: Phone; onOpen(id: string): void })
   const current = phone.projects.find((p) => p.path === project) ?? phone.projects[0]
   const needs = (s: Session) => (phone.activity[s.id]?.requests ?? 0) > 0
   const list = phone.sessions
-    .filter((s) => current && s.cwd.toLowerCase() === current.path.toLowerCase())
+    .filter((s) => current && projectOf(s).toLowerCase() === current.path.toLowerCase())
     .sort((a, b) => Number(needs(b)) - Number(needs(a)) || (b.activeAt ?? b.createdAt) - (a.activeAt ?? a.createdAt))
   const agentName = (id: string) => phone.agents.find((a) => a.id === id)?.name ?? id
   const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const held = useRef(false)
 
-  async function create(agentId: string): Promise<void> {
+  /** `worktree`: in a new worktree of the project (SPEC → Worktrees). */
+  async function create(agentId: string, worktree = false): Promise<void> {
     if (!current) return
     setPicker(null)
     setError(null)
     try {
-      const s = await window.gloss.sessions.create(current.path, agentId)
+      const s = worktree
+        ? await window.gloss.sessions.createInWorktree(current.path, agentId)
+        : await window.gloss.sessions.create(current.path, agentId)
       onOpen(s.id)
     } catch (err) {
       setError(errorText(err))
@@ -174,7 +178,7 @@ function Sessions({ phone, onOpen }: { phone: Phone; onOpen(id: string): void })
       {picker === 'projects' && (
         <Sheet title="Projects" onClose={() => setPicker(null)}>
           {phone.projects.map((p) => {
-            const here = phone.sessions.filter((s) => s.cwd.toLowerCase() === p.path.toLowerCase())
+            const here = phone.sessions.filter((s) => projectOf(s).toLowerCase() === p.path.toLowerCase())
             const waits = here.filter((s) => (phone.activity[s.id]?.requests ?? 0) > 0).length
             const runs = here.some((s) => phone.activity[s.id]?.turn !== undefined)
             return (
@@ -196,6 +200,12 @@ function Sessions({ phone, onOpen }: { phone: Phone; onOpen(id: string): void })
             <button key={a.id} className="m-kv m-kv-btn" onClick={() => void create(a.id)}>
               <span className="m-k m-ink">{a.name}</span>
               {a.id === phone.info?.defaultAgent && <span className="m-v m-small">Default</span>}
+            </button>
+          ))}
+          <div className="m-sec">In a new worktree</div>
+          {phone.agents.filter((a) => a.available !== false).map((a) => (
+            <button key={`wt:${a.id}`} className="m-kv m-kv-btn" onClick={() => void create(a.id, true)}>
+              <GitBranch size={18} /><span className="m-k m-ink">{a.name}</span>
             </button>
           ))}
         </Sheet>

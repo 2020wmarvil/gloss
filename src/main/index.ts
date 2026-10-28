@@ -799,11 +799,23 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   share(IPC.sessionsCreate, (cwd: unknown, agentId: unknown) =>
     manager.startSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
   )
-  ipcMain.handle(IPC.sessionsCreateReview, (_e, cwd: unknown, agentId: unknown, baseRef: unknown, headRef: unknown) =>
+  share(IPC.sessionsCreateInWorktree, (project: unknown, agentId: unknown) =>
+    manager.startWorktreeSession(folderArg(project, 'project'), str(agentId, 'agentId'))
+  )
+  // An existing worktree is picked on the desktop's Worktrees screen; phones only start new ones.
+  ipcMain.handle(IPC.sessionsCreateIn, (_e, project: unknown, path: unknown, agentId: unknown) =>
+    manager.startSessionIn(folderArg(project, 'project'), folderArg(path, 'path'), str(agentId, 'agentId'))
+  )
+  ipcMain.handle(IPC.worktreesList, (_e, project: unknown) => manager.listProjectWorktrees(folderArg(project, 'project')))
+  ipcMain.handle(IPC.worktreesRemove, (_e, project: unknown, path: unknown) =>
+    manager.removeProjectWorktree(folderArg(project, 'project'), folderArg(path, 'path'))
+  )
+  ipcMain.handle(IPC.sessionsCreateReview, (_e, cwd: unknown, agentId: unknown, baseRef: unknown, headRef: unknown, project: unknown) =>
     manager.createReview(
       folderArg(cwd, 'cwd'),
       str(agentId, 'agentId'),
-      baseRef == null ? undefined : { baseRef: str(baseRef, 'baseRef'), ...(headRef == null ? {} : { headRef: str(headRef, 'headRef') }) }
+      baseRef == null ? undefined : { baseRef: str(baseRef, 'baseRef'), ...(headRef == null ? {} : { headRef: str(headRef, 'headRef') }) },
+      project == null ? undefined : folderArg(project, 'project')
     )
   )
   ipcMain.handle(IPC.sessionsRunReview, (_e, id: unknown) => manager.runReview(str(id, 'id')))
@@ -828,13 +840,14 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   )
   ipcMain.handle(
     IPC.sessionsImport,
-    (_e, cwd: unknown, agentId: unknown, acpSessionId: unknown, title: unknown, listedAt: unknown) =>
+    (_e, cwd: unknown, agentId: unknown, acpSessionId: unknown, title: unknown, listedAt: unknown, project: unknown) =>
       manager.importSession(
         folderArg(cwd, 'cwd'),
         str(agentId, 'agentId'),
         str(acpSessionId, 'acpSessionId'),
         str(title, 'title'),
-        typeof listedAt === 'string' ? listedAt : undefined
+        typeof listedAt === 'string' ? listedAt : undefined,
+        project == null ? undefined : folderArg(project, 'project')
       )
   )
   share(IPC.sessionsRewindPoints, (id: unknown) => manager.rewindPoints(str(id, 'id')), 'Only a Gloss window can rewind.')
@@ -890,7 +903,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.sessionsOpenObsidian, async (_e, id: unknown) => {
     const session = store!.getSession(str(id, 'id'))
     if (!session) throw new Error(`Unknown session ${String(id)}`)
-    const vault = projectSettings(settingsFile.state().projects, session.cwd).obsidianVault
+    const vault = projectSettings(settingsFile.state().projects, session.project ?? session.cwd).obsidianVault
     if (!vault?.trim()) throw new Error('Set an Obsidian vault in project settings first.')
     await shell.openExternal(obsidianUri(vault))
   })
@@ -1011,6 +1024,7 @@ function paneStateArg(value: unknown, sessionId: string): PaneState {
 function mainActionArg(value: unknown): MainAction {
   const a = (typeof value === 'object' && value !== null ? value : {}) as Partial<Record<string, unknown>>
   if (a.kind === 'search' || a.kind === 'newSession' || a.kind === 'review' || a.kind === 'settings') return { kind: a.kind }
+  if (a.kind === 'reviewFolder') return { kind: 'reviewFolder', sessionId: str(a.sessionId, 'sessionId'), ...(a.path == null ? {} : { path: folderArg(a.path, 'path') }) }
   if (a.kind === 'cycleSession') return { kind: 'cycleSession', back: a.back === true }
   if (a.kind === 'newReview') return { kind: 'newReview', sessionId: str(a.sessionId, 'sessionId') }
   throw new Error('Unknown action')
@@ -1120,7 +1134,14 @@ app.whenReady().then(() => {
     },
     agentEnv: (config) => agentEnv(config),
     connect: (config, env, handlers) => AgentConnection.start(config, env, handlers),
-    runInTerminal
+    runInTerminal,
+    worktreeSettings: (project) => {
+      const p = projectSettings(settingsFile.state().projects, project)
+      return { base: p.worktreeBase, setup: p.worktreeSetup, place: p.newSessionPlace }
+    },
+    placeRemoved: (project) => {
+      settingsFile.update({ project: { path: project, values: { newSessionPlace: 'folder' } } })
+    }
   })
   registerIpc(sessions, settingsFile)
   phone = new PhoneService({

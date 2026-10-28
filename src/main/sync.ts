@@ -6,6 +6,7 @@ import type * as acp from '@agentclientprotocol/sdk'
 import type { Attachment, Message, Plan, PlanEntry, Thread, ToolCall } from '../shared/types'
 import { MAIN_TAG, threadTag, threadToMainTag } from '../shared/wire'
 import { isRangeNote } from '../shared/review'
+import { isWorktreeNote } from '../shared/worktree'
 
 /** One entry of the agent's history, as its replay tells it. */
 export type ReplayEntry =
@@ -273,9 +274,10 @@ export function placeUserMessage(
   threads: Thread[],
   active: Map<string, number>
 ): { threadId: string | null; text: string } {
-  // A review's range note is for the agent only.
+  // A review's range note and a worktree's note are for the agent only.
   const noteEnd = wire.indexOf('\n')
-  if (noteEnd >= 0 && isRangeNote(wire.slice(0, noteEnd))) return placeUserMessage(wire.slice(noteEnd + 1), threads, active)
+  const note = noteEnd >= 0 ? wire.slice(0, noteEnd) : ''
+  if (isRangeNote(note) || isWorktreeNote(note)) return placeUserMessage(wire.slice(noteEnd + 1), threads, active)
   const nl = wire.indexOf('\n')
   const first = nl < 0 ? wire : wire.slice(0, nl)
   const rest = nl < 0 ? '' : wire.slice(nl + 1)

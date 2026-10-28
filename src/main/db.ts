@@ -214,7 +214,18 @@ const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
     created_at INTEGER NOT NULL,
     last_used_at INTEGER,
     push_subscription TEXT
-  );`
+  );`,
+  // Worktrees (SPEC → Worktrees): a session's project when it works in another folder,
+  // and the worktrees Gloss created (only those are removed without asking).
+  (db) => {
+    if (!db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'project')) db.exec('ALTER TABLE sessions ADD COLUMN project TEXT')
+    db.exec(`CREATE TABLE IF NOT EXISTS worktrees (
+      path TEXT PRIMARY KEY,
+      project TEXT NOT NULL,
+      branch TEXT,
+      created_at INTEGER NOT NULL
+    )`)
+  }
 ]
 
 function addPermissionColumns(db: DatabaseSync): void {
@@ -246,7 +257,8 @@ function toSession(r: Row): Session {
           openThreads: Number(r.open_threads)
         }
       : {}),
-    ...(r.draft ? { draft: true as const } : {})
+    ...(r.draft ? { draft: true as const } : {}),
+    ...(r.project != null ? { project: r.project as string } : {})
   }
 }
 
@@ -374,7 +386,7 @@ export class Store {
   insertSession(s: Session): void {
     this.db
       .prepare(
-        'INSERT INTO sessions (id, agent_id, acp_session_id, cwd, title, created_at, title_set, review_base, review_head, draft) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO sessions (id, agent_id, acp_session_id, cwd, title, created_at, title_set, review_base, review_head, draft, project) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
       .run(
         s.id,
@@ -386,8 +398,29 @@ export class Store {
         s.titleSet ? 1 : null,
         s.review?.baseRef ?? null,
         s.review?.headRef ?? null,
-        s.draft ? 1 : null
+        s.draft ? 1 : null,
+        s.project ?? null
       )
+  }
+
+  // Worktrees Gloss created (SPEC → Worktrees)
+
+  addWorktree(w: { path: string; project: string; branch: string | null; createdAt: number }): void {
+    this.db.prepare('INSERT OR REPLACE INTO worktrees (path, project, branch, created_at) VALUES (?, ?, ?, ?)')
+      .run(w.path, w.project, w.branch, w.createdAt)
+  }
+
+  listWorktrees(): { path: string; project: string; branch: string | null; createdAt: number }[] {
+    return this.db.prepare('SELECT * FROM worktrees ORDER BY created_at').all().map((r) => ({
+      path: r.path as string,
+      project: r.project as string,
+      branch: (r.branch as string | null) ?? null,
+      createdAt: Number(r.created_at)
+    }))
+  }
+
+  deleteWorktree(path: string): void {
+    this.db.prepare('DELETE FROM worktrees WHERE path = ?').run(path)
   }
 
   getSessionByAcpId(agentId: string, acpSessionId: string): Session | undefined {

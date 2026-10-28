@@ -22,6 +22,7 @@ import type {
   Session,
   SessionLive,
   Thread,
+  Worktree,
   ToolCall
 } from './types'
 
@@ -123,6 +124,8 @@ export type GlossEvent =
   | { type: 'session'; session: Session }
   /** `deletedOutside`: the agent no longer had it, so Gloss deleted it too (SPEC → Shared sessions). */
   | { type: 'sessionDeleted'; sessionId: string; deletedOutside?: { title: string } }
+  /** A project's worktrees changed (one was created or removed, or a session in one was deleted). */
+  | { type: 'worktrees'; project: string }
   /** `/clear` emptied the session: its messages, tool calls and threads are gone. */
   | { type: 'sessionCleared'; sessionId: string }
   | { type: 'sessionRewound'; sessionId: string }
@@ -199,6 +202,8 @@ export type MainAction =
   | { kind: 'cycleSession'; back: boolean }
   /** **New review** in a popped-out review: the fresh draft opens in the main window. */
   | { kind: 'newReview'; sessionId: string }
+  /** **Review changes** (or `Ctrl+Shift+D`) in a popped-out session: a review of its folder; `path`: a draft review switching folder. */
+  | { kind: 'reviewFolder'; sessionId: string; path?: string }
 
 export type GlossApi = {
   confirmClose(requestId: string, close: boolean): Promise<void>
@@ -233,11 +238,15 @@ export type GlossApi = {
     list(): Promise<Session[]>
     /** Starts an agent session in `cwd`. Rejects if the agent can't start one. */
     create(cwd: string, agentId: string): Promise<Session>
+    /** Starts a session in a new worktree of the project (SPEC → Worktrees). Rejects if git can't create it. */
+    createInWorktree(project: string, agentId: string): Promise<Session>
+    /** Starts a session in one of the project's worktrees, or the project folder. */
+    createIn(project: string, path: string, agentId: string): Promise<Session>
     /**
      * Opens a draft review of the project's branch, or the project's draft again (SPEC →
      * Review sessions). `baseRef` and `headRef` (null: the working tree) start a new one of that range.
      */
-    createReview(cwd: string, agentId: string, baseRef?: string, headRef?: string | null): Promise<Session>
+    createReview(cwd: string, agentId: string, baseRef?: string, headRef?: string | null, project?: string): Promise<Session>
     /** **Run review**: asks the agent for a summary and its findings; the turn runs on. */
     runReview(id: string): Promise<void>
     /** What a review's dropdowns offer. */
@@ -254,7 +263,8 @@ export type GlossApi = {
      * Opens one of the agent's sessions in Gloss: its history becomes the log, placed in threads by its tags.
      * `listedAt` (the agent's `updatedAt` in its listing) stands in for when it was made, so it keeps its place.
      */
-    import(cwd: string, agentId: string, acpSessionId: string, title: string, listedAt?: string): Promise<Session>
+    /** `project`: the project folder, when `cwd` is one of its worktrees. */
+    import(cwd: string, agentId: string, acpSessionId: string, title: string, listedAt?: string, project?: string): Promise<Session>
     /** Its log and threads. Also resumes the session on the agent in the background, for the status line. */
     open(id: string): Promise<SessionView>
     rewindPoints(id: string): Promise<RewindPoint[]>
@@ -280,6 +290,12 @@ export type GlossApi = {
     openObsidian(id: string): Promise<void>
     /** Plan usage from the session's agent, for the usage popup. Null if the agent can't be asked. */
     planUsage(id: string): Promise<PlanUsage | null>
+  }
+  worktrees: {
+    /** The project folder and its worktrees, with the work each holds (SPEC → Worktrees screen). */
+    list(project: string): Promise<Worktree[]>
+    /** Removes a worktree, its branch and its sessions. Resolves to a warning if some agent copies couldn't be deleted. */
+    remove(project: string, path: string): Promise<string | null>
   }
   git: {
     /** The folder's branch and whether it has uncommitted changes; null outside a repo. */
@@ -418,6 +434,10 @@ export const IPC = {
   projectsDelete: 'gloss:projects:delete',
   sessionsList: 'gloss:sessions:list',
   sessionsCreate: 'gloss:sessions:create',
+  sessionsCreateInWorktree: 'gloss:sessions:createInWorktree',
+  sessionsCreateIn: 'gloss:sessions:createIn',
+  worktreesList: 'gloss:worktrees:list',
+  worktreesRemove: 'gloss:worktrees:remove',
   sessionsCreateReview: 'gloss:sessions:createReview',
   sessionsRunReview: 'gloss:sessions:runReview',
   sessionsReviewDiff: 'gloss:sessions:reviewDiff',

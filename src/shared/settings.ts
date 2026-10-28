@@ -76,6 +76,12 @@ export type ProjectSettings = {
   obsidianVault?: string
   /** Overrides the global permission mode for new sessions here; `inherit` (or omitted) uses it. */
   permissionMode?: PermissionModeSetting | 'inherit'
+  /** The branch new worktrees start from; empty (or omitted) for the project folder's current branch (SPEC → Worktrees). */
+  worktreeBase?: string
+  /** Run in each new worktree before its first turn; empty for none. */
+  worktreeSetup?: string
+  /** Where New session starts: `folder` (default), `worktree` (a new one) or an existing worktree's path. */
+  newSessionPlace?: string
 }
 
 export type SettingField = {
@@ -138,6 +144,26 @@ export const SETTING_FIELDS: readonly SettingField[] = [
       { value: 'bypass', label: 'Bypass permissions' },
       { value: 'agent', label: "Agent's default" }
     ]
+  },
+  {
+    key: 'worktreeBase',
+    scope: 'project',
+    type: 'string',
+    label: 'Worktree base branch',
+    description: "The branch new worktrees start from. Empty uses the project folder's current branch. A remote branch (origin/main) is fetched first.",
+    placeholder: "Project folder's branch"
+  },
+  {
+    key: 'worktreeSetup',
+    scope: 'project',
+    type: 'string',
+    label: 'Worktree setup command',
+    description: "Runs in each new worktree before its first message is sent, for example npm install. Empty runs nothing.",
+    placeholder: 'npm install'
+  },
+  {
+    key: 'newSessionPlace', scope: 'project', type: 'string', label: 'New session starts in',
+    description: 'Star a place in the New session menu: folder, worktree (a new one) or an existing worktree\'s path.', hidden: true
   },
   {
     key: 'listItemReplies',

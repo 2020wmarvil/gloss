@@ -72,7 +72,8 @@ export function SessionWindow({ sessionId }: { sessionId: string }): React.JSX.E
       if (open?.session.review) {
         e.preventDefault()
         window.close()
-      } else toMain({ kind: 'review' })
+      } else if (open) toMain({ kind: 'reviewFolder', sessionId: open.session.id })
+      else toMain({ kind: 'review' })
     }
     else if (e.key === ',') toMain({ kind: 'settings' })
     else if (e.key === 'Tab') {
@@ -111,6 +112,7 @@ export function SessionWindow({ sessionId }: { sessionId: string }): React.JSX.E
               onResizeThread={setThreadPanelWidth}
               creating={false}
               onNewReview={(from) => window.gloss.windows.toMain({ kind: 'newReview', sessionId: from.id })}
+              onReviewFolder={(from, path) => window.gloss.windows.toMain({ kind: 'reviewFolder', sessionId: from.id, ...(path ? { path } : {}) })}
               popped
               onWindow={popIn}
             />
