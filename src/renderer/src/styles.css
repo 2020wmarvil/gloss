@@ -673,7 +673,7 @@ button.new-session-agents {
 }
 
 .agent-item button[role='menuitem'],
-.agent-item button[role='menuitemradio'] {
+.agent-item button[role='menuitemradio']:not(.agent-star) {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -692,12 +692,12 @@ button.new-session-agents {
   color: var(--faint);
 }
 
-.agent-item button[role='menuitemradio'] {
+.agent-item button[role='menuitemradio']:not(.agent-star) {
   align-items: center;
   gap: 8px;
 }
 
-.agent-item button[role='menuitemradio'] svg,
+.agent-item button[role='menuitemradio']:not(.agent-star) svg,
 .menu .menu-link svg {
   flex: none;
   width: 14px;
@@ -751,6 +751,18 @@ button.new-session-agents {
   height: 12px;
   margin-right: 3px;
   vertical-align: -1px;
+}
+
+/* Review changes in a conversation's header (SPEC → Worktrees → Reviews). */
+.review-folder-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.review-folder-button svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* Worktrees without sessions, on the sidebar's Worktrees button. */

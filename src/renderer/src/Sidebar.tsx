@@ -465,7 +465,7 @@ export function Sidebar(props: Props): React.JSX.Element {
               </div>
               <button className="menu-link" onClick={() => (setAgentMenuOpen(false), props.onWorktrees())}>
                 <FolderGit2 />
-                In an existing worktree…
+                Existing worktree…
                 <ChevronRight className="menu-link-end" />
               </button>
               <hr />

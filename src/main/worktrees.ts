@@ -19,7 +19,7 @@ export type WorktreeEntry = {
 export type UnfinishedWork = {
   /** Lines of `git status --porcelain`: changed tracked files and new files git doesn't ignore. */
   uncommitted: number
-  /** Commits on the branch that are on no remote branch. */
+  /** Commits only on this branch: on no other branch, local or remote. */
   unpushed: number
   /** The branch's PR, if `gh` finds an open or draft one, or one merged at the branch's commit. */
   pr: PullRequest | null
@@ -70,7 +70,8 @@ export function countLines(output: string): number {
 export async function unfinishedWork(path: string, branch: string | null): Promise<UnfinishedWork> {
   const [status, unpushed, pr] = await Promise.all([
     git(path, ['status', '--porcelain'], 15_000),
-    branch ? git(path, ['rev-list', '--count', `refs/heads/${branch}`, '--not', '--remotes'], 15_000) : Promise.resolve('0'),
+    // Only on this branch: on no other branch, local or remote (so a repository without a remote works too).
+    branch ? git(path, ['rev-list', '--count', `refs/heads/${branch}`, '--not', `--exclude=${branch}`, '--branches', '--remotes'], 15_000) : Promise.resolve('0'),
     branch ? pullRequest(path).catch(() => null) : Promise.resolve(null)
   ])
   const relevant = pr && (pr.state === 'open' || pr.state === 'draft' || pr.state === 'merged') ? pr : null

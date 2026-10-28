@@ -802,7 +802,8 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   share(IPC.sessionsCreateInWorktree, (project: unknown, agentId: unknown) =>
     manager.startWorktreeSession(folderArg(project, 'project'), str(agentId, 'agentId'))
   )
-  share(IPC.sessionsCreateIn, (project: unknown, path: unknown, agentId: unknown) =>
+  // An existing worktree is picked on the desktop's Worktrees screen; phones only start new ones.
+  ipcMain.handle(IPC.sessionsCreateIn, (_e, project: unknown, path: unknown, agentId: unknown) =>
     manager.startSessionIn(folderArg(project, 'project'), folderArg(path, 'path'), str(agentId, 'agentId'))
   )
   ipcMain.handle(IPC.worktreesList, (_e, project: unknown) => manager.listProjectWorktrees(folderArg(project, 'project')))

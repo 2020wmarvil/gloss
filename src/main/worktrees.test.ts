@@ -93,6 +93,18 @@ describe('worktrees', () => {
     expect(await unfinishedWork(path, branch)).toMatchObject({ unpushed: 1 })
   })
 
+  it('counts commits on no other branch, so a repository without a remote works and a local merge keeps them', async () => {
+    git(repo, 'remote', 'remove', 'origin')
+    const { path, branch } = await createWorktree(repo, home, undefined)
+    expect(await unfinishedWork(path, branch)).toMatchObject({ unpushed: 0 })
+    writeFileSync(join(path, 'b.txt'), 'b\n')
+    git(path, 'add', 'b.txt')
+    git(path, 'commit', '-q', '-m', 'work')
+    expect(await unfinishedWork(path, branch)).toMatchObject({ unpushed: 1 })
+    git(repo, 'merge', '-q', '--ff-only', branch)
+    expect(await unfinishedWork(path, branch)).toMatchObject({ unpushed: 0 })
+  })
+
   it('removes a worktree with deep ignored paths and untracked files, and its branch', async () => {
     const { path, branch } = await createWorktree(repo, home, undefined)
     const deep = join(path, 'node_modules', ...Array<string>(30).fill('deep-package-name'))
