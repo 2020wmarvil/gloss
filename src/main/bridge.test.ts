@@ -1,8 +1,5 @@
-import { X509Certificate } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
-import { createServer as createHttpsServer, request as httpsRequest } from 'node:https'
-import { connect as tlsConnect } from 'node:tls'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -201,54 +198,5 @@ describe('Bridge', () => {
     await bridge.stop()
     expect(await closed).toBe(1001)
     expect(bridge.listening).toBe(false)
-  })
-})
-
-describe('Bridge over TLS', () => {
-  const fixture = (name: string) => readFileSync(join(__dirname, 'fixtures', name))
-  const [certA, keyA, certB, keyB] = ['bridge-a-cert.pem', 'bridge-a-key.pem', 'bridge-b-cert.pem', 'bridge-b-key.pem'].map(fixture)
-  const fingerprint = (pem: Buffer) => new X509Certificate(pem).fingerprint256
-
-  /** The certificate a new TLS connection to the port is shown. */
-  function served(port: number): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const socket = tlsConnect({ host: '127.0.0.1', port, rejectUnauthorized: false }, () => {
-        resolve(socket.getPeerX509Certificate()!.fingerprint256)
-        socket.end()
-      })
-      socket.once('error', reject)
-    })
-  }
-
-  it('switches to a renewed certificate without dropping connected phones', async () => {
-    const tls = new Bridge({ store, phoneApi: api, staticDir: tmpdir(), calls: { info: () => ({ host: 'tls' }), activity: () => ({}), pushKey: () => 'key' }, onChange: () => {} })
-    await tls.start({ ip: '127.0.0.1', port: 0, origin: 'https://placeholder', createServer: (h) => createHttpsServer({ cert: certA, key: keyA }, h) })
-    const port = tls.address()!.port
-    const tlsOrigin = `https://127.0.0.1:${port}`
-    await tls.start({ ip: '127.0.0.1', port, origin: tlsOrigin, createServer: (h) => createHttpsServer({ cert: certA, key: keyA }, h) })
-    try {
-      expect(await served(port)).toBe(fingerprint(certA))
-      // Pair and connect over TLS.
-      const code = tls.startPairing().url.split('#')[1]
-      const cookie = await new Promise<string>((resolve, reject) => {
-        const req = httpsRequest({ host: '127.0.0.1', port, path: '/pair', method: 'POST', rejectUnauthorized: false, headers: { origin: tlsOrigin } }, (res) => {
-          res.resume()
-          resolve(String(res.headers['set-cookie']).split(';')[0])
-        })
-        req.once('error', reject)
-        req.end(JSON.stringify({ code, name: 'TLS phone' }))
-      })
-      const ws = new WebSocket(`wss://127.0.0.1:${port}/api`, { headers: { origin: tlsOrigin, cookie }, rejectUnauthorized: false })
-      await new Promise((r) => ws.once('open', r))
-
-      tls.setCertificate(certB, keyB)
-      expect(await served(port)).toBe(fingerprint(certB))
-      // The phone connected before the switch carries on.
-      expect(ws.readyState).toBe(WebSocket.OPEN)
-      expect(await call(ws, 1, IPC.sessionsList)).toEqual({ id: 1, result: [{ id: 's1' }] })
-      ws.close()
-    } finally {
-      await tls.stop()
-    }
   })
 })

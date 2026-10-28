@@ -1,22 +1,8 @@
 # Milestones
 
-Build in order, from M18 through M25 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
+Build in order, from M19 through M25 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1 through M17 and failed-turn actions are done. Next is remote and mobile access, followed by shared skills and plugins, worktrees, sub-agent threads, performance improvements and per-turn file checkpoints before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
-
-## M18: Remote and mobile
-Drive Gloss from a phone while the desktop app runs the agents. The desktop stays the only place agents, ACP and the database live; the phone is another client of the main process. Adds a section to `SPEC.md` (update it in this milestone).
-
-- **Bridge in the main process:** off by default, turned on in Settings. Serves the same API the preload exposes (requests and the event stream) over an authenticated WebSocket, plus a mobile web client. No new agent-facing logic: the phone's calls go through `SessionManager` like the renderer's, so a turn started on the phone shows live on the desktop and the reverse.
-- **Pairing:** Settings shows a QR code with the address and a one-time pairing secret; scanning it gives the phone a long-lived device token. Paired devices are listed with their last use and can be revoked. Every request needs a valid token. The bridge gives full control of agents that run commands without asking, so treat it as remote code execution: TLS only, and nothing listens until the user turns it on.
-- **Reachability:** start with the local network. For away from home, document a private network (Tailscale or similar) rather than building a relay; a hosted relay is a later option, not part of this milestone.
-- **Mobile client:** a phone layout of the session list, conversation and composer, with threads opened full screen. Covers the daily loop: read the log, open and reply in threads, send, queue, steer, cancel, resume a paused queue, see the status line (context, plan limits). Desktop-only features (settings, review sessions, visual feedback) can stay desktop-only. Agent output is untrusted here too: the same sanitized markdown rendering, and no `file://` or local-path links.
-- **Waiting on you:** with M15, questions and approval prompts can be answered from the phone; a turn that ends or needs an answer can notify the phone (web push from the PWA) when the desktop isn't focused.
-- **Desktop asleep or closed:** the phone shows "Gloss is offline" and reconnects on its own; nothing is queued on the phone while offline.
-- Verify first: serving the client from the main process without loosening the renderer's security settings, TLS on a LAN address (self-signed certificate pinned at pairing, or the private network's certificates), and web push on iOS (needs an installed PWA).
-- **Plan and spike results:** [plans/M18-remote-mobile.md](plans/M18-remote-mobile.md). TLS comes from Tailscale's certificates (decided 2026-10-27); the server, WebSocket and iOS web push are verified on an iPhone.
-
-**Done when:** you can pair a phone by scanning a QR code, see the same sessions as the desktop, start and steer a turn in a thread from the phone while watching it stream on both, and a revoked phone can no longer connect.
+M1 through M18 and failed-turn actions are done. Next is shared skills and plugins, followed by worktrees, sub-agent threads, performance improvements and per-turn file checkpoints before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M19: Shared plugin library and marketplaces
 Build on M13's global MCP settings and M14's agent profiles. Plugins are the top-level library entries; skills, tools and other capabilities are components inside them. Implement the three phases below in order, and stop for review at the end of each phase. Design and update `SPEC.md` for the phase being implemented; later phases do not block completion of the current one.
@@ -136,7 +122,7 @@ Present Gloss to people who haven't used it. Comes after Shipping, so every link
 **Done when:** someone landing on the repository understands what Gloss does from the README's first screen, can install it from the release link, find the docs for their agent, and watch the demo reel.
 
 ## Exploratory milestone: Package-manager-style skill updates
-Unscheduled exploration outside the M18-M25 delivery sequence. Revisit only if maintaining externally sourced skills becomes a useful workflow; M19's manually maintained shared library does not depend on it.
+Unscheduled exploration outside the M19-M25 delivery sequence. Revisit only if maintaining externally sourced skills becomes a useful workflow; M19's manually maintained shared library does not depend on it.
 
 - Investigate optional source and version tracking for skills that have an upstream repository or package. User-authored skills and skills with unknown origins must continue to work without this metadata.
 - Explore explicit update checks and previews, version pinning, recovery, and handling local edits when upstream files change. Evaluate whether automatic updates are useful as a separate opt-in decision.
@@ -148,7 +134,7 @@ Unscheduled exploration outside the M18-M25 delivery sequence. Revisit only if m
 - ~~**M14:** agent profiles and connection testing, guided open source/local-model setup, capability indicators, and actionable launch or model-server errors.~~ Done.
 - ~~**M15:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.~~ Done.
 - ~~**M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.~~ Done: `docs/mocks/visual-feedback.html`.
-- **M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.
+- ~~**M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.~~ Done: `docs/mocks/mobile.html`.
 - **M19:** phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh; phase 2, source ownership and import previews; phase 3, catalog browsing/search and installation previews. Review each phase separately.
 - **M20:** the checkout picker and new-worktree form, project grouping with branch indicators, missing-checkout recovery, and explicit cleanup with affected sessions visible.
 - **M21:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
@@ -432,3 +418,19 @@ Replace the current fresh-session transcript prompt with native history restorat
 - **Verification:** exercise both supported built-in agents with long, image-heavy sessions, mixed tool calls and results, cancellation followed by immediate rewind, repeated rewinds, restart/replay, native-startup failures and recovery. Document tested adapter versions and remaining capability gaps.
 
 **Done when:** supported agents continue from the exact retained structured history without a synthetic transcript prompt; discarded turns do not return after reconnect or restart; the selected message and attachments are ready to edit in the composer; project files remain unchanged; and long or image-heavy conversations are not blocked by Gloss's arbitrary snapshot limit. Unsupported agents have a documented, explicit behavior rather than an assumed native rewind.
+
+## ~~M18: Remote and mobile~~
+
+**Done.** Phones connect over Tailscale to a bridge in the main process (HTTPS and a WebSocket on the Tailscale address only), which runs the windows' own handlers for an allowlist of calls. TLS uses the Let's Encrypt certificate Tailscale issues for the machine's `ts.net` name, renewed daily and swapped in without dropping phones, instead of a self-signed certificate pinned at pairing: a web page can't pin, and the PWA and push need a trusted certificate. Pairing by a one-time QR code sets an HttpOnly device token that carries over to an iOS Home Screen app; Settings → Phone lists devices and removes them at once. The phone client covers sessions, threads full screen, send, queue, steer and stop, questions and approvals, images and the status line; web push notifies when no window is focused, except about a session open on the phone. Verified on an iPhone; Android is untested. Design: `SPEC.md` → Remote and mobile.
+
+Drive Gloss from a phone while the desktop app runs the agents. The desktop stays the only place agents, ACP and the database live; the phone is another client of the main process. Adds a section to `SPEC.md` (update it in this milestone).
+
+- **Bridge in the main process:** off by default, turned on in Settings. Serves the same API the preload exposes (requests and the event stream) over an authenticated WebSocket, plus a mobile web client. No new agent-facing logic: the phone's calls go through `SessionManager` like the renderer's, so a turn started on the phone shows live on the desktop and the reverse.
+- **Pairing:** Settings shows a QR code with the address and a one-time pairing secret; scanning it gives the phone a long-lived device token. Paired devices are listed with their last use and can be revoked. Every request needs a valid token. The bridge gives full control of agents that run commands without asking, so treat it as remote code execution: TLS only, and nothing listens until the user turns it on.
+- **Reachability:** start with the local network. For away from home, document a private network (Tailscale or similar) rather than building a relay; a hosted relay is a later option, not part of this milestone.
+- **Mobile client:** a phone layout of the session list, conversation and composer, with threads opened full screen. Covers the daily loop: read the log, open and reply in threads, send, queue, steer, cancel, resume a paused queue, see the status line (context, plan limits). Desktop-only features (settings, review sessions, visual feedback) can stay desktop-only. Agent output is untrusted here too: the same sanitized markdown rendering, and no `file://` or local-path links.
+- **Waiting on you:** with M15, questions and approval prompts can be answered from the phone; a turn that ends or needs an answer can notify the phone (web push from the PWA) when the desktop isn't focused.
+- **Desktop asleep or closed:** the phone shows "Gloss is offline" and reconnects on its own; nothing is queued on the phone while offline.
+- Verify first: serving the client from the main process without loosening the renderer's security settings, TLS on a LAN address (self-signed certificate pinned at pairing, or the private network's certificates), and web push on iOS (needs an installed PWA).
+
+**Done when:** you can pair a phone by scanning a QR code, see the same sessions as the desktop, start and steer a turn in a thread from the phone while watching it stream on both, and a revoked phone can no longer connect.

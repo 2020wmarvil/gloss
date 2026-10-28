@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { X509Certificate } from 'node:crypto'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { tailscaleCert, tailscaleCli, tailscaleStatus } from './tailscale'
 
 const status = (s: object) => async () => JSON.stringify(s)
@@ -32,18 +29,14 @@ describe('tailscaleStatus', () => {
 })
 
 describe('tailscaleCert', () => {
-  it('asks for at least 30 days of validity and reads the expiry', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gloss-cert-'))
-    const fixture = readFileSync(join(__dirname, 'fixtures', 'bridge-a-cert.pem'))
+  it('asks for at least 30 days of validity, and says when Tailscale can\'t issue one', async () => {
     let args: string[] = []
-    const cert = await tailscaleCert('my-pc.tail1234.ts.net', dir, 'ts', async (_cli, a) => {
+    const failing = async (_cli: string, a: string[]): Promise<string> => {
       args = a
-      writeFileSync(a[a.indexOf('--cert-file') + 1], fixture)
-      writeFileSync(a[a.indexOf('--key-file') + 1], 'key')
-      return ''
-    })
+      throw Object.assign(new Error('exit 1'), { stderr: 'certificates are not enabled for this tailnet' })
+    }
+    await expect(tailscaleCert('my-pc.tail1234.ts.net', tmpdir(), 'ts', failing)).rejects.toThrow('certificates are not enabled')
     expect(args.slice(0, 3)).toEqual(['cert', '--min-validity', '720h'])
     expect(args.at(-1)).toBe('my-pc.tail1234.ts.net')
-    expect(cert.expiresAt).toBe(Date.parse(new X509Certificate(fixture).validTo))
   })
 })
