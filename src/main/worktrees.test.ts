@@ -1,11 +1,14 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createWorktree, hasUnfinishedWork, listWorktrees, parseWorktreeList, removeWorktree, unfinishedWork
 } from './worktrees'
+
+// These tests exercise local Git repositories, without invoking gh or its authentication/network.
+vi.mock('./git', () => ({ pullRequest: vi.fn(async () => null) }))
 
 let root: string
 let repo: string
@@ -13,6 +16,16 @@ let remote: string
 let home: string
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+
+function windowsShortPath(path: string): string {
+  const result = spawnSync('cmd.exe', ['/d', '/c', 'for %I in ("%GLOSS_TEST_WORKTREE%") do @echo %~sI'], {
+    encoding: 'utf8', env: { ...process.env, GLOSS_TEST_WORKTREE: path }, windowsHide: true, windowsVerbatimArguments: true
+  })
+  expect(result.status).toBe(0)
+  const shortPath = result.stdout.trim()
+  expect(existsSync(shortPath)).toBe(true)
+  return shortPath
+}
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'gloss-worktrees-test-'))
@@ -48,7 +61,8 @@ describe('parseWorktreeList', () => {
   })
 })
 
-describe('worktrees', () => {
+// Each test launches real Git processes, which take longer on Windows CI.
+describe('worktrees', { timeout: 30_000 }, () => {
   it('creates one on a new branch from the project folder\'s branch, outside the repository', async () => {
     const created = await createWorktree(repo, home, undefined)
     expect(created.branch).toMatch(/^gloss\/[a-z0-9]{4}$/)
@@ -123,6 +137,18 @@ describe('worktrees', () => {
     await expect(removeWorktree(repo, stray, null)).rejects.toThrow()
     await expect(removeWorktree(repo, repo, null)).rejects.toThrow()
     expect(existsSync(stray)).toBe(true)
+    expect(existsSync(join(repo, 'a.txt'))).toBe(true)
+  })
+
+  it.skipIf(process.platform !== 'win32')('removes a worktree addressed by its Windows short path', async () => {
+    const { path, branch } = await createWorktree(repo, home, undefined)
+    const shortPath = windowsShortPath(path)
+    await removeWorktree(repo, shortPath, branch)
+    expect(existsSync(path)).toBe(false)
+    expect((await listWorktrees(repo)).length).toBe(1)
+    expect(() => git(repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`)).toThrow()
+    const shortRepo = windowsShortPath(repo)
+    await expect(removeWorktree(repo, shortRepo, null)).rejects.toThrow()
     expect(existsSync(join(repo, 'a.txt'))).toBe(true)
   })
 })

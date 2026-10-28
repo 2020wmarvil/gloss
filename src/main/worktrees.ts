@@ -1,7 +1,7 @@
 // A project's git worktrees (SPEC → Worktrees): listing, creating, what work is left in one, and removing.
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, realpathSync, rmSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { pullRequest } from './git'
 import type { PullRequest } from '../shared/ipc'
@@ -134,7 +134,9 @@ export async function createWorktree(projectPath: string, root: string, base: st
  */
 export async function removeWorktree(projectPath: string, path: string, branch: string | null): Promise<void> {
   // Only ever delete a folder git lists as one of this project's worktrees (not the project folder).
-  const listed = (await listWorktrees(projectPath)).some((e) => !e.main && sameFolder(e.path, path))
+  // Git expands Windows short paths (e.g. RUNNER~1), while callers may retain them.
+  const canonicalPath = existsSync(path) ? realpathSync.native(path) : path
+  const listed = (await listWorktrees(projectPath)).some((e) => !e.main && sameFolder(e.path, canonicalPath))
   if (listed) {
     // A failure can leave the folder half deleted (long paths): Node finishes it below.
     await git(projectPath, ['worktree', 'remove', '--force', path], 120_000).catch(() => {})
