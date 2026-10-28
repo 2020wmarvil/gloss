@@ -4,7 +4,8 @@
 import { forkClaude } from './rewind'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { readdirSync, rmdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import type * as acp from '@agentclientprotocol/sdk'
 import { pathToFileURL } from 'node:url'
 import type { GlossEvent, PullRequest, SessionView, TurnResult } from '../shared/ipc'
@@ -1143,6 +1144,21 @@ export class SessionManager {
     return this.deps.worktreeGit ?? WORKTREE_GIT
   }
 
+  private get worktreeRoot(): string {
+    return this.deps.worktreeRoot ?? join(homedir(), '.gloss', 'worktrees')
+  }
+
+  /** Drops a repository's folder under Gloss's worktree root once its last worktree is gone. Never anything else. */
+  private tidyWorktreeRoot(path: string): void {
+    const parent = dirname(path)
+    if (!samePath(dirname(parent), this.worktreeRoot)) return
+    try {
+      if (readdirSync(parent).length === 0) rmdirSync(parent)
+    } catch {
+      // Already gone, or in use: harmless.
+    }
+  }
+
   /**
    * Starts a session in a new worktree of `project`: a new branch and folder from the
    * project's base branch, then its setup command, while messages sent meanwhile wait.
@@ -1151,8 +1167,7 @@ export class SessionManager {
   async startWorktreeSession(project: string, agentId: string): Promise<Session> {
     this.deps.getAgentConfig(agentId)
     const settings = this.deps.worktreeSettings?.(project) ?? {}
-    const root = this.deps.worktreeRoot ?? join(homedir(), '.gloss', 'worktrees')
-    const created = await this.worktreeGit.create(project, root, settings.base)
+    const created = await this.worktreeGit.create(project, this.worktreeRoot, settings.base)
     this.deps.store.addWorktree({ path: created.path, project, branch: created.branch, createdAt: this.now() })
     const session = this.startSession(created.path, agentId, { project, branch: created.branch })
     this.deps.emit({ type: 'worktrees', project })
@@ -1245,6 +1260,7 @@ export class SessionManager {
       if (warning) warnings.push(`${s.title}: ${warning}`)
     }
     await this.worktreeGit.remove(project, entry.path, entry.branch)
+    this.tidyWorktreeRoot(entry.path)
     this.forgetWorktree(project, entry.path)
     return warnings.length > 0 ? warnings.join('\n') : null
   }
@@ -1276,6 +1292,7 @@ export class SessionManager {
       }
       if (hasUnfinishedWork(await this.worktreeGit.unfinished(entry.path, entry.branch))) return this.deps.emit({ type: 'worktrees', project })
       await this.worktreeGit.remove(project, entry.path, entry.branch)
+      this.tidyWorktreeRoot(entry.path)
       this.forgetWorktree(project, entry.path)
     } catch {
       // Left in place: it shows on the Worktrees screen, where it can be removed.

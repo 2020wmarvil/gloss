@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as acp from '@agentclientprotocol/sdk'
@@ -3103,6 +3106,38 @@ describe('SessionManager worktrees', () => {
     expect(store.getSession(session.id)).toBeUndefined()
     expect(placeReset).toEqual(['/project'])
     await expect(manager.removeProjectWorktree('/project', '/project')).rejects.toThrow()
+  })
+
+  it("drops a repository's folder under the worktree root once its last worktree is gone, and nothing else", async () => {
+    const root = mkdtempSync(join(tmpdir(), 'gloss-wt-root-'))
+    const repoFolder = join(root, 'project')
+    mkdirSync(join(repoFolder, 'a'), { recursive: true })
+    mkdirSync(join(repoFolder, 'b'), { recursive: true })
+    trees.push({ path: join(repoFolder, 'a'), branch: 'gloss/a', head: null, main: false }, { path: join(repoFolder, 'b'), branch: 'gloss/b', head: null, main: false })
+    const elsewhere = mkdtempSync(join(tmpdir(), 'gloss-wt-mine-'))
+    mkdirSync(join(elsewhere, 'c'))
+    trees.push({ path: join(elsewhere, 'c'), branch: 'feature-c', head: null, main: false })
+    const tidy = new SessionManager({
+      store, emit: () => {}, getAgentConfig: () => config, agentEnv: () => ({}),
+      connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
+      runInTerminal: vi.fn(async () => 0) as never,
+      worktreeRoot: root,
+      worktreeGit: { ...git, remove: async (_p, path) => { rmSync(path, { recursive: true, force: true }); trees = trees.filter((t) => t.path !== path) } }
+    })
+    try {
+      await tidy.removeProjectWorktree('/project', join(repoFolder, 'a'))
+      expect(existsSync(repoFolder)).toBe(true)
+      await tidy.removeProjectWorktree('/project', join(repoFolder, 'b'))
+      expect(existsSync(repoFolder)).toBe(false)
+      expect(existsSync(root)).toBe(true)
+      // A worktree outside the root leaves its folder's parent alone.
+      await tidy.removeProjectWorktree('/project', join(elsewhere, 'c'))
+      expect(existsSync(elsewhere)).toBe(true)
+    } finally {
+      await tidy.dispose()
+      rmSync(root, { recursive: true, force: true })
+      rmSync(elsewhere, { recursive: true, force: true })
+    }
   })
 
   it("lists the agent's sessions in each worktree, with their folder and without the note in titles", async () => {
