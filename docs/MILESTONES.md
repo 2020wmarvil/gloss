@@ -1,8 +1,8 @@
 # Milestones
 
-Build in order, from M19 through M25 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
+Build in order, from M19 through M24 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1 through M18 and failed-turn actions are done. Next is shared skills and plugins, followed by worktrees, sub-agent threads, performance improvements and per-turn file checkpoints before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1 through M18 and failed-turn actions are done. Next is shared skills and plugins, followed by sub-agent threads, performance improvements and per-turn file checkpoints before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M19: Shared plugin library and marketplaces
 Build on M13's global MCP settings and M14's agent profiles. Plugins are the top-level library entries; skills, tools and other capabilities are components inside them. Implement the three phases below in order, and stop for review at the end of each phase. Design and update `SPEC.md` for the phase being implemented; later phases do not block completion of the current one.
@@ -47,20 +47,7 @@ Find new plugins from supported catalogs and install them through the establishe
 
 **Outside M19:** package-manager-style upstream updates remain a separate exploratory milestone. Presets, separate workspace dashboards and multi-device library backup are also deferred.
 
-## M20: Git worktrees
-Run independent coding tasks in separate checkouts while keeping their sessions together under one project. Worktrees are optional per session; conversation threads stay in their session's checkout. Update `SPEC.md` and design the creation, project grouping and cleanup flows before implementation.
-
-- **Project identity and session folder:** separate the shared project identity from each session's working directory. Discover related checkouts through Git's common directory and worktree metadata, including worktrees created outside Gloss. Non-Git folders keep their existing behavior. Migrate existing sessions and project settings without losing history, threads or overrides; resolve conflicting settings explicitly when existing projects become one group.
-- **Choose a checkout:** New session offers the current folder, an existing worktree, or a new worktree. For a new worktree, choose a branch name, starting branch or commit, and destination. Validate branch and path conflicts, including branches already checked out elsewhere. A failed creation reports Git's error without leaving a session pointed at a nonexistent folder. Ordinary sessions continue to use the selected folder without creating a worktree.
-- **One project in the sidebar:** group sessions from all related worktrees under the same project, with the branch or checkout visible on each session. Project-scoped search and project settings cover the group. Existing agent sessions remain discovered using their actual working directories.
-- **Keep the checkout visible:** the status line shows the session's branch and worktree path, with an action to open the folder. Agent creation and resume, tools, diffs and review sessions use that session's working directory. Preserve it across restarts; if a worktree is moved or removed externally, show a recovery action instead of silently falling back to another checkout.
-- **Explicit cleanup:** deleting a conversation keeps its worktree and branch. A separate remove-worktree action shows the path and affected sessions, blocks removal while a turn is running there, and checks for modified and untracked files. The first version refuses dirty-worktree removal and never force-removes a checkout or implicitly deletes its branch. Retain conversation history and clearly mark sessions whose checkout was removed.
-- **Setup and limits:** explain that each checkout may need its own dependencies and local configuration. Keep automatic setup commands, merging, rebasing and branch deletion outside this milestone. Worktrees separate checked-out files; agents still have the access allowed by their permission mode.
-- Verify with temporary Git repositories on Windows and Linux: create and discover worktrees, group and migrate sessions, apply project settings and search across checkouts, resume in the correct folder, report branch/path conflicts and missing checkouts, and refuse cleanup for dirty or active worktrees. Exercise the agent flow with both Claude Code and Codex.
-
-**Done when:** you can start two sessions for one repository in different worktrees, make independent edits, find both under one project, restart Gloss and resume each in the correct checkout, review each checkout's changes, and explicitly remove a clean, idle worktree without deleting its conversation or branch. Existing externally created worktrees are usable through the same flow.
-
-## M21: Sub-agent threads
+## M20: Sub-agent threads
 An opt-in alternative to view-only threads: a thread runs its own agent session instead of being tagged into the main one. Changes the core idea in `SPEC.md` (update it in this milestone).
 
 - **Thread mode setting** (M6 settings, global with a per-project override): `view-only` (default, today's behavior), `fresh` or `fork`.
@@ -74,7 +61,7 @@ An opt-in alternative to view-only threads: a thread runs its own agent session 
 
 **Done when:** with either mode on, a thread runs as its own agent, can run while the main thread works, and resolving it brings its summary into the main session.
 
-## M22: Performance
+## M21: Performance
 Measure first, then fix what the numbers show. Keep the app's behavior unchanged, and don't optimize anything the measurements don't point at.
 
 - **Latency needs attention:** application startup until the UI is responsive, starting and opening sessions, and opening, navigating and scrolling large diffs in the diff viewer. Measure these paths and reduce the delays.
@@ -90,18 +77,18 @@ Measure first, then fix what the numbers show. Keep the app's behavior unchanged
 
 **Done when:** the benchmark runs from one command, each fixed hotspot shows a measured improvement and has a deterministic test that would catch it coming back, typing and scrolling while streaming a long answer into a large, image-heavy session stay smooth (no long tasks over 50 ms in the renderer), and the numbers are recorded for the next comparison.
 
-## M23: Checkpoints and undo per turn
+## M22: Checkpoints and undo per turn
 Extend M17's conversation-only rewind with a separate way to inspect and undo a turn's file changes. Snapshot the working tree before each turn without adding commits to the user's history, using a hidden shadow repository or dedicated snapshot refs. Update `SPEC.md` and design the inspection and restore flows before implementation.
 
 - **Per-turn snapshots:** associate each turn with its checkout and before/after file state, including cancelled and failed turns. Preserve pre-existing local changes and define coverage for untracked files, ignored files and non-Git folders explicitly.
 - **Inspect a turn:** show exactly what a turn changed and allow a review session scoped to that turn's diff.
 - **Explicit file undo:** preview the affected files before restoring a checkpoint. Detect edits made since the snapshot and refuse to overwrite them silently. Keep file undo distinct from conversation rewind and explain which state each action restores.
-- **Worktrees and concurrent sessions:** keep checkpoints tied to M20's checkout identity. Block restoration while a turn is running in that checkout, including M21's sub-agent threads, and account for overlapping edits from other sessions.
+- **Concurrent sessions:** block restoration while a turn is running in that checkout, including M20's sub-agent threads, and account for overlapping edits from other sessions.
 - **Persistence and cleanup:** retain checkpoint associations across restart and define retention and cleanup without changing the user's Git history or deleting unrelated work.
 
 **Done when:** a user can inspect a completed or cancelled turn's file changes, review that diff, restart Gloss and explicitly restore its checkpoint without silently losing pre-existing or later edits. M17's conversation rewind continues to leave files unchanged.
 
-## M24: Shipping
+## M23: Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
 - **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
 - **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
@@ -110,7 +97,7 @@ Extend M17's conversation-only rewind with a separate way to inspect and undo a 
 
 **Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place. The signing policy is documented, and release artifacts follow it.
 
-## M25: Marketing
+## M24: Marketing
 Present Gloss to people who haven't used it. Comes after Shipping, so every link points at a release people can install.
 
 - **README:** lead with what Gloss is and why threads help, with visuals near the top: screenshots in light and dark, and short GIFs of the core features (replying to an item in a thread, steering a running turn, visual feedback pins). Install from the latest GitHub Release first; building from source moves lower. Trim the feature walkthrough to the highlights and link to the docs for the rest.
@@ -122,7 +109,7 @@ Present Gloss to people who haven't used it. Comes after Shipping, so every link
 **Done when:** someone landing on the repository understands what Gloss does from the README's first screen, can install it from the release link, find the docs for their agent, and watch the demo reel.
 
 ## Exploratory milestone: Package-manager-style skill updates
-Unscheduled exploration outside the M19-M25 delivery sequence. Revisit only if maintaining externally sourced skills becomes a useful workflow; M19's manually maintained shared library does not depend on it.
+Unscheduled exploration outside the M19-M24 delivery sequence. Revisit only if maintaining externally sourced skills becomes a useful workflow; M19's manually maintained shared library does not depend on it.
 
 - Investigate optional source and version tracking for skills that have an upstream repository or package. User-authored skills and skills with unknown origins must continue to work without this metadata.
 - Explore explicit update checks and previews, version pinning, recovery, and handling local edits when upstream files change. Evaluate whether automatic updates are useful as a separate opt-in decision.
@@ -136,9 +123,8 @@ Unscheduled exploration outside the M19-M25 delivery sequence. Revisit only if m
 - ~~**M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.~~ Done: `docs/mocks/visual-feedback.html`.
 - ~~**M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.~~ Done: `docs/mocks/mobile.html`.
 - **M19:** phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh; phase 2, source ownership and import previews; phase 3, catalog browsing/search and installation previews. Review each phase separately.
-- **M20:** the checkout picker and new-worktree form, project grouping with branch indicators, missing-checkout recovery, and explicit cleanup with affected sessions visible.
-- **M21:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
-- **M23:** per-turn diff inspection, checkpoint restore preview, conflicts and retention controls.
+- **M20:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
+- **M22:** per-turn diff inspection, checkpoint restore preview, conflicts and retention controls.
 
 ---
 
@@ -197,7 +183,7 @@ A home for Gloss's settings, editable by hand (and by agents) as well as in the 
 - **Settings screen** (from the sidebar, or `Ctrl+,`): global and current-project sections, the file's path, and "Open in editor". Saving from the screen writes the file, keeping unknown keys.
 - Validated and owned by the main process; the renderer reads and writes through the IPC API.
 - Move the dev model (Haiku) toggle into it.
-- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M24: updates). No section appears before its feature exists.
+- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M23: updates). No section appears before its feature exists.
 
 **Done when:** a setting changed in the screen shows up in the file, a change made in an editor (or by an agent) shows up in the app without a restart, and a broken edit is reported without losing the previous settings.
 
@@ -302,7 +288,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
 - **Dark mode**, following the system setting, built on the dark tokens. *A Theme setting (System, Light, Dark) and a provisional dark palette landed early; M12 replaces the palette with the designed dark tokens.* *Done: the dark tokens, applied in the screen pass.*
 - Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected. *Done.*
-- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M24 installers. *Done.*
+- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M23 installers. *Done.*
 - Polish: empty, loading and error states; window title. *Done.*
 
 **Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
@@ -346,7 +332,7 @@ Let users bring an ACP-compatible coding agent and run it with either a hosted m
 
 - **Compatibility spike first:** evaluate OpenCode as the initial supported open source agent. Its documented `opencode acp` command speaks ACP over stdio, and its provider configuration supports local model servers. Verify the current release, license, Windows launch behavior, instruction injection, permissions, model selection, tool events, cancellation, session listing and resume before committing to the integration. Record supported features and gaps; choose another ACP agent if the basic Gloss flow cannot work reliably.
 - **Bring your own ACP agent:** add global agent profiles with a stable ID, display name, executable, argument array and environment-variable references, plus a Test connection action. Keep Claude Code and Codex available. Launch directly without composing a shell command; report missing executables, incompatible protocol versions, failed initialization and process exits clearly. Keep credentials in the agent's native credential store or referenced environment variables, and redact them from diagnostics. Removing a profile retains its conversations and allows restoring the profile to resume them.
-- **One documented integration:** provide a guided profile for the selected open source agent using a user-installed executable. Explain installation and configuration with official links, show the detected version, and verify a connection before offering it for new sessions. Persist the profile used by each session and retain the chosen working directory. M20 will extend this to worktrees. Do not silently switch an existing session to another agent or model provider.
+- **One documented integration:** provide a guided profile for the selected open source agent using a user-installed executable. Explain installation and configuration with official links, show the detected version, and verify a connection before offering it for new sessions. Persist the profile used by each session and retain the chosen working directory. Do not silently switch an existing session to another agent or model provider.
 - **Local inference path:** document and validate one complete setup, initially the selected agent connected to a user-managed Ollama server with a tool-capable local model. Gloss speaks ACP to the agent; the agent connects to the model server. Keep model/provider configuration in the agent's supported configuration unless it exposes that choice through ACP. Explain each component in setup and distinguish a loopback endpoint from a LAN or hosted endpoint. A server such as Ollama or LM Studio is not itself a coding agent and cannot be added as an ACP executable.
 - **Capabilities and instructions:** offer attachments, model switching, session discovery/resume, steering, plans, usage and permission controls only where supported. Show unavailable usage or cost as unknown. Verify that Gloss's thread-routing instructions reach the agent without modifying the user's project instruction files. Preserve display history when resume is unavailable and require an explicit new-session action instead of claiming the agent retained context. Use the current permission behavior initially; M15 will add questions, permission modes and approval prompts across agents.
 - **Failures and local expectations:** distinguish an unavailable model server, a missing model, authentication failure, insufficient memory and unsupported tool calling where the agent exposes those errors. Explain that speed, memory requirements and coding quality depend on the model and hardware. A local model does not guarantee an offline workflow: tools, MCP servers and other integrations may still access the network. Do not silently fall back to a hosted provider.
@@ -405,7 +391,7 @@ Point at things visually to give the agent feedback. Expect to iterate on this c
 
 ## ~~M17: Agent-native conversation rewind~~
 
-**Done.** Claude Code and Codex rewind by forking their saved native history at the selected boundary, preserving structured records without a synthetic transcript prompt. The selected prompt and attachments return to the composer; retained message IDs and thread anchors survive replay and restart. Failed fork loads can be retried. Unsupported agents offer no rewind, and transcript reconstruction and its size cap are removed except for pending legacy reconstructions. Conversation rewind leaves project files unchanged; per-turn file checkpoints and undo are scheduled in M23. Implemented in `e3d06fe`.
+**Done.** Claude Code and Codex rewind by forking their saved native history at the selected boundary, preserving structured records without a synthetic transcript prompt. The selected prompt and attachments return to the composer; retained message IDs and thread anchors survive replay and restart. Failed fork loads can be retried. Unsupported agents offer no rewind, and transcript reconstruction and its size cap are removed except for pending legacy reconstructions. Conversation rewind leaves project files unchanged; per-turn file checkpoints and undo are scheduled in M22. Implemented in `e3d06fe`.
 
 Replace the current fresh-session transcript prompt with native history restoration where the agent supports it. Keep the existing rewind interaction, draft restoration and conversation-only scope. Update `SPEC.md` in this milestone.
 
