@@ -45,7 +45,7 @@ export function makeApi(t: ApiTransport): GlossApi {
       create: (cwd, agentId) => invoke(IPC.sessionsCreate, cwd, agentId),
       createInWorktree: (project, agentId) => invoke(IPC.sessionsCreateInWorktree, project, agentId),
       createIn: (project, path, agentId) => invoke(IPC.sessionsCreateIn, project, path, agentId),
-      createReview: (cwd, agentId, baseRef, headRef) => invoke(IPC.sessionsCreateReview, cwd, agentId, baseRef, headRef),
+      createReview: (cwd, agentId, baseRef, headRef, project) => invoke(IPC.sessionsCreateReview, cwd, agentId, baseRef, headRef, project),
       runReview: (id) => invoke(IPC.sessionsRunReview, id),
       reviewRefs: (id) => invoke(IPC.sessionsReviewRefs, id),
       openReviewFile: (id, path, how, line) => invoke(IPC.sessionsOpenReviewFile, id, path, how, line),

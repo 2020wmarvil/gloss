@@ -1,4 +1,4 @@
-// Worktree sessions (SPEC → Worktrees): what the agent is told, and the New session menu's places.
+// Worktree sessions (SPEC → Worktrees): what the agent is told, and which project a session is in.
 
 /**
  * The first line of a worktree session's first message, for the agent only: Gloss gives
@@ -19,8 +19,7 @@ export function withoutWorktreeNote(title: string): string {
   return m ? title.slice(m[0].length) : title
 }
 
-/**
- * Where New session starts (a project setting): the project folder, a new worktree, or
- * an existing worktree's folder (its path).
- */
-export type NewSessionPlace = 'folder' | 'worktree' | { path: string }
+/** The project a session belongs to: its folder, or the project folder of the worktree it works in. */
+export function projectOf(session: { cwd: string; project?: string }): string {
+  return session.project ?? session.cwd
+}

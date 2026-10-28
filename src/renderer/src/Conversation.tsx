@@ -53,6 +53,8 @@ type Props = {
   onOpenQueue(): void
   /** Pop out, or Return to main window, at the header's end (SPEC → Session windows). */
   windowButton?: React.ReactNode
+  /** **Review changes**, before it (SPEC → Worktrees → Reviews). */
+  reviewButton?: React.ReactNode
 }
 
 export function Conversation(props: Props): React.JSX.Element {
@@ -128,6 +130,7 @@ export function Conversation(props: Props): React.JSX.Element {
       <header>
         <h1 title={session.title}>{session.title}</h1>
         <span className="agent-name">{agentName}</span>
+        {props.reviewButton}
         {props.windowButton}
       </header>
       <Log

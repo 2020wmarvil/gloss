@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { GitStatus, PullRequest } from '@shared/ipc'
 import { expandable, gapsOf, linesOf, newLineOf, type LineAnchor, type Location, type ReviewDiff, type ReviewRange, type ReviewRefs, type Side } from '@shared/review'
-import type { MessageQueue, SessionLive } from '@shared/types'
+import type { MessageQueue, SessionLive, Worktree } from '@shared/types'
+import { folderName, sameFolder } from '@shared/paths'
+import { projectOf } from '@shared/worktree'
+import { Select } from './Select'
 import type { OpenSession, Panel } from './App'
 import { useScrollMemory, type ScrollAnchors } from './scrollMemory'
 import { DiffView, EMPTY_LINE, cardOpen, firstLine, REVEAL_LABEL, type Card, type Layout } from './DiffView'
@@ -54,6 +57,8 @@ type Props = {
   onRunReview(): void
   /** Starts a fresh review session of the same range; this one stays. */
   onNewReview(): void
+  /** A draft switches to reviewing another of the project's folders (SPEC → Worktrees → Reviews). */
+  onSwitchFolder?(path: string): void
   /** Opens a file of the diff in the file manager, or in the external editor at `line`. */
   onOpenFile(path: string, how: 'reveal' | 'editor', line: number): void
   /** Pop out, or Return to main window, at the end of the header's tools (SPEC → Session windows). */
@@ -124,6 +129,16 @@ export function ReviewView(props: Props): React.JSX.Element {
   const [layout, setLayout] = useStored<Layout>('gloss.review.layout', 'split', ['split', 'unified'])
   const [tree, setTree] = useStored(TREE_KEY, 'shown', ['shown', 'hidden'])
   const [comments, setComments] = useStored('gloss.review.comments', 'shown', ['shown', 'hidden'])
+  /** A draft's choice of the project's folders to review. */
+  const [folders, setFolders] = useState<Worktree[] | null>(null)
+  const draftOf = props.open.session.draft ? projectOf(props.open.session) : null
+  useEffect(() => {
+    setFolders(null)
+    if (!draftOf || !props.onSwitchFolder) return
+    let live = true
+    window.gloss.worktrees.list(draftOf).then((list) => live && setFolders(list), () => {})
+    return () => { live = false }
+  }, [draftOf, props.open.session.id])
   const [toggled, setToggled] = useState(() => new Set<string>())
   /** Files expanded: every file starts collapsed, so a large review opens fast. */
   const [expandedFiles, setExpandedFiles] = useState(() => new Set<string>(props.initialExpandedFiles))
@@ -404,6 +419,15 @@ export function ReviewView(props: Props): React.JSX.Element {
           </div>
         </div>
         <div className="review-meta">
+          {open.session.draft && props.onSwitchFolder && folders && folders.length > 1 && (
+            <Select
+              label="In"
+              ariaLabel="Folder under review"
+              value={folders.find((w) => sameFolder(w.path, open.session.cwd))?.path ?? open.session.cwd}
+              options={folders.map((w) => ({ value: w.path, label: w.main ? `Project folder (${w.branch ?? 'detached'})` : (w.branch ?? folderName(w.path)) }))}
+              onChange={props.onSwitchFolder}
+            />
+          )}
           {review && <RangePicker range={review} diff={diff.diff} refs={refs} onRefresh={loadRefs} onChange={props.onSetRange} />}
           {diff.diff && (
             <span className="review-counts">

@@ -530,7 +530,7 @@ export class SessionManager {
   }
 
   /** `review`: a review session (SPEC → Review sessions), with its title. It starts as a draft. */
-  async createSession(cwd: string, agentId: string, review?: ReviewRange & { title: string }): Promise<Session> {
+  async createSession(cwd: string, agentId: string, review?: ReviewRange & { title: string }, project?: string): Promise<Session> {
     const servers = this.mcpServers(cwd)
     let conn!: AgentConnection
     let mode!: ModeState
@@ -550,11 +550,12 @@ export class SessionManager {
       ...(review
         ? { titleSet: true as const, review: { baseRef: review.baseRef, ...(review.headRef ? { headRef: review.headRef } : {}) }, draft: true as const }
         : {}),
-      createdAt: this.now()
+      createdAt: this.now(),
+      ...(project && !samePath(project, cwd) ? { project } : {})
     }
     this.deps.store.insertSession(session)
     if (mode.saved.mode !== undefined || mode.saved.autoApprove !== undefined) this.deps.store.updateSession(session.id, mode.saved)
-    this.deps.store.addProject(cwd, this.now())
+    this.deps.store.addProject(session.project ?? cwd, this.now())
     this.register(session.acpSessionId, session.id)
     this.runtime(session.id).attachedTo = conn
     this.runtime(session.id).mcpFingerprint = JSON.stringify(servers)
@@ -569,11 +570,13 @@ export class SessionManager {
    * something is sent in it. Without a `range` it shows the project's draft again if it
    * has one, else compares the working tree with the merge base of the branch's open pull
    * request's base, else of the default branch; **New review** passes the range of the
-   * review it replaces. A project keeps one draft: a new one replaces it.
+   * review it replaces. A project keeps one draft: a new one replaces it. `project`: the
+   * project folder, when `cwd` is one of its worktrees (SPEC → Worktrees → Reviews).
    */
-  async createReview(cwd: string, agentId: string, range?: ReviewRange): Promise<Session> {
-    const drafts = (): Session[] => this.deps.store.listSessions().filter((s) => s.draft && samePath(s.cwd, cwd))
-    const kept = range === undefined ? drafts().find((s) => s.agentId === agentId) : undefined
+  async createReview(cwd: string, agentId: string, range?: ReviewRange, project?: string): Promise<Session> {
+    const home = project ?? cwd
+    const drafts = (): Session[] => this.deps.store.listSessions().filter((s) => s.draft && samePath(s.project ?? s.cwd, home))
+    const kept = range === undefined ? drafts().find((s) => s.agentId === agentId && samePath(s.cwd, cwd)) : undefined
     if (kept) return kept
     const found = await this.git.pullRequest(cwd)
     const pr = found && (found.state === 'open' || found.state === 'draft') && found.baseRef ? found : null
@@ -585,7 +588,7 @@ export class SessionManager {
     const branch = await this.git.currentBranch(cwd)
     const ofPr = pr && reviewsPr({ baseRef, headRef }, prBase) ? pr : null
     const title = ofPr ? `Review: #${ofPr.number} ${ofPr.title}` : `Review: ${branch ?? folderName(cwd)}`
-    const session = await this.createSession(cwd, agentId, { baseRef, ...(headRef ? { headRef } : {}), title })
+    const session = await this.createSession(cwd, agentId, { baseRef, ...(headRef ? { headRef } : {}), title }, project)
     for (const old of drafts()) if (old.id !== session.id) await this.discardDraft(old.id)
     // Whatever is sent first, the agent learns what is under review.
     this.runtime(session.id).rangeNote = rangeNote(diff)

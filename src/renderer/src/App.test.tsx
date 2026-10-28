@@ -63,6 +63,7 @@ it("starts sessions with the default agent or one from the menu, and lists every
   const create = vi.fn(async () => { throw new Error('creation observed') })
   const importSession = vi.fn(async () => { throw new Error('import observed') })
   const createReview = vi.fn(async () => { throw new Error('review observed') })
+  const createInWorktree = vi.fn(async () => { throw new Error('worktree observed') })
   const resetsAt = new Date(2026, 9, 26, 15, 40).getTime()
   const state = { global: { defaultAgent: 'codex', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }
   const update = vi.fn(async (patch: { global: object }) => ({ ...state, global: { ...state.global, ...patch.global } }))
@@ -74,7 +75,8 @@ it("starts sessions with the default agent or one from the menu, and lists every
       list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'codex', name: 'Codex' }, { id: 'opencode', name: 'OpenCode', available: false, setupMessage: 'Install OpenCode' }]
     },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: list },
-    sessions: { list: async () => [], create, createReview, import: importSession },
+    sessions: { list: async () => [], create, createReview, createInWorktree, import: importSession },
+    worktrees: { list: async () => [{ path: '/project', branch: 'dev', main: true }] },
     onEvent: () => () => {}
   } as unknown as typeof window.gloss
   const el = document.createElement('div')
@@ -92,39 +94,48 @@ it("starts sessions with the default agent or one from the menu, and lists every
 
   const openMenu = async (): Promise<void> => act(async () => (el.querySelector('.new-session-agents') as HTMLButtonElement).click())
   await openMenu()
-  const stars = [...el.querySelectorAll<HTMLButtonElement>('.agent-star')]
-  expect(stars.map((b) => b.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false'])
-  expect(stars[2].disabled).toBe(true)
-  expect([...el.querySelectorAll<HTMLButtonElement>('.agent-item [role="menuitem"]')][2].disabled).toBe(true)
+  const agentStars = (): HTMLButtonElement[] => [...el.querySelectorAll<HTMLButtonElement>('.agent-star[aria-label^="Make "]')]
+  const agentRows = (): HTMLButtonElement[] => [...el.querySelectorAll<HTMLButtonElement>('.agent-item [data-agent]')]
+  const placeRow = (label: string): HTMLButtonElement =>
+    [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Where"] [role="menuitemradio"]')].find((b) => b.textContent === label)!
+  const start = (): HTMLButtonElement => el.querySelector<HTMLButtonElement>('.new-start button')!
+  expect(agentStars().map((b) => b.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false'])
+  expect(agentStars()[2].disabled).toBe(true)
+  expect(agentRows()[2].disabled).toBe(true)
   // A reached plan limit shows on its agent, with when it resets.
-  const items = (): HTMLButtonElement[] => [...el.querySelectorAll<HTMLButtonElement>('.agent-item [role="menuitem"]')]
-  expect(items()[0].querySelector('.agent-limit')!.textContent).toBe(`Limit · ${formatReset(resetsAt)}`)
-  expect(items()[1].querySelector('.agent-limit')).toBeNull()
-  await act(async () => items()[0].click())
+  expect(agentRows()[0].querySelector('.agent-limit')!.textContent).toBe(`Limit · ${formatReset(resetsAt)}`)
+  expect(agentRows()[1].querySelector('.agent-limit')).toBeNull()
+  // Picking an agent only selects it; Start starts.
+  await act(async () => agentRows()[0].click())
+  expect(create).toHaveBeenCalledTimes(1)
+  expect(start().textContent).toBe('Start in the project folder')
+  await act(async () => start().click())
   expect(create).toHaveBeenLastCalledWith('/project', 'claude')
 
-  // Review, then an agent: a review with that agent, not the default.
+  // A new worktree, with the default agent: the menu opens on the defaults again.
   await openMenu()
-  await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.new-kind [role="radio"]')][1].click())
-  await act(async () => items()[0].click())
-  expect(createReview).toHaveBeenLastCalledWith('/project', 'claude', undefined, null)
-  // The menu keeps the kind picked last.
-  await openMenu()
-  expect(el.querySelector('.new-kind [aria-checked="true"]')!.textContent).toBe('Review')
-  await act(async () => el.querySelector('.new-session-agents')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-  // Ctrl+Shift+D: a review with the default agent.
+  await act(async () => placeRow('New worktree').click())
+  expect(start().textContent).toBe('Start in a new worktree')
+  await act(async () => start().click())
+  expect(createInWorktree).toHaveBeenLastCalledWith('/project', 'codex')
+  // Ctrl+Shift+N does the same; Ctrl+Shift+D reviews the project folder.
+  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'N', ctrlKey: true, shiftKey: true })))
+  expect(createInWorktree).toHaveBeenCalledTimes(2)
   await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'D', ctrlKey: true, shiftKey: true })))
-  expect(createReview).toHaveBeenLastCalledWith('/project', 'codex', undefined, null)
+  expect(createReview).toHaveBeenLastCalledWith('/project', 'codex', undefined, null, '/project')
 
+  // The stars set the defaults: the place for this project, the agent for all.
   await openMenu()
-  await act(async () => el.querySelectorAll<HTMLButtonElement>('.agent-star')[0].click())
+  await act(async () => (placeRow('New worktree').parentElement!.querySelector('.agent-star') as HTMLButtonElement).click())
+  expect(update).toHaveBeenCalledWith({ project: { path: '/project', values: { newSessionPlace: 'worktree' } } })
+  await act(async () => agentStars()[0].click())
   expect(update).toHaveBeenCalledWith({ global: { defaultAgent: 'claude' } })
-  expect(el.querySelector('.agent-star.on')!.getAttribute('aria-label')).toContain('Claude Code')
+  expect(el.querySelector('.agent-star.on[aria-label^="Make "]')!.getAttribute('aria-label')).toContain('Claude Code')
   expect(el.querySelector('.new-session')!.getAttribute('title')).toContain('Claude Code')
 
   const claudeRow = [...el.querySelectorAll<HTMLButtonElement>('.session-row.agent')].find((b) => b.textContent!.includes('claude external'))!
   await act(async () => claudeRow.click())
-  expect(importSession).toHaveBeenCalledWith('/project', 'claude', 'same-id', 'claude external', undefined)
+  expect(importSession).toHaveBeenCalledWith('/project', 'claude', 'same-id', 'claude external', undefined, '/project')
 })
 
 it('goes back and forward through the sessions and settings visited with the mouse buttons and Alt+arrows', async () => {

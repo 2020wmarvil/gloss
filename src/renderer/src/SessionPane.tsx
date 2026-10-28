@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { SettingsState } from '@shared/ipc'
 import { projectSettings } from '@shared/settings'
+import { projectOf } from '@shared/worktree'
 import type { AgentInfo, Session, Thread } from '@shared/types'
-import { SquareArrowOutDownLeft, SquareArrowOutUpRight } from 'lucide-react'
+import { GitCompare, SquareArrowOutDownLeft, SquareArrowOutUpRight } from 'lucide-react'
 import { Conversation } from './Conversation'
 import { GeneralPanel, ReviewThreadList } from './ReviewPanels'
 import { locations as threadLocations } from './reviewThreads'
@@ -75,6 +76,11 @@ type Props = {
   onResizeThread(width: number | null): void
   creating: boolean
   onNewReview(from: Session): void
+  /**
+   * **Review changes**: a review of the folder the session works in, with the default agent
+   * (SPEC → Worktrees → Reviews). With `path`, a draft review switches to that folder, with its agent.
+   */
+  onReviewFolder(from: Session, path?: string): void
   /** This view is in the session's own window. */
   popped: boolean
   /** Pops the session out, or returns it to the main window. */
@@ -94,8 +100,18 @@ export function SessionPane(props: Props): React.JSX.Element {
     [open.threads, diffState.diff, reviewSources.sources]
   )
   const agentName = agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId
-  const obsidianVault = settings ? projectSettings(settings.projects, open.session.cwd).obsidianVault : undefined
+  const obsidianVault = settings ? projectSettings(settings.projects, projectOf(open.session)).obsidianVault : undefined
   const windowButton = <WindowButton popped={props.popped} onClick={props.onWindow} />
+  const reviewButton = (
+    <button
+      className="tool-button review-folder-button"
+      title={`Review this session's changes (${modKey()}+Shift+D)`}
+      onClick={() => props.onReviewFolder(open.session)}
+    >
+      <GitCompare />
+      Review changes
+    </button>
+  )
   const exportMarkdown = (threadId: string | null, how: 'copy' | 'save'): void => {
     const done = how === 'copy' ? window.gloss.sessions.copyMarkdown(id, threadId) : window.gloss.sessions.saveMarkdown(id, threadId)
     done.catch((err: unknown) => s.addNotice(id, threadId, `Couldn't export: ${errorText(err)}`))
@@ -127,6 +143,7 @@ export function SessionPane(props: Props): React.JSX.Element {
           creating={props.creating}
           onRunReview={() => s.runReview(id)}
           onNewReview={() => props.onNewReview(open.session)}
+          onSwitchFolder={(path) => props.onReviewFolder(open.session, path)}
           windowButton={windowButton}
           initialExpandedFiles={s.takeExpanded(id)}
           onExpandedFilesChange={(files) => {
@@ -160,6 +177,7 @@ export function SessionPane(props: Props): React.JSX.Element {
           reveal={reveal}
           queue={queue}
           composerQueue={s.composerQueue(id, queue.items.filter((q) => q.threadId === null))}
+          reviewButton={reviewButton}
           windowButton={windowButton}
           onSend={(text, attachments) => void s.send(text, attachments, null)}
           onSteer={(text, attachments) => void s.send(text, attachments, null, 'steer')}

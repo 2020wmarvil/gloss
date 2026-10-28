@@ -181,8 +181,9 @@ it('opens a new review in its own window unless reviewWindow is off', async () =
   const createReview = vi.fn(async () => session('r', 4))
   window.gloss.sessions.createReview = createReview as unknown as typeof window.gloss.sessions.createReview
   const el = await render(<App />)
+  // From session a: a review of the folder it works in.
   await key({ key: 'D', ctrlKey: true, shiftKey: true })
-  expect(createReview).toHaveBeenCalledWith('/project', 'claude', undefined, null)
+  expect(createReview).toHaveBeenCalledWith('/project', 'claude', undefined, null, '/project')
   // Its side panel set to open on the general conversation; this window stays on a.
   expect(windows.popOut).toHaveBeenCalledWith('r', { threadId: null, sideOpen: false, general: true, sideTab: 'threads', expandedFiles: [], drafts: {}, scroll: {} })
   expect(opened).not.toHaveBeenCalledWith('r')

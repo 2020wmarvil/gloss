@@ -672,13 +672,92 @@ button.new-session-agents {
   gap: 2px;
 }
 
-.agent-item button[role='menuitem'] {
+.agent-item button[role='menuitem'],
+.agent-item button[role='menuitemradio'] {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: baseline;
   gap: 4px;
   white-space: nowrap;
+}
+
+/* The New session menu (SPEC → Worktrees): where and with which agent, then Start. */
+.menu .menu-label {
+  padding: 6px 10px 2px;
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.agent-item button[role='menuitemradio'] {
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-item button[role='menuitemradio'] svg,
+.menu .menu-link svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+.menu .agent-item button.picked {
+  background: var(--selected);
+  color: var(--ink);
+}
+
+.menu .menu-sub {
+  margin-left: auto;
+  font-size: var(--t-11);
+  color: var(--faint);
+}
+
+.menu .menu-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.menu .menu-link:hover {
+  color: var(--ink);
+}
+
+.menu .menu-link .menu-link-end {
+  margin-left: auto;
+}
+
+.menu .new-start {
+  padding: 6px 2px 2px;
+}
+
+/* Over .menu button's plain rows. */
+.menu .new-start button.primary {
+  width: 100%;
+  height: var(--control);
+  display: flex;
+  background: var(--gloss), var(--brand-gradient);
+  color: var(--on-brand);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.new-session-place {
+  width: 12px;
+  height: 12px;
+  margin-right: 3px;
+  vertical-align: -1px;
+}
+
+/* Worktrees without sessions, on the sidebar's Worktrees button. */
+.worktrees-idle {
+  margin-left: auto;
+  font-size: var(--t-11);
+  color: var(--warn);
 }
 
 /* A reached plan limit, and when it resets. */
@@ -6530,4 +6609,205 @@ kbd {
 
 .phone-remove {
   color: var(--failed);
+}
+
+/* The Worktrees screen (SPEC → Worktrees): laid out like the settings screen's body. */
+.worktrees-screen {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.worktrees-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 40px 32px;
+}
+
+.worktrees-body > * {
+  max-width: 780px;
+}
+
+.worktrees-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.worktrees-top h2 {
+  margin: 0;
+  font-size: var(--t-20);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.worktrees-top button {
+  margin-left: auto;
+}
+
+.worktrees-body .lede {
+  margin: 0 0 18px;
+  font-size: var(--t-13);
+  color: var(--muted);
+}
+
+.worktrees-label {
+  margin: 0 0 6px;
+  font-size: var(--t-11);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.worktree {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 18px;
+  padding: 14px 18px;
+}
+
+.worktree + .worktree {
+  border-top: 1px solid var(--line);
+}
+
+.worktree-branch {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--t-13);
+  color: var(--ink);
+}
+
+.worktree-branch > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--faint);
+}
+
+.worktree-star {
+  width: 22px;
+  height: 22px;
+  color: var(--faint);
+}
+
+.worktree-star svg {
+  width: 13px;
+  height: 13px;
+}
+
+.worktree-star.on {
+  color: var(--ink);
+}
+
+.worktree-path {
+  margin-top: 1px;
+  font-size: var(--t-11);
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worktree-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 5px;
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.worktree-state .warn {
+  color: var(--warn);
+}
+
+.worktree-state .ok,
+.worktree-state .pr {
+  color: var(--state-done);
+}
+
+.worktree-state a.pr {
+  text-decoration: none;
+}
+
+.worktree-state a.pr:hover {
+  text-decoration: underline;
+}
+
+.worktree-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+button.danger-text {
+  color: var(--failed);
+}
+
+.worktree-sessions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.worktree-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 280px;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--sunken);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: var(--t-12);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.worktree-chip:hover {
+  background: var(--hover);
+}
+
+.worktree-chip-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worktree-none {
+  font-size: var(--t-12);
+  color: var(--faint);
+}
+
+.worktree-none.padded {
+  margin: 0;
+  padding: 14px 18px;
+}
+
+.worktree-losses {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  font-size: var(--t-13);
+  color: var(--ink-2);
 }

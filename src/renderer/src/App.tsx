@@ -3,8 +3,10 @@ import { SearchDialog } from './SearchDialog'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GlossEvent, PaneState } from '@shared/ipc'
 import { sameFolder } from '@shared/paths'
-import type { GlobalSettings } from '@shared/settings'
-import type { AgentSession, Project, Session } from '@shared/types'
+import { projectOf } from '@shared/worktree'
+import { projectSettings, type GlobalSettings } from '@shared/settings'
+import type { AgentSession, Project, Session, Worktree } from '@shared/types'
+import { WorktreesScreen } from './WorktreesScreen'
 import { hideFileList } from './ReviewView'
 import { CaptureShortcut, clearDrafts } from './Composer'
 import { errorText } from './errors'
@@ -58,7 +60,14 @@ export function App(): React.JSX.Element {
   const s = useSession()
   const { load, close: closeSession, openId } = s
   const [showSettings, setShowSettings] = useState(false)
+  /** Settings opens on the project's page from the Worktrees screen. */
+  const [settingsSection, setSettingsSection] = useState<'project' | undefined>(undefined)
   const [showSearch, setShowSearch] = useState(false)
+  /** The Worktrees screen (SPEC → Worktrees), in the center like Settings. */
+  const [showWorktrees, setShowWorktrees] = useState(false)
+  /** The shown project's folder and worktrees; null while they are read. */
+  const [worktrees, setWorktrees] = useState<Worktree[] | null>(null)
+  const [worktreesError, setWorktreesError] = useState<string | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
@@ -171,8 +180,9 @@ export function App(): React.JSX.Element {
         return
       }
       setShowSettings(false)
+      setShowWorktrees(false)
       const view = await load(id, threadId, target)
-      if (view) setProjectPath(view.session.cwd)
+      if (view) setProjectPath(projectOf(view.session))
     },
     [load, clearUnseen]
   )
@@ -192,7 +202,7 @@ export function App(): React.JSX.Element {
   const selectProject = useCallback(
     (path: string, all: Session[]) => {
       setProjectPath(path)
-      const first = all.find((x) => sameFolder(x.cwd, path) && !poppedRef.current.includes(x.id))
+      const first = all.find((x) => sameFolder(projectOf(x), path) && !poppedRef.current.includes(x.id))
       if (first) {
         if (first.id !== openId.current) void selectSession(first.id)
       } else {
@@ -255,11 +265,14 @@ export function App(): React.JSX.Element {
         setShowSettings(false)
         clearUnseen(event.sessionId)
         void s.restore(event.sessionId, event.state).then((view) => {
-          if (view) setProjectPath(view.session.cwd)
+          if (view) setProjectPath(projectOf(view.session))
         })
         break
       case 'mainAction':
         runMainAction(event.action)
+        break
+      case 'worktrees':
+        if (projectPathRef.current && sameFolder(event.project, projectPathRef.current)) void loadWorktrees(projectPathRef.current)
         break
     }
   }
@@ -289,22 +302,55 @@ export function App(): React.JSX.Element {
     if (added.size) void loadAgentSessions(projectPath, added)
   }, [projectPath, loadAgentSessions, agents])
 
+  // The shown project's worktrees: read when it is shown, when they change, and when the window comes back.
+  const projectPathRef = useRef(projectPath)
+  projectPathRef.current = projectPath
+  const loadWorktrees = useCallback(async (path: string) => {
+    try {
+      const list = await window.gloss.worktrees.list(path)
+      if (projectPathRef.current === path) {
+        setWorktrees(list)
+        setWorktreesError(null)
+      }
+    } catch (err) {
+      if (projectPathRef.current === path) setWorktreesError(`Couldn't read the worktrees: ${errorText(err)}`)
+    }
+  }, [])
+  useEffect(() => {
+    setWorktrees(null)
+    if (projectPath) void loadWorktrees(projectPath)
+  }, [projectPath, loadWorktrees])
+
   // Back in the window: pick up what was done in the agent's CLI meanwhile (SPEC → Shared sessions).
   useEffect(() => {
     const onFocus = (): void => {
       if (projectPath) void loadAgentSessions(projectPath)
+      if (projectPath) void loadWorktrees(projectPath)
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [projectPath, loadAgentSessions])
+  }, [projectPath, loadAgentSessions, loadWorktrees])
 
-  async function newSession(agentId = agent?.id): Promise<void> {
+  /** Where New session starts in the shown project (SPEC → Worktrees): `folder`, `worktree` or a worktree's path. */
+  const place = (projectPath && settings && projectSettings(settings.projects, projectPath).newSessionPlace) || 'folder'
+  function setPlace(value: string): void {
+    if (!projectPath) return
+    void updateSettings({ project: { path: projectPath, values: { newSessionPlace: value } } })
+  }
+
+  /** Starts a session with the agent (else the default one) in `where` (else the project's place). */
+  async function newSession(agentId = agent?.id, where = place): Promise<void> {
     if (!projectPath) return openProject()
     if (!agentId) return
     setSidebarError(null)
     setCreating(true)
     try {
-      const session = await window.gloss.sessions.create(projectPath, agentId)
+      const session =
+        where === 'worktree'
+          ? await window.gloss.sessions.createInWorktree(projectPath, agentId)
+          : where === 'folder' || sameFolder(where, projectPath)
+            ? await window.gloss.sessions.create(projectPath, agentId)
+            : await window.gloss.sessions.createIn(projectPath, where, agentId)
       await selectSession(session.id)
       void refreshProjects()
     } catch (err) {
@@ -319,14 +365,15 @@ export function App(): React.JSX.Element {
    * else the default one: the project's draft, or a new one. **New review** passes an open
    * review, for a fresh one with the same agent and range.
    */
-  async function newReview(from?: Session, agentId = from?.agentId ?? agent?.id): Promise<void> {
-    const cwd = from?.cwd ?? projectPath
+  async function newReview(from?: Session, agentId = from?.agentId ?? agent?.id, folder?: string): Promise<void> {
+    const cwd = from?.cwd ?? folder ?? projectPath
     if (!cwd || !agentId) return
+    const project = from ? projectOf(from) : projectPath ?? cwd
     setSidebarError(null)
     setCreating(true)
     try {
       const review = from?.review
-      const session = await window.gloss.sessions.createReview(cwd, agentId, review?.baseRef, review?.headRef ?? null)
+      const session = await window.gloss.sessions.createReview(cwd, agentId, review?.baseRef, review?.headRef ?? null, project)
       // The project's draft, already in its own window.
       if (poppedRef.current.includes(session.id)) return void (await selectSession(session.id))
       // A new review starts with only the diff: the session list, the side panel and the
@@ -360,7 +407,8 @@ export function App(): React.JSX.Element {
     setSidebarError(null)
     setImporting(a.acpSessionId)
     try {
-      const session = await window.gloss.sessions.import(projectPath, a.agentId, a.acpSessionId, a.title, a.updatedAt)
+      // A session the agent lists in one of the project's worktrees resumes there.
+      const session = await window.gloss.sessions.import(a.cwd ?? projectPath, a.agentId, a.acpSessionId, a.title, a.updatedAt, projectPath)
       const key = agentSessionsKey(projectPath, a.agentId)
       setAgentSessions((all) => ({ ...all, [key]: (all[key] ?? []).filter((x) => x.acpSessionId !== a.acpSessionId) }))
       await selectSession(session.id)
@@ -381,7 +429,7 @@ export function App(): React.JSX.Element {
       // Show the next session in the project, if the deleted one was open.
       if (deleted && openId.current === null) {
         const rest = sessions.filter((x) => x.id !== id)
-        selectProject(deleted.cwd, rest)
+        selectProject(projectOf(deleted), rest)
       }
     } catch (err) {
       setSidebarError(errorText(err))
@@ -484,7 +532,7 @@ export function App(): React.JSX.Element {
 
   /** The next or previous session in the project, skipping those in their own windows. */
   function cycleSession(back: boolean): void {
-    const list = (projectPath ? sessions.filter((x) => sameFolder(x.cwd, projectPath)) : sessions).filter(
+    const list = (projectPath ? sessions.filter((x) => sameFolder(projectOf(x), projectPath)) : sessions).filter(
       (x) => !poppedRef.current.includes(x.id) || x.id === openId.current
     )
     if (list.length === 0) return
@@ -499,6 +547,9 @@ export function App(): React.JSX.Element {
    */
   async function toggleReview(): Promise<void> {
     const id = openId.current
+    // From a session, a review of the folder it works in (SPEC → Worktrees → Reviews).
+    const from = id && !showSettings && !showWorktrees ? sessions.find((x) => x.id === id) : undefined
+    if (from && !s.openReview.current) return newReview(undefined, undefined, from.cwd)
     if (!id || showSettings || !s.openReview.current) return newReview()
     const restore = reviewHidSidebar.current === id
     reviewHidSidebar.current = null
@@ -513,7 +564,11 @@ export function App(): React.JSX.Element {
     else if (action.kind === 'review') void newReview()
     else if (action.kind === 'settings') setShowSettings(true)
     else if (action.kind === 'cycleSession') cycleSession(action.back)
-    else {
+    else if (action.kind === 'newWorktreeSession') void newSession(undefined, 'worktree')
+    else if (action.kind === 'reviewFolder') {
+      const from = sessions.find((x) => x.id === action.sessionId)
+      if (from) void (action.path ? newReview(undefined, from.agentId, action.path) : newReview(undefined, undefined, from.cwd))
+    } else {
       const from = sessions.find((x) => x.id === action.sessionId)
       if (from) void newReview(from)
     }
@@ -541,9 +596,10 @@ export function App(): React.JSX.Element {
     if (e.key === ',') {
       e.preventDefault()
       setShowSettings((on) => !on)
-    } else if (e.key.toLowerCase() === 'n' && !e.shiftKey && !e.altKey) {
+    } else if (e.key.toLowerCase() === 'n' && !e.altKey) {
       e.preventDefault()
-      void newSession()
+      // Ctrl+Shift+N: in a new worktree (SPEC → Worktrees).
+      void newSession(undefined, e.shiftKey ? 'worktree' : place)
     } else if (e.key.toLowerCase() === 'w' && !e.shiftKey && !e.altKey) {
       e.preventDefault()
       const id = openId.current
@@ -643,7 +699,7 @@ export function App(): React.JSX.Element {
       <TitleBar />
       {sidebarWidth === null ? (
         <SidebarRail
-          count={project ? sessions.filter((x) => sameFolder(x.cwd, project.path)).length : 0}
+          count={project ? sessions.filter((x) => sameFolder(projectOf(x), project.path)).length : 0}
           onExpand={() => hideSidebar(false)}
         />
       ) : (
@@ -675,8 +731,17 @@ export function App(): React.JSX.Element {
             onOpenProject={() => void openProject()}
             onDeleteProject={(path) => void deleteProject(path)}
             onSelect={(id) => void selectSession(id)}
-            onNew={(agentId) => void newSession(agentId)}
-            onReview={(agentId) => void newReview(undefined, agentId)}
+            onNew={(agentId, where) => void newSession(agentId, where)}
+            place={place}
+            placeBranch={worktrees?.find((w) => !w.main && sameFolder(w.path, place))?.branch ?? null}
+            onSetPlace={setPlace}
+            worktreesOpen={showWorktrees}
+            onWorktrees={() => {
+              setShowSettings(false)
+              setShowWorktrees((on) => !on)
+              if (projectPath) void loadWorktrees(projectPath)
+            }}
+            idleWorktrees={(worktrees ?? []).filter((w) => !w.main && !sessions.some((x) => sameFolder(x.cwd, w.path))).length}
             onImport={(a) => void importSession(a)}
             onRename={(id, title) =>
               void window.gloss.sessions.rename(id, title).catch((err: unknown) => setSidebarError(errorText(err)))
@@ -686,7 +751,11 @@ export function App(): React.JSX.Element {
             onCopyMarkdown={(id) => exportMarkdown(id, 'copy')}
             onSaveMarkdown={(id) => exportMarkdown(id, 'save')}
             onSearch={() => setShowSearch(true)}
-            onSettings={() => setShowSettings((on) => !on)}
+            onSettings={() => {
+              setShowWorktrees(false)
+              setSettingsSection(undefined)
+              setShowSettings((on) => !on)
+            }}
             onCollapse={() => hideSidebar(true)}
           />
           <ResizeHandle
@@ -704,6 +773,7 @@ export function App(): React.JSX.Element {
           settings && (
             <SettingsScreen
               state={settings}
+              initialSection={settingsSection}
               projectPath={projectPath}
               projects={projects}
               onUpdate={updateSettings}
@@ -711,6 +781,37 @@ export function App(): React.JSX.Element {
               onClose={closeSettings}
             />
           )
+        ) : showWorktrees && project ? (
+          <WorktreesScreen
+            project={project}
+            worktrees={worktrees}
+            sessions={sessions}
+            running={running}
+            place={place}
+            base={projectSettings(settings?.projects ?? {}, project.path).worktreeBase ?? ''}
+            setup={projectSettings(settings?.projects ?? {}, project.path).worktreeSetup ?? ''}
+            error={worktreesError}
+            onSetPlace={setPlace}
+            onNewSession={(path) => void newSession(undefined, sameFolder(path, project.path) ? 'folder' : path)}
+            onReview={(path) => void newReview(undefined, undefined, path)}
+            onRemove={async (path) => {
+              setWorktreesError(null)
+              try {
+                const warning = await window.gloss.worktrees.remove(project.path, path)
+                if (warning) setWorktreesError(warning)
+              } catch (err) {
+                setWorktreesError(`Couldn't remove the worktree: ${errorText(err)}`)
+              }
+              void loadWorktrees(project.path)
+            }}
+            onOpenSession={(id) => void selectSession(id)}
+            onOpenSettings={() => {
+              setShowWorktrees(false)
+              setSettingsSection('project')
+              setShowSettings(true)
+            }}
+            onClose={() => setShowWorktrees(false)}
+          />
         ) : open ? (
           <SessionPane
             s={s}
@@ -724,6 +825,7 @@ export function App(): React.JSX.Element {
             onResizeThread={setThreadPanelWidth}
             creating={creating}
             onNewReview={(from) => void newReview(from)}
+            onReviewFolder={(from, path) => void (path ? newReview(undefined, from.agentId, path) : newReview(undefined, undefined, from.cwd))}
             popped={false}
             onWindow={() => void popOut(open.session.id)}
           />
