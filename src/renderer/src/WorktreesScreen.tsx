@@ -137,7 +137,7 @@ export function WorktreesScreen(props: Props): React.JSX.Element {
   return (
     <main className="worktrees-screen">
       <div className="worktrees-body">
-        <div className="screen-column">
+        <div className="worktrees-column">
         <div className="worktrees-top">
           <h2>Worktrees</h2>
           <button className="secondary" onClick={props.onClose} title="Close (Esc)">Done</button>

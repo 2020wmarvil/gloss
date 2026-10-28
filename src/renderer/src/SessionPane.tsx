@@ -104,12 +104,12 @@ export function SessionPane(props: Props): React.JSX.Element {
   const windowButton = <WindowButton popped={props.popped} onClick={props.onWindow} />
   const reviewButton = (
     <button
-      className="tool-button review-folder-button"
-      title={`Review this session's changes (${modKey()}+Shift+D)`}
+      className="tool-button icon review-folder-button"
+      title={`Review changes: this session's folder (${modKey()}+Shift+D)`}
+      aria-label="Review changes"
       onClick={() => props.onReviewFolder(open.session)}
     >
       <GitCompare />
-      Review changes
     </button>
   )
   const exportMarkdown = (threadId: string | null, how: 'copy' | 'save'): void => {

@@ -755,18 +755,6 @@ button.new-session-agents {
   vertical-align: -1px;
 }
 
-/* Review changes in a conversation's header (SPEC → Worktrees → Reviews). */
-.review-folder-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.review-folder-button svg {
-  width: 14px;
-  height: 14px;
-}
-
 /* A reached plan limit, and when it resets. */
 .agent-limit {
   margin-left: auto;
@@ -1303,10 +1291,8 @@ button.settings-button.on {
   padding: 20px 40px 32px;
 }
 
-/* The Settings and Worktrees screens' content: one centered column. */
-.screen-column {
+.settings-body > * {
   max-width: 760px;
-  margin-inline: auto;
 }
 
 /* The file's path and Open in editor, then Done at the right. */
@@ -1876,9 +1862,13 @@ button.settings-button.on {
 }
 
 /* Pop out, or Return to main window, at the end of a conversation's header (SPEC → Session windows). */
-.conversation > header > .window-button {
+/* Review changes and Pop out, at the header's end. */
+.conversation > header > .header-tools {
   flex: none;
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .conversation header .mono {
@@ -6634,6 +6624,12 @@ kbd {
   min-height: 0;
   overflow-y: auto;
   padding: 20px 40px 32px;
+}
+
+/* The Worktrees screen's content: one centered column. */
+.worktrees-column {
+  max-width: 760px;
+  margin-inline: auto;
 }
 
 .worktrees-top {

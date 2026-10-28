@@ -130,8 +130,10 @@ export function Conversation(props: Props): React.JSX.Element {
       <header>
         <h1 title={session.title}>{session.title}</h1>
         <span className="agent-name">{agentName}</span>
-        {props.reviewButton}
-        {props.windowButton}
+        <span className="header-tools">
+          {props.reviewButton}
+          {props.windowButton}
+        </span>
       </header>
       <Log
         cwd={open.session.cwd}

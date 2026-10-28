@@ -145,14 +145,9 @@ export function Sidebar(props: Props): React.JSX.Element {
     }
   }, [switcherOpen, agentMenuOpen, menuFor])
 
-  // The menu opens on the defaults, with Start focused, so Enter does what New session does.
+  // The menu opens on the defaults (picked by the button that opens it), with Start focused, so Enter does what New session does.
   useEffect(() => {
-    if (!agentMenuOpen) return
-    setPickPlace(props.place)
-    const usable = props.agents.find((a) => a.id === props.defaultAgent && a.available !== false) ?? props.agents.find((a) => a.available !== false)
-    setPickAgent(usable?.id ?? props.defaultAgent)
-    requestAnimationFrame(() => agentMenu.current?.querySelector<HTMLButtonElement>('.new-start button')?.focus())
-    // Only on opening, not when a default changes from the menu's stars.
+    if (agentMenuOpen) agentMenu.current?.querySelector<HTMLButtonElement>('.new-start button')?.focus()
   }, [agentMenuOpen])
 
   /** In the ▾ menu: the arrows move between the rows of a list, Enter starts. */
@@ -179,6 +174,11 @@ export function Sidebar(props: Props): React.JSX.Element {
   }
 
   const existing = props.place !== 'folder' && props.place !== 'worktree' ? props.place : null
+  /** A place's shortcuts with the default agent: Ctrl+N for the starred place, Ctrl+Shift+N for a new worktree. */
+  const keysFor = (place: string): string => {
+    const keys = [...(place === props.place ? [`${modKey()}+N`] : []), ...(place === 'worktree' ? [`${modKey()}+Shift+N`] : [])]
+    return keys.length ? ` (${keys.join(', ')})` : ''
+  }
   const placeName = (place: string): string =>
     place === 'folder' ? 'the project folder' : place === 'worktree' ? 'a new worktree' : (props.placeBranch ?? folderName(place))
 
@@ -418,6 +418,12 @@ export function Sidebar(props: Props): React.JSX.Element {
             disabled={props.creating}
             onClick={(e) => {
               e.stopPropagation()
+              // Opens on the defaults, set before it shows so its first frame isn't the last pick.
+              if (!agentMenuOpen) {
+                setPickPlace(props.place)
+                const usable = props.agents.find((a) => a.id === props.defaultAgent && a.available !== false) ?? props.agents.find((a) => a.available !== false)
+                setPickAgent(usable?.id ?? props.defaultAgent)
+              }
               setAgentMenuOpen((o) => !o)
               setSwitcherOpen(false)
               setMenuFor(null)
@@ -430,9 +436,9 @@ export function Sidebar(props: Props): React.JSX.Element {
               <div className="menu-label">Where</div>
               <div role="radiogroup" aria-label="Where">
                 {[
-                  { value: 'folder', icon: <Folder />, label: 'Project folder', title: 'Works in the project folder, with the other sessions there' },
-                  { value: 'worktree', icon: <GitBranch />, label: 'New worktree', title: "Works on a new branch in its own folder, so it doesn't touch other sessions' files" },
-                  ...(existing ? [{ value: existing, icon: <GitBranch />, label: props.placeBranch ?? folderName(existing), title: existing, sub: 'existing' }] : [])
+                  { value: 'folder', icon: <Folder />, label: 'Project folder', title: `Works in the project folder, with the other sessions there${keysFor('folder')}` },
+                  { value: 'worktree', icon: <GitBranch />, label: 'New worktree', title: `Works on a new branch in its own folder, so it doesn't touch other sessions' files${keysFor('worktree')}` },
+                  ...(existing ? [{ value: existing, icon: <GitBranch />, label: props.placeBranch ?? folderName(existing), title: `${existing}${keysFor(existing)}`, sub: 'existing' }] : [])
                 ].map((p) => (
                   <div key={p.value} className="agent-item">
                     <button

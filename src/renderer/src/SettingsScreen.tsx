@@ -107,8 +107,6 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
         {nav('shortcuts', <Keyboard />, 'Keyboard shortcuts')}
       </nav>
       <div className="settings-body">
-        {/* A centered column, like the Worktrees screen's. */}
-        <div className="screen-column">
         <div className="settings-file">
           <span className="mono" title={state.path}>
             {state.path}
@@ -198,7 +196,6 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
             <Shortcuts />
           </section>
         )}
-        </div>
       </div>
     </main>
   )
