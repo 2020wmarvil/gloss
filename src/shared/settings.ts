@@ -59,6 +59,8 @@ export type GlobalSettings = {
   externalEditor: string
   /** Tools made available to all agents in every project. */
   mcpServers: import('./mcp').McpServer[]
+  /** New reviews open in their own window (SPEC → Review sessions); omitted means on. */
+  reviewWindow?: boolean
   /** The key combination that starts a capture, in Gloss or any app (an Electron accelerator); empty turns it off. */
   captureShortcut?: string
   /** Paired phones may connect over Tailscale (SPEC → Remote and mobile). */
@@ -187,6 +189,13 @@ export const SETTING_FIELDS: readonly SettingField[] = [
       { value: 'created', label: 'Newest first' },
       { value: 'activity', label: 'Recent activity' }
     ]
+  },
+  {
+    key: 'reviewWindow',
+    scope: 'global',
+    type: 'boolean',
+    label: 'Open reviews in their own window',
+    description: 'New reviews pop out instead of opening in the main window.'
   },
   {
     key: 'externalEditor',

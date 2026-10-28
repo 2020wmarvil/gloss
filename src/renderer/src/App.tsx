@@ -332,6 +332,8 @@ export function App(): React.JSX.Element {
       // A new review starts with only the diff: the session list, the side panel and the
       // file list closed. Each remembers what it is set to from then on.
       hideFileList()
+      // Or in its own window, with the side panel set to open on its general conversation.
+      if (settings?.global.reviewWindow ?? true) return void (await popOut(session.id, { ...FRESH_PANE, general: true }))
       reviewHidSidebar.current = sidebarHidden ? null : session.id
       hideSidebar(true)
       await selectSession(session.id)
@@ -425,12 +427,12 @@ export function App(): React.JSX.Element {
   /**
    * Pops a session out into its own window (SPEC → Session windows). The open one takes what
    * it shows along, and the main window goes back to the view before it, or the project's
-   * empty state.
+   * empty state. A session that isn't open takes `fresh`.
    */
-  async function popOut(id: string): Promise<void> {
+  async function popOut(id: string, fresh = FRESH_PANE): Promise<void> {
     const isOpen = openId.current === id
     try {
-      await window.gloss.windows.popOut(id, isOpen ? s.snapshot() : FRESH_PANE)
+      await window.gloss.windows.popOut(id, isOpen ? s.snapshot() : fresh)
     } catch (err) {
       setSidebarError(errorText(err))
       return

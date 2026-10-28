@@ -176,6 +176,27 @@ it('pops a session out from its menu or Ctrl+Shift+O, and hands session-window s
   expect(opened).not.toHaveBeenCalledWith('c')
 })
 
+it('opens a new review in its own window unless reviewWindow is off', async () => {
+  const { emit, opened, windows } = fakeGloss()
+  const createReview = vi.fn(async () => session('r', 4))
+  window.gloss.sessions.createReview = createReview as unknown as typeof window.gloss.sessions.createReview
+  const el = await render(<App />)
+  await key({ key: 'D', ctrlKey: true, shiftKey: true })
+  expect(createReview).toHaveBeenCalledWith('/project', 'claude', undefined, null)
+  // Its side panel set to open on the general conversation; this window stays on a.
+  expect(windows.popOut).toHaveBeenCalledWith('r', { threadId: null, sideOpen: false, general: true, sideTab: 'threads', expandedFiles: [], drafts: {}, scroll: {} })
+  expect(opened).not.toHaveBeenCalledWith('r')
+  expect(el.querySelector('.session-row.on')!.getAttribute('title')).toBe('a')
+
+  await act(async () => emit({ type: 'settings', state: { global: { ...global, reviewWindow: false }, projects: {}, error: null, path: '/settings.json' } }))
+  createReview.mockResolvedValue(session('s', 5))
+  await key({ key: 'D', ctrlKey: true, shiftKey: true })
+  expect(windows.popOut).toHaveBeenCalledOnce()
+  expect(opened).toHaveBeenLastCalledWith('s')
+  // Opening it here collapsed the sidebar, which is remembered.
+  localStorage.clear()
+})
+
 it("doesn't mark or chime a turn that finishes in a focused session window", async () => {
   const { emit } = fakeGloss()
   vi.spyOn(document, 'hasFocus').mockReturnValue(false)
