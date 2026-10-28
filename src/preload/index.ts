@@ -1,120 +1,14 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
-import { IPC, type GlossApi, type GlossEvent } from '../shared/ipc'
+import { makeApi } from '../shared/api'
+import { IPC, type GlossEvent } from '../shared/ipc'
 
-const api: GlossApi = {
-  confirmClose: (requestId, close) => ipcRenderer.invoke(IPC.confirmClose, requestId, close),
-  composer: {
-    shell: (id, command) => ipcRenderer.invoke(IPC.composerShell, id, command),
-    cancelShell: (id) => ipcRenderer.invoke(IPC.composerCancelShell, id),
-    contexts: (id, query) => ipcRenderer.invoke(IPC.composerContexts, id, query),
-    attach: (id, item) => ipcRenderer.invoke(IPC.composerAttach, id, item),
-    editDraft: (text) => ipcRenderer.invoke(IPC.composerEditDraft, text)
-  },
-  readMarkdownImage: (src, cwd) => ipcRenderer.invoke(IPC.readMarkdownImage, src, cwd),
-  openFileLink: (href) => ipcRenderer.invoke(IPC.openFileLink, href),
-  search: (request) => ipcRenderer.invoke(IPC.search, request),
-  agents: {
-    list: () => ipcRenderer.invoke(IPC.agentsList),
-    rateLimits: () => ipcRenderer.invoke(IPC.agentsRateLimits),
-    testOpenCode: (executable) => ipcRenderer.invoke(IPC.agentsTestOpenCode, executable),
-    testProfile: (profile) => ipcRenderer.invoke(IPC.agentsTestProfile, profile)
-  },
-  projects: {
-    list: () => ipcRenderer.invoke(IPC.projectsList),
-    open: () => ipcRenderer.invoke(IPC.projectsOpen),
-    agentSessions: (path, agentId) => ipcRenderer.invoke(IPC.projectsAgentSessions, path, agentId),
-    delete: (path) => ipcRenderer.invoke(IPC.projectsDelete, path)
-  },
-  history: () => ipcRenderer.invoke(IPC.history),
-  sessions: {
-    rewindPoints: (id) => ipcRenderer.invoke(IPC.sessionsRewindPoints, id),
-    rewind: (id, messageId) => ipcRenderer.invoke(IPC.sessionsRewind, id, messageId),
-    list: () => ipcRenderer.invoke(IPC.sessionsList),
-    create: (cwd, agentId) => ipcRenderer.invoke(IPC.sessionsCreate, cwd, agentId),
-    createReview: (cwd, agentId, baseRef, headRef) => ipcRenderer.invoke(IPC.sessionsCreateReview, cwd, agentId, baseRef, headRef),
-    runReview: (id) => ipcRenderer.invoke(IPC.sessionsRunReview, id),
-    reviewRefs: (id) => ipcRenderer.invoke(IPC.sessionsReviewRefs, id),
-    openReviewFile: (id, path, how, line) => ipcRenderer.invoke(IPC.sessionsOpenReviewFile, id, path, how, line),
-    setReviewRange: (id, baseRef, headRef) => ipcRenderer.invoke(IPC.sessionsSetReviewRange, id, baseRef, headRef),
-    reviewDiff: (id) => ipcRenderer.invoke(IPC.sessionsReviewDiff, id),
-    reviewFile: (id, path) => ipcRenderer.invoke(IPC.sessionsReviewFile, id, path),
-    import: (cwd, agentId, acpSessionId, title, listedAt) =>
-      ipcRenderer.invoke(IPC.sessionsImport, cwd, agentId, acpSessionId, title, listedAt),
-    open: (id) => ipcRenderer.invoke(IPC.sessionsOpen, id),
-    refresh: (id) => ipcRenderer.invoke(IPC.sessionsRefresh, id),
-    rename: (id, title) => ipcRenderer.invoke(IPC.sessionsRename, id, title),
-    delete: (id) => ipcRenderer.invoke(IPC.sessionsDelete, id),
-    setChoice: (id, kind, value) => ipcRenderer.invoke(IPC.sessionsSetChoice, id, kind, value),
-    setMode: (id, modeId) => ipcRenderer.invoke(IPC.sessionsSetMode, id, modeId),
-    setAutoApprove: (id, on) => ipcRenderer.invoke(IPC.sessionsSetAutoApprove, id, on),
-    copyMarkdown: (id, threadId) => ipcRenderer.invoke(IPC.sessionsCopyMarkdown, id, threadId),
-    saveMarkdown: (id, threadId) => ipcRenderer.invoke(IPC.sessionsSaveMarkdown, id, threadId),
-    openFolder: (id) => ipcRenderer.invoke(IPC.sessionsOpenFolder, id),
-    openObsidian: (id) => ipcRenderer.invoke(IPC.sessionsOpenObsidian, id),
-    planUsage: (id) => ipcRenderer.invoke(IPC.sessionsPlanUsage, id)
-  },
-  git: {
-    status: (cwd) => ipcRenderer.invoke(IPC.gitStatus, cwd),
-    pullRequest: (cwd) => ipcRenderer.invoke(IPC.gitPullRequest, cwd)
-  },
-  threads: {
-    create: (sessionId, anchorMessageId, anchor) =>
-      ipcRenderer.invoke(IPC.threadsCreate, sessionId, anchorMessageId, anchor),
-    resolve: (sessionId, threadId, resolved) => ipcRenderer.invoke(IPC.threadsResolve, sessionId, threadId, resolved)
-  },
-  send: (sessionId, text, threadId, attachments, fromThread) =>
-    ipcRenderer.invoke(IPC.send, sessionId, text, threadId, attachments, fromThread ?? null),
-  steer: (sessionId, text, threadId, attachments) =>
-    ipcRenderer.invoke(IPC.steer, sessionId, text, threadId, attachments),
-  retry: (sessionId, messageId) => ipcRenderer.invoke(IPC.retry, sessionId, messageId),
-  cancel: (sessionId) => ipcRenderer.invoke(IPC.cancel, sessionId),
-  setBadge: (badge) => ipcRenderer.send(IPC.setBadge, badge),
-  capture: {
-    start: () => ipcRenderer.invoke(IPC.captureStart),
-    shortcutStatus: () => ipcRenderer.invoke(IPC.captureShortcutStatus),
-    pauseShortcut: (paused) => ipcRenderer.invoke(IPC.capturePauseShortcut, paused)
-  },
-  annotate: {
-    open: (request) => ipcRenderer.invoke(IPC.annotateOpen, request),
-    initial: () => ipcRenderer.invoke(IPC.annotateInitial),
-    finish: (result) => ipcRenderer.invoke(IPC.annotateFinish, result),
-    minimize: () => ipcRenderer.send(IPC.annotateMinimize),
-    toggleMaximize: () => ipcRenderer.send(IPC.annotateToggleMaximize)
-  },
-  requests: {
-    answer: (sessionId, requestId, answer) => ipcRenderer.invoke(IPC.requestsAnswer, sessionId, requestId, answer)
-  },
-  queue: {
-    edit: (sessionId, id, text) => ipcRenderer.invoke(IPC.queueEdit, sessionId, id, text),
-    remove: (sessionId, id) => ipcRenderer.invoke(IPC.queueRemove, sessionId, id),
-    resume: (sessionId) => ipcRenderer.invoke(IPC.queueResume, sessionId)
-  },
-  auth: {
-    signIn: (agentId, methodId) => ipcRenderer.invoke(IPC.authSignIn, agentId, methodId),
-    dismiss: (agentId) => ipcRenderer.invoke(IPC.authDismiss, agentId)
-  },
-  files: {
-    pathFor: (file) => webUtils.getPathForFile(file)
-  },
-  settings: {
-    previewMcpImport: (source) => ipcRenderer.invoke(IPC.settingsPreviewMcpImport, source),
-    get: () => ipcRenderer.invoke(IPC.settingsGet),
-    update: (patch) => ipcRenderer.invoke(IPC.settingsUpdate, patch),
-    openFile: () => ipcRenderer.invoke(IPC.settingsOpenFile)
-  },
-  windows: {
-    popOut: (sessionId, state) => ipcRenderer.invoke(IPC.windowsPopOut, sessionId, state),
-    popIn: (state) => ipcRenderer.invoke(IPC.windowsPopIn, state),
-    focus: (sessionId) => ipcRenderer.invoke(IPC.windowsFocus, sessionId),
-    list: () => ipcRenderer.invoke(IPC.windowsList),
-    initial: () => ipcRenderer.invoke(IPC.windowsInitial),
-    toMain: (action) => ipcRenderer.send(IPC.windowsToMain, action)
-  },
+contextBridge.exposeInMainWorld('gloss', makeApi({
+  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args) as Promise<never>,
+  send: (channel, ...args) => ipcRenderer.send(channel, ...args),
   onEvent(listener) {
     const wrapped = (_e: IpcRendererEvent, event: GlossEvent): void => listener(event)
     ipcRenderer.on(IPC.event, wrapped)
     return () => ipcRenderer.removeListener(IPC.event, wrapped)
-  }
-}
-
-contextBridge.exposeInMainWorld('gloss', api)
+  },
+  pathFor: (file) => webUtils.getPathForFile(file)
+}))

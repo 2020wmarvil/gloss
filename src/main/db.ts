@@ -4,7 +4,7 @@ import type { RewindSeed } from './rewind'
 import { DatabaseSync } from 'node:sqlite'
 import type { SearchRequest, SearchResponse, SearchResult } from '../shared/search'
 import { sameFolder } from '../shared/paths'
-import type { Anchor, Attachment, Finding, Message, Plan, PlanEntry, Session, Thread, ToolCall, TurnOutcome } from '../shared/types'
+import type { Anchor, Attachment, Device, Finding, Message, Plan, PlanEntry, Session, Thread, ToolCall, TurnOutcome } from '../shared/types'
 
 // Append-only. Each entry upgrades the schema by one version (PRAGMA user_version).
 const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
@@ -205,7 +205,16 @@ const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
     }
     db.exec(`DELETE FROM tool_calls WHERE id GLOB 'mcp_startup.*'
       AND session_id IN (SELECT id FROM sessions WHERE agent_id = 'codex')`)
-  }
+  },
+  // Paired phones (SPEC → Remote and mobile). Only the token's SHA-256 is kept.
+  `CREATE TABLE IF NOT EXISTS devices (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    push_subscription TEXT
+  );`
 ]
 
 function addPermissionColumns(db: DatabaseSync): void {
@@ -759,5 +768,49 @@ export class Store {
       .prepare('SELECT * FROM threads WHERE session_id = ? ORDER BY created_at, rowid')
       .all(sessionId)
       .map((r) => toThread(r as Row))
+  }
+
+  // Devices
+
+  listDevices(): Device[] {
+    return this.db.prepare('SELECT * FROM devices ORDER BY created_at, rowid').all().map((r) => toDevice(r as Row))
+  }
+
+  insertDevice(d: { id: string; name: string; tokenHash: string; createdAt: number }): void {
+    this.db.prepare('INSERT INTO devices (id, name, token_hash, created_at, last_used_at) VALUES (?, ?, ?, ?, ?)')
+      .run(d.id, d.name, d.tokenHash, d.createdAt, d.createdAt)
+  }
+
+  deviceByTokenHash(tokenHash: string): Device | undefined {
+    const r = this.db.prepare('SELECT * FROM devices WHERE token_hash = ?').get(tokenHash)
+    return r ? toDevice(r as Row) : undefined
+  }
+
+  touchDevice(id: string, at: number): void {
+    this.db.prepare('UPDATE devices SET last_used_at = ? WHERE id = ?').run(at, id)
+  }
+
+  /** A web push subscription (its JSON), or null when notifications are off. */
+  setDevicePush(id: string, subscription: string | null): void {
+    this.db.prepare('UPDATE devices SET push_subscription = ? WHERE id = ?').run(subscription, id)
+  }
+
+  devicePushSubscriptions(): { id: string; subscription: string }[] {
+    return this.db.prepare('SELECT id, push_subscription FROM devices WHERE push_subscription IS NOT NULL').all()
+      .map((r) => ({ id: r.id as string, subscription: r.push_subscription as string }))
+  }
+
+  deleteDevice(id: string): boolean {
+    return Number(this.db.prepare('DELETE FROM devices WHERE id = ?').run(id).changes) > 0
+  }
+}
+
+function toDevice(r: Row): Device {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    createdAt: Number(r.created_at),
+    lastUsedAt: r.last_used_at == null ? null : Number(r.last_used_at),
+    notifications: r.push_subscription != null
   }
 }

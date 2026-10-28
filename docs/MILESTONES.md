@@ -14,6 +14,7 @@ Drive Gloss from a phone while the desktop app runs the agents. The desktop stay
 - **Waiting on you:** with M15, questions and approval prompts can be answered from the phone; a turn that ends or needs an answer can notify the phone (web push from the PWA) when the desktop isn't focused.
 - **Desktop asleep or closed:** the phone shows "Gloss is offline" and reconnects on its own; nothing is queued on the phone while offline.
 - Verify first: serving the client from the main process without loosening the renderer's security settings, TLS on a LAN address (self-signed certificate pinned at pairing, or the private network's certificates), and web push on iOS (needs an installed PWA).
+- **Plan and spike results:** [plans/M18-remote-mobile.md](plans/M18-remote-mobile.md). TLS comes from Tailscale's certificates (decided 2026-10-27); the server, WebSocket and iOS web push are verified on an iPhone.
 
 **Done when:** you can pair a phone by scanning a QR code, see the same sessions as the desktop, start and steer a turn in a thread from the phone while watching it stream on both, and a revoked phone can no longer connect.
 

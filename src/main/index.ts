@@ -19,6 +19,8 @@ import { patchArg, SettingsFile } from './settings'
 import { editorArgs, launchEditor } from './openFile'
 import { fileLink, isHtmlFile, isMediaFile } from '../shared/fileLink'
 import { readMarkdownImage } from './markdownImage'
+import { PhoneApi, type PhoneHandler } from './phoneApi'
+import { PhoneService } from './phone'
 import { registerComposerIpc } from './composerIpc'
 import { takeForeground } from './foreground'
 import { runInTerminal } from './terminal'
@@ -42,6 +44,9 @@ let mainWindow: BrowserWindow | undefined
 let store: Store | undefined
 let sessions: SessionManager | undefined
 let settings: SettingsFile | undefined
+/** The handlers a paired phone may call (SPEC → Remote and mobile). */
+const phoneApi = new PhoneApi()
+let phone: PhoneService | undefined
 let quitting = false
 let openCode: OpenCodeSupport
 let openCodeRestartPending = false
@@ -408,6 +413,7 @@ function emit(event: GlossEvent): void {
   } else {
     for (const win of glossWindows()) win.webContents.send(IPC.event, event)
   }
+  phone?.broadcast(event)
   if (event.type === 'sessionDeleted') sessionWindows.get(event.sessionId)?.close()
   keepAwake(event)
   if (event.type === 'turnEnd') notifyTurnEnd(event)
@@ -453,7 +459,7 @@ const notifications = new Set<Notification>()
 /** An OS notification when a turn ends or fails while Gloss isn't focused. Clicking it opens the session (and thread). */
 function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
   // A queued message starting next isn't the end of the agent's work.
-  if (glossWindows().some((w) => w.isFocused()) || event.stopReason === 'cancelled' || event.continues || !Notification.isSupported()) return
+  if (glossWindows().some((w) => w.isFocused()) || event.stopReason === 'cancelled' || event.continues) return
   const session = store?.getSession(event.sessionId)
   if (!session) return
   const body = event.error
@@ -461,6 +467,8 @@ function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
     : event.threadId
       ? 'The agent replied in a thread.'
       : 'The agent finished.'
+  phone?.notify({ title: session.title, body, sessionId: event.sessionId, threadId: event.threadId })
+  if (!Notification.isSupported()) return
   // Gloss plays its own chime (or none, if the user turned it off) instead of the system's sound.
   const n = new Notification({ title: session.title, body, silent: true })
   notifications.add(n)
@@ -484,10 +492,12 @@ function notifyRequests(event: Extract<GlossEvent, { type: 'requests' }>): void 
   const fresh = event.requests.filter((r) => !seen?.has(r.id))
   notifiedRequests.set(event.sessionId, new Set(event.requests.map((r) => r.id)))
   const first = fresh[0]
-  if (!first || glossWindows().some((w) => w.isFocused()) || !Notification.isSupported()) return
+  if (!first || glossWindows().some((w) => w.isFocused())) return
   const session = store?.getSession(event.sessionId)
   if (!session) return
   const body = first.kind === 'question' ? `Waiting for you: ${first.message}` : `Waiting for your approval: ${first.title}`
+  phone?.notify({ title: session.title, body, sessionId: event.sessionId, threadId: first.threadId })
+  if (!Notification.isSupported()) return
   const n = new Notification({ title: session.title, body, silent: true })
   notifications.add(n)
   n.on('click', () => {
@@ -656,6 +666,15 @@ async function pickFolder(): Promise<string | null> {
 }
 
 function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void {
+  // A window's call, and through the bridge a paired phone's (SPEC → Remote and mobile). `glossOnly`
+  // refuses other webContents (the capture overlay, the annotation canvas).
+  const share = (channel: string, handler: PhoneHandler, glossOnly?: string): void => {
+    ipcMain.handle(channel, (e, ...args: unknown[]) => {
+      if (glossOnly && !isGlossSender(e.sender)) throw new Error(glossOnly)
+      return handler(...args)
+    })
+    phoneApi.add(channel, handler)
+  }
   const agentEntries = (status?: OpenCodeStatus) => {
     const builtins = listAgents().map((agent) => agent.id === 'opencode'
       ? { ...agent, available: status?.available ?? false, setupMessage: status ? status.error ?? undefined : 'Checking OpenCode availability…' }
@@ -669,8 +688,8 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   const availability = new AgentAvailability((key) => openCode.check(key), (key, status) => {
     if (!quitting && (settingsFile.state().global.opencodeExecutable ?? '') === key) emit({ type: 'agents', agents: agentEntries(status) })
   })
-  ipcMain.handle(IPC.agentsRateLimits, () => manager.rateLimits())
-  ipcMain.handle(IPC.agentsList, () => agentEntries(availability.get(settingsFile.state().global.opencodeExecutable ?? '')))
+  share(IPC.agentsRateLimits, () => manager.rateLimits())
+  share(IPC.agentsList, () => agentEntries(availability.get(settingsFile.state().global.opencodeExecutable ?? '')))
   ipcMain.handle(IPC.agentsTestProfile, (_e, profile: unknown) => {
     const error = profileError(profile)
     if (error) throw new Error(error)
@@ -682,7 +701,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     availability.set(key, status)
     return status
   })
-  ipcMain.handle(IPC.projectsList, () => manager.listProjects())
+  share(IPC.projectsList, () => manager.listProjects())
   ipcMain.handle(IPC.projectsOpen, async () => {
     const path = await pickFolder()
     return path ? manager.addProject(path) : null
@@ -697,11 +716,9 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     bringForward(win)
     void takeForeground(win.getNativeWindowHandle())
   })
-  ipcMain.handle(IPC.sessionsList, () => manager.listSessions())
-  ipcMain.handle(IPC.readMarkdownImage, (e, src: unknown, cwd: unknown) => {
-    if (!isGlossSender(e.sender)) throw new Error('Only a Gloss window can load images.')
-    return readMarkdownImage(str(src, 'src'), cwd === undefined ? undefined : folderArg(cwd, 'cwd'))
-  })
+  share(IPC.sessionsList, () => manager.listSessions())
+  share(IPC.readMarkdownImage, (src: unknown, cwd: unknown) =>
+    readMarkdownImage(str(src, 'src'), cwd === undefined ? undefined : folderArg(cwd, 'cwd')), 'Only a Gloss window can load images.')
   ipcMain.handle(IPC.openFileLink, async (_e, href: unknown) => {
     const link = fileLink(str(href, 'href'))
     if (!link || !isAbsolute(link.path)) throw new Error('Expected an absolute local file path.')
@@ -724,7 +741,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     if (!pending || event.sender !== pending.sender || requestId !== pending.requestId) return
     pending.finish(close === true)
   })
-  ipcMain.handle(IPC.history, () => manager.messageHistory())
+  share(IPC.history, () => manager.messageHistory())
   registerCaptureIpc()
   ipcMain.handle(IPC.captureShortcutStatus, () => ({ shortcut: capture.registered, error: capture.error }))
   ipcMain.handle(IPC.capturePauseShortcut, (e, paused: unknown) => {
@@ -779,7 +796,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
       }
     }
   })
-  ipcMain.handle(IPC.sessionsCreate, (_e, cwd: unknown, agentId: unknown) =>
+  share(IPC.sessionsCreate, (cwd: unknown, agentId: unknown) =>
     manager.startSession(folderArg(cwd, 'cwd'), str(agentId, 'agentId'))
   )
   ipcMain.handle(IPC.sessionsCreateReview, (_e, cwd: unknown, agentId: unknown, baseRef: unknown, headRef: unknown) =>
@@ -820,35 +837,31 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
         typeof listedAt === 'string' ? listedAt : undefined
       )
   )
-  ipcMain.handle(IPC.sessionsRewindPoints, (e, id: unknown) => {
-    if (!isGlossSender(e.sender)) throw new Error('Only a Gloss window can rewind.')
-    return manager.rewindPoints(str(id, 'id'))
-  })
-  ipcMain.handle(IPC.sessionsRewind, async (e, id: unknown, messageId: unknown) => {
-    if (!isGlossSender(e.sender)) throw new Error('Only a Gloss window can rewind.')
+  share(IPC.sessionsRewindPoints, (id: unknown) => manager.rewindPoints(str(id, 'id')), 'Only a Gloss window can rewind.')
+  share(IPC.sessionsRewind, async (id: unknown, messageId: unknown) => {
     const sessionId = str(id, 'id')
     const targetId = str(messageId, 'messageId')
     const message = store!.listMessages(sessionId).find((m) => m.id === targetId && m.role === 'user')
     if (!message) throw new Error('That rewind point no longer exists.')
     await manager.rewindSession(sessionId, targetId)
     return { text: message.text, attachments: message.attachments ?? [] }
-  })
-  ipcMain.handle(IPC.sessionsOpen, (_e, id: unknown) => manager.openSession(str(id, 'id')))
-  ipcMain.handle(IPC.sessionsRefresh, (_e, id: unknown) => manager.refreshSession(str(id, 'id')))
+  }, 'Only a Gloss window can rewind.')
+  share(IPC.sessionsOpen, (id: unknown) => manager.openSession(str(id, 'id')))
+  share(IPC.sessionsRefresh, (id: unknown) => manager.refreshSession(str(id, 'id')))
   ipcMain.handle(IPC.sessionsRename, (_e, id: unknown, title: unknown) =>
     manager.renameSession(str(id, 'id'), str(title, 'title'))
   )
   ipcMain.handle(IPC.sessionsDelete, (_e, id: unknown) => manager.deleteSession(str(id, 'id')))
-  ipcMain.handle(IPC.sessionsSetChoice, (_e, id: unknown, kind: unknown, value: unknown) => {
+  share(IPC.sessionsSetChoice, (id: unknown, kind: unknown, value: unknown) => {
     if (kind !== 'model' && kind !== 'effort') throw new Error('kind must be "model" or "effort"')
     return manager.setChoice(str(id, 'id'), kind, str(value, 'value'))
   })
-  ipcMain.handle(IPC.sessionsSetMode, (_e, id: unknown, modeId: unknown) => manager.setMode(str(id, 'id'), str(modeId, 'modeId')))
-  ipcMain.handle(IPC.sessionsSetAutoApprove, (_e, id: unknown, on: unknown) => {
+  share(IPC.sessionsSetMode, (id: unknown, modeId: unknown) => manager.setMode(str(id, 'id'), str(modeId, 'modeId')))
+  share(IPC.sessionsSetAutoApprove, (id: unknown, on: unknown) => {
     if (typeof on !== 'boolean') throw new Error('Expected on to be a boolean')
     return manager.setAutoApprove(str(id, 'id'), on)
   })
-  ipcMain.handle(IPC.requestsAnswer, (_e, sessionId: unknown, requestId: unknown, answer: unknown) =>
+  share(IPC.requestsAnswer, (sessionId: unknown, requestId: unknown, answer: unknown) =>
     manager.answerRequest(str(sessionId, 'sessionId'), str(requestId, 'requestId'), answerArg(answer))
   )
   ipcMain.handle(IPC.sessionsCopyMarkdown, (_e, id: unknown, threadId: unknown) => {
@@ -881,27 +894,27 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     if (!vault?.trim()) throw new Error('Set an Obsidian vault in project settings first.')
     await shell.openExternal(obsidianUri(vault))
   })
-  ipcMain.handle(IPC.sessionsPlanUsage, (_e, id: unknown) => {
+  share(IPC.sessionsPlanUsage, (id: unknown) => {
     const session = store!.getSession(str(id, 'id'))
     if (!session) throw new Error(`Unknown session ${String(id)}`)
     return usage.get(session.agentId, session.cwd)
   })
   ipcMain.handle(IPC.gitStatus, (_e, cwd: unknown) => gitStatus(str(cwd, 'cwd')))
   ipcMain.handle(IPC.gitPullRequest, (_e, cwd: unknown) => pullRequest(str(cwd, 'cwd')))
-  ipcMain.handle(IPC.threadsCreate, (_e, sessionId: unknown, anchorMessageId: unknown, anchor: unknown) =>
+  share(IPC.threadsCreate, (sessionId: unknown, anchorMessageId: unknown, anchor: unknown) =>
     manager.createThread(
       str(sessionId, 'sessionId'),
       anchorMessageId === null ? null : str(anchorMessageId, 'anchorMessageId'),
       anchorArg(anchor)
     )
   )
-  ipcMain.handle(IPC.threadsResolve, (_e, sessionId: unknown, threadId: unknown, resolved: unknown) => {
+  share(IPC.threadsResolve, (sessionId: unknown, threadId: unknown, resolved: unknown) => {
     if (typeof resolved !== 'boolean') throw new Error('Expected resolved to be a boolean')
     return manager.resolveThread(str(sessionId, 'sessionId'), str(threadId, 'threadId'), resolved)
   })
-  ipcMain.handle(
+  share(
     IPC.send,
-    (_e, sessionId: unknown, text: unknown, threadId: unknown, attachments: unknown, fromThread: unknown) =>
+    (sessionId: unknown, text: unknown, threadId: unknown, attachments: unknown, fromThread: unknown) =>
       manager.send(
         str(sessionId, 'sessionId'),
         str(text, 'text'),
@@ -910,7 +923,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
         threadArg(fromThread)
       )
   )
-  ipcMain.handle(IPC.steer, (_e, sessionId: unknown, text: unknown, threadId: unknown, attachments: unknown) =>
+  share(IPC.steer, (sessionId: unknown, text: unknown, threadId: unknown, attachments: unknown) =>
     manager.steer(str(sessionId, 'sessionId'), str(text, 'text'), threadArg(threadId), attachmentsArg(attachments))
   )
   // The main window's renderer owns the badge (SPEC → Session windows).
@@ -918,21 +931,35 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     if (e.sender === mainWindow?.webContents) setBadge(badge)
   })
   registerWindowsIpc()
-  ipcMain.handle(IPC.retry, (_e, sessionId: unknown, messageId: unknown) => manager.retry(str(sessionId, 'sessionId'), str(messageId, 'messageId')))
-  ipcMain.handle(IPC.cancel, (_e, sessionId: unknown) => manager.cancel(str(sessionId, 'sessionId')))
-  ipcMain.handle(IPC.queueEdit, (_e, sessionId: unknown, id: unknown, text: unknown) =>
+  share(IPC.retry, (sessionId: unknown, messageId: unknown) => manager.retry(str(sessionId, 'sessionId'), str(messageId, 'messageId')))
+  share(IPC.cancel, (sessionId: unknown) => manager.cancel(str(sessionId, 'sessionId')))
+  share(IPC.queueEdit, (sessionId: unknown, id: unknown, text: unknown) =>
     manager.editQueued(str(sessionId, 'sessionId'), str(id, 'id'), str(text, 'text'))
   )
-  ipcMain.handle(IPC.queueRemove, (_e, sessionId: unknown, id: unknown) =>
+  share(IPC.queueRemove, (sessionId: unknown, id: unknown) =>
     manager.removeQueued(str(sessionId, 'sessionId'), str(id, 'id'))
   )
-  ipcMain.handle(IPC.queueResume, (_e, sessionId: unknown) => manager.resumeQueue(str(sessionId, 'sessionId')))
+  share(IPC.queueResume, (sessionId: unknown) => manager.resumeQueue(str(sessionId, 'sessionId')))
   ipcMain.handle(IPC.authSignIn, (_e, agentId: unknown, methodId: unknown) =>
     manager.signIn(str(agentId, 'agentId'), str(methodId, 'methodId'))
   )
   ipcMain.handle(IPC.authDismiss, (_e, agentId: unknown) =>
     manager.dismissSignIn(str(agentId, 'agentId'))
   )
+
+  // Settings → Phone, from a Gloss window only (SPEC → Remote and mobile).
+  const phoneCall = (channel: string, fn: (...args: unknown[]) => unknown) =>
+    ipcMain.handle(channel, async (e, ...args: unknown[]) => {
+      if (!isGlossSender(e.sender)) throw new Error('Only a Gloss window can manage phones.')
+      if (!phone) throw new Error('Gloss is still starting.')
+      await fn(...args)
+      return phone.status()
+    })
+  phoneCall(IPC.phoneStatus, () => {})
+  phoneCall(IPC.phoneRetry, () => phone?.retry())
+  phoneCall(IPC.phonePair, () => phone?.pair())
+  phoneCall(IPC.phoneCancelPairing, () => phone?.cancelPairing())
+  phoneCall(IPC.phoneRemoveDevice, (id) => phone?.removeDevice(str(id, 'id')))
 
   ipcMain.handle(IPC.settingsGet, () => settingsFile.state())
   ipcMain.handle(IPC.settingsPreviewMcpImport, (_e, source: unknown) => {
@@ -1050,12 +1077,13 @@ app.whenReady().then(() => {
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [], captureShortcut: DEFAULT_CAPTURE_SHORTCUT },
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [], captureShortcut: DEFAULT_CAPTURE_SHORTCUT, phoneAccess: false, phonePort: 8443 },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
       // Fires nativeTheme's 'updated', which recolors the window controls.
       if (next.global.theme !== previous.global.theme) nativeTheme.themeSource = next.global.theme
       if (next.global.captureShortcut !== previous.global.captureShortcut) setCaptureShortcut(next.global.captureShortcut)
+      void phone?.apply(next.global.phoneAccess ?? false, next.global.phonePort ?? 8443)
       if (next.global.opencodeExecutable !== previous.global.opencodeExecutable) {
         openCodeRestartPending = true
         void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
@@ -1095,6 +1123,22 @@ app.whenReady().then(() => {
     runInTerminal
   })
   registerIpc(sessions, settingsFile)
+  phone = new PhoneService({
+    dataDir,
+    // The phone client is a page of the renderer build (SPEC → Remote and mobile).
+    staticDir: join(__dirname, '../renderer'),
+    store,
+    phoneApi,
+    calls: {
+      info: () => {
+        const g = settingsFile.state().global
+        return { machine: phone?.status().machine ?? null, defaultAgent: g.defaultAgent, listItemReplies: g.listItemReplies, theme: g.theme }
+      },
+      activity: () => sessions?.activity() ?? {}
+    },
+    onStatus: (status) => emit({ type: 'phone', status })
+  })
+  void phone.apply(settingsFile.state().global.phoneAccess ?? false, settingsFile.state().global.phonePort ?? 8443)
   nativeTheme.on('updated', updateTitleBar)
   createWindow()
   app.on('activate', () => {
@@ -1111,6 +1155,7 @@ app.on('will-quit', () => globalShortcut.unregisterAll())
 app.on('before-quit', (event) => {
   if (!guardClose(event, () => app.quit())) return
   quitting = true
+  void phone?.dispose()
   settings?.close()
   void sessions?.dispose()
   store?.close()

@@ -162,6 +162,9 @@ export type AgentInfo = { id: string; name: string; available?: boolean; setupMe
  */
 export type Project = { path: string; name: string; where: string }
 
+/** A paired phone (SPEC → Remote and mobile). */
+export type Device = { id: string; name: string; createdAt: number; lastUsedAt: number | null; notifications: boolean }
+
 /** One of the agent's own sessions for a folder that Gloss has no record of yet. */
 export type AgentSession = { acpSessionId: string; title: string; updatedAt?: string }
 

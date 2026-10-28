@@ -13,9 +13,10 @@ import { AgentProfileSettings } from './AgentProfileSettings'
 import { Segmented, Select, Switch } from './Select'
 import { EditorSetting } from './EditorSetting'
 import { ShortcutSetting } from './ShortcutSetting'
-import { ExternalLink, Folder, Keyboard, Palette, Server, SlidersVertical, Terminal } from 'lucide-react'
+import { PhoneSettings } from './PhoneSettings'
+import { ExternalLink, Folder, Keyboard, Palette, Server, SlidersVertical, Smartphone, Terminal } from 'lucide-react'
 
-export type SettingsSection = 'general' | 'appearance' | 'mcp' | 'agents' | 'project' | 'shortcuts'
+export type SettingsSection = 'general' | 'appearance' | 'mcp' | 'agents' | 'phone' | 'project' | 'shortcuts'
 
 /** Fields shown in Appearance; the other visible global fields are General. */
 const APPEARANCE = new Set(['theme'])
@@ -92,6 +93,7 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
         {nav('appearance', <Palette />, 'Appearance')}
         {nav('mcp', <Server />, 'MCP servers')}
         {nav('agents', <Terminal />, 'Agents')}
+        {nav('phone', <Smartphone />, 'Phone')}
         {projectFields.length > 0 && (
           <>
             <div className="settings-nav-group">Projects</div>
@@ -155,6 +157,16 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
               onSave={async (opencodeExecutable) => { await onUpdate({ global: { opencodeExecutable } }) }} />
             <AgentProfileSettings profiles={state.global.agentProfiles ?? []} defaultAgent={state.global.defaultAgent}
               onSave={async (agentProfiles, resetDefault) => { await onUpdate({ global: { agentProfiles, ...(resetDefault ? { defaultAgent: 'claude' } : {}) } }) }} />
+          </section>
+        )}
+        {section === 'phone' && (
+          <section aria-labelledby="settings-phone">
+            <h2 id="settings-phone">Phone</h2>
+            <PhoneSettings
+              on={state.global.phoneAccess === true}
+              port={state.global.phonePort ?? 8443}
+              onUpdate={(values) => onUpdate({ global: values })}
+            />
           </section>
         )}
         {section === 'project' && (

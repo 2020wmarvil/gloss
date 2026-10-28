@@ -65,6 +65,8 @@ function checkValue(field: SettingField, value: unknown): string | null {
     case 'mcp': return mcpError(value)
     case 'boolean':
       return typeof value === 'boolean' ? null : `expected true or false, got ${JSON.stringify(value)}`
+    case 'port':
+      return Number.isInteger(value) && (value as number) >= 1024 && (value as number) <= 65535 ? null : `expected a port from 1024 to 65535, got ${JSON.stringify(value)}`
     case 'string':
       return typeof value === 'string' ? null : `expected a string, got ${JSON.stringify(value)}`
     case 'shortcut':
@@ -137,7 +139,7 @@ export function settingsSchema(defaults: GlobalSettings): object {
       fields(scope).map((f) => [
         f.key,
         {
-          ...(f.type === 'mcp' ? mcpSchema : f.type === 'profiles' ? profileSchema : f.type === 'agent' ? { type: 'string', pattern: '^(claude|codex|opencode|custom:[a-z0-9][a-z0-9-]{0,63})$' } : { type: f.type === 'enum' || f.type === 'shortcut' ? 'string' : f.type }),
+          ...(f.type === 'mcp' ? mcpSchema : f.type === 'profiles' ? profileSchema : f.type === 'agent' ? { type: 'string', pattern: '^(claude|codex|opencode|custom:[a-z0-9][a-z0-9-]{0,63})$' } : f.type === 'port' ? { type: 'integer', minimum: 1024, maximum: 65535 } : { type: f.type === 'enum' || f.type === 'shortcut' ? 'string' : f.type }),
           ...(f.options && f.type !== 'agent' ? { enum: f.options.map((o) => o.value) } : {}),
           description: f.description,
           default: defaultsFor?.[f.key]

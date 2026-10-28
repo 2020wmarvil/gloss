@@ -6400,3 +6400,134 @@ kbd {
 .close-heading > svg { color: var(--failed); flex: none; }
 .close-heading h2 { margin: 0; }
 .close-dialog > p { line-height: 1.6; margin: 14px 0 20px; }
+
+/* Settings → Phone (SPEC → Remote and mobile). */
+.settings-hint {
+  color: var(--muted);
+  margin: -4px 0 14px;
+  max-width: 640px;
+}
+
+.setting:has(.phone-port) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.phone-port {
+  width: 90px;
+  height: var(--control);
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.phone-checks {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: -8px 0 18px;
+}
+
+.phone-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-13);
+  color: var(--ink-2);
+}
+
+.phone-check .ok {
+  color: var(--done);
+}
+
+.phone-check .bad {
+  color: var(--failed);
+  flex: none;
+}
+
+.phone-pair {
+  display: flex;
+  gap: 20px;
+  margin: 0 0 22px;
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--card);
+}
+
+.phone-qr {
+  width: 168px;
+  height: 168px;
+  padding: 10px;
+  flex: none;
+  border-radius: var(--r-md);
+  /* A QR code needs a light quiet zone, in either theme. */
+  background: #fff;
+}
+
+.phone-pair-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--t-13);
+  color: var(--ink-2);
+}
+
+.phone-pair-text strong {
+  font-size: var(--t-14);
+  color: var(--ink);
+}
+
+.phone-addr {
+  align-self: flex-start;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  background: var(--sunken);
+  color: var(--muted);
+  font-size: var(--t-12);
+}
+
+.phone-expiry {
+  font-size: var(--t-12);
+  color: var(--faint);
+}
+
+.phone-pair-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.phone-pair-button {
+  margin: 0 0 22px;
+}
+
+.phone-devices-title {
+  margin: 0 0 8px;
+  font-size: var(--t-14);
+  font-weight: 600;
+}
+
+.setting.phone-device {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 14px;
+}
+
+.phone-device-icon {
+  color: var(--muted);
+}
+
+.phone-live {
+  font-size: var(--t-12);
+  font-weight: 500;
+  color: var(--done);
+}
+
+.phone-remove {
+  color: var(--failed);
+}
