@@ -43,6 +43,8 @@ export function makeApi(t: ApiTransport): GlossApi {
       rewind: (id, messageId) => invoke(IPC.sessionsRewind, id, messageId),
       list: () => invoke(IPC.sessionsList),
       create: (cwd, agentId) => invoke(IPC.sessionsCreate, cwd, agentId),
+      createInWorktree: (project, agentId) => invoke(IPC.sessionsCreateInWorktree, project, agentId),
+      createIn: (project, path, agentId) => invoke(IPC.sessionsCreateIn, project, path, agentId),
       createReview: (cwd, agentId, baseRef, headRef) => invoke(IPC.sessionsCreateReview, cwd, agentId, baseRef, headRef),
       runReview: (id) => invoke(IPC.sessionsRunReview, id),
       reviewRefs: (id) => invoke(IPC.sessionsReviewRefs, id),
@@ -50,8 +52,8 @@ export function makeApi(t: ApiTransport): GlossApi {
       setReviewRange: (id, baseRef, headRef) => invoke(IPC.sessionsSetReviewRange, id, baseRef, headRef),
       reviewDiff: (id) => invoke(IPC.sessionsReviewDiff, id),
       reviewFile: (id, path) => invoke(IPC.sessionsReviewFile, id, path),
-      import: (cwd, agentId, acpSessionId, title, listedAt) =>
-        invoke(IPC.sessionsImport, cwd, agentId, acpSessionId, title, listedAt),
+      import: (cwd, agentId, acpSessionId, title, listedAt, project) =>
+        invoke(IPC.sessionsImport, cwd, agentId, acpSessionId, title, listedAt, project),
       open: (id) => invoke(IPC.sessionsOpen, id),
       refresh: (id) => invoke(IPC.sessionsRefresh, id),
       rename: (id, title) => invoke(IPC.sessionsRename, id, title),
@@ -64,6 +66,10 @@ export function makeApi(t: ApiTransport): GlossApi {
       openFolder: (id) => invoke(IPC.sessionsOpenFolder, id),
       openObsidian: (id) => invoke(IPC.sessionsOpenObsidian, id),
       planUsage: (id) => invoke(IPC.sessionsPlanUsage, id)
+    },
+    worktrees: {
+      list: (project) => invoke(IPC.worktreesList, project),
+      remove: (project, path) => invoke(IPC.worktreesRemove, project, path)
     },
     git: {
       status: (cwd) => invoke(IPC.gitStatus, cwd),

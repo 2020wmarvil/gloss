@@ -5,7 +5,8 @@ import type { GlossEvent, PullRequest } from '../shared/ipc'
 import { AgentConnection } from './acp'
 import type { AgentConfig } from './agents'
 import { Store } from './db'
-import { folderWhere, SessionManager } from './sessions'
+import { folderWhere, SessionManager, type WorktreeGit } from './sessions'
+import type { UnfinishedWork, WorktreeEntry } from './worktrees'
 import { threadTag, toMainTag, wireTag } from '../shared/wire'
 import { isFirstPass, REVIEW_INSTRUCTIONS, type ReviewDiff } from '../shared/review'
 import type { Session } from '../shared/types'
@@ -2956,5 +2957,165 @@ describe('folderWhere', () => {
     expect(folderWhere('/srv/app/', home)).toBe('/srv')
     expect(folderWhere('/app', home)).toBe('/')
     expect(folderWhere('C:\\app', '')).toBe('C:\\')
+  })
+})
+
+describe('SessionManager worktrees', () => {
+  type Tree = WorktreeEntry & { work?: UnfinishedWork }
+  let store: Store
+  let events: GlossEvent[]
+  let state: FakeAgent
+  let manager: SessionManager
+  let trees: Tree[]
+  let removed: string[]
+  let setup: { command: string; release(result: { output: string; exitCode: number | null }): void }[]
+  let settings: { base?: string; setup?: string; place?: string }
+  let placeReset: string[]
+
+  const clean: UnfinishedWork = { uncommitted: 0, unpushed: 0, pr: null }
+  const git: WorktreeGit = {
+    list: async () => trees.map(({ work: _, ...e }) => e),
+    unfinished: async (path) => trees.find((t) => t.path === path)?.work ?? clean,
+    create: async (_project, root) => {
+      const name = `n${trees.length}`
+      const tree = { path: `${root}/${name}`, branch: `gloss/${name}`, head: null, main: false }
+      trees.push(tree)
+      return tree
+    },
+    remove: async (_project, path) => {
+      removed.push(path)
+      trees = trees.filter((t) => t.path !== path)
+    },
+    setup: (_cwd, command) => new Promise((resolve) => setup.push({ command, release: resolve }))
+  }
+
+  beforeEach(() => {
+    store = new Store(':memory:')
+    events = []
+    state = fakeAgent()
+    trees = [{ path: '/project', branch: 'dev', head: null, main: true }]
+    removed = []
+    setup = []
+    settings = {}
+    placeReset = []
+    manager = new SessionManager({
+      store,
+      emit: (e) => events.push(e),
+      getAgentConfig: () => config,
+      agentEnv: () => ({}),
+      connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
+      runInTerminal: vi.fn(async () => 0) as never,
+      now: () => 1000,
+      worktreeGit: git,
+      worktreeRoot: '/wt',
+      worktreeSettings: () => settings,
+      placeRemoved: (project) => { placeReset.push(project); settings.place = 'folder' }
+    })
+  })
+
+  afterEach(async () => {
+    await manager.dispose()
+    store.close()
+  })
+
+  it('starts a session in a new worktree that belongs to the project, and tells the agent once', async () => {
+    const session = await manager.startWorktreeSession('/project', 'claude')
+    expect(session).toMatchObject({ cwd: '/wt/n1', project: '/project' })
+    expect(manager.listProjects().map((p) => p.path)).toEqual(['/project'])
+    expect(events.some((e) => e.type === 'worktrees' && e.project === '/project')).toBe(true)
+    await manager.send(session.id, 'first', null)
+    await manager.send(session.id, 'second', null)
+    expect(state.prompts[0]).toBe('[You are working in a git worktree at /wt/n1, on branch gloss/n1. The project folder is /project.]\nfirst')
+    expect(state.prompts[1]).toBe('second')
+    const first = store.listMessages(session.id).find((m) => m.role === 'user')!
+    expect(first.text).toBe('first')
+    expect(store.getSession(session.id)!.title).toBe('first')
+    expect(state.cwds.get(store.getSession(session.id)!.acpSessionId)).toBe('/wt/n1')
+  })
+
+  it('holds messages until setup finishes, then sends them', async () => {
+    settings.setup = 'npm install'
+    const session = await manager.startWorktreeSession('/project', 'claude')
+    await vi.waitFor(() => expect(setup).toHaveLength(1))
+    expect(await manager.send(session.id, 'go', null)).toEqual({ queued: true })
+    expect(state.prompts).toEqual([])
+    const running = store.listToolCalls(session.id)[0]
+    expect(running).toMatchObject({ title: 'npm install', kind: 'execute', status: 'in_progress' })
+    setup[0].release({ output: 'added 3 packages', exitCode: 0 })
+    await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+    expect(state.prompts[0]).toMatch(/^\[You are working in a git worktree at .*\]\ngo$/)
+    expect(store.listToolCalls(session.id)[0]).toMatchObject({
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: '```console\nadded 3 packages\n```' } }]
+    })
+  })
+
+  it('keeps the session when setup fails, and pauses what waits for it', async () => {
+    settings.setup = 'npm install'
+    const session = await manager.startWorktreeSession('/project', 'claude')
+    await vi.waitFor(() => expect(setup).toHaveLength(1))
+    await manager.send(session.id, 'go', null)
+    setup[0].release({ output: 'npm error ERESOLVE', exitCode: 1 })
+    await vi.waitFor(() => expect(store.listToolCalls(session.id)[0]?.status).toBe('failed'))
+    expect(store.getSession(session.id)).toBeDefined()
+    expect(trees.some((t) => t.path === '/wt/n1')).toBe(true)
+    expect(events.findLast((e) => e.type === 'queue')).toMatchObject({ queue: { paused: true, items: [{ text: 'go' }] } })
+    expect(events.some((e) => e.type === 'notice' && e.sessionId === session.id)).toBe(true)
+    expect(state.prompts).toEqual([])
+    manager.resumeQueue(session.id)
+    await vi.waitFor(() => expect(state.prompts).toHaveLength(1))
+  })
+
+  it('removes a worktree it made with its last session, unless work is left or it is the default place', async () => {
+    const a = await manager.startWorktreeSession('/project', 'claude')
+    const b = manager.startSession(a.cwd, 'claude', { project: '/project', branch: 'gloss/n1' })
+    await manager.deleteSession(a.id)
+    expect(removed).toEqual([])
+    trees.find((t) => t.path === a.cwd)!.work = { uncommitted: 2, unpushed: 0, pr: null }
+    await manager.deleteSession(b.id)
+    expect(removed).toEqual([])
+
+    const c = await manager.startWorktreeSession('/project', 'claude')
+    settings.place = c.cwd
+    await manager.deleteSession(c.id)
+    expect(removed).toEqual([])
+
+    const d = await manager.startWorktreeSession('/project', 'claude')
+    await manager.deleteSession(d.id)
+    expect(removed).toEqual([d.cwd])
+    expect(store.listWorktrees().map((w) => w.path)).not.toContain(d.cwd)
+  })
+
+  it("never removes a worktree it didn't make by itself", async () => {
+    trees.push({ path: '/mine', branch: 'feature-x', head: null, main: false })
+    const session = await manager.startSessionIn('/project', '/mine', 'claude')
+    expect(session).toMatchObject({ cwd: '/mine', project: '/project' })
+    await manager.deleteSession(session.id)
+    expect(removed).toEqual([])
+  })
+
+  it('removes a worktree with its sessions on request, and New session goes back to the project folder', async () => {
+    trees.push({ path: '/mine', branch: 'feature-x', head: null, main: false })
+    const session = await manager.startSessionIn('/project', '/mine', 'claude')
+    settings.place = '/mine'
+    await manager.removeProjectWorktree('/project', '/mine')
+    expect(removed).toEqual(['/mine'])
+    expect(store.getSession(session.id)).toBeUndefined()
+    expect(placeReset).toEqual(['/project'])
+    await expect(manager.removeProjectWorktree('/project', '/project')).rejects.toThrow()
+  })
+
+  it("lists the agent's sessions in each worktree, with their folder and without the note in titles", async () => {
+    state.canList = true
+    trees.push({ path: '/wt/old', branch: 'gloss/old', head: null, main: false })
+    state.listed = [
+      { sessionId: 'here', cwd: '/project', title: 'In the folder' },
+      { sessionId: 'there', cwd: '/wt/old', title: '[You are working in a git worktree at /wt/old, on branch gloss/old. The project folder is /project.] Fix it' }
+    ]
+    const listed = await manager.agentSessions('/project', 'claude')
+    expect(listed.map((s) => [s.acpSessionId, s.title, s.cwd])).toEqual([
+      ['here', 'In the folder', undefined],
+      ['there', 'Fix it', '/wt/old']
+    ])
   })
 })

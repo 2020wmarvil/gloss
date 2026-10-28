@@ -29,6 +29,19 @@ export type Session = {
   openThreads?: number
   /** A review nothing was sent in yet: not listed, and dropped when it is replaced or Gloss restarts (SPEC → Review sessions). */
   draft?: true
+  /** The project folder, for a session working in one of its worktrees (`cwd` is the worktree's folder). */
+  project?: string
+}
+
+/** One of a project's worktrees, or the project folder itself (SPEC → Worktrees). */
+export type Worktree = {
+  path: string
+  /** Null on a detached HEAD. */
+  branch: string | null
+  /** The project folder. */
+  main?: true
+  /** What it holds that isn't anywhere else; undefined until read. */
+  work?: { uncommitted: number; unpushed: number; pr: { number: number; state: string; url: string } | null; unfinished: boolean }
 }
 
 /**
@@ -166,7 +179,8 @@ export type Project = { path: string; name: string; where: string }
 export type Device = { id: string; name: string; createdAt: number; lastUsedAt: number | null; notifications: boolean }
 
 /** One of the agent's own sessions for a folder that Gloss has no record of yet. */
-export type AgentSession = { acpSessionId: string; title: string; updatedAt?: string }
+/** `cwd`: the folder it works in, when the agent says (one of the project's worktrees, say). */
+export type AgentSession = { acpSessionId: string; title: string; updatedAt?: string; cwd?: string }
 
 export type ModelOption = { value: string; name: string; description?: string }
 

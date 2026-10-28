@@ -2,7 +2,7 @@ import { spawn, execFile } from 'node:child_process'
 import type { ShellResult } from '../shared/composer'
 
 /** A user-entered shell command, executed directly with bounded captured output. */
-export function runComposerShell(cwd: string, command: string, signal: AbortSignal): Promise<ShellResult> {
+export function runComposerShell(cwd: string, command: string, signal: AbortSignal, timeoutMs = 5 * 60 * 1000): Promise<ShellResult> {
   if (!command.trim() || command.length > 32000) return Promise.reject(new Error('Enter a shell command shorter than 32,000 characters.'))
   return new Promise((resolve, reject) => {
     const windows = process.platform === 'win32'
@@ -28,7 +28,7 @@ export function runComposerShell(cwd: string, command: string, signal: AbortSign
       if (windows) execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {})
       else { try { process.kill(-child.pid, 'SIGKILL') } catch { child.kill('SIGKILL') } }
     }
-    const timer = setTimeout(() => { timedOut = true; stop() }, 5 * 60 * 1000)
+    const timer = setTimeout(() => { timedOut = true; stop() }, timeoutMs)
     signal.addEventListener('abort', stop, { once: true })
     if (signal.aborted) stop()
     const cleanup = (): void => { clearTimeout(timer); signal.removeEventListener('abort', stop) }
@@ -36,7 +36,7 @@ export function runComposerShell(cwd: string, command: string, signal: AbortSign
     child.once('close', (exitCode) => {
       cleanup()
       if (truncated) output += '\n[Output truncated at 900 KB]'
-      if (timedOut) output += '\n[Stopped after 5 minutes]'
+      if (timedOut) output += `\n[Stopped after ${Math.round(timeoutMs / 60000)} minutes]`
       else if (signal.aborted) output += '\n[Cancelled]'
       resolve({ command, output, exitCode, truncated })
     })
