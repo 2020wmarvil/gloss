@@ -741,7 +741,6 @@ export function App(): React.JSX.Element {
               setShowWorktrees((on) => !on)
               if (projectPath) void loadWorktrees(projectPath)
             }}
-            idleWorktrees={(worktrees ?? []).filter((w) => !w.main && !sessions.some((x) => sameFolder(x.cwd, w.path))).length}
             onImport={(a) => void importSession(a)}
             onRename={(id, title) =>
               void window.gloss.sessions.rename(id, title).catch((err: unknown) => setSidebarError(errorText(err)))

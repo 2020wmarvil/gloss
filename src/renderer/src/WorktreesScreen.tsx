@@ -94,16 +94,6 @@ export function WorktreesScreen(props: Props): React.JSX.Element {
             </button>
           </div>
           <div className="worktree-path mono" title={w.path}>{w.path}</div>
-          <div className="worktree-state">
-            {w.work === undefined && worktrees !== null && <span>Couldn&apos;t read its state</span>}
-            {stateParts(w).map((p) =>
-              p.tone === 'pr' && w.work?.pr ? (
-                <a key={p.text} className="pr" href={w.work.pr.url} target="_blank" rel="noreferrer">{p.text}</a>
-              ) : (
-                <span key={p.text} className={p.tone}>{p.text}</span>
-              )
-            )}
-          </div>
         </div>
         <div className="worktree-actions">
           <button className="secondary sm" onClick={() => props.onNewSession(w.path)} title="New session here with the default agent">
@@ -114,17 +104,6 @@ export function WorktreesScreen(props: Props): React.JSX.Element {
             <GitCompare />
             Review
           </button>
-          {!w.main && (
-            <button
-              className="ghost sm danger-text"
-              disabled={removing === w.path}
-              onClick={() => (losses(w, inIt).length > 0 ? setConfirm(w) : void remove(w))}
-              title="Remove the worktree, its branch and its sessions"
-            >
-              <Trash2 />
-              {removing === w.path ? 'Removing…' : 'Remove'}
-            </button>
-          )}
         </div>
         <div className="worktree-sessions">
           {inIt.length > 0
@@ -137,6 +116,17 @@ export function WorktreesScreen(props: Props): React.JSX.Element {
             : !w.main && (
                 <span className="worktree-none">{w.work?.unfinished ? 'No sessions. Its work is kept until you remove it.' : 'No sessions.'}</span>
               )}
+          {!w.main && (
+            <button
+              className="icon-button worktree-remove"
+              disabled={removing === w.path}
+              onClick={() => (losses(w, inIt).length > 0 ? setConfirm(w) : void remove(w))}
+              title={removing === w.path ? 'Removing…' : 'Remove the worktree, its branch and its sessions'}
+              aria-label={`Remove ${w.branch ?? folderName(w.path)}`}
+            >
+              <Trash2 />
+            </button>
+          )}
         </div>
       </div>
     )
@@ -147,14 +137,16 @@ export function WorktreesScreen(props: Props): React.JSX.Element {
   return (
     <main className="worktrees-screen">
       <div className="worktrees-body">
+        <div className="screen-column">
         <div className="worktrees-top">
           <h2>Worktrees</h2>
           <button className="secondary" onClick={props.onClose} title="Close (Esc)">Done</button>
         </div>
         <p className="lede">
           New worktrees branch from {props.base ? <code>{props.base}</code> : 'the project folder’s branch'}
-          {props.setup ? <> and run <code>{props.setup}</code></> : ''}.{' '}
-          <button className="link-button" onClick={props.onOpenSettings}>Change in Settings → {project.name}</button>
+          {props.setup ? <> and run <code>{props.setup}</code></> : ''}.
+          <br />
+          <button className="link-button" onClick={props.onOpenSettings}>Configure in Settings</button>
         </p>
         {props.error && <p className="settings-problem">{props.error}</p>}
         {worktrees === null ? (
@@ -171,6 +163,7 @@ export function WorktreesScreen(props: Props): React.JSX.Element {
             </div>
           </>
         )}
+        </div>
       </div>
       {confirm && (
         <div className="dialog-backdrop">

@@ -49,17 +49,13 @@ function mount(props: Partial<Parameters<typeof WorktreesScreen>[0]> = {}): { el
 const card = (el: HTMLElement, branch: string): HTMLElement =>
   [...el.querySelectorAll<HTMLElement>('.worktree')].find((w) => w.querySelector('.worktree-branch')!.textContent!.includes(branch))!
 
-it('lists the project folder and each worktree with what it holds and its sessions', () => {
+it('lists the project folder and each worktree with its sessions', () => {
   const { el, calls } = mount()
   expect(el.querySelector('.lede')!.textContent).toContain('npm install')
-  expect(card(el, 'dev').querySelector('.worktree-state')!.textContent).toBe('2 uncommitted files')
   // The project folder has no Remove.
-  expect(card(el, 'dev').textContent).not.toContain('Remove')
-  expect(card(el, 'gloss/k3f9').querySelector('.worktree-state')!.textContent).toBe('Clean')
-  expect(card(el, 'gloss/p82d').querySelector('.worktree-state')!.textContent).toBe('3 uncommitted files2 unpushed commits')
+  expect(card(el, 'dev').querySelector('.worktree-remove')).toBeNull()
+  expect(card(el, 'gloss/k3f9').textContent).toContain('No sessions.')
   expect(card(el, 'gloss/p82d').textContent).toContain('Its work is kept until you remove it')
-  // Merged at its commit: its commits aren't counted as unpushed.
-  expect(card(el, 'gloss/m1qa').querySelector('.worktree-state')!.textContent).toBe('PR #58 merged')
   act(() => card(el, 'gloss/m1qa').querySelector<HTMLButtonElement>('.worktree-chip')!.click())
   expect(calls.onOpenSession).toHaveBeenCalledWith('s1')
   act(() => card(el, 'gloss/k3f9').querySelector<HTMLButtonElement>('.worktree-star')!.click())
@@ -68,8 +64,7 @@ it('lists the project folder and each worktree with what it holds and its sessio
 
 it('removes a clean worktree at once, and asks first when something would be lost', async () => {
   const { el, calls } = mount()
-  const remove = (branch: string): HTMLButtonElement =>
-    [...card(el, branch).querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Remove')!
+  const remove = (branch: string): HTMLButtonElement => card(el, branch).querySelector<HTMLButtonElement>('.worktree-remove')!
   await act(async () => remove('gloss/k3f9').click())
   expect(calls.onRemove).toHaveBeenCalledWith('/w/clean')
   await act(async () => remove('gloss/m1qa').click())

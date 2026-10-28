@@ -59,8 +59,6 @@ type Props = {
   /** Opens the Worktrees screen. */
   onWorktrees(): void
   worktreesOpen: boolean
-  /** The project's worktrees without sessions, counted on the Worktrees button. */
-  idleWorktrees: number
   onImport(session: ListedAgentSession): void
   onRename(id: string, title: string): void
   onDelete(id: string): void
@@ -572,11 +570,6 @@ export function Sidebar(props: Props): React.JSX.Element {
           <button className={props.worktreesOpen ? 'ghost settings-button on' : 'ghost settings-button'} onClick={props.onWorktrees} title="Worktrees">
             <FolderGit2 />
             Worktrees
-            {props.idleWorktrees > 0 && (
-              <span className="worktrees-idle" title={`${props.idleWorktrees} without sessions`}>
-                {props.idleWorktrees}
-              </span>
-            )}
           </button>
         )}
         <button

@@ -632,6 +632,8 @@ button.new-session {
   margin-left: auto;
   min-width: 0;
   overflow: hidden;
+  /* The button's line-height of 1 would clip descenders under overflow: hidden. */
+  line-height: 1.4;
   text-overflow: ellipsis;
   color: var(--muted);
   font-weight: 400;
@@ -763,13 +765,6 @@ button.new-session-agents {
 .review-folder-button svg {
   width: 14px;
   height: 14px;
-}
-
-/* Worktrees without sessions, on the sidebar's Worktrees button. */
-.worktrees-idle {
-  margin-left: auto;
-  font-size: var(--t-11);
-  color: var(--warn);
 }
 
 /* A reached plan limit, and when it resets. */
@@ -1308,8 +1303,10 @@ button.settings-button.on {
   padding: 20px 40px 32px;
 }
 
-.settings-body > * {
+/* The Settings and Worktrees screens' content: one centered column. */
+.screen-column {
   max-width: 760px;
+  margin-inline: auto;
 }
 
 /* The file's path and Open in editor, then Done at the right. */
@@ -6639,10 +6636,6 @@ kbd {
   padding: 20px 40px 32px;
 }
 
-.worktrees-body > * {
-  max-width: 780px;
-}
-
 .worktrees-top {
   display: flex;
   align-items: center;
@@ -6738,32 +6731,6 @@ kbd {
   white-space: nowrap;
 }
 
-.worktree-state {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  margin-top: 5px;
-  font-size: var(--t-12);
-  color: var(--muted);
-}
-
-.worktree-state .warn {
-  color: var(--warn);
-}
-
-.worktree-state .ok,
-.worktree-state .pr {
-  color: var(--state-done);
-}
-
-.worktree-state a.pr {
-  text-decoration: none;
-}
-
-.worktree-state a.pr:hover {
-  text-decoration: underline;
-}
-
 .worktree-actions {
   display: flex;
   align-items: flex-start;
@@ -6778,7 +6745,18 @@ button.danger-text {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+}
+
+/* Remove: an icon at the card's bottom right. */
+.worktree-remove {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.worktree-remove:hover:not(:disabled) {
+  color: var(--failed);
 }
 
 .worktree-chip {
