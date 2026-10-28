@@ -174,11 +174,8 @@ export function Sidebar(props: Props): React.JSX.Element {
   }
 
   const existing = props.place !== 'folder' && props.place !== 'worktree' ? props.place : null
-  /** A place's shortcuts with the default agent: Ctrl+N for the starred place, Ctrl+Shift+N for a new worktree. */
-  const keysFor = (place: string): string => {
-    const keys = [...(place === props.place ? [`${modKey()}+N`] : []), ...(place === 'worktree' ? [`${modKey()}+Shift+N`] : [])]
-    return keys.length ? ` (${keys.join(', ')})` : ''
-  }
+  /** The starred place's shortcut: New session with the default agent. */
+  const keysFor = (place: string): string => (place === props.place ? ` (${modKey()}+N)` : '')
   const placeName = (place: string): string =>
     place === 'folder' ? 'the project folder' : place === 'worktree' ? 'a new worktree' : (props.placeBranch ?? folderName(place))
 
@@ -412,7 +409,7 @@ export function Sidebar(props: Props): React.JSX.Element {
           <button
             className="secondary new-session-agents"
             aria-label="New session with any agent, anywhere"
-            title="New session with any agent, in the project folder or a worktree (new worktree: Ctrl+Shift+N)"
+            title="New session with any agent, in the project folder or a worktree"
             aria-haspopup="menu"
             aria-expanded={agentMenuOpen}
             disabled={props.creating}

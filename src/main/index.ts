@@ -1023,7 +1023,7 @@ function paneStateArg(value: unknown, sessionId: string): PaneState {
 
 function mainActionArg(value: unknown): MainAction {
   const a = (typeof value === 'object' && value !== null ? value : {}) as Partial<Record<string, unknown>>
-  if (a.kind === 'search' || a.kind === 'newSession' || a.kind === 'review' || a.kind === 'settings' || a.kind === 'newWorktreeSession') return { kind: a.kind }
+  if (a.kind === 'search' || a.kind === 'newSession' || a.kind === 'review' || a.kind === 'settings') return { kind: a.kind }
   if (a.kind === 'reviewFolder') return { kind: 'reviewFolder', sessionId: str(a.sessionId, 'sessionId'), ...(a.path == null ? {} : { path: folderArg(a.path, 'path') }) }
   if (a.kind === 'cycleSession') return { kind: 'cycleSession', back: a.back === true }
   if (a.kind === 'newReview') return { kind: 'newReview', sessionId: str(a.sessionId, 'sessionId') }

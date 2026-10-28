@@ -564,7 +564,6 @@ export function App(): React.JSX.Element {
     else if (action.kind === 'review') void newReview()
     else if (action.kind === 'settings') setShowSettings(true)
     else if (action.kind === 'cycleSession') cycleSession(action.back)
-    else if (action.kind === 'newWorktreeSession') void newSession(undefined, 'worktree')
     else if (action.kind === 'reviewFolder') {
       const from = sessions.find((x) => x.id === action.sessionId)
       if (from) void (action.path ? newReview(undefined, from.agentId, action.path) : newReview(undefined, undefined, from.cwd))
@@ -596,10 +595,9 @@ export function App(): React.JSX.Element {
     if (e.key === ',') {
       e.preventDefault()
       setShowSettings((on) => !on)
-    } else if (e.key.toLowerCase() === 'n' && !e.altKey) {
+    } else if (e.key.toLowerCase() === 'n' && !e.shiftKey && !e.altKey) {
       e.preventDefault()
-      // Ctrl+Shift+N: in a new worktree (SPEC → Worktrees).
-      void newSession(undefined, e.shiftKey ? 'worktree' : place)
+      void newSession()
     } else if (e.key.toLowerCase() === 'w' && !e.shiftKey && !e.altKey) {
       e.preventDefault()
       const id = openId.current

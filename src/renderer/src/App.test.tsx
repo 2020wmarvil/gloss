@@ -118,9 +118,7 @@ it("starts sessions with the default agent or one from the menu, and lists every
   expect(start().textContent).toBe('Start in a new worktree')
   await act(async () => start().click())
   expect(createInWorktree).toHaveBeenLastCalledWith('/project', 'codex')
-  // Ctrl+Shift+N does the same; Ctrl+Shift+D reviews the project folder.
-  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'N', ctrlKey: true, shiftKey: true })))
-  expect(createInWorktree).toHaveBeenCalledTimes(2)
+  // Ctrl+Shift+D reviews the project folder.
   await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'D', ctrlKey: true, shiftKey: true })))
   expect(createReview).toHaveBeenLastCalledWith('/project', 'codex', undefined, null, '/project')
 

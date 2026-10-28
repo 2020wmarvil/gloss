@@ -66,7 +66,7 @@ export function SessionWindow({ sessionId }: { sessionId: string }): React.JSX.E
       if (!e.repeat) window.close()
     }
     else if (e.shiftKey && key === 'f') toMain({ kind: 'search' })
-    else if (key === 'n') toMain({ kind: e.shiftKey ? 'newWorktreeSession' : 'newSession' })
+    else if (!e.shiftKey && key === 'n') toMain({ kind: 'newSession' })
     else if (e.shiftKey && key === 'd') {
       // Out of a review closes its window (a draft is kept, as when closing it by hand).
       if (open?.session.review) {

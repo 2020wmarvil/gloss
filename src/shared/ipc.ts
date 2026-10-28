@@ -204,8 +204,6 @@ export type MainAction =
   | { kind: 'newReview'; sessionId: string }
   /** **Review changes** (or `Ctrl+Shift+D`) in a popped-out session: a review of its folder; `path`: a draft review switching folder. */
   | { kind: 'reviewFolder'; sessionId: string; path?: string }
-  /** `Ctrl+Shift+N`: a session in a new worktree with the default agent. */
-  | { kind: 'newWorktreeSession' }
 
 export type GlossApi = {
   confirmClose(requestId: string, close: boolean): Promise<void>

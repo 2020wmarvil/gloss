@@ -6626,10 +6626,9 @@ kbd {
   padding: 20px 40px 32px;
 }
 
-/* The Worktrees screen's content: one centered column. */
-.worktrees-column {
+/* Left-aligned, like the settings screen's body. */
+.worktrees-body > div {
   max-width: 760px;
-  margin-inline: auto;
 }
 
 .worktrees-top {
