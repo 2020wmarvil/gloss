@@ -18,13 +18,15 @@ export default defineConfig({
       }
     }
   },
+  // mobile.html is the phone client, served by the bridge (SPEC → Remote and mobile); public/ holds its
+  // service worker, manifest and icons.
   renderer: {
     resolve: {
       alias: { '@shared': resolve('src/shared') }
     },
     build: {
       rollupOptions: {
-        input: { index: resolve('src/renderer/index.html'), capture: resolve('src/renderer/capture.html') }
+        input: { index: resolve('src/renderer/index.html'), capture: resolve('src/renderer/capture.html'), mobile: resolve('src/renderer/mobile.html') }
       }
     },
     plugins: [react()]

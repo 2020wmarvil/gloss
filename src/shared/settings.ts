@@ -61,6 +61,10 @@ export type GlobalSettings = {
   mcpServers: import('./mcp').McpServer[]
   /** The key combination that starts a capture, in Gloss or any app (an Electron accelerator); empty turns it off. */
   captureShortcut?: string
+  /** Paired phones may connect over Tailscale (SPEC → Remote and mobile). */
+  phoneAccess?: boolean
+  /** The port the phone bridge listens on. */
+  phonePort?: number
 }
 
 /** Settings for one project folder, under `projects` keyed by its path. */
@@ -75,7 +79,7 @@ export type ProjectSettings = {
 export type SettingField = {
   key: string
   scope: 'global' | 'project'
-  type: 'boolean' | 'enum' | 'string' | 'mcp' | 'profiles' | 'agent' | 'shortcut'
+  type: 'boolean' | 'enum' | 'string' | 'mcp' | 'profiles' | 'agent' | 'shortcut' | 'port'
   label: string
   description: string
   /** For enum fields: the allowed values and how the screen labels them. */
@@ -192,6 +196,14 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     description:
       'Open file links and review files in your editor. Custom commands replace {file} with the path and {line} with the line number. Use a command on PATH or a full executable path.',
     placeholder: DEFAULT_EXTERNAL_EDITOR,
+  },
+  {
+    key: 'phoneAccess', scope: 'global', type: 'boolean', label: 'Allow phones to connect',
+    description: 'Paired phones may use Gloss over Tailscale.', hidden: true
+  },
+  {
+    key: 'phonePort', scope: 'global', type: 'port', label: 'Phone port',
+    description: 'The port phones connect to (1024 to 65535).', hidden: true
   },
   {
     key: 'captureShortcut',

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- The bridge sends the Content-Security-Policy as a header, with its own WebSocket origin. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Gloss" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" content="#f7f6f2" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#141312" media="(prefers-color-scheme: dark)" />
+    <!-- ?v= gets phones past icons cached before they changed (the bridge ignores the query). -->
+    <link rel="manifest" href="/mobile.webmanifest?v=3" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3" />
+    <title>Gloss</title>
+  </head>
+  <body class="m-page">
+    <div id="root"></div>
+    <script type="module" src="./mobile/main.tsx"></script>
+  </body>
+</html>

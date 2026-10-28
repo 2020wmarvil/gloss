@@ -1,5 +1,6 @@
 // Renders build/icon.svg (and build/icon-small.svg for 32 px and under) to the app icon files:
-// build/icon.ico (Windows), build/icon.icns (macOS), build/icon.png and build/icons/<n>x<n>.png (Linux).
+// build/icon.ico (Windows), build/icon.icns (macOS), build/icon.png and build/icons/<n>x<n>.png (Linux),
+// and the phone client's icons in src/renderer/public (docs/BRAND.md → Phone icon).
 // Usage: npm run icons
 import { Buffer } from 'node:buffer'
 import console from 'node:console'
@@ -13,9 +14,7 @@ const svg = (name) => 'data:image/svg+xml;base64,' + readFileSync(join(dir, name
 const sizes = [16, 24, 32, 48, 64, 128, 256, 512, 1024]
 
 // Chromium rasterizes an SVG image at the size it is drawn, so each size is drawn from the vector.
-async function render() {
-  const win = new BrowserWindow({ show: false })
-  await win.loadURL('about:blank')
+async function render(win) {
   const jobs = sizes.map((size) => ({ size, src: svg(size <= 32 ? 'icon-small.svg' : 'icon.svg') }))
   const urls = await win.webContents.executeJavaScript(`Promise.all(${JSON.stringify(jobs)}.map(({ size, src }) =>
     new Promise((resolve, reject) => {
@@ -29,8 +28,37 @@ async function render() {
       img.onerror = reject
       img.src = src
     })))`)
-  win.destroy()
   return new Map(sizes.map((size, i) => [size, Buffer.from(urls[i].split(',')[1], 'base64')]))
+}
+
+// The phone's icons: the bead on an opaque sunset-tint square. iOS fills a Home Screen icon's
+// transparency with black and rounds the corners itself. The bead fills 84% of the side; Android's maskable
+// icon (cropped to a circle or squircle) keeps it at 76%, inside the safe zone.
+const PHONE = [['apple-touch-icon.png', 180, 0.84], ['icon-192.png', 192, 0.84], ['icon-512.png', 512, 0.84], ['icon-maskable-512.png', 512, 0.76]]
+
+async function renderPhone(win) {
+  const urls = await win.webContents.executeJavaScript(`Promise.all(${JSON.stringify(PHONE.map(([, size, scale]) => [size, scale]))}.map(([size, scale]) =>
+    new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = canvas.height = size
+        const ctx = canvas.getContext('2d')
+        // CSS linear-gradient(160deg, #fff3f8, #fff4ea) across the square.
+        const dx = Math.sin(160 * Math.PI / 180) * size / 2, dy = -Math.cos(160 * Math.PI / 180) * size / 2
+        const fill = ctx.createLinearGradient(size / 2 - dx, size / 2 - dy, size / 2 + dx, size / 2 + dy)
+        fill.addColorStop(0, '#fff3f8')
+        fill.addColorStop(1, '#fff4ea')
+        ctx.fillStyle = fill
+        ctx.fillRect(0, 0, size, size)
+        const bead = Math.round(size * scale)
+        ctx.drawImage(img, (size - bead) / 2, (size - bead) / 2, bead, bead)
+        resolve(canvas.toDataURL('image/png'))
+      }
+      img.onerror = reject
+      img.src = ${JSON.stringify(svg('icon.svg'))}
+    })))`)
+  return PHONE.map(([name], i) => [name, Buffer.from(urls[i].split(',')[1], 'base64')])
 }
 
 // ICO with PNG entries (Windows Vista and later). A width or height of 0 means 256.
@@ -70,7 +98,10 @@ function icns(entries) {
 
 app.whenReady().then(async () => {
   try {
-    const png = await render()
+    // One window for both renders: closing the last window would quit the app.
+    const win = new BrowserWindow({ show: false })
+    await win.loadURL('about:blank')
+    const png = await render(win)
     writeFileSync(join(dir, 'icon.ico'), ico([16, 24, 32, 48, 64, 128, 256].map((s) => [s, png.get(s)])))
     const types = [['icp4', 16], ['icp5', 32], ['icp6', 64], ['ic07', 128], ['ic08', 256], ['ic09', 512], ['ic10', 1024],
       ['ic11', 32], ['ic12', 64], ['ic13', 256], ['ic14', 512]]
@@ -78,7 +109,10 @@ app.whenReady().then(async () => {
     writeFileSync(join(dir, 'icon.png'), png.get(1024))
     mkdirSync(join(dir, 'icons'), { recursive: true })
     for (const s of [16, 32, 48, 64, 128, 256, 512]) writeFileSync(join(dir, 'icons', `${s}x${s}.png`), png.get(s))
-    console.log('Wrote build/icon.ico, build/icon.icns, build/icon.png and build/icons/')
+    const phone = join(dir, '..', 'src', 'renderer', 'public')
+    for (const [name, data] of await renderPhone(win)) writeFileSync(join(phone, name), data)
+    win.destroy()
+    console.log('Wrote build/icon.ico, build/icon.icns, build/icon.png, build/icons/ and the phone icons in src/renderer/public/')
   } catch (err) {
     console.error(err)
     process.exitCode = 1

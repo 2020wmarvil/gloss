@@ -337,6 +337,19 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Where each session's turn runs (its thread, null for main) and how many questions and approvals
+   * it waits on, for a phone that connects mid-turn (SPEC → Remote and mobile). Idle sessions are left out.
+   */
+  activity(): Record<string, { turn: string | null | undefined; requests: number; queued: number; paused: boolean }> {
+    const out: Record<string, { turn: string | null | undefined; requests: number; queued: number; paused: boolean }> = {}
+    for (const [id, rt] of this.runtimes) {
+      if (!rt.turn && rt.requests.size === 0 && rt.queue.items.length === 0) continue
+      out[id] = { turn: rt.turn ? rt.turn.threadId : undefined, requests: rt.requests.size, queued: rt.queue.items.length, paused: rt.queue.paused }
+    }
+    return out
+  }
+
   /** Each agent's plan limits, as `setRateLimits` keeps them. */
   rateLimits(): Record<string, RateLimit[]> {
     return Object.fromEntries([...this.agents].map(([id, slot]) => [id, slot.rateLimits]))

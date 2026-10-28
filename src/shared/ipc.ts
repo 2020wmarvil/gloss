@@ -12,6 +12,7 @@ import type {
   Anchor,
   Attachment,
   AuthMethodInfo,
+  Device,
   Message,
   MessageQueue,
   Plan,
@@ -96,6 +97,24 @@ export type AgentProfileStatus = {
   capabilities: { resume: boolean; discovery: boolean; steering: boolean; images: boolean; context: boolean } | null
 }
 
+/** Settings → Phone (SPEC → Remote and mobile). */
+export type PhoneStatus = {
+  /** `starting`: checking Tailscale and getting the certificate. */
+  state: 'off' | 'starting' | 'on' | 'error'
+  /** What went wrong and what to do, in `error`. */
+  error: string | null
+  /** The address phones use, e.g. `https://my-pc.tail1234.ts.net:8443`. */
+  origin: string | null
+  machine: string | null
+  ip: string | null
+  certExpiresAt: number | null
+  /** The daily renewal failed; the certificate still works until `certExpiresAt`. */
+  certWarning: string | null
+  /** The open pairing code: its link and the QR code for it (an SVG data URL). */
+  pairing: { url: string; qr: string; expiresAt: number } | null
+  devices: (Device & { connected: boolean })[]
+}
+
 export type GlossEvent =
   | { type: 'agents'; agents: AgentInfo[] }
   /** An agent's plan limits changed (a report, or a window that reset). */
@@ -143,6 +162,8 @@ export type GlossEvent =
   | { type: 'authRequired'; agentId: string; agentName: string; methods: AuthMethodInfo[] }
   | { type: 'authResolved'; agentId: string }
   | { type: 'settings'; state: SettingsState }
+  /** Settings → Phone changed: the bridge, pairing or devices. Desktop only. */
+  | { type: 'phone'; status: PhoneStatus }
   /** The global capture shortcut was pressed (SPEC → Visual feedback). */
   | { type: 'captureShortcut' }
   /** The sessions popped out into their own windows, and the one whose window is focused (SPEC → Session windows). */
@@ -359,6 +380,15 @@ export type GlossApi = {
     toMain(action: MainAction): void
   }
   /** Subscribe to main-process events. Returns an unsubscribe function. */
+  /** Settings → Phone (SPEC → Remote and mobile). Desktop windows only. */
+  phone: {
+    status(): Promise<PhoneStatus>
+    /** Starts the bridge again after an error. */
+    retry(): Promise<PhoneStatus>
+    pair(): Promise<PhoneStatus>
+    cancelPairing(): Promise<PhoneStatus>
+    removeDevice(id: string): Promise<PhoneStatus>
+  }
   onEvent(listener: (event: GlossEvent) => void): () => void
 }
 
@@ -444,5 +474,10 @@ export const IPC = {
   windowsInitial: 'gloss:windows:initial',
   windowsToMain: 'gloss:windows:toMain',
   confirmClose: 'gloss:confirmClose',
+  phoneStatus: 'gloss:phone:status',
+  phoneRetry: 'gloss:phone:retry',
+  phonePair: 'gloss:phone:pair',
+  phoneCancelPairing: 'gloss:phone:cancelPairing',
+  phoneRemoveDevice: 'gloss:phone:removeDevice',
   event: 'gloss:event'
 } as const

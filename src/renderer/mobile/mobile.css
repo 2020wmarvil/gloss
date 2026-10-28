@@ -1,0 +1,249 @@
+/* The phone client (docs/mocks/mobile.html). Tokens, markdown, code, tool details and request
+   cards come from styles.css; these are the phone's own layout pieces, all prefixed m-. */
+
+.m-page {
+  font-size: var(--t-16);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+.m-screen {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+}
+
+.m-screen button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: inherit;
+}
+
+.m-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 28px;
+  gap: 12px;
+}
+
+.m-center h3 { margin: 6px 0 0; font-size: var(--t-20); font-weight: 600; letter-spacing: -0.01em; }
+.m-center p { margin: 0; color: var(--muted); font-size: var(--t-15); }
+
+.m-body { flex: 1; min-height: 0; position: relative; }
+.m-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.m-grow { flex: 1; min-width: 0; }
+.m-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-wrap { white-space: normal !important; }
+.m-faint { color: var(--faint); }
+.m-ink { color: var(--ink) !important; }
+.m-accent { color: var(--accent); }
+.m-small { font-size: var(--t-12); color: var(--faint); }
+.m-small-b { font-size: var(--t-12); font-weight: 600; }
+.m-pad { padding: 10px 16px; }
+.m-empty { color: var(--muted); padding: 24px 20px; text-align: center; font-size: var(--t-15); }
+.m-error { color: var(--failed); font-size: var(--t-13); margin: 4px 2px; }
+
+/* Brand */
+.m-bead {
+  width: 22px; height: 22px; border-radius: 50%; flex: none; display: inline-block;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.85) 0 12%, transparent 30%), var(--brand-gradient);
+  box-shadow: inset -2px -3px 5px rgba(120, 20, 60, 0.28);
+}
+.m-bead.lg { width: 56px; height: 56px; }
+
+/* States */
+.m-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; display: inline-block; }
+.m-pulse { animation: m-pulse 1.4s ease infinite; }
+@keyframes m-pulse { 50% { opacity: 0.35; } }
+.s-working { color: var(--working); }
+.s-done { color: var(--done); }
+.s-queued { color: var(--queued); }
+.s-paused { color: var(--paused); }
+.s-failed { color: var(--failed); }
+.s-wait { color: var(--warn); }
+.m-pill { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: var(--r-pill); font: 600 var(--t-11)/1 var(--font-ui); }
+.m-wait { background: var(--queued-tint); color: var(--warn); }
+
+/* Offline */
+.m-banner { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 16px; font-size: var(--t-13); border-bottom: 1px solid var(--line); }
+.m-banner-off { background: var(--failed-tint); color: var(--failed); }
+.m-offline .m-body, .m-offline .m-foot { opacity: 0.55; }
+
+/* Session list */
+.m-proj { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 16px; }
+.m-screen .m-pick { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; font-size: var(--t-24); letter-spacing: -0.02em; }
+.m-sec { padding: 14px 16px 6px; font: 600 var(--t-12)/1 var(--font-ui); letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); }
+.m-screen .m-row { width: 100%; display: flex; gap: 12px; align-items: flex-start; padding: 11px 16px; border-bottom: 1px solid var(--line-soft); }
+.m-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.m-row-main b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-row-main small { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--t-13); color: var(--muted); }
+.m-when { font-size: var(--t-12); color: var(--faint); padding-top: 2px; flex: none; }
+.m-lead { width: 10px; padding-top: 8px; display: grid; place-items: center; flex: none; }
+.m-fab-space { height: 90px; }
+.m-screen .m-fab {
+  position: absolute; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom));
+  height: 48px; padding: 0 18px 0 14px; border-radius: var(--r-pill);
+  background: var(--brand-gradient); color: var(--on-brand); font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px; box-shadow: var(--shadow-2);
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+
+/* Notifications card */
+.m-card { position: relative; margin: 8px 16px; padding: 12px 14px; border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); font-size: var(--t-14); }
+.m-card b { display: inline-flex; align-items: center; gap: 6px; }
+.m-card p { margin: 6px 0 10px; color: var(--muted); }
+.m-screen .m-card .m-card-x { position: absolute; right: 6px; top: 6px; }
+.m-ios-share { color: #0a84ff; vertical-align: -2px; }
+
+/* Header */
+.m-hdr { flex: none; display: flex; align-items: center; gap: 6px; padding: 4px 8px 8px; border-bottom: 1px solid var(--line); }
+.m-hdr-t { flex: 1; min-width: 0; }
+.m-hdr-t b { display: block; font-size: var(--t-15); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-hdr-t small { display: block; font-size: var(--t-12); color: var(--muted); }
+.m-screen .m-ib { width: 40px; height: 40px; display: inline-grid; place-items: center; border-radius: var(--r-md); color: var(--ink-2); position: relative; flex: none; }
+.m-screen .m-ib.sm { width: 30px; height: 30px; color: var(--muted); }
+.m-screen .m-ib:disabled { opacity: 0.4; }
+.m-badge { position: absolute; right: 2px; top: 3px; min-width: 17px; height: 17px; padding: 0 5px; border-radius: var(--r-pill); background: var(--accent); color: #fff; font: 600 10px/17px var(--font-ui); text-align: center; }
+.m-screen .m-back { display: inline-flex; align-items: center; gap: 2px; height: 40px; padding: 0 6px 0 2px; color: var(--accent); font-weight: 500; flex: none; }
+.m-quote { flex: none; margin: 10px 16px 2px; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--accent-tint); border-radius: 0 var(--r-md) var(--r-md) 0; font-size: var(--t-14); color: var(--ink-2); max-height: 30vh; overflow-y: auto; }
+.m-quote small { display: block; font-size: var(--t-11); color: var(--muted); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+
+/* Log */
+.m-log { padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 14px; font-size: var(--t-16); line-height: 1.5; }
+.m-you { align-self: flex-end; max-width: 86%; background: var(--you-fill); border-radius: 16px 16px 6px 16px; padding: 9px 13px; box-shadow: 0 0 0 1px var(--you-ring); }
+.m-meta { display: block; font-size: var(--t-11); color: var(--muted); margin-top: 2px; text-align: right; }
+.m-agent { min-width: 0; }
+.m-agent .md { overflow-wrap: anywhere; }
+.m-agent .md pre { overflow-x: auto; }
+/* Taps reply on the phone; the margin Reply button stays, hidden, for the tap to press. */
+.m-agent .item-reply { display: none !important; }
+.m-agent .md li.anchor-item.active { background: var(--accent-mark); border-radius: 4px; }
+.m-note { font-size: var(--t-13); color: var(--faint); }
+.m-tools { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); font-size: var(--t-13); }
+.m-screen .m-tr { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line-soft); color: var(--ink-2); }
+.m-tools > div:first-child .m-tr { border-top: 0; }
+.m-tr code { flex: 1; min-width: 0; font: 12.5px/1.4 var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-tool-details { padding: 0 10px 10px; overflow-x: auto; font-size: var(--t-12); }
+.m-plan { padding: 8px 12px; border-radius: var(--r-md); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); display: flex; flex-direction: column; gap: 4px; font-size: var(--t-14); }
+.m-plan-row { display: flex; align-items: center; gap: 8px; }
+.m-plan-row.completed span:last-child { color: var(--muted); text-decoration: line-through; }
+.m-notice { font-size: var(--t-13); color: var(--faint); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.m-notice-failed { padding: 10px 12px; border-radius: var(--r-md); background: var(--failed-tint); color: var(--failed); box-shadow: inset 0 0 0 1px var(--failed-line); }
+.m-screen .m-dbtn { height: 30px; padding: 0 12px; border-radius: var(--r-md); background: var(--selected); box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); font-size: var(--t-13); font-weight: 500; }
+
+/* Reply bar */
+.m-selbar { flex: none; display: flex; gap: 8px; margin: 8px 12px; padding: 6px; border-radius: 14px; background: var(--raised); box-shadow: var(--shadow-2), inset 0 0 0 1px var(--line); }
+.m-screen .m-act { flex: 1; height: 42px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 500; font-size: var(--t-14); color: var(--ink-2); }
+.m-screen .m-act.m-pri { flex: 3; background: var(--brand-gradient); color: var(--on-brand); font-weight: 600; }
+
+/* Activity strip, queue, composer, status */
+.m-foot { flex: none; border-top: 1px solid var(--line); background: var(--bg); padding: 8px 10px 4px; display: flex; flex-direction: column; gap: 6px; }
+.m-screen .m-strip { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border-radius: var(--r-md); background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); font-size: var(--t-13); color: var(--ink-2); }
+.m-strip .m-grow { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-qlist { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow-y: auto; }
+.m-qhead { display: flex; align-items: center; gap: 6px; font-size: var(--t-12); font-weight: 600; color: var(--queued); padding: 0 2px; }
+.m-qhead.paused { color: var(--paused); }
+.m-screen .m-resume { height: 28px; padding: 0 12px; border-radius: var(--r-pill); background: var(--paused); color: #fff; font-weight: 600; font-size: var(--t-12); }
+.m-qi { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; border-radius: var(--r-md); background: var(--queued-tint); font-size: var(--t-14); color: var(--ink-2); }
+.m-qi.paused { background: var(--paused-tint); }
+.m-qedit { flex: 1; min-height: 60px; font: inherit; font-size: var(--t-16); border: 0; background: var(--surface); border-radius: var(--r-sm); padding: 6px; color: var(--ink); }
+.m-commands { display: flex; flex-direction: column; background: var(--raised); border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--line); max-height: 30vh; overflow-y: auto; }
+.m-screen .m-command { display: flex; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--line-soft); font-size: var(--t-14); }
+.m-command:first-child { border-top: 0; }
+.m-command span { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-thumbs { display: flex; gap: 6px; overflow-x: auto; }
+.m-thumb { position: relative; flex: none; }
+.m-thumb img { width: 56px; height: 56px; object-fit: cover; border-radius: var(--r-md); display: block; }
+.m-screen .m-thumb button { position: absolute; top: -4px; right: -4px; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); color: var(--bg); display: grid; place-items: center; }
+.m-comp { display: flex; align-items: flex-end; gap: 6px; padding: 5px 5px 5px 6px; border-radius: 22px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.m-comp .m-ib { width: 34px; height: 34px; color: var(--muted); }
+/* 16px stops iOS from zooming into the field. */
+.m-txt { flex: 1; min-width: 0; min-height: 34px; padding: 7px 4px; font: inherit; font-size: 16px; line-height: 1.3; color: var(--ink); background: transparent; border: 0; outline: 0; resize: none; }
+.m-txt::placeholder { color: var(--faint); }
+.m-screen .m-send { height: 34px; min-width: 34px; padding: 0 12px; border-radius: 17px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-weight: 600; font-size: var(--t-14); flex: none; background: var(--brand-gradient); color: var(--on-brand); }
+.m-screen .m-send.round { padding: 0; width: 34px; }
+.m-screen .m-send.queue { background: var(--queued-tint); color: var(--queued); box-shadow: inset 0 0 0 1px var(--queued); }
+.m-screen .m-send.stop { background: var(--sunken); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-strong); padding: 0; width: 34px; }
+.m-screen .m-send:disabled { opacity: 0.45; }
+.m-screen .m-stat { display: flex; gap: 6px; overflow-x: auto; padding: 0 2px 2px; scrollbar-width: none; }
+.m-stat::-webkit-scrollbar { display: none; }
+/* .m-screen: some pills are buttons, which the reset above would otherwise flatten. */
+.m-screen .m-sp { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: var(--r-pill); background: var(--sunken); font-size: var(--t-12); color: var(--ink-2); white-space: nowrap; }
+.m-screen .m-sp.warn { color: var(--warn); background: var(--queued-tint); }
+.m-screen .m-sp.paused { color: var(--paused); background: var(--paused-tint); }
+.m-lbl { color: var(--faint); }
+.m-meter { width: 26px; height: 5px; border-radius: 3px; background: var(--line-strong); overflow: hidden; }
+.m-meter i, .m-bar i { display: block; height: 100%; background: var(--ink-2); border-radius: 3px; }
+
+/* Sheets */
+.m-dim { position: absolute; inset: 0; background: var(--scrim); z-index: 3; }
+.m-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; max-height: 80dvh; overflow-y: auto; background: var(--raised); border-radius: 18px 18px 0 0; box-shadow: var(--shadow-3); padding: 8px 16px calc(24px + env(safe-area-inset-bottom)); }
+.m-grab { width: 36px; height: 5px; border-radius: 3px; background: var(--line-strong); margin: 0 auto 10px; }
+.m-sheet h4 { margin: 4px 0 10px; font-size: var(--t-17); font-weight: 600; }
+.m-sheet .m-kv:first-of-type { border-top: 0; }
+
+/* A picker's options: name, the agent's description, and a check on the current one. */
+.m-screen .m-opt { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 10px 12px; border-radius: var(--r-lg); text-align: left; }
+.m-screen .m-opt + .m-opt { margin-top: 2px; }
+.m-screen .m-opt.on { background: var(--accent-tint); }
+.m-screen .m-opt:active { background: var(--pressed); }
+.m-opt-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.m-opt-text b { font-weight: 500; font-size: var(--t-15); color: var(--ink); }
+.m-opt-text small { font-size: var(--t-13); color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.m-opt svg { color: var(--accent); flex: none; }
+
+/* The usage pill: context and plan limits together, as on the desktop. */
+.m-sp-sep { color: var(--faint); }
+/* .m-screen: rows that are buttons (pickers) would otherwise be flattened by the reset. */
+.m-screen .m-kv { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line-soft); font-size: var(--t-15); }
+.m-screen .m-kv.m-col { flex-direction: column; align-items: stretch; gap: 0; }
+.m-row-flex { display: flex; gap: 10px; }
+.m-k { flex: 1; color: var(--muted); }
+.m-v { color: var(--ink); font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+.m-bar { height: 6px; border-radius: 3px; background: var(--sunken); overflow: hidden; margin-top: 6px; }
+.m-select { font: inherit; font-size: 16px; color: var(--ink); background: var(--sunken); border: 0; border-radius: var(--r-md); padding: 6px 10px; max-width: 60%; }
+
+/* Threads list */
+.m-tabs { flex: none; display: flex; margin: 10px 16px; padding: 2px; border-radius: var(--r-md); background: var(--sunken); gap: 2px; }
+.m-screen .m-tabs button { flex: 1; height: 32px; border-radius: var(--r-sm); color: var(--muted); font-weight: 500; font-size: var(--t-14); text-align: center; }
+.m-screen .m-tabs button[aria-pressed='true'] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+
+/* Pairing */
+.m-flabel { width: 100%; text-align: left; font-size: var(--t-12); color: var(--muted); font-weight: 600; margin-bottom: -6px; }
+.m-field { width: 100%; height: 46px; border-radius: var(--r-md); background: var(--surface); border: 0; box-shadow: inset 0 0 0 1px var(--line-strong); padding: 0 12px; font: inherit; font-size: 16px; color: var(--ink); }
+.m-screen .m-btn { width: 100%; height: 46px; border-radius: var(--r-md); display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; background: var(--selected); }
+.m-screen .m-btn.m-pri { background: var(--brand-gradient); color: var(--on-brand); }
+.m-screen .m-btn.m-ghost { background: transparent; font-weight: 500; }
+.m-screen .m-btn:disabled { opacity: 0.5; }
+.m-steps { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 10px; margin: 4px 0; }
+.m-steps > div { display: flex; gap: 10px; align-items: center; font-size: var(--t-14); color: var(--ink-2); }
+.m-num { width: 24px; height: 24px; border-radius: 50%; background: var(--sunken); display: grid; place-items: center; font-size: var(--t-12); font-weight: 600; flex: none; }
+
+/* Sent images; a tap shows one full screen. */
+.m-sent-images { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.m-sent-images img { display: block; max-width: 100%; max-height: 220px; border-radius: var(--r-md); }
+.m-screen .m-lightbox { position: fixed; inset: 0; z-index: 10; background: rgba(0, 0, 0, 0.9); display: grid; place-items: center; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+.m-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+/* The notifications prompt is just its button, with room for the dismiss button. */
+.m-screen .m-notify-btn { width: calc(100% - 34px); }
+
+/* Usage meters: amber from 80%, red when used up, as on the desktop. */
+.m-meter-row.high .m-bar i { background: var(--warn-fill); }
+.m-meter-row.full .m-bar i { background: var(--failed); }
+.m-meter-detail { margin-top: 4px; }
+.m-sheet-note { margin: 10px 0; }
+.m-screen .m-link { color: var(--accent); text-decoration: underline; }

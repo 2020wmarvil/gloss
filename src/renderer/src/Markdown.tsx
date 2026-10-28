@@ -75,6 +75,13 @@ function FileLink({ href, children }: { href: string; children: React.ReactNode 
 
 export const MarkdownImageDirectory = createContext<string | undefined>(undefined)
 
+/** Local file links open on this computer; off on a phone, where they show as text (SPEC → Remote and mobile). */
+export const LocalFileLinks = createContext(true)
+
+function LinkOrText({ href, children }: { href: string; children: React.ReactNode }): React.JSX.Element {
+  return useContext(LocalFileLinks) ? <FileLink href={href}>{children}</FileLink> : <span className="md-link-text" title={href}>{children}</span>
+}
+
 function LocalImage({ src, alt, title }: { src?: string; alt?: string; title?: string }): React.JSX.Element {
   const cwd = useContext(MarkdownImageDirectory)
   const [result, setResult] = useState<{ src: string; cwd?: string; data?: string; error?: string } | null>(null)
@@ -95,7 +102,7 @@ function LocalImage({ src, alt, title }: { src?: string; alt?: string; title?: s
 
 const baseComponents: Components = {
   a: ({ href, children }) =>
-    href && fileLink(href) ? <FileLink href={href}>{children}</FileLink> : href && SAFE_LINK.test(href) ? (
+    href && fileLink(href) ? <LinkOrText href={href}>{children}</LinkOrText> : href && SAFE_LINK.test(href) ? (
       <a href={href} target="_blank" rel="noreferrer noopener" title={href}>
         {children}
       </a>
