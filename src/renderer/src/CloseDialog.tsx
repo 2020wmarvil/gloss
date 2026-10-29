@@ -67,7 +67,7 @@ function ClosePrompt({ request, onDismiss }: { request: Request; onDismiss(): vo
         </p>
         {error && <p className="dialog-error" role="alert">{error}</p>}
         <div className="dialog-actions">
-          <button ref={keep} onClick={() => void answer(false)}>Keep open</button>
+          <button ref={keep} className="ghost" onClick={() => void answer(false)}>Keep open</button>
           <button ref={close} className="danger" onClick={() => void answer(true)}>Close Gloss</button>
         </div>
       </div>

@@ -301,7 +301,8 @@ button:disabled {
    Disabled is neutral for every kind. */
 button.primary,
 button.secondary,
-button.ghost {
+button.ghost,
+.dialog-actions button.danger {
   flex: none;
   height: var(--control);
   padding: 0 12px;
@@ -369,7 +370,8 @@ button.lg {
 
 /* Disabled is a pressed-in well for every kind, never a faded gradient. */
 button.primary:disabled,
-button.secondary:disabled {
+button.secondary:disabled,
+.dialog-actions button.danger:disabled {
   opacity: 1;
   background: var(--sunken);
   color: var(--faint);
@@ -2945,17 +2947,8 @@ button.activity-thread:hover .activity-name {
   gap: 8px;
 }
 
-.dialog-actions button {
-  height: 36px;
-  padding: 0 14px;
-  border: 0;
-  box-shadow: inset 0 0 0 1px var(--line);
-  border-radius: var(--r-md);
-  background: var(--selected);
-}
-
+/* Danger only confirms destruction, so it's a kind only in a dialog's actions (menus use .danger for red text). */
 .dialog-actions button.danger {
-  box-shadow: none;
   background: var(--failed);
   color: var(--on-failed);
 }
@@ -6817,13 +6810,6 @@ button.danger-text {
   border-bottom: 1px solid var(--line);
 }
 
-.plugin-library-header h2 span {
-  font-size: var(--t-12);
-  font-weight: 400;
-  color: var(--muted);
-  margin-left: 5px;
-}
-
 .plugin-library-header p {
   margin: 5px 0 0;
   color: var(--muted);
@@ -7018,21 +7004,15 @@ button.danger-text {
   font-weight: 500;
 }
 
+.plugin-detail > header .plugin-inline-heading {
+  gap: 0;
+}
+
 .plugin-detail > header p {
   color: var(--muted);
-  margin: 8px 0 12px;
+  margin: 8px 0 0;
   line-height: 1.6;
   font-size: var(--t-12);
-}
-
-.plugin-counts {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.plugin-counts .icon-button {
-  margin-left: auto;
 }
 
 .plugin-badge {

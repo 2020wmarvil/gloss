@@ -157,7 +157,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
     </>
   }
   return <main className="plugins-screen"><section className="plugin-settings" aria-label="Plugins">
-    <header className="plugin-library-header"><div><h2>Plugins <span>{state?.plugins.length ?? ''}</span></h2><p>Your skills and tools, kept together.</p></div></header>
+    <header className="plugin-library-header"><div><h2>Plugins</h2><p>Your skills and tools, kept together.</p></div></header>
     {error && <p className="plugin-error" role="alert">{error}</p>}{state?.errors.map(e => <p className="plugin-error" role="alert" key={e}>{e}</p>)}
     {notice && <div className="plugin-notice" role="status"><Info /><span>{notice}</span><button className="icon-button" aria-label="Dismiss notice" onClick={() => setNotice(null)}><X /></button></div>}
     <div className="plugin-workspace"><div className="plugin-library">
@@ -169,7 +169,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
       <button className="plugin-library-folder plugin-link" onClick={() => run(() => window.gloss.plugins.openFolder())}><FolderOpen />Open library folder</button>
     </div>
     <aside className="plugin-detail" aria-label="Plugin details">{plugin ? <>
-      <header><div className="plugin-inline-heading"><h3>{plugin.name}</h3><button className="icon-button" aria-label="Edit plugin details" title="Edit plugin details" onClick={() => navigate(() => setDialog({ kind: 'edit', plugin }))}><Pencil /></button><button className="icon-button" aria-label="Remove plugin" title="Remove plugin" onClick={() => navigate(() => setDialog({ kind: 'remove', plugin }))}><Trash2 /></button></div><p>{plugin.description}</p><div className="plugin-counts"><span className="plugin-badge">{count(plugin.skills.length, 'skill')}</span>{plugin.connections.length > 0 && <span className="plugin-badge">{count(plugin.connections.length, 'connection')}</span>}<button className="icon-button" aria-label="Open plugin folder" title="Open plugin folder" onClick={() => run(() => window.gloss.plugins.openFolder(plugin.id))}><FolderOpen /></button></div></header>
+      <header><div className="plugin-inline-heading"><h3>{plugin.name}</h3><button className="icon-button" aria-label="Open plugin folder" title="Open plugin folder" onClick={() => run(() => window.gloss.plugins.openFolder(plugin.id))}><FolderOpen /></button><button className="icon-button" aria-label="Edit plugin details" title="Edit plugin details" onClick={() => navigate(() => setDialog({ kind: 'edit', plugin }))}><Pencil /></button><button className="icon-button" aria-label="Remove plugin" title="Remove plugin" onClick={() => navigate(() => setDialog({ kind: 'remove', plugin }))}><Trash2 /></button></div><p>{plugin.description}</p></header>
       <nav className="plugin-tabs" aria-label="Plugin sections">{(['overview', 'skills', 'tools', 'agents'] as Tab[]).map(t => <button key={t} className={tab === t ? 'on' : ''} aria-current={tab === t ? 'page' : undefined} onClick={() => navigate(() => { resetDetail(); setTab(t) })}>{t[0].toUpperCase() + t.slice(1)}</button>)}</nav>
       <div className="plugin-detail-content">{plugin.problems.map(problem => <p className="plugin-error" key={problem}>{problem}</p>)}{skill ? skillContent(plugin, skill) : tab === 'overview' ? components(plugin) : tab === 'skills' ? <><div className="plugin-inline-heading"><h4>Skills in this plugin</h4><button className="ghost sm" onClick={() => setDialog({ kind: 'skill', plugin })}><Plus />Add skill</button></div>{components({ ...plugin, connections: [] })}</> : tab === 'tools' ? tools(plugin) : agents(plugin)}</div>
     </> : <div className="plugin-empty"><Package /><h3>One place for each workflow</h3><p>Create a plugin, write its first skill, and choose which agents can use it.</p></div>}</aside></div>
@@ -237,7 +237,7 @@ function PluginDialog({ dialog, state, busy, onClose, onSubmit, onManageConnecti
       {dialog.kind === 'removeSkill' && <p>Remove <strong>{dialog.skill.name}</strong> and its supporting files? Turn the plugin off for its agents first.</p>}
       {dialog.kind === 'discard' && <p>The editor has unsaved changes. The saved file will be kept.</p>}
       {error && <p className="dialog-error" role="alert">{error}</p>}
-      <div className="dialog-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button className={['remove', 'removeSkill', 'discard'].includes(dialog.kind) ? 'danger' : 'primary'} disabled={disabled}>{busy ? 'Saving…' : action}</button></div>
+      <div className="dialog-actions"><button type="button" className="ghost" disabled={busy} onClick={onClose}>Cancel</button><button className={['remove', 'removeSkill', 'discard'].includes(dialog.kind) ? 'danger' : 'primary'} disabled={disabled}>{busy ? 'Saving…' : action}</button></div>
     </form>
   </div></div>, document.body)
 }

@@ -49,7 +49,7 @@ export function SignInDialog({ request, onSignIn, onDismiss }: Props): React.JSX
         )}
         {error && <p className="dialog-error">{error}</p>}
         <div className="dialog-actions">
-          <button onClick={onDismiss}>Cancel</button>
+          <button className="ghost" onClick={onDismiss}>Cancel</button>
         </div>
       </div>
     </div>
