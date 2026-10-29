@@ -23,7 +23,7 @@ export function ShortcutSetting(props: { id: string; value: string; onChange(val
   const [held, setHeld] = useState<string[]>([])
   /** Why the last key press couldn't be a shortcut, while recording. */
   const [hint, setHint] = useState<string | null>(null)
-  /** Why the shortcut isn't working (another app has it), from the main process. */
+  /** Why the shortcut isn't working (Gloss can't use those keys), from the main process. */
   const [error, setError] = useState<string | null>(null)
   const recordingRef = useRef(false)
 

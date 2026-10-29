@@ -2,6 +2,7 @@
 import { useMemo, useRef } from 'react'
 import { Clock } from 'lucide-react'
 import { folderName } from '@shared/paths'
+import { projectOf } from '@shared/worktree'
 import type { GitStatus, PullRequest } from '@shared/ipc'
 import type { Attachment, Message, MessageQueue, SessionLive, Thread, TurnOutcome } from '@shared/types'
 import type { OpenSession, Panel } from './App'
@@ -140,7 +141,7 @@ export function Conversation(props: Props): React.JSX.Element {
         className="log"
         scrollKey={`${open.session.id}:main`}
         items={items}
-        empty={<h2 className="new-hint">What should {agentName} do in {folderName(session.cwd)}?</h2>}
+        empty={<h2 className="new-hint">What should {agentName} do in {folderName(projectOf(session))}?</h2>}
         renderAgent={renderAgent}
         reveal={props.reveal}
         pins={pinAnchorsFor(open, panel, runningThread, props.onOpenPin)}

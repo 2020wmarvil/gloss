@@ -55,7 +55,7 @@ import { samePath } from './settings'
 import { isLogUpdate, matchReplay, parseReplay, placeUserMessage, type CachedEntry, type ReplayEntry } from './sync'
 import type { TerminalRunner } from './terminal'
 import { originRepoUrl, pullRequest } from './git'
-import { createWorktree, hasUnfinishedWork, listWorktrees, removeWorktree, unfinishedWork, type UnfinishedWork, type WorktreeEntry } from './worktrees'
+import { branchPrefix, branchSlug, createWorktree, hasUnfinishedWork, listWorktrees, removeWorktree, renameWorktreeBranch, unfinishedWork, type UnfinishedWork, type WorktreeEntry } from './worktrees'
 import { runComposerShell } from './composerShell'
 import { withoutWorktreeNote, worktreeNote } from '../shared/worktree'
 import { currentBranch, defaultBranch, mergeBase, pullRequestBase, readReviewDiff, readReviewFile, reviewCommits, workingFilePath } from './review'
@@ -81,8 +81,8 @@ export type SessionManagerDeps = {
   worktreeGit?: WorktreeGit
   /** Where new worktrees go, under a folder per repository; `~/.gloss/worktrees` by default. */
   worktreeRoot?: string
-  /** A project's worktree settings (SPEC → Worktrees): base branch, setup command and where New session starts. */
-  worktreeSettings?(project: string): { base?: string; setup?: string; place?: string }
+  /** A project's worktree settings (SPEC → Worktrees): base branch, setup command, branch prefix and where New session starts. */
+  worktreeSettings?(project: string): { base?: string; setup?: string; place?: string; branchPrefix?: string }
   /** The worktree New session started in is gone: it goes back to the project folder. */
   placeRemoved?(project: string): void
 }
@@ -91,8 +91,10 @@ export type SessionManagerDeps = {
 export type WorktreeGit = {
   list(project: string): Promise<WorktreeEntry[]>
   unfinished(path: string, branch: string | null): Promise<UnfinishedWork>
-  create(project: string, root: string, base: string | undefined): Promise<{ path: string; branch: string }>
+  create(project: string, root: string, base: string | undefined, prefix: string): Promise<{ path: string; branch: string }>
   remove(project: string, path: string, branch: string | null): Promise<void>
+  /** Renames a worktree's branch to `<prefix><slug>` (with a number if taken): the new branch. */
+  rename(path: string, from: string, prefix: string, slug: string): Promise<string>
   /** Runs the setup command in a new worktree: its output and exit code. */
   setup(cwd: string, command: string): Promise<{ output: string; exitCode: number | null }>
 }
@@ -102,6 +104,7 @@ const WORKTREE_GIT: WorktreeGit = {
   unfinished: unfinishedWork,
   create: createWorktree,
   remove: removeWorktree,
+  rename: renameWorktreeBranch,
   // npm install can take a while on a cold cache.
   setup: (cwd, command) => runComposerShell(cwd, command, new AbortController().signal, 30 * 60 * 1000)
 }
@@ -156,8 +159,12 @@ type SessionRuntime = {
   rangeNote?: string
   /** A worktree session's note, told at the start of its first message (SPEC → Worktrees). */
   worktreeNote?: string
+  /** A new worktree's generated branch, renamed after the first message before it goes out. */
+  branchToRename?: { project: string; path: string; branch: string; prefix: string }
   /** The worktree's setup command is running: messages wait in the queue. */
   settingUp?: boolean
+  /** The worktree's branch is being renamed: messages wait in the queue. */
+  renamingBranch?: boolean
   /** The connection the session's ACP session is live on. */
   attachedTo?: AgentConnection
   /** An attach in progress, so concurrent callers share it. */
@@ -1167,13 +1174,40 @@ export class SessionManager {
   async startWorktreeSession(project: string, agentId: string): Promise<Session> {
     this.deps.getAgentConfig(agentId)
     const settings = this.deps.worktreeSettings?.(project) ?? {}
-    const created = await this.worktreeGit.create(project, this.worktreeRoot, settings.base)
+    const prefix = branchPrefix(settings.branchPrefix)
+    const created = await this.worktreeGit.create(project, this.worktreeRoot, settings.base, prefix)
     this.deps.store.addWorktree({ path: created.path, project, branch: created.branch, createdAt: this.now() })
     const session = this.startSession(created.path, agentId, { project, branch: created.branch })
+    this.runtime(session.id).branchToRename = { project, path: created.path, branch: created.branch, prefix }
     this.deps.emit({ type: 'worktrees', project })
     const setup = settings.setup?.trim()
     if (setup) void this.runSetup(session.id, setup)
     return session
+  }
+
+  /**
+   * Renames a new worktree's generated branch after the session's first message (SPEC →
+   * Worktrees), before the note naming it goes out. Messages sent meanwhile wait; if git
+   * can't rename it, the generated name stays.
+   */
+  private async renameBranch(sessionId: string, text: string): Promise<void> {
+    const rt = this.runtime(sessionId)
+    const tree = rt.branchToRename!
+    rt.branchToRename = undefined
+    const slug = branchSlug(text)
+    if (!slug) return
+    rt.renamingBranch = true
+    try {
+      const branch = await this.worktreeGit.rename(tree.path, tree.branch, tree.prefix, slug)
+      if (branch === tree.branch) return
+      this.deps.store.setWorktreeBranch(tree.path, branch)
+      if (rt.worktreeNote) rt.worktreeNote = worktreeNote(tree.path, branch, tree.project)
+      this.deps.emit({ type: 'worktrees', project: tree.project })
+    } catch (err) {
+      console.warn(`[gloss] could not rename ${tree.branch}: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      rt.renamingBranch = false
+    }
   }
 
   /** Starts a session in one of the project's existing worktrees (or the project folder itself). */
@@ -1895,7 +1929,7 @@ export class SessionManager {
     }
     const rt = this.runtime(sessionId)
     if (rt.rewinding || rt.resetting) throw new Error('Wait for conversation reset or rewind to finish.')
-    if (rt.turn || rt.settingUp) {
+    if (rt.turn || rt.settingUp || rt.renamingBranch) {
       if (rt.turn && rt.turn.threadId === threadId && rt.live.steering) {
         return this.steer(sessionId, text, threadId, attachments, fromThread)
       }
@@ -2038,6 +2072,7 @@ export class SessionManager {
     const rt = this.runtime(sessionId)
     if (rt.rewinding || rt.resetting) throw new Error('Wait for conversation reset or rewind to finish.')
     if (rt.turn) throw new Error('A turn is already running in this session.')
+    if (rt.branchToRename && !rt.renamingBranch) await this.renameBranch(sessionId, session.titleSet ? session.title : text)
     const seed = this.deps.store.rewindState(sessionId)?.context
     const wire = originalWire ?? `${seed?.text ?? ''}${this.wire(sessionId, text, threadId, attachments, fromThread)}`
     // Only a session still named after its folder takes its title from the first message.
@@ -2192,7 +2227,7 @@ export class SessionManager {
   /** Starts the next queued message if the session is idle and its queue isn't paused. */
   private drain(sessionId: string): void {
     const rt = this.runtimes.get(sessionId)
-    if (!rt || rt.rewinding || rt.resetting || rt.turn || rt.settingUp || rt.queue.paused) return
+    if (!rt || rt.rewinding || rt.resetting || rt.turn || rt.settingUp || rt.renamingBranch || rt.queue.paused) return
     const [next, ...rest] = rt.queue.items
     if (!next) return
     this.setQueue(sessionId, { items: rest, paused: false })

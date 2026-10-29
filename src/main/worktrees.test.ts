@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  createWorktree, hasUnfinishedWork, listWorktrees, parseWorktreeList, removeWorktree, unfinishedWork
+  branchPrefix, branchSlug, createWorktree, hasUnfinishedWork, listWorktrees, parseWorktreeList, removeWorktree, renameWorktreeBranch, unfinishedWork
 } from './worktrees'
 
 // These tests exercise local Git repositories, without invoking gh or its authentication/network.
@@ -61,15 +61,50 @@ describe('parseWorktreeList', () => {
   })
 })
 
+describe('branchPrefix', () => {
+  it('defaults to gloss/ and ends a bare word with a slash', () => {
+    expect(branchPrefix(undefined)).toBe('gloss/')
+    expect(branchPrefix('  ')).toBe('gloss/')
+    expect(branchPrefix('dev')).toBe('dev/')
+    expect(branchPrefix('dev/')).toBe('dev/')
+    expect(branchPrefix('wm-')).toBe('wm-')
+  })
+})
+
+describe('branchSlug', () => {
+  it('takes the first words of the first message, lowercase and hyphenated, up to 40 characters', () => {
+    expect(branchSlug('Fix the sticky diff header!')).toBe('fix-the-sticky-diff-header')
+    expect(branchSlug('Café: rename `worktrees` on first message, then update the docs and tests')).toBe('cafe-rename-worktrees-on-first-message')
+    expect(branchSlug('日本語')).toBe('')
+  })
+})
+
 // Each test launches real Git processes, which take longer on Windows CI.
 describe('worktrees', { timeout: 30_000 }, () => {
   it('creates one on a new branch from the project folder\'s branch, outside the repository', async () => {
     const created = await createWorktree(repo, home, undefined)
-    expect(created.branch).toMatch(/^gloss\/[a-z0-9]{4}$/)
+    expect(created.branch).toMatch(/^gloss\/[a-z]+-[a-z]+$/)
     expect(created.path).toBe(join(home, 'project', created.branch.slice('gloss/'.length)))
     expect(git(created.path, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe(created.branch)
     const listed = await listWorktrees(repo)
     expect(listed.map((e) => [e.branch, e.main])).toEqual([['dev', true], [created.branch, false]])
+  })
+
+  it('renames a worktree\'s branch, numbering a name that is taken', async () => {
+    const a = await createWorktree(repo, home, undefined)
+    const b = await createWorktree(repo, home, undefined)
+    expect(await renameWorktreeBranch(a.path, a.branch, 'gloss/', 'fix-header')).toBe('gloss/fix-header')
+    expect(await renameWorktreeBranch(b.path, b.branch, 'gloss/', 'fix-header')).toBe('gloss/fix-header-2')
+    expect(git(a.path, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('gloss/fix-header')
+    expect(git(b.path, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('gloss/fix-header-2')
+  })
+
+  it('starts branch names with the prefix setting', async () => {
+    const created = await createWorktree(repo, home, undefined, 'wm/')
+    expect(created.branch).toMatch(/^wm\/[a-z]+-[a-z]+$/)
+    expect(created.path).toBe(join(home, 'project', created.branch.slice('wm/'.length)))
+    expect(await renameWorktreeBranch(created.path, created.branch, 'wm/', 'fix-header')).toBe('wm/fix-header')
+    await expect(createWorktree(repo, home, undefined, 'dev/')).rejects.toThrow("The branch dev exists, so branches can't start with dev/.")
   })
 
   it('fetches a remote base branch first', async () => {
