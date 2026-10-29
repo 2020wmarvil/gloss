@@ -14,7 +14,6 @@ export type PluginAgentState = {
   enabled: boolean
   status: 'off' | 'ready' | 'setup' | 'error' | 'pending'
   support: 'tested' | 'configured' | 'unknown'
-  delivery: string
   message: string
   skillDirectory?: string
 }

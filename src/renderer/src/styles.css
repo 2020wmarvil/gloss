@@ -6849,10 +6849,6 @@ button.danger-text {
   padding: 18px 18px 14px;
 }
 
-.plugin-toolbar .select-button {
-  font-size: var(--t-12);
-}
-
 .plugin-search {
   display: flex;
   align-items: center;
@@ -7189,10 +7185,6 @@ button.danger-text {
   margin: 7px 0;
 }
 
-.plugin-agent small {
-  font-size: var(--t-11);
-}
-
 .plugin-agent-actions {
   display: flex;
   gap: 14px;
@@ -7396,7 +7388,7 @@ button.danger-text {
 .plugin-empty h3 {
   font-size: var(--t-16);
   color: var(--ink);
-  margin: 14px 0 9px;
+  margin: 14px 0 18px;
 }
 
 .plugin-empty p {

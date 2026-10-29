@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom'
 import { ArrowLeft, BookOpen, Check, ChevronRight, FileText, FolderOpen, Info, Package, Pencil, Plus, RefreshCw, Search, Server, Trash2, X } from 'lucide-react'
 import type { PersonalPlugin, PluginAgentState, PluginFile, PluginLibraryState, PluginSkill } from '@shared/plugins'
 import { Markdown } from './Markdown'
-import { Select } from './Select'
 import { errorText } from './errors'
 
 type Tab = 'overview' | 'skills' | 'tools' | 'agents'
@@ -33,7 +32,6 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
   const [selected, setSelected] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
   const [query, setQuery] = useState('')
-  const [agentFilter, setAgentFilter] = useState('all')
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -104,8 +102,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
       setFile(next); setDraft(next.content); setEditing(false)
     }, 'Saved to the shared plugin. New instructions apply after the agent refreshes; earlier conversation instructions remain in history.')
   }
-  const allAgents = [...new Map(state?.plugins.flatMap(p => p.agents).map(a => [a.id, a]) ?? []).values()]
-  const shown = state?.plugins.filter(p => `${p.name} ${p.description} ${p.skills.map(s => s.name).join(' ')}`.toLowerCase().includes(query.toLowerCase()) && (agentFilter === 'all' || p.agents.some(a => a.id === agentFilter && a.enabled))) ?? []
+  const shown = state?.plugins.filter(p => `${p.name} ${p.description} ${p.skills.map(s => s.name).join(' ')}`.toLowerCase().includes(query.toLowerCase())) ?? []
 
   function components(p: PersonalPlugin): React.JSX.Element {
     return <>
@@ -141,9 +138,9 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
         if (agent.support === 'unknown' && !agent.enabled) setDialog({ kind: 'custom', agent })
         else run(() => window.gloss.plugins.enable(p.id, agent.id, !agent.enabled))
       }}>{agent.status === 'ready' && <Check />}{stateLabel(agent)}</button></div>
-      <p>{agent.message}</p><small className="muted">{agent.delivery}{agent.support === 'configured' ? ' · user-configured' : ''}</small>
+      {agent.message && <p>{agent.message}</p>}
       <div className="plugin-agent-actions">
-        {(agent.enabled || agent.status === 'pending' || agent.status === 'error') && <button className="plugin-link" disabled={busy} onClick={() => run(() => window.gloss.plugins.refresh(agent.id), 'Refresh requested. Active turns finish first.')}><RefreshCw />Refresh when idle</button>}
+        {agent.status === 'error' && <button className="plugin-link" disabled={busy} onClick={() => run(() => window.gloss.plugins.refresh(agent.id), 'Refresh requested. Active turns finish first.')}><RefreshCw />Refresh when idle</button>}
         {agent.id.startsWith('custom:') && <button className="plugin-link" onClick={() => setDialog({ kind: 'custom', agent })}>{agent.skillDirectory ? 'Skill directory' : 'Set up skills'}</button>}
       </div>
     </div>)}</>
@@ -160,14 +157,14 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
     </>
   }
   return <main className="plugins-screen"><section className="plugin-settings" aria-label="Plugins">
-    <header className="plugin-library-header"><div><h2>Plugins <span>{state?.plugins.length ?? ''}</span></h2><p>Your skills and tools, kept together.</p></div><button className="primary" disabled={busy || !state} onClick={() => navigate(() => setDialog({ kind: 'new' }))}><Plus />New plugin</button></header>
+    <header className="plugin-library-header"><div><h2>Plugins <span>{state?.plugins.length ?? ''}</span></h2><p>Your skills and tools, kept together.</p></div></header>
     {error && <p className="plugin-error" role="alert">{error}</p>}{state?.errors.map(e => <p className="plugin-error" role="alert" key={e}>{e}</p>)}
     {notice && <div className="plugin-notice" role="status"><Info /><span>{notice}</span><button className="icon-button" aria-label="Dismiss notice" onClick={() => setNotice(null)}><X /></button></div>}
     <div className="plugin-workspace"><div className="plugin-library">
-      <div className="plugin-toolbar"><label className="plugin-search"><Search /><input aria-label="Find a plugin" placeholder="Find a plugin…" value={query} onChange={e => setQuery(e.target.value)} /></label><Select ariaLabel="Filter plugins by agent" value={agentFilter} options={[{ value: 'all', label: 'All agents' }, ...allAgents.map(a => ({ value: a.id, label: a.name }))]} onChange={setAgentFilter} /></div>
+      <div className="plugin-toolbar"><label className="plugin-search"><Search /><input aria-label="Find a plugin" placeholder="Find a plugin…" value={query} onChange={e => setQuery(e.target.value)} /></label><button className="primary" disabled={busy || !state} onClick={() => navigate(() => setDialog({ kind: 'new' }))}><Plus />New plugin</button></div>
       <div className="plugin-list">{shown.map(p => <button key={p.id} className={`plugin-list-item ${p.id === plugin?.id ? 'selected' : ''}`} aria-pressed={p.id === plugin?.id} onClick={() => select(p.id)}><span className="plugin-package-mark"><Package /></span><span><strong>{p.name}</strong><span>{p.description}</span><small>{p.problems.length ? 'Needs attention' : summary(p)}</small></span></button>)}
         {!state && !error && <p className="plugin-empty">Loading plugins…</p>}
-        {state && !shown.length && <div className="plugin-empty"><Package /><h3>{state.plugins.length ? 'No matching plugins' : 'Start with a plugin of your own'}</h3><p>{state.plugins.length ? 'Try another search or agent filter.' : 'A plugin can be as simple as one skill you write and maintain yourself.'}</p><button className="secondary" onClick={() => { if (state.plugins.length) { setQuery(''); setAgentFilter('all') } else setDialog({ kind: 'new' }) }}>{state.plugins.length ? 'Clear filters' : 'New plugin'}</button></div>}
+        {state && !shown.length && <div className="plugin-empty"><Package /><h3>{state.plugins.length ? 'No matching plugins' : 'Start with a plugin of your own'}</h3>{state.plugins.length > 0 && <button className="secondary" onClick={() => setQuery('')}>Clear search</button>}</div>}
       </div>
       <button className="plugin-library-folder plugin-link" onClick={() => run(() => window.gloss.plugins.openFolder())}><FolderOpen />Open library folder</button>
     </div>

@@ -21,7 +21,7 @@ beforeEach(async () => {
   state = { directory: '/data/plugins/library', errors: [], connections: [{ name: 'Docs', transport: 'stdio', usedBy: ['Code review'] }], plugins: [{
     schemaVersion: 1, id: 'review', name: 'Code review', description: 'Review changes', connections: ['Docs'], enabledAgents: ['claude'], directory: '/data/plugins/library/review', problems: [],
     skills: [{ id: 'review-instructions', name: 'instructions', description: 'Review changes', path: file.path, files: ['SKILL.md'] }],
-    agents: [{ id: 'claude', name: 'Claude Code', enabled: true, status: 'ready', support: 'tested', delivery: 'Local plugin', message: 'Available' }, { id: 'custom:local', name: 'Local agent', enabled: false, status: 'setup', support: 'unknown', delivery: 'Configured folder', message: 'Configure a directory.' }]
+    agents: [{ id: 'claude', name: 'Claude Code', enabled: true, status: 'ready', support: 'tested', message: 'Available' }, { id: 'custom:local', name: 'Local agent', enabled: false, status: 'setup', support: 'unknown', message: 'Configure a directory.' }]
   }] }
   api = {
     list: vi.fn(async () => structuredClone(state)),

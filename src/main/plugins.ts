@@ -22,11 +22,6 @@ type Options = {
 const MANIFEST_KEYS = ['schemaVersion', 'name', 'description', 'connections', 'enabledAgents']
 /** Native plugin parts Gloss doesn't deliver (SPEC → Plugins): a plugin with one shows a problem instead. */
 const NATIVE_PARTS = ['hooks', 'agents', 'commands', '.mcp.json', 'mcp.json', 'index.js', 'index.ts', '.claude-plugin']
-const DELIVERY: Record<string, string> = {
-  claude: 'Local Claude plugin',
-  codex: 'Scoped skills and shared MCP',
-  opencode: 'Configured skills and shared MCP'
-}
 const MAX_FILE = 1024 * 1024
 const MAX_FILES = 1000
 const MAX_PLUGIN_BYTES = 64 * 1024 * 1024
@@ -207,15 +202,13 @@ export class PluginLibrary {
       const message = deploymentError ?? issues[0]
         ?? (!configured ? 'Configure a skill directory for this custom agent.'
           : status === 'pending' ? 'The selected availability will apply when the active turn finishes.'
-          : enabled ? 'Skill files are available. Existing conversation instructions are retained; connection authentication is checked by the agent.'
-          : 'Not enabled for this agent.')
+          : '')
       return {
         ...agent,
         enabled,
         status,
         support: !custom ? 'tested' : configured ? 'configured' : 'unknown',
         skillDirectory: this.state.customDirectories[agent.id],
-        delivery: DELIVERY[agent.id] ?? 'Configured skill directory; stdio MCP',
         message
       }
     }
