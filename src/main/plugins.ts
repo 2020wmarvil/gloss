@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { AgentConfig } from './agents'
 import type { McpServer } from '../shared/mcp'
+import { skillInvocation } from './skillInvocation'
 import { mcpName } from '../shared/mcp'
 import { PLUGIN_ID, pluginSlug, type PersonalPlugin, type PluginAgentState, type PluginChange, type PluginFile, type PluginLibraryState, type PluginManifest, type PluginSkill } from '../shared/plugins'
 
@@ -150,8 +151,33 @@ export class PluginLibrary {
         return value.replace(/^'(.*)'$/, '$1')
       }
       if (field('name') !== entry.name || !field('description') || ['>', '|'].includes(field('description'))) throw new Error(`${entry.name}: SKILL.md needs a matching name and a single-line description.`)
-      return { id: entry.name, name: entry.name.startsWith(`${id}-`) ? entry.name.slice(id.length + 1) : entry.name, description: field('description'), path: `skills/${entry.name}/SKILL.md`, files: this.files(dir) }
+      const metadata = this.invocationMetadata(id, entry.name)
+      const invocation = skillInvocation(raw, metadata).invocation
+      return { invocation, invocationRevision: hash(JSON.stringify([raw, metadata])), id: entry.name, name: entry.name.startsWith(`${id}-`) ? entry.name.slice(id.length + 1) : entry.name, description: field('description'), path: `skills/${entry.name}/SKILL.md`, files: this.files(dir) }
     })
+  }
+  private invocationMetadata(id: string, skillId: string): string | undefined {
+    const path = this.file(id, `skills/${skillId}/agents/openai.yaml`)
+    return exists(path) ? this.readText(path) : undefined
+  }
+  setSkillInvocation(id: string, skillId: string, invocation: unknown, revision: string): void {
+    this.assertState()
+    this.id(skillId)
+    if (invocation !== 'automatic' && invocation !== 'direct') throw new Error('Choose Automatic or Direct only.')
+    const skill = this.scanSkills(id).find(s => s.id === skillId)
+    if (!skill) throw new Error('Unknown skill.')
+    const file = this.readFile(id, skill.path)
+    const metadata = this.invocationMetadata(id, skillId)
+    if (hash(JSON.stringify([file.content, metadata])) !== revision) throw new Error('This skill changed. Reload it before changing invocation.')
+    const next = skillInvocation(file.content, metadata).update(invocation)
+    if (Buffer.byteLength(next.instructions) > MAX_FILE || Buffer.byteLength(next.metadata) > MAX_FILE) throw new Error('Skill files must be at most 1 MB.')
+    const instructionsPath = this.file(id, skill.path)
+    const metadataPath = this.file(id, `skills/${skillId}/agents/openai.yaml`)
+    // Prepare both documents before writing. Restore the first if the second write fails.
+    atomic(instructionsPath, next.instructions)
+    try { atomic(metadataPath, next.metadata) }
+    catch (error) { atomic(instructionsPath, file.content); throw error }
+    this.changed()
   }
   private readText(file: string): string {
     this.safe(file)
@@ -201,6 +227,7 @@ export class PluginLibrary {
         : enabled ? 'ready' : 'off'
       const message = deploymentError ?? issues[0]
         ?? (!configured ? 'Configure a skill directory for this custom agent.'
+          : custom && p.skills.some(s => s.invocation !== 'automatic') ? 'Direct-only invocation is unverified for this custom agent.'
           : status === 'pending' ? 'The selected availability will apply when the active turn finishes.'
           : '')
       return {
@@ -260,16 +287,22 @@ export class PluginLibrary {
     }
     this.save(id, manifest); this.changed()
   }
-  addSkill(id: string, name: string, description: string): string {
+  addSkill(id: string, name: string, description: string, invocation: unknown = 'automatic'): string {
     this.manifest(id)
+    if (invocation !== 'automatic' && invocation !== 'direct') throw new Error('Choose Automatic or Direct only.')
     name = text(name, 'skill name', 48)
     description = text(description, 'skill description', 1000)
     const skillId = `${id}-${pluginSlug(name)}`
     if (!PLUGIN_ID.test(skillId)) throw new Error('The plugin and skill names together must fit within 64 characters.')
     const folder = this.safe(join(this.folder(id), 'skills', skillId))
     if (exists(folder)) throw new Error('A skill with this name already exists in this plugin.')
+    const initial = `---\nname: ${skillId}\ndescription: ${JSON.stringify(description)}\n---\n\n# ${name}\n\nDescribe the workflow here.\n`
+    const policy = invocation === 'direct' ? skillInvocation(initial).update('direct') : undefined
     mkdirSync(folder, { recursive: true })
-    atomic(join(folder, 'SKILL.md'), `---\nname: ${skillId}\ndescription: ${JSON.stringify(description)}\n---\n\n# ${name}\n\nDescribe the workflow here.\n`)
+    try {
+      atomic(join(folder, 'SKILL.md'), policy?.instructions ?? initial)
+      if (policy) atomic(join(folder, 'agents', 'openai.yaml'), policy.metadata)
+    } catch (error) { rmSync(folder, { recursive: true }); throw error }
     this.changed(); return skillId
   }
   private file(id: string, path: string): string {
@@ -283,6 +316,18 @@ export class PluginLibrary {
     if (existing.revision !== file.revision) throw new Error('This file changed outside the editor. Reload it before saving to preserve those edits.')
     atomic(this.file(id, file.path), file.content); this.changed()
   }
+  removeFile(id: string, file: PluginFile): void {
+    this.assertState()
+    this.manifest(id)
+    if (!object(file) || typeof file.path !== 'string') throw new Error('Choose a skill file.')
+    const path = this.file(id, file.path)
+    if (/^skills\/[^/]+\/SKILL\.md$/i.test(file.path)) throw new Error('Remove the skill to delete its instructions.')
+    const existing = this.readFile(id, file.path)
+    if (existing.revision !== file.revision) throw new Error('This file changed outside the editor. Reload it before deleting.')
+    if (this.state.deployments.some(d => d.pluginId === id && this.options.busy?.(d.agentId))) throw new Error('Wait for active turns using this plugin to finish before deleting a file.')
+    unlinkSync(path)
+    this.changed()
+  }
   createFile(id: string, skillId: string, path: string, content: string): void {
     this.id(skillId)
     if (!this.scanSkills(id).some(s => s.id === skillId)) throw new Error('Unknown skill.')
@@ -292,12 +337,16 @@ export class PluginLibrary {
     mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, content, { flag: 'wx' }); this.changed()
   }
   removeSkill(id: string, skillId: string): void {
-    this.id(skillId); const manifest = this.manifest(id)
-    if (manifest.enabledAgents.length) throw new Error('Turn this plugin off for its agents before removing a skill.')
+    this.assertState()
+    this.id(skillId); this.manifest(id)
     if (this.state.deployments.some(d => d.pluginId === id && this.options.busy?.(d.agentId))) throw new Error('Wait for this plugin’s active turns to finish before removing a skill.')
     const skill = this.scanSkills(id).find(s => s.id === skillId)
     if (!skill) throw new Error('Unknown skill.')
-    rmSync(this.safe(join(this.folder(id), 'skills', skillId)), { recursive: true }); this.changed()
+    const folder = this.safe(join(this.folder(id), 'skills', skillId))
+    const targets = this.state.deployments.filter(d => d.pluginId === id && d.source === folder)
+    for (const target of targets) this.assertOwned(target)
+    for (const target of targets) this.removeTarget(target)
+    rmSync(folder, { recursive: true }); this.changed()
   }
   remove(id: string): void {
     this.assertState()

@@ -6984,7 +6984,8 @@ button.danger-text {
 }
 
 .plugin-detail {
-  width: 390px;
+  width: var(--plugin-detail-width, 390px);
+  max-width: calc(100% - 240px);
   min-width: 290px;
   flex: none;
   display: flex;
@@ -7253,24 +7254,28 @@ button.danger-text {
   height: 12px;
 }
 
-.plugin-file-tabs {
+.plugin-file-toolbar {
   display: flex;
-  gap: 7px;
-  margin: 14px 0;
+  align-items: center;
+  gap: 6px;
+  margin: 20px 0 16px;
 }
 
-.plugin-file-tabs button {
-  border: 0;
+.plugin-file-toolbar select {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  padding: 5px 9px;
-  background: transparent;
-  font-size: var(--t-11);
-  color: var(--muted);
+  background: var(--surface);
+  color: var(--ink);
+  font: var(--t-12) var(--font-mono);
+  text-overflow: ellipsis;
 }
 
-.plugin-file-tabs button.on {
-  background: var(--selected);
-  color: var(--ink);
+.plugin-file-toolbar .icon-button {
+  flex: none;
 }
 
 .plugin-editor, .plugin-form-field input, .plugin-form-field textarea {
@@ -7308,31 +7313,6 @@ button.danger-text {
   border-radius: var(--r-md);
   background: var(--sunken);
   font: var(--t-12)/1.7 var(--font-mono);
-}
-
-.plugin-file-list {
-  margin-bottom: 12px;
-}
-
-.plugin-file-list button {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 0;
-  text-align: left;
-  color: var(--ink);
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  font: var(--t-11) var(--font-mono);
-  overflow-wrap: anywhere;
-}
-
-.plugin-file-list svg {
-  width: 14px;
-  height: 14px;
-  flex: none;
 }
 
 .plugin-error {
@@ -7431,6 +7411,152 @@ button.danger-text {
   color: var(--failed);
 }
 
+.plugin-create-dialog {
+  width: 450px;
+  padding: 22px;
+  user-select: none;
+}
+
+.plugin-create-dialog > .plugin-inline-heading {
+  margin-bottom: 20px;
+}
+
+.plugin-create-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.plugin-create-heading h2 {
+  margin: 0;
+  font-size: var(--t-20);
+  letter-spacing: -.025em;
+}
+
+.plugin-create-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--accent-tint);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent-mark);
+}
+
+.plugin-create-mark svg {
+  width: 19px;
+  height: 19px;
+}
+
+.plugin-create-dialog .plugin-form-field {
+  gap: 7px;
+  margin: 0 0 16px;
+  font-size: var(--t-13);
+  font-weight: 500;
+}
+
+.plugin-create-dialog .plugin-form-field input,
+.plugin-create-dialog .plugin-form-field textarea {
+  user-select: text;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: var(--t-14);
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.plugin-invocation-choice {
+  user-select: none;
+  min-width: 0;
+  padding: 0;
+  margin: 0 0 16px;
+  border: 0;
+}
+
+.plugin-invocation-choice.plugin-invocation-footer {
+  max-width: 300px;
+  padding-top: 16px;
+  margin: 24px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.plugin-invocation-choice legend {
+  padding: 0;
+  margin-bottom: 7px;
+  font-size: var(--t-13);
+  font-weight: 500;
+}
+
+.plugin-invocation-choice > div {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+}
+
+.plugin-invocation-choice label {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  cursor: pointer;
+}
+
+.plugin-invocation-choice input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.plugin-invocation-choice span {
+  display: block;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  text-align: center;
+  font-size: var(--t-13);
+  font-weight: 500;
+}
+
+.plugin-invocation-choice input:checked + span {
+  background: var(--selected);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line), 0 1px 3px #00000014;
+}
+
+.plugin-invocation-choice label:hover span {
+  color: var(--ink);
+}
+
+.plugin-invocation-choice input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.plugin-invocation-choice:disabled {
+  opacity: .5;
+}
+
+.plugin-create-dialog .plugin-form-field textarea {
+  min-height: 88px;
+}
+
+.plugin-create-dialog input::placeholder,
+.plugin-create-dialog textarea::placeholder {
+  color: var(--muted);
+  opacity: .75;
+}
+
+.plugin-create-dialog .dialog-actions {
+  padding-top: 16px;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
 .plugin-connection-choice {
   display: flex;
   align-items: flex-start;
@@ -7460,7 +7586,7 @@ button.danger-text {
 
 @media (max-width: 1150px) {
   .plugin-detail {
-    width: 335px;
+    width: var(--plugin-detail-width, 335px);
   }
 
   .plugin-toolbar {
@@ -7473,6 +7599,10 @@ button.danger-text {
 }
 
 @media (max-width: 850px) {
+  .plugin-workspace > .resize-handle {
+    display: none;
+  }
+
   .plugin-workspace {
     flex-direction: column;
     overflow: auto;
@@ -7488,6 +7618,7 @@ button.danger-text {
   }
 
   .plugin-detail {
+    max-width: none;
     width: auto;
     min-width: 0;
     border-left: 0;

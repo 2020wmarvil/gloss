@@ -15,8 +15,8 @@ import type { McpServer } from '../shared/mcp'
 
 const mcpScript = String.raw`const r=require('node:readline').createInterface({input:process.stdin});r.on('line',line=>{try{const q=JSON.parse(line);if(q.id===undefined)return;const result=q.method==='initialize'?{protocolVersion:q.params.protocolVersion,capabilities:{tools:{}},serverInfo:{name:'plugin-probe',version:'1'}}:q.method==='tools/list'?{tools:[{name:'plugin_probe',description:'GLOSS_PLUGIN_MCP_MARKER',inputSchema:{type:'object',properties:{}}}]}:q.method==='tools/call'?{content:[{type:'text',text:'Plugin MCP works'}]}:{};process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:q.id,result})+'\n')}catch{}});`
 
-it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).each(['claude', 'codex', 'opencode', 'custom:probe'])('loads a complete authored package through %s and removes only its deployment', async agentId => {
-  if (['opencode', 'custom:probe'].includes(agentId) && !process.env.GLOSS_OPENCODE_EXECUTABLE) return
+it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).for(['claude', 'codex', 'opencode', 'custom:probe'])('loads a complete authored package through %s and removes only its deployment', { timeout: 120000 }, async (agentId, context) => {
+  if (['opencode', 'custom:probe'].includes(agentId) && !process.env.GLOSS_OPENCODE_EXECUTABLE) { context.skip(); return }
   const root = mkdtempSync(join(tmpdir(), 'gloss-plugin-native-'))
   // Checked before the test runs, so the cleanup below can't hide a failure by throwing.
   if (!resolve(root).startsWith(resolve(tmpdir()) + sep)) throw new Error('Invalid test cleanup path.')
@@ -130,6 +130,23 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).each(['claude', 'codex', 'opencode',
     await useSkill(session)
     expect(JSON.stringify(payloads).includes(revised), 'Revised skill instructions reached the provider after a resume').toBe(true)
     connection!.dispose(); connection = undefined
+    // Direct-only removes discovery while preserving native explicit loading.
+    const policy = library.list().plugins[0].skills[0]
+    library.setSkillInvocation(id, skill.id, 'direct', policy.invocationRevision)
+    payloads.length = 0; updates.length = 0
+    const direct = await start()
+    await connection!.prompt(direct, [{ type: 'text', text: 'Reply with ACK.' }])
+    expect(JSON.stringify(payloads).includes('Only for plugin integration testing'), 'Direct-only skill is absent from automatic discovery').toBe(false)
+    await useSkill(direct)
+    expect(JSON.stringify(payloads).includes(revised), 'Direct-only skill can still be explicitly loaded').toBe(true)
+    connection!.dispose(); connection = undefined
+    const directPolicy = library.list().plugins[0].skills[0]
+    library.setSkillInvocation(id, skill.id, 'automatic', directPolicy.invocationRevision)
+    payloads.length = 0; updates.length = 0
+    const automatic = await start()
+    await connection!.prompt(automatic, [{ type: 'text', text: 'Reply with ACK.' }])
+    expect(JSON.stringify(payloads).includes('Only for plugin integration testing'), 'Automatic skill is advertised again').toBe(true)
+    connection!.dispose(); connection = undefined
     library.enable(id, agentId, false)
     payloads.length = 0; updates.length = 0
     const fresh = await start()
@@ -145,7 +162,7 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).each(['claude', 'codex', 'opencode',
     connection?.dispose(); library.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r()))
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
-}, 90000)
+})
 
 async function viWait(check: () => boolean): Promise<void> {
   for (let i = 0; i < 100; i++) { if (check()) return; await new Promise(r => setTimeout(r, 100)) }

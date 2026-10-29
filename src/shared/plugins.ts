@@ -7,7 +7,8 @@ export type PluginManifest = {
   enabledAgents: string[]
 }
 
-export type PluginSkill = { id: string; name: string; description: string; path: string; files: string[] }
+export type SkillInvocation = 'automatic' | 'direct'
+export type PluginSkill = { id: string; name: string; description: string; path: string; files: string[]; invocation: SkillInvocation | 'mixed'; invocationRevision: string }
 export type PluginAgentState = {
   id: string
   name: string
@@ -37,14 +38,17 @@ export type PluginApi = {
   create(name: string, description: string): Promise<string>
   update(id: string, change: PluginChange): Promise<void>
   remove(id: string): Promise<void>
-  addSkill(id: string, name: string, description: string): Promise<string>
+  addSkill(id: string, name: string, description: string, invocation?: SkillInvocation): Promise<string>
+  setSkillInvocation(id: string, skillId: string, invocation: SkillInvocation, revision: string): Promise<void>
   removeSkill(id: string, skillId: string): Promise<void>
   readFile(id: string, path: string): Promise<PluginFile>
   writeFile(id: string, file: PluginFile): Promise<void>
+  removeFile(id: string, file: PluginFile): Promise<void>
   createFile(id: string, skillId: string, path: string, content: string): Promise<void>
   enable(id: string, agentId: string, enabled: boolean): Promise<void>
   setSkillDirectory(agentId: string, directory: string): Promise<void>
   refresh(agentId: string): Promise<void>
+  openInEditor(id: string, path: string): Promise<void>
   openFolder(id?: string): Promise<void>
 }
 
