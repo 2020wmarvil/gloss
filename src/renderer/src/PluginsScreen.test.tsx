@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { GlossApi } from '@shared/ipc'
+import type { GlossApi, GlossEvent } from '@shared/ipc'
 import type { PluginApi, PluginLibraryState } from '@shared/plugins'
 import { PluginsScreen } from './PluginsScreen'
 
@@ -12,6 +12,7 @@ let container: HTMLDivElement
 let state: PluginLibraryState
 let api: PluginApi
 let guard: ((leave: () => void) => void) | null
+let emit: (event: GlossEvent) => void
 let onClose: ReturnType<typeof vi.fn<() => void>>
 const file = { path: 'skills/review-instructions/SKILL.md', content: '---\nname: review-instructions\ndescription: Review changes\n---\n\n# Review\n\nRead the diff.', revision: 'before' }
 
@@ -40,7 +41,7 @@ beforeEach(async () => {
     enable: vi.fn(async (_id, _agent, enabled) => { state.plugins[0].agents[0].enabled = enabled; state.plugins[0].agents[0].status = enabled ? 'ready' : 'off' }),
     setSkillDirectory: vi.fn(async () => {}), refresh: vi.fn(async () => {}), openFolder: vi.fn(async () => {}), openInEditor: vi.fn(async () => {})
   }
-  Object.defineProperty(window, 'gloss', { configurable: true, value: { plugins: api, onEvent: () => () => {} } as unknown as GlossApi })
+  Object.defineProperty(window, 'gloss', { configurable: true, value: { plugins: api, onEvent: (listener: (event: GlossEvent) => void) => { emit = listener; return () => {} } } as unknown as GlossApi })
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
   await act(async () => root.render(<PluginsScreen onManageConnections={() => {}} onClose={onClose} onNavigationGuard={value => { guard = value }} />))
 })
@@ -98,7 +99,7 @@ it('removes a connection reference without deleting or rewriting the global conn
   await click('Tools'); await click('Remove from plugin')
   expect(api.update).toHaveBeenCalledWith('review', { connections: [] })
   expect(state.connections).toHaveLength(1)
-  expect(container.textContent).toContain('global MCP connection is preserved')
+  expect(container.querySelector('[role="status"]')).toBeNull()
 })
 
 it('opens New plugin directly and creates its first editable skill', async () => {
@@ -499,5 +500,83 @@ it('keeps Save enabled for unchanged files and during saves while ignoring repea
   expect(save.disabled).toBe(false)
   expect(save.getAttribute('aria-busy')).toBe('true')
   await act(async () => finish())
+  expect(container.querySelector('#plugin-file-editor')).toBeNull()
+})
+
+
+it('updates externally changed previews in place without dimming buttons', async () => {
+  await act(async () => container.querySelector<HTMLButtonElement>('.plugin-component')!.click())
+  const editButton = container.querySelector<HTMLButtonElement>('[aria-label="Edit file"]')!
+  vi.mocked(api.readFile).mockResolvedValueOnce({ ...file, content: '# Updated externally', revision: 'external' })
+  await act(async () => emit({ type: 'pluginsChanged' }))
+  expect(api.readFile).toHaveBeenLastCalledWith('review', file.path)
+  expect(container.querySelector('.plugin-detail-content')?.textContent).toContain('Updated externally')
+  expect(container.querySelector('.plugin-detail-content')?.textContent).not.toContain('Read the diff.')
+  expect(editButton.isConnected).toBe(true)
+  expect(editButton.disabled).toBe(false)
+  expect(container.querySelector('#plugin-file-editor')).toBeNull()
+})
+
+it('refreshes the selected supporting file after external changes', async () => {
+  await act(async () => container.querySelector<HTMLButtonElement>('.plugin-component')!.click())
+  const picker = container.querySelector<HTMLSelectElement>('[aria-label="Skill file"]')!
+  const path = 'skills/review-instructions/references/checklist.txt'
+  await act(async () => { picker.value = path; picker.dispatchEvent(new Event('change', { bubbles: true })) })
+  vi.mocked(api.readFile).mockResolvedValueOnce({ path, content: 'New supporting text', revision: 'external-reference' })
+  await act(async () => emit({ type: 'pluginsChanged' }))
+  expect(api.readFile).toHaveBeenLastCalledWith('review', path)
+  expect(container.querySelector('.plugin-file-content')?.textContent).toBe('New supporting text')
+  expect(picker.value).toBe(path)
+})
+
+it('preserves local drafts and their original revisions when external changes arrive', async () => {
+  await input(await edit(), 'Local unsaved draft')
+  await act(async () => emit({ type: 'pluginsChanged' }))
+  expect(api.readFile).toHaveBeenCalledTimes(1)
+  expect(container.querySelector<HTMLTextAreaElement>('#plugin-file-editor')?.value).toBe('Local unsaved draft')
+  await click('Save')
+  expect(api.writeFile).toHaveBeenCalledWith('review', { ...file, content: 'Local unsaved draft' })
+})
+
+it('does not replace edits started while an external refresh is pending', async () => {
+  await act(async () => container.querySelector<HTMLButtonElement>('.plugin-component')!.click())
+  let finish!: () => void
+  vi.mocked(api.readFile).mockReturnValueOnce(new Promise(resolve => { finish = () => resolve({ ...file, content: 'External text', revision: 'external' }) }))
+  await act(async () => emit({ type: 'pluginsChanged' }))
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Edit file"]')!.click())
+  await input(container.querySelector<HTMLTextAreaElement>('#plugin-file-editor')!, 'New local edits')
+  await act(async () => finish())
+  expect(container.querySelector<HTMLTextAreaElement>('#plugin-file-editor')?.value).toBe('New local edits')
+})
+
+it('ignores external preview responses after navigation', async () => {
+  await act(async () => container.querySelector<HTMLButtonElement>('.plugin-component')!.click())
+  let finish!: () => void
+  vi.mocked(api.readFile).mockReturnValueOnce(new Promise(resolve => { finish = () => resolve({ ...file, content: 'External text', revision: 'external' }) }))
+  await act(async () => emit({ type: 'pluginsChanged' }))
+  await click('Agents')
+  await act(async () => finish())
+  expect(container.querySelector('[aria-label="Plugin sections"] [aria-current="page"]')?.textContent).toBe('Agents')
+  expect(container.querySelector('.plugin-detail-content')?.textContent).not.toContain('External text')
+})
+
+it('keeps the newest external refresh when responses arrive out of order', async () => {
+  await act(async () => container.querySelector<HTMLButtonElement>('.plugin-component')!.click())
+  let finishOld!: () => void
+  vi.mocked(api.readFile).mockReturnValueOnce(new Promise(resolve => { finishOld = () => resolve({ ...file, content: 'Old external text', revision: 'old' }) }))
+  await act(async () => emit({ type: 'pluginsChanged' }))
+  vi.mocked(api.readFile).mockResolvedValueOnce({ ...file, content: 'Newest external text', revision: 'newest' })
+  await act(async () => emit({ type: 'pluginsChanged' }))
+  await act(async () => finishOld())
+  expect(container.querySelector('.plugin-detail-content')?.textContent).toContain('Newest external text')
+  expect(container.querySelector('.plugin-detail-content')?.textContent).not.toContain('Old external text')
+})
+
+
+it('saves without adding a page-wide success banner', async () => {
+  await input(await edit(), 'Updated instructions')
+  await click('Save')
+  expect(api.writeFile).toHaveBeenCalledWith('review', { ...file, content: 'Updated instructions' })
+  expect(container.querySelector('[role="status"]')).toBeNull()
   expect(container.querySelector('#plugin-file-editor')).toBeNull()
 })

@@ -7328,30 +7328,6 @@ button.danger-text {
   flex: none;
 }
 
-.plugin-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 13px;
-  background: var(--working-tint);
-  color: var(--working);
-  font-size: var(--t-12);
-  margin: 8px 18px;
-  border-radius: var(--r-md);
-  flex: none;
-}
-
-.plugin-notice > svg {
-  width: 15px;
-  height: 15px;
-  flex: none;
-  margin-top: 3px;
-}
-
-.plugin-notice span {
-  flex: 1;
-}
-
 .plugin-empty {
   text-align: center;
   padding: 50px 24px;

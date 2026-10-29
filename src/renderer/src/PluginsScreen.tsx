@@ -2,7 +2,7 @@
 // in the center like Worktrees. Its data lives in the plugin library folder, not settings.json.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, BookOpen, Check, ChevronRight, ExternalLink, FolderOpen, Info, Package, Pencil, Plus, RefreshCw, Search, Server, Trash2, X } from 'lucide-react'
+import { ArrowLeft, BookOpen, Check, ChevronRight, ExternalLink, FolderOpen, Package, Pencil, Plus, RefreshCw, Search, Server, Trash2, X } from 'lucide-react'
 import type { PersonalPlugin, PluginAgentState, PluginFile, PluginLibraryState, PluginSkill, SkillInvocation } from '@shared/plugins'
 import { Markdown } from './Markdown'
 import { errorText } from './errors'
@@ -35,7 +35,6 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
   const [tab, setTab] = useState<Tab>('overview')
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set())
   const pendingRef = useRef(new Set<string>())
   const [dialog, setDialog] = useState<Dialog | null>(null)
@@ -43,8 +42,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
   const [file, setFile] = useState<PluginFile | null>(null)
   const [draft, setDraft] = useState('')
   const [editing, setEditing] = useState(false)
-  const activeEditor = useRef({ file, editing })
-  activeEditor.current = { file, editing }
+  const activeEditor = useRef<{ file: PluginFile | null; editing: boolean; pluginId?: string }>({ file, editing })
   const workspace = useRef<HTMLDivElement>(null)
   const [workspaceWidth, setWorkspaceWidth] = useState(0)
   const [detailWidth, setDetailWidth] = useStoredWidth('gloss.pluginDetailWidth')
@@ -59,6 +57,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
   const fileRequest = useRef(0)
   const live = useRef(true)
   const plugin = state?.plugins.find(p => p.id === selected) ?? state?.plugins[0]
+  activeEditor.current = { file, editing, pluginId: plugin?.id }
   const skill = plugin?.skills.find(s => s.id === skillId)
   const dirty = editing && file !== null && draft !== file.content
 
@@ -68,14 +67,29 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
     if (live.current && serial === request.current) setState(next)
     return next
   }, [])
+  const refreshPreview = useCallback(async (): Promise<void> => {
+    const { file, editing, pluginId } = activeEditor.current
+    if (!file || editing || !pluginId) return
+    const serial = ++fileRequest.current
+    const stillPreviewing = (): boolean => live.current && serial === fileRequest.current
+      && !activeEditor.current.editing && activeEditor.current.pluginId === pluginId
+      && activeEditor.current.file?.path === file.path
+    try {
+      const next = await window.gloss.plugins.readFile(pluginId, file.path)
+      if (stillPreviewing() && next.revision !== activeEditor.current.file?.revision) {
+        setFile(next); setDraft(next.content)
+      }
+    } catch (err) { if (stillPreviewing()) setError(errorText(err)) }
+  }, [])
   useEffect(() => {
     live.current = true
     void reload().catch(e => setError(errorText(e)))
     const dispose = window.gloss.onEvent(event => {
+      if (event.type === 'pluginsChanged') void refreshPreview()
       if (event.type === 'pluginsChanged' || event.type === 'settings' || event.type === 'agents') void reload().catch(e => { if (live.current) setError(errorText(e)) })
     })
     return () => { live.current = false; request.current++; fileRequest.current++; dispose() }
-  }, [reload])
+  }, [reload, refreshPreview])
 
   const navigate = useCallback((leave: () => void): void => {
     if (dirty) setDialog({ kind: 'discard', leave })
@@ -91,21 +105,20 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
     return () => window.removeEventListener('keydown', onKey)
   }, [navigate, onClose])
 
-  function resetDetail(): void { fileRequest.current++; setFile(null); setEditing(false); setSkillId(null); setNotice(null); setError(null) }
+  function resetDetail(): void { fileRequest.current++; setFile(null); setEditing(false); setSkillId(null); setError(null) }
   function select(id: string): void { navigate(() => { setSelected(id); setTab('overview'); resetDetail() }) }
   function isPending(key: string): boolean { return pending.has(key) }
-  async function execute(key: string, operation: () => Promise<unknown>, success?: string, reportError = true, refresh = true): Promise<void> {
+  async function execute(key: string, operation: () => Promise<unknown>, reportError = true, refresh = true): Promise<void> {
     if (pendingRef.current.has(key)) return
     pendingRef.current.add(key); setPending(new Set(pendingRef.current)); setError(null)
-    if (success) setNotice(null)
-    try { await operation(); if (refresh) await reload(); if (live.current && success) setNotice(success) }
+    try { await operation(); if (refresh) await reload() }
     catch (err) { if (live.current && reportError) setError(errorText(err)); throw err }
     finally {
       pendingRef.current.delete(key)
       if (live.current) setPending(new Set(pendingRef.current))
     }
   }
-  function run(key: string, operation: () => Promise<unknown>, success?: string, refresh = true): void { void execute(key, operation, success, true, refresh).catch(() => {}) }
+  function run(key: string, operation: () => Promise<unknown>, refresh = true): void { void execute(key, operation, true, refresh).catch(() => {}) }
   async function openFile(p: PersonalPlugin, s: PluginSkill, path = s.path): Promise<void> {
     const serial = ++fileRequest.current
     const sameFile = activeEditor.current.file?.path === path
@@ -128,7 +141,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
         const next = await window.gloss.plugins.readFile(p.id, path)
         if (stillPreviewing()) { setFile(next); setDraft(next.content) }
       }
-    }, undefined, true, false).catch(() => {})
+    }, true, false).catch(() => {})
   }
   async function saveFile(): Promise<void> {
     if (!plugin || !file) return
@@ -137,7 +150,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
       await window.gloss.plugins.writeFile(plugin.id, { ...file, content: draft })
       const next = await window.gloss.plugins.readFile(plugin.id, file.path)
       if (live.current && serial === fileRequest.current) { setFile(next); setDraft(next.content); setEditing(false) }
-    }, 'Saved to the shared plugin. New instructions apply after the agent refreshes; earlier conversation instructions remain in history.')
+    })
   }
   const shown = state?.plugins.filter(p => `${p.name} ${p.description} ${p.skills.map(s => s.name).join(' ')}`.toLowerCase().includes(query.toLowerCase())) ?? []
 
@@ -163,7 +176,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
         return <div className="plugin-connection" key={name}><div className="plugin-inline-heading"><strong>{name}</strong><span className={`plugin-badge ${connection ? '' : 'warn'}`}>{connection ? 'Configured' : 'Needs setup'}</span></div>
           <p>{connection ? `${connection.transport.toUpperCase()} MCP. Authentication and availability are checked by the agent when it connects.` : 'This connection is missing from the global MCP settings.'}</p>
           {connection && <p>Used by {connection.usedBy.join(', ')}.</p>}
-          <button className="ghost sm" disabled={isPending(`connections:${p.id}`)} onClick={() => run(`connections:${p.id}`, () => window.gloss.plugins.update(p.id, { connections: p.connections.filter(n => n !== name) }), 'Connection removed from this plugin. The global MCP connection is preserved.')}>Remove from plugin</button>
+          <button className="ghost sm" disabled={isPending(`connections:${p.id}`)} onClick={() => run(`connections:${p.id}`, () => window.gloss.plugins.update(p.id, { connections: p.connections.filter(n => n !== name) }))}>Remove from plugin</button>
         </div>
       }) : <p className="muted">No tool connections in this plugin.</p>}
       <button className="plugin-link" onClick={() => navigate(onManageConnections)}>Configure MCP servers</button>
@@ -177,7 +190,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
       }}>{agent.status === 'ready' && <Check />}{stateLabel(agent)}</button></div>
       {agent.message && <p>{agent.message}</p>}
       <div className="plugin-agent-actions">
-        {agent.status === 'error' && <button className="plugin-link" disabled={isPending(`agent:${agent.id}`)} onClick={() => run(`agent:${agent.id}`, () => window.gloss.plugins.refresh(agent.id), 'Refresh requested. Active turns finish first.')}><RefreshCw />Refresh when idle</button>}
+        {agent.status === 'error' && <button className="plugin-link" disabled={isPending(`agent:${agent.id}`)} onClick={() => run(`agent:${agent.id}`, () => window.gloss.plugins.refresh(agent.id))}><RefreshCw />Refresh when idle</button>}
         {agent.id.startsWith('custom:') && <button className="plugin-link" onClick={() => setDialog({ kind: 'custom', agent })}>{agent.skillDirectory ? 'Skill directory' : 'Set up skills'}</button>}
       </div>
     </div>)}</>
@@ -191,7 +204,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
           {[...new Set(['SKILL.md', ...s.files])].map(path => <option key={path} value={`skills/${s.id}/${path}`}>{path}</option>)}
         </select>
         <button className="icon-button" title="New text file" aria-label="New text file" onClick={() => navigate(() => setDialog({ kind: 'file', plugin: p, skill: s }))}><Plus /></button>
-        {file && !editing && <><button className="icon-button" title="Edit file" aria-label="Edit file" onClick={() => setEditing(true)}><Pencil /></button><button className="icon-button" title="Open in external editor" aria-label="Open in external editor" disabled={isPending(`editor:${p.id}:${file.path}`)} onClick={() => run(`editor:${p.id}:${file.path}`, () => window.gloss.plugins.openInEditor(p.id, file.path), undefined, false)}><ExternalLink /></button></>}
+        {file && !editing && <><button className="icon-button" title="Edit file" aria-label="Edit file" onClick={() => setEditing(true)}><Pencil /></button><button className="icon-button" title="Open in external editor" aria-label="Open in external editor" disabled={isPending(`editor:${p.id}:${file.path}`)} onClick={() => run(`editor:${p.id}:${file.path}`, () => window.gloss.plugins.openInEditor(p.id, file.path), false)}><ExternalLink /></button></>}
         {file && file.path !== s.path && <button className="icon-button" title="Delete file" aria-label="Delete file" disabled={fileBusy} onClick={() => navigate(() => setDialog({ kind: 'removeFile', plugin: p, skill: s, file }))}><Trash2 /></button>}
       </div>
       {file ? <>
@@ -204,18 +217,17 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
   return <main className="plugins-screen"><section className="plugin-settings" aria-label="Plugins">
     <header className="plugin-library-header"><div><h2>Plugins</h2><p>Your skills and tools, kept together.</p></div></header>
     {error && <p className="plugin-error" role="alert">{error}</p>}{state?.errors.map(e => <p className="plugin-error" role="alert" key={e}>{e}</p>)}
-    {notice && <div className="plugin-notice" role="status"><Info /><span>{notice}</span><button className="icon-button" aria-label="Dismiss notice" onClick={() => setNotice(null)}><X /></button></div>}
     <div className="plugin-workspace" ref={workspace}><div className="plugin-library">
       <div className="plugin-toolbar"><label className="plugin-search"><Search /><input aria-label="Find a plugin" placeholder="Find a plugin…" value={query} onChange={e => setQuery(e.target.value)} /></label><button className="primary" disabled={!state} onClick={() => navigate(() => setDialog({ kind: 'new' }))}><Plus />New plugin</button></div>
       <div className="plugin-list">{shown.map(p => <button key={p.id} className={`plugin-list-item ${p.id === plugin?.id ? 'selected' : ''}`} aria-pressed={p.id === plugin?.id} onClick={() => select(p.id)}><span className="plugin-package-mark"><Package /></span><span><strong>{p.name}</strong><span>{p.description}</span><small>{p.problems.length ? 'Needs attention' : summary(p)}</small></span></button>)}
         {!state && !error && <p className="plugin-empty">Loading plugins…</p>}
         {state && !shown.length && <div className="plugin-empty"><Package /><h3>{state.plugins.length ? 'No matching plugins' : 'Start with a plugin of your own'}</h3>{state.plugins.length > 0 && <button className="secondary" onClick={() => setQuery('')}>Clear search</button>}</div>}
       </div>
-      <button className="plugin-library-folder plugin-link" disabled={isPending('folder:library')} onClick={() => run('folder:library', () => window.gloss.plugins.openFolder(), undefined, false)}><FolderOpen />Open library folder</button>
+      <button className="plugin-library-folder plugin-link" disabled={isPending('folder:library')} onClick={() => run('folder:library', () => window.gloss.plugins.openFolder(), false)}><FolderOpen />Open library folder</button>
     </div>
     <ResizeHandle label="Resize plugin details" pane="after" limits={detailLimits} value={detailWidth === null ? null : clampWidth(detailWidth, detailLimits)} onResize={setDetailWidth} onReset={() => setDetailWidth(null)} />
     <aside className="plugin-detail" style={detailWidth === null ? undefined : { '--plugin-detail-width': `${clampWidth(detailWidth, detailLimits)}px` } as React.CSSProperties} aria-label="Plugin details">{plugin ? <>
-      <header><div className="plugin-inline-heading"><h3>{plugin.name}</h3><button className="icon-button" aria-label="Open plugin folder" title="Open plugin folder" disabled={isPending(`folder:${plugin.id}`)} onClick={() => run(`folder:${plugin.id}`, () => window.gloss.plugins.openFolder(plugin.id), undefined, false)}><FolderOpen /></button><button className="icon-button" aria-label="Edit plugin details" title="Edit plugin details" onClick={() => navigate(() => setDialog({ kind: 'edit', plugin }))}><Pencil /></button><button className="icon-button" aria-label="Remove plugin" title="Remove plugin" onClick={() => navigate(() => setDialog({ kind: 'remove', plugin }))}><Trash2 /></button></div><p>{plugin.description}</p></header>
+      <header><div className="plugin-inline-heading"><h3>{plugin.name}</h3><button className="icon-button" aria-label="Open plugin folder" title="Open plugin folder" disabled={isPending(`folder:${plugin.id}`)} onClick={() => run(`folder:${plugin.id}`, () => window.gloss.plugins.openFolder(plugin.id), false)}><FolderOpen /></button><button className="icon-button" aria-label="Edit plugin details" title="Edit plugin details" onClick={() => navigate(() => setDialog({ kind: 'edit', plugin }))}><Pencil /></button><button className="icon-button" aria-label="Remove plugin" title="Remove plugin" onClick={() => navigate(() => setDialog({ kind: 'remove', plugin }))}><Trash2 /></button></div><p>{plugin.description}</p></header>
       <nav className="plugin-tabs" aria-label="Plugin sections">{(['overview', 'skills', 'tools', 'agents'] as Tab[]).map(t => <button key={t} className={tab === t ? 'on' : ''} aria-current={tab === t ? 'page' : undefined} onClick={() => navigate(() => { resetDetail(); setTab(t) })}>{t[0].toUpperCase() + t.slice(1)}</button>)}</nav>
       <div className="plugin-detail-content">{plugin.problems.map(problem => <p className="plugin-error" key={problem}>{problem}</p>)}{skill ? skillContent(plugin, skill) : tab === 'overview' ? components(plugin) : tab === 'skills' ? <><div className="plugin-inline-heading"><h4>Skills in this plugin</h4><button className="ghost sm" onClick={() => setDialog({ kind: 'skill', plugin })}><Plus />Add skill</button></div>{components({ ...plugin, connections: [] })}</> : tab === 'tools' ? tools(plugin) : agents(plugin)}</div>
     </> : <div className="plugin-empty"><Package /><h3>One place for each workflow</h3></div>}</aside></div>
@@ -240,7 +252,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
         else if (dialog.kind === 'remove') { await window.gloss.plugins.remove(dialog.plugin.id); setSelected(null); resetDetail() }
         else if (dialog.kind === 'removeFile') { await window.gloss.plugins.removeFile(dialog.plugin.id, dialog.file); await openFile(dialog.plugin, dialog.skill) }
         else if (dialog.kind === 'removeSkill') { await window.gloss.plugins.removeSkill(dialog.plugin.id, dialog.skill.id); resetDetail(); setTab('skills') }
-      }, undefined, false)
+      }, false)
       setDialog(null)
     }} />}
   </section></main>
