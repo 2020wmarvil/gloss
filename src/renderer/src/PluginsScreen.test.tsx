@@ -580,3 +580,19 @@ it('saves without adding a page-wide success banner', async () => {
   expect(container.querySelector('[role="status"]')).toBeNull()
   expect(container.querySelector('#plugin-file-editor')).toBeNull()
 })
+
+
+it('keeps plugin health errors behind a failed removal dialog out of view', async () => {
+  state.plugins[0].problems = ['This plugin is incomplete because plugin.json is missing.']
+  state.errors = ['Library health issue']
+  await act(async () => emit({ type: 'pluginsChanged' }))
+  expect(container.querySelectorAll('[role="alert"]')).toHaveLength(2)
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Remove plugin"]')!.click())
+  vi.mocked(api.remove).mockRejectedValueOnce(new Error('Could not finish removing this plugin. Try again.'))
+  await click('Remove plugin', document.querySelector('[role="dialog"]')!)
+  expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1)
+  expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain('Could not finish removing')
+  expect(container.querySelector('[role="alert"]')).toBeNull()
+  await click('Cancel', document.querySelector('[role="dialog"]')!)
+  expect(container.querySelectorAll('[role="alert"]')).toHaveLength(2)
+})

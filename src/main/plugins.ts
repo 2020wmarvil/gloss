@@ -41,6 +41,16 @@ function atomic(file: string, content: string): void {
   try { writeFileSync(temporary, content, { encoding: 'utf8', flag: 'wx' }); renameSync(temporary, file) }
   finally { if (existsSync(temporary)) unlinkSync(temporary) }
 }
+/** Windows directory watchers and open handles can briefly delay recursive removal. */
+function removeDirectory(folder: string, noun: string): void {
+  try { rmSync(folder, { recursive: true, maxRetries: 3, retryDelay: 100 }) }
+  catch (error) {
+    if (['ENOTEMPTY', 'EBUSY', 'EPERM', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+      throw new Error(`Could not finish removing ${noun}. Some files may still be in use or changing. Close apps using its files and try again.`, { cause: error })
+    }
+    throw error
+  }
+}
 function inside(root: string, file: string): boolean { const rel = relative(root, file); return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel)) }
 function exists(path: string): boolean { try { lstatSync(path); return true } catch (error) { if (isMissing(error)) return false; throw error } }
 
@@ -107,7 +117,14 @@ export class PluginLibrary {
     return absolute
   }
   private manifest(id: string): PluginManifest {
-    const value: unknown = JSON.parse(readFileSync(this.safe(join(this.folder(id), 'plugin.json')), 'utf8'))
+    const path = this.safe(join(this.folder(id), 'plugin.json'))
+    let source: string
+    try { source = readFileSync(path, 'utf8') }
+    catch (error) {
+      if (isMissing(error)) throw new Error('This plugin is incomplete because plugin.json is missing. Remove the plugin to clean up its remaining files.', { cause: error })
+      throw error
+    }
+    const value: unknown = JSON.parse(source)
     if (!object(value) || value.schemaVersion !== 1
       || typeof value.name !== 'string' || !value.name.trim()
       || typeof value.description !== 'string'
@@ -346,7 +363,7 @@ export class PluginLibrary {
     const targets = this.state.deployments.filter(d => d.pluginId === id && d.source === folder)
     for (const target of targets) this.assertOwned(target)
     for (const target of targets) this.removeTarget(target)
-    rmSync(folder, { recursive: true }); this.changed()
+    removeDirectory(folder, 'this skill'); this.changed()
   }
   remove(id: string): void {
     this.assertState()
@@ -355,7 +372,7 @@ export class PluginLibrary {
     if (targets.some(d => this.options.busy?.(d.agentId))) throw new Error('Wait for the agents using this plugin to finish their turns before removing it.')
     for (const target of targets) this.assertOwned(target)
     for (const target of targets) this.removeTarget(target)
-    rmSync(folder, { recursive: true }); this.changed()
+    removeDirectory(folder, 'this plugin'); this.changed()
   }
   enable(id: string, agentId: string, enabled: boolean): void {
     this.assertState()

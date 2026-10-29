@@ -5,6 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PluginLibrary } from './plugins'
 import { parse as parseYaml } from 'yaml'
 import { getAgentConfig } from './agents'
+
+vi.mock('node:fs', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return { ...actual, rmSync: vi.fn(actual.rmSync) }
+})
 import type { McpServer } from '../shared/mcp'
 
 let root: string
@@ -391,4 +396,26 @@ it('creates direct-only skills with native policies before notifying enabled age
   changed.mockReset()
   expect(() => library.addSkill(id, 'Invalid', 'Invalid mode', 'invalid')).toThrow(/Choose/)
   expect(record(id).skills).toHaveLength(2)
+})
+
+
+it('cleans up incomplete plugins left by an interrupted removal', () => {
+  const id = library.create('Incomplete', 'Removal test')
+  const folder = record(id).directory
+  rmSync(join(folder, 'plugin.json'))
+  expect(record(id).problems[0]).toBe('This plugin is incomplete because plugin.json is missing. Remove the plugin to clean up its remaining files.')
+  library.remove(id)
+  expect(existsSync(folder)).toBe(false)
+  expect(library.list().plugins).toEqual([])
+})
+
+it('retries plugin directory removal and explains persistent filesystem failures', () => {
+  const id = library.create('Writing', 'Write clearly')
+  const folder = record(id).directory
+  vi.mocked(rmSync).mockImplementationOnce(() => { throw Object.assign(new Error('Raw Windows filesystem details'), { code: 'ENOTEMPTY' }) })
+  expect(() => library.remove(id)).toThrow('Could not finish removing this plugin. Some files may still be in use or changing. Close apps using its files and try again.')
+  expect(rmSync).toHaveBeenCalledWith(folder, { recursive: true, maxRetries: 3, retryDelay: 100 })
+  expect(existsSync(folder)).toBe(true)
+  library.remove(id)
+  expect(existsSync(folder)).toBe(false)
 })
