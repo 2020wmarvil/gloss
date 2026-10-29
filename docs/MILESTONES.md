@@ -1,8 +1,8 @@
 # Milestones
 
-Build in order, from M19 through M23 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
+Build in order, from M19 through M24 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1 through M18, failed-turn actions and worktrees are done. Next is shared skills and plugins, followed by sub-agent threads and performance improvements before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1 through M18, failed-turn actions and worktrees are done. Next is shared skills and plugins, followed by sub-agent threads, performance improvements and custom keyboard shortcuts before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M19: Shared plugin library and marketplaces
 Build on M13's global MCP settings and M14's agent profiles. Plugins are the top-level library entries; skills, tools and other capabilities are components inside them. Implement the three phases below in order, and stop for review at the end of each phase. Design and update `SPEC.md` for the phase being implemented; later phases do not block completion of the current one.
@@ -32,6 +32,7 @@ Bring in content the user has already selected, such as a local plugin, standalo
 - **Design ownership first:** revisit what import means for source files and native managers before implementation. Moving existing skills into Gloss and replacing them with links is not an accepted default. The source ownership, registration and transfer decisions discussed earlier are deferred to this phase.
 - **Preview the complete package:** inspect skills, supporting files, tools, hooks and dependencies, resolve naming conflicts, and show what each selected agent can use. A standalone skill can become a simple personal plugin. Keep related components together; any intentional partial import must explain the missing functionality.
 - **Review affected locations:** show exactly what will be registered, created or changed and which manager owns each installation. Preserve source content on failure, and leave native plugin caches with their manager unless a supported transfer is explicitly chosen. Importing content does not itself execute its scripts or unsupported hooks.
+- **Revisit where MCP servers are authored:** phase 1 keeps MCP servers in Settings (`mcpServers` in `settings.json`, shared by every agent), and plugins only reference them by name. Consider whether servers should instead be authored inside plugins, so a plugin carries its own tools and an imported plugin's servers arrive with it. Decide what happens to servers not tied to any plugin, a server several plugins use, and the existing global list, before building import.
 - **Use the phase 1 lifecycle:** imported content uses the same library, editing, compatibility, deployment and removal flows. Account for required tools and preserve independently used connections. There is no separate independent-copy mode or ongoing upstream synchronization requirement.
 - **Verify:** test imports from each supported source type, name collisions, dependencies, unsupported components, failed operations, restart recovery and preservation of source files and existing installations according to the reviewed ownership model.
 
@@ -79,7 +80,19 @@ Measure first, then fix what the numbers show. Keep the app's behavior unchanged
 
 **Done when:** the benchmark runs from one command, each fixed hotspot shows a measured improvement and has a deterministic test that would catch it coming back, typing and scrolling while streaming a long answer into a large, image-heavy session stay smooth (no long tasks over 50 ms in the renderer), and the numbers are recorded for the next comparison.
 
-## M22: Shipping
+## M22: Custom keyboard shortcuts
+Let the user change Gloss's keyboard shortcuts in Settings → Keyboard shortcuts, which today only lists them. Update `SPEC.md` (Keyboard shortcuts, Settings) in this milestone.
+
+- **One registry:** every shortcut becomes a named command with its scope (anywhere, composer, conversation, session list, annotation canvas and the other groups the list has now) and its default keys, in one table that both the handlers and the settings screen read. Today each of the 69 is handled where it applies (about 18 `keydown` handlers) and `src/renderer/src/shortcuts.ts` only describes them, so the two can drift. Move the handlers onto the registry without changing any default.
+- **Stored in `settings.json`:** only the changed bindings, as command id to keys (empty for none), validated by the settings schema like any field, with live reload. Defaults stay in code, so a new Gloss version's new shortcuts still apply. The existing `captureShortcut` becomes one of these commands (its global, any-app registration stays as it is), and an old file's value still works.
+- **Editing:** each row of the list gets the recorder the capture shortcut uses now (`ShortcutSetting`), plus Reset to default, and the section gets Reset all. Show each binding's keys as keycaps, mark changed ones, and keep the search-friendly grouping.
+- **Conflicts:** refuse a binding already used by another command that can be active at the same time (same scope, or Anywhere against any scope), naming that command; the user frees it first or swaps. Refuse keys the platform or Electron reserves or that would stop typing (as the capture shortcut does now), and warn about keys the browser engine or OS commonly takes. Bindings written straight into `settings.json` are checked the same way, and a bad one falls back to its default with a visible problem.
+- **Platforms:** `Mod` stays Ctrl on Windows and Linux and Cmd on macOS; a stored binding that says `Mod` follows the platform.
+- **Out of scope:** key sequences (chords), per-project bindings, and remapping on the phone.
+
+**Done when:** a user can rebind, unbind and reset any shortcut in Settings, the change applies at once everywhere that command works, conflicts are refused with a clear reason, bindings survive restart and hand edits of `settings.json`, and every default is unchanged for users who never touch them.
+
+## M23: Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
 - **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
 - **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
@@ -88,7 +101,7 @@ Measure first, then fix what the numbers show. Keep the app's behavior unchanged
 
 **Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place. The signing policy is documented, and release artifacts follow it.
 
-## M23: Marketing
+## M24: Marketing
 Present Gloss to people who haven't used it. Comes after Shipping, so every link points at a release people can install.
 
 - **README:** lead with what Gloss is and why threads help, with visuals near the top: screenshots in light and dark, and short GIFs of the core features (replying to an item in a thread, steering a running turn, visual feedback pins). Install from the latest GitHub Release first; building from source moves lower. Trim the feature walkthrough to the highlights and link to the docs for the rest.
@@ -100,7 +113,7 @@ Present Gloss to people who haven't used it. Comes after Shipping, so every link
 **Done when:** someone landing on the repository understands what Gloss does from the README's first screen, can install it from the release link, find the docs for their agent, and watch the demo reel.
 
 ## Exploratory milestone: Package-manager-style skill updates
-Unscheduled exploration outside the M19-M23 delivery sequence. Revisit only if maintaining externally sourced skills becomes a useful workflow; M19's manually maintained shared library does not depend on it.
+Unscheduled exploration outside the M19-M24 delivery sequence. Revisit only if maintaining externally sourced skills becomes a useful workflow; M19's manually maintained shared library does not depend on it.
 
 - Investigate optional source and version tracking for skills that have an upstream repository or package. User-authored skills and skills with unknown origins must continue to work without this metadata.
 - Explore explicit update checks and previews, version pinning, recovery, and handling local edits when upstream files change. Evaluate whether automatic updates are useful as a separate opt-in decision.
@@ -116,6 +129,7 @@ Unscheduled exploration outside the M19-M23 delivery sequence. Revisit only if m
 - ~~**Worktrees:** the New session menu, the Worktrees screen, removal, and setup in progress or failed.~~ Done: `docs/mocks/worktrees.html`.
 - **M19:** ~~phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh~~ (done); phase 2, source ownership and import previews; phase 3, catalog browsing/search and installation previews. Review each phase separately.
 - **M20:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
+- **M22:** the shortcut editor: rows with recorders, changed and conflict states, Reset and Reset all.
 
 ---
 
@@ -174,7 +188,7 @@ A home for Gloss's settings, editable by hand (and by agents) as well as in the 
 - **Settings screen** (from the sidebar, or `Ctrl+,`): global and current-project sections, the file's path, and "Open in editor". Saving from the screen writes the file, keeping unknown keys.
 - Validated and owned by the main process; the renderer reads and writes through the IPC API.
 - Move the dev model (Haiku) toggle into it.
-- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M22: updates). No section appears before its feature exists.
+- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M23: updates). No section appears before its feature exists.
 
 **Done when:** a setting changed in the screen shows up in the file, a change made in an editor (or by an agent) shows up in the app without a restart, and a broken edit is reported without losing the previous settings.
 
@@ -279,7 +293,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
 - **Dark mode**, following the system setting, built on the dark tokens. *A Theme setting (System, Light, Dark) and a provisional dark palette landed early; M12 replaces the palette with the designed dark tokens.* *Done: the dark tokens, applied in the screen pass.*
 - Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected. *Done.*
-- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M22 installers. *Done.*
+- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M23 installers. *Done.*
 - Polish: empty, loading and error states; window title. *Done.*
 
 **Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
