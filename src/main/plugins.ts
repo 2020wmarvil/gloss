@@ -19,6 +19,14 @@ type Options = {
   /** Test the copy fallback without depending on OS symlink privilege. */
   link?: typeof symlinkSync
 }
+const MANIFEST_KEYS = ['schemaVersion', 'name', 'description', 'connections', 'enabledAgents']
+/** Native plugin parts Gloss doesn't deliver (SPEC → Plugins): a plugin with one shows a problem instead. */
+const NATIVE_PARTS = ['hooks', 'agents', 'commands', '.mcp.json', 'mcp.json', 'index.js', 'index.ts', '.claude-plugin']
+const DELIVERY: Record<string, string> = {
+  claude: 'Local Claude plugin',
+  codex: 'Scoped skills and shared MCP',
+  opencode: 'Configured skills and shared MCP'
+}
 const MAX_FILE = 1024 * 1024
 const MAX_FILES = 1000
 const MAX_PLUGIN_BYTES = 64 * 1024 * 1024
@@ -53,6 +61,7 @@ export class PluginLibrary {
   private fingerprint = ''
   private agentFingerprints = new Map<string, string>()
   private stateProblem: string | null = null
+  private watchProblem: string | null = null
 
   constructor(private readonly options: Options) {
     const base = resolve(options.directory)
@@ -63,8 +72,8 @@ export class PluginLibrary {
     mkdirSync(this.runtime, { recursive: true })
     try {
       const state: unknown = JSON.parse(readFileSync(this.stateFile, 'utf8'))
-      if (!object(state) || state.schemaVersion !== 1 || !object(state.customDirectories) || !Object.entries(state.customDirectories).every(([id, dir]) => id.startsWith('custom:') && typeof dir === 'string' && isAbsolute(dir)) || !Array.isArray(state.deployments) || !state.deployments.every(d => object(d) && typeof d.agentId === 'string' && typeof d.pluginId === 'string' && PLUGIN_ID.test(d.pluginId) && typeof d.target === 'string' && isAbsolute(d.target) && typeof d.source === 'string' && inside(join(this.directory, d.pluginId), d.source) && ['link', 'copy'].includes(String(d.mode)) && typeof d.hash === 'string')) throw new Error('Invalid plugin deployment state.')
-      this.state = state as State
+      if (!this.validState(state)) throw new Error('Invalid plugin deployment state.')
+      this.state = state
       for (const d of this.state.deployments) {
         const skillId = relative(join(this.directory, d.pluginId, 'skills'), d.source)
         if (!PLUGIN_ID.test(skillId) || resolve(d.target) !== resolve(this.target(d.agentId, d.pluginId, skillId))) throw new Error('Deployment paths do not match their plugin and agent.')
@@ -72,6 +81,20 @@ export class PluginLibrary {
     } catch (error) { if (!isMissing(error)) this.stateProblem = 'Plugin deployment state could not be read. Restore state.json before changing deployments.' }
     this.fingerprint = this.sourceFingerprint()
     this.agentFingerprints = this.signatures()
+  }
+
+  private validState(state: unknown): state is State {
+    if (!object(state) || state.schemaVersion !== 1 || !object(state.customDirectories) || !Array.isArray(state.deployments)) return false
+    const directories = Object.entries(state.customDirectories)
+      .every(([id, dir]) => id.startsWith('custom:') && typeof dir === 'string' && isAbsolute(dir))
+    const deployment = (d: unknown): boolean => object(d)
+      && typeof d.agentId === 'string'
+      && typeof d.pluginId === 'string' && PLUGIN_ID.test(d.pluginId)
+      && typeof d.target === 'string' && isAbsolute(d.target)
+      && typeof d.source === 'string' && inside(join(this.directory, d.pluginId), d.source)
+      && (d.mode === 'link' || d.mode === 'copy')
+      && typeof d.hash === 'string'
+    return directories && state.deployments.every(deployment)
   }
 
   private id(id: unknown): string { if (typeof id !== 'string' || !PLUGIN_ID.test(id)) throw new Error('Invalid plugin identifier.'); return id }
@@ -89,8 +112,11 @@ export class PluginLibrary {
   }
   private manifest(id: string): PluginManifest {
     const value: unknown = JSON.parse(readFileSync(this.safe(join(this.folder(id), 'plugin.json')), 'utf8'))
-    if (!object(value) || value.schemaVersion !== 1 || typeof value.name !== 'string' || !value.name.trim() || typeof value.description !== 'string' || !strings(value.connections) || !strings(value.enabledAgents)) throw new Error('Invalid plugin.json. Expected schemaVersion, name, description, connections and enabledAgents.')
-    if (Object.keys(value).some(k => !['schemaVersion', 'name', 'description', 'connections', 'enabledAgents'].includes(k))) throw new Error('This plugin manifest contains unsupported fields. Phase 1 supports skills and references to shared MCP connections.')
+    if (!object(value) || value.schemaVersion !== 1
+      || typeof value.name !== 'string' || !value.name.trim()
+      || typeof value.description !== 'string'
+      || !strings(value.connections) || !strings(value.enabledAgents)) throw new Error('Invalid plugin.json. Expected schemaVersion, name, description, connections and enabledAgents.')
+    if (Object.keys(value).some(k => !MANIFEST_KEYS.includes(k))) throw new Error('This plugin manifest contains unsupported fields. Plugins support skills and references to shared MCP connections.')
     return { schemaVersion: 1, name: value.name, description: value.description, connections: [...new Set(value.connections)], enabledAgents: [...new Set(value.enabledAgents)] }
   }
   private save(id: string, manifest: PluginManifest): void { atomic(this.safe(join(this.folder(id), 'plugin.json')), JSON.stringify(manifest, null, 2) + '\n') }
@@ -149,7 +175,7 @@ export class PluginLibrary {
       try {
         this.id(id); manifest = this.manifest(id)
         this.files(this.folder(id))
-        if (['hooks', 'agents', 'commands', '.mcp.json', 'mcp.json', 'index.js', 'index.ts', '.claude-plugin'].some(name => exists(join(this.folder(id), name)))) throw new Error('Native hooks, agents, commands and embedded servers are not loaded in phase 1. Use skills and shared MCP connection references.')
+        if (NATIVE_PARTS.some(name => exists(join(this.folder(id), name)))) throw new Error('Native hooks, agents, commands and embedded servers are not loaded. Use skills and shared MCP connection references.')
         skills = this.scanSkills(id)
       } catch (error) { problems.push(message(error)) }
       return { id, manifest, skills, problems }
@@ -168,19 +194,46 @@ export class PluginLibrary {
     const sources = this.sources()
     const agents = this.options.agents()
     const deploymentErrors = this.deploymentErrors()
-    const plugins: PersonalPlugin[] = sources.map(p => ({ ...p.manifest, id: p.id, directory: join(this.directory, p.id), skills: p.skills, problems: p.problems,
-      agents: agents.map(agent => {
-        const enabled = p.manifest.enabledAgents.includes(agent.id)
-        const custom = agent.id.startsWith('custom:')
-        const configured = !custom || !!this.state.customDirectories[agent.id]
-        const issues = [...p.problems, ...this.blockers(p.manifest, agent.id)]
-        const deploymentError = deploymentErrors.get(`${agent.id}:${p.id}`)
-        const status: PluginAgentState['status'] = deploymentError ? 'error' : issues.length || !configured ? 'setup' : this.pending.has(agent.id) ? 'pending' : !enabled ? 'off' : 'ready'
-        return { ...agent, enabled, status, support: custom ? configured ? 'configured' : 'unknown' : 'tested', skillDirectory: this.state.customDirectories[agent.id],
-          delivery: agent.id === 'claude' ? 'Local Claude plugin' : agent.id === 'codex' ? 'Scoped skills and shared MCP' : agent.id === 'opencode' ? 'Configured skills and shared MCP' : 'Configured skill directory; stdio MCP',
-          message: deploymentError ?? issues[0] ?? (!configured ? 'Configure a skill directory for this custom agent.' : status === 'pending' ? 'The selected availability will apply when the active turn finishes.' : enabled ? 'Skill files are available. Existing conversation instructions are retained; connection authentication is checked by the agent.' : 'Not enabled for this agent.') }
-      }) }))
-    return { directory: this.directory, plugins, connections: this.options.connections().map(s => ({ name: s.name, transport: 'type' in s ? s.type : 'stdio', usedBy: plugins.filter(p => p.connections.some(n => mcpName(n) === mcpName(s.name))).map(p => p.name) })), errors: this.stateProblem ? [this.stateProblem] : [] }
+    const agentState = (p: (typeof sources)[number], agent: Agent): PluginAgentState => {
+      const enabled = p.manifest.enabledAgents.includes(agent.id)
+      const custom = agent.id.startsWith('custom:')
+      const configured = !custom || !!this.state.customDirectories[agent.id]
+      const issues = [...p.problems, ...this.blockers(p.manifest, agent.id)]
+      const deploymentError = deploymentErrors.get(`${agent.id}:${p.id}`)
+      const status: PluginAgentState['status'] = deploymentError ? 'error'
+        : issues.length || !configured ? 'setup'
+        : this.pending.has(agent.id) ? 'pending'
+        : enabled ? 'ready' : 'off'
+      const message = deploymentError ?? issues[0]
+        ?? (!configured ? 'Configure a skill directory for this custom agent.'
+          : status === 'pending' ? 'The selected availability will apply when the active turn finishes.'
+          : enabled ? 'Skill files are available. Existing conversation instructions are retained; connection authentication is checked by the agent.'
+          : 'Not enabled for this agent.')
+      return {
+        ...agent,
+        enabled,
+        status,
+        support: !custom ? 'tested' : configured ? 'configured' : 'unknown',
+        skillDirectory: this.state.customDirectories[agent.id],
+        delivery: DELIVERY[agent.id] ?? 'Configured skill directory; stdio MCP',
+        message
+      }
+    }
+    const plugins: PersonalPlugin[] = sources.map(p => ({
+      ...p.manifest,
+      id: p.id,
+      directory: join(this.directory, p.id),
+      skills: p.skills,
+      problems: p.problems,
+      agents: agents.map(agent => agentState(p, agent))
+    }))
+    const connections = this.options.connections().map(s => ({
+      name: s.name,
+      transport: 'type' in s ? s.type : 'stdio' as const,
+      usedBy: plugins.filter(p => p.connections.some(n => mcpName(n) === mcpName(s.name))).map(p => p.name)
+    }))
+    const errors = [this.stateProblem, this.watchProblem].filter((e): e is string => !!e)
+    return { directory: this.directory, plugins, connections, errors }
   }
 
   create(name: string, description: string): string {
@@ -285,10 +338,16 @@ export class PluginLibrary {
     if (inside(this.directory, target) || inside(target, this.directory)) throw new Error('The agent directory must be separate from the shared library.')
     const sharedRoots = ['.agents/skills', '.claude/skills', '.codex/skills', '.config/opencode/skills'].map(p => join(homedir(), p))
     if (sharedRoots.some(root => inside(root, target) || inside(target, root))) throw new Error('Use this custom agent’s own skill directory, separate from other agents’ discovery roots.')
-    if (Object.entries(this.state.customDirectories).some(([id, dir]) => id !== agentId && resolve(dir).toLowerCase() === target.toLowerCase())) throw new Error('Each custom agent needs its own skill directory for independent availability.')
     mkdirSync(target, { recursive: true })
+    // Compared by real path, so a link or another spelling of the same folder is caught too.
     const canonical = realpathSync(target)
-    if (sharedRoots.some(root => inside(root, canonical) || inside(canonical, root)) || inside(this.directory, canonical) || inside(canonical, this.directory)) throw new Error('Use a directory separate from the library and other agents’ discovery roots.')
+    const real = (dir: string): string => { try { return realpathSync(dir) } catch { return resolve(dir) } }
+    const overlaps = (a: string, b: string): boolean => {
+      const [x, y] = process.platform === 'win32' ? [a.toLowerCase(), b.toLowerCase()] : [a, b]
+      return inside(x, y) || inside(y, x)
+    }
+    if (sharedRoots.some(root => overlaps(real(root), canonical)) || overlaps(real(this.directory), canonical) || overlaps(real(this.runtime), canonical)) throw new Error('Use a directory separate from the library and other agents’ discovery roots.')
+    if (Object.entries(this.state.customDirectories).some(([id, dir]) => id !== agentId && overlaps(real(dir), canonical))) throw new Error('Each custom agent needs its own skill directory for independent availability.')
     this.state.customDirectories[agentId] = canonical; this.persist(); this.changed()
   }
 
@@ -411,7 +470,14 @@ export class PluginLibrary {
           const content = JSON.stringify({ name: `gloss-${p.id}`, description: p.manifest.description }) + '\n'
           if (!exists(file) || lstatSync(file).isSymbolicLink() || readFileSync(file, 'utf8') !== content) atomic(file, content)
         }
-      } catch (error) { this.errors.set(`${agent.id}:${p.id}`, message(error)) }
+      } catch (error) {
+        this.errors.set(`${agent.id}:${p.id}`, message(error))
+        // All or nothing: an agent never gets part of a plugin. What can't be removed stays recorded.
+        for (const d of this.state.deployments.filter(d => d.agentId === agent.id && d.pluginId === p.id)) {
+          expected.delete(d.target)
+          try { this.removeTarget(d) } catch { /* reported by deploymentErrors */ }
+        }
+      }
     }
     for (const d of [...this.state.deployments]) if (!expected.has(d.target)) {
       try { this.removeTarget(d) } catch (error) {
@@ -419,30 +485,70 @@ export class PluginLibrary {
         for (const agent of this.options.agents()) this.errors.set(`${agent.id}:${pluginId}`, message(error))
       }
     }
+    this.removeStaleClaudePlugins()
   }
-  /** Decorates only Gloss's process/session configuration, never native user settings. */
-  configureAgent(config: AgentConfig): AgentConfig {
-    if (this.stateProblem) throw new Error(this.stateProblem)
-    const deploymentError = [...this.deploymentErrors()].find(([key]) => key.startsWith(`${config.id}:`))?.[1]
-    if (deploymentError) throw new Error(`Resolve the plugin deployment problem before starting this agent: ${deploymentError}`)
-    const enabled = this.sources().filter(p => p.manifest.enabledAgents.includes(config.id) && !p.problems.length && !this.blockers(p.manifest, config.id).length && !this.errors.has(`${config.id}:${p.id}`))
-    if (config.id === 'opencode') {
-      const raw = config.env?.OPENCODE_CONFIG_CONTENT ?? process.env.OPENCODE_CONFIG_CONTENT ?? '{}'
-      const content: unknown = JSON.parse(raw)
-      if (!object(content) || content.skills !== undefined && !strings(content.skills)) throw new Error('OpenCode skills configuration must be an array of paths.')
-      return { ...config, env: { ...config.env, OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...content, skills: [...new Set([...(content.skills as string[] ?? []), ...(enabled.length ? [join(this.runtime, 'opencode', 'skills')] : [])])] }) } }
+  /** Drops the generated `.claude-plugin` of a plugin Claude no longer gets, once its skills are gone. */
+  private removeStaleClaudePlugins(): void {
+    const root = join(this.runtime, 'claude')
+    if (!exists(root)) return
+    const enabled = new Set(this.sources().filter(p => p.manifest.enabledAgents.includes('claude')).map(p => p.id))
+    for (const id of readdirSync(root)) {
+      if (enabled.has(id) || !PLUGIN_ID.test(id) || this.state.deployments.some(d => d.agentId === 'claude' && d.pluginId === id)) continue
+      const dir = join(root, id)
+      try {
+        this.assertTargetParents('claude', dir)
+        rmSync(join(dir, '.claude-plugin'), { recursive: true, force: true })
+        const skills = join(dir, 'skills')
+        if (exists(skills) && readdirSync(skills).length === 0) rmSync(skills, { recursive: true })
+        if (readdirSync(dir).length === 0) rmSync(dir, { recursive: true })
+      } catch { /* left for the next reconcile */ }
     }
-    if (config.id !== 'claude' && config.id !== 'codex') return config
-    return { ...config, sessionMeta: instructions => {
-      const meta = config.sessionMeta?.(instructions) ?? {}
-      return Object.fromEntries((['new', 'load'] as const).map(kind => {
-        const previous = meta[kind] ?? {}
-        if (config.id === 'codex') return [kind, { ...previous, additionalRoots: [...(Array.isArray(previous.additionalRoots) ? previous.additionalRoots : []), ...(enabled.length ? [join(this.runtime, 'codex')] : [])] }]
-        const claude = object(previous.claudeCode) ? previous.claudeCode : {}
-        const options = object(claude.options) ? claude.options : {}
-        return [kind, { ...previous, claudeCode: { ...claude, options: { ...options, plugins: [...(Array.isArray(options.plugins) ? options.plugins : []), ...enabled.map(p => ({ type: 'local', path: join(this.runtime, 'claude', p.id) }))] } } }]
-      }))
-    } }
+  }
+  /**
+   * Adds the enabled plugins to Gloss's process and session configuration for the agent,
+   * never to native user settings. A plugin with a problem is left out (the Plugins screen
+   * shows why); it never stops the agent from starting.
+   */
+  configureAgent(config: AgentConfig): AgentConfig {
+    if (this.stateProblem) return config
+    const deploymentErrors = this.deploymentErrors()
+    const enabled = this.sources().filter(p => p.manifest.enabledAgents.includes(config.id)
+      && !p.problems.length
+      && !this.blockers(p.manifest, config.id).length
+      && !deploymentErrors.has(`${config.id}:${p.id}`))
+    if (config.id === 'opencode') {
+      if (!enabled.length) return config
+      const raw = config.env?.OPENCODE_CONFIG_CONTENT ?? process.env.OPENCODE_CONFIG_CONTENT ?? '{}'
+      let content: unknown
+      try { content = JSON.parse(raw) } catch { content = null }
+      if (!object(content) || (content.skills !== undefined && !strings(content.skills))) {
+        console.warn('[plugins] OPENCODE_CONFIG_CONTENT has no usable skills list; plugins are left out.')
+        return config
+      }
+      const skills = [...new Set([...(content.skills as string[] | undefined ?? []), join(this.runtime, 'opencode', 'skills')])]
+      return { ...config, env: { ...config.env, OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...content, skills }) } }
+    }
+    if ((config.id !== 'claude' && config.id !== 'codex') || !enabled.length) return config
+    const decorate = (previous: Record<string, unknown>): Record<string, unknown> => {
+      if (config.id === 'codex') {
+        const roots = Array.isArray(previous.additionalRoots) ? previous.additionalRoots : []
+        return { ...previous, additionalRoots: [...roots, join(this.runtime, 'codex')] }
+      }
+      const claude = object(previous.claudeCode) ? previous.claudeCode : {}
+      const options = object(claude.options) ? claude.options : {}
+      const plugins = [
+        ...(Array.isArray(options.plugins) ? options.plugins : []),
+        ...enabled.map(p => ({ type: 'local', path: join(this.runtime, 'claude', p.id) }))
+      ]
+      return { ...previous, claudeCode: { ...claude, options: { ...options, plugins } } }
+    }
+    return {
+      ...config,
+      sessionMeta: instructions => {
+        const meta = config.sessionMeta?.(instructions) ?? {}
+        return { new: decorate(meta.new ?? {}), load: decorate(meta.load ?? {}) }
+      }
+    }
   }
   markPending(agentIds: string[]): void { for (const id of agentIds) this.pending.add(id) }
   refreshed(agentId: string): void { this.pending.delete(agentId) }
@@ -469,15 +575,26 @@ export class PluginLibrary {
     this.options.changed?.(changed)
   }
   settingsChanged(): void { this.changed() }
+  /** Picks up edits made outside Gloss. Without a watcher, they apply on the next Refresh. */
   startWatching(): void {
     this.reconcile()
-    this.watcher = watch(this.directory, { recursive: true }, () => {
-      clearTimeout(this.timer)
-      this.timer = setTimeout(() => {
-        const next = this.sourceFingerprint()
-        if (next !== this.fingerprint) this.changed()
-      }, 350)
-    })
+    const lost = (error: unknown): void => {
+      console.warn('[plugins] Could not watch the plugin library:', message(error))
+      this.watcher?.close()
+      this.watcher = undefined
+      this.watchProblem = 'Gloss stopped noticing edits made outside it. Use Refresh on an agent to apply them, or restart Gloss.'
+      this.options.changed?.([])
+    }
+    try {
+      this.watcher = watch(this.directory, { recursive: true }, () => {
+        clearTimeout(this.timer)
+        this.timer = setTimeout(() => {
+          const next = this.sourceFingerprint()
+          if (next !== this.fingerprint) this.changed()
+        }, 350)
+      })
+      this.watcher.on('error', lost)
+    } catch (error) { lost(error) }
   }
   close(): void { clearTimeout(this.timer); this.watcher?.close() }
 }

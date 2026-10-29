@@ -95,6 +95,8 @@ type FakeAgent = {
   clientCapabilities?: acp.ClientCapabilities
   /** Forks made: session/fork's source and fork point, and Claude's through the Agent SDK. */
   forks: { sessionId: string; messageId: string }[]
+  /** session/fork's `_meta`, each time. */
+  forkMeta: Record<string, unknown>[]
   script: Script
 }
 
@@ -137,6 +139,7 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
     steers: [],
     turnEnding: false,
     forks: [],
+    forkMeta: [],
     script: async ({ say }) => {
       await say('Hello')
       await say(' world')
@@ -240,6 +243,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       const { sessionId } = ctx.params
       const messageId = (ctx.params._meta as { jetbrains?: { air?: { fork?: { messageId?: string } } } } | undefined)?.jetbrains?.air?.fork?.messageId ?? ''
       state.forks.push({ sessionId, messageId })
+      state.forkMeta.push(ctx.params._meta ?? {})
       const transcript = state.transcripts.get(sessionId) ?? []
       const at = transcript.findLastIndex((u) => idOf(u) === messageId)
       if (at < 0) throw acp.RequestError.invalidParams({ messageId }, `Fork point message ${messageId} was not found`)
@@ -527,6 +531,24 @@ describe('SessionManager', () => {
     await manager.send(session.id, 'four', null)
     expect(state.prompts.at(-1)).toBe('four')
     expect(store.listMessages(session.id).map((m) => m.text)).toEqual(['one', 're: one', 'four', 're: four'])
+  })
+
+  it("forks with the session's load _meta, so Codex keeps its plugin skill roots", async () => {
+    state.script = async ({ say, text }) => { await say(`re: ${text}`, `msg-${text}`); return 'end_turn' }
+    manager = new SessionManager({
+      store,
+      emit: (e) => events.push(e),
+      getAgentConfig: () => ({ ...config, sessionMeta: () => ({ load: { additionalRoots: ['/plugins/codex'] } }) }),
+      agentEnv: () => ({ FAKE: '1' }),
+      connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
+      runInTerminal: runInTerminal as never,
+      now: () => 1000
+    })
+    const session = await manager.createSession('/project', 'codex')
+    await manager.send(session.id, 'one', null)
+    await manager.send(session.id, 'two', null)
+    await manager.rewindSession(session.id, store.listMessages(session.id).find((m) => m.text === 'two')!.id)
+    expect(state.forkMeta).toEqual([{ additionalRoots: ['/plugins/codex'], jetbrains: { air: { fork: { version: 1, messageId: 'msg-one' } } } }])
   })
 
   it('names the prompt of the turn before when that turn has no agent message', async () => {

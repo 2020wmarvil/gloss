@@ -34,6 +34,7 @@ import { previewMcpImport } from './mcp-import'
 import { OpenCodeSupport } from './opencode'
 import { AgentProfileSupport } from './agentProfiles'
 import { PluginLibrary } from './plugins'
+import { PluginRefresh } from './pluginRefresh'
 import type { PluginChange, PluginFile } from '../shared/plugins'
 import { AgentAvailability } from './agentAvailability'
 import { profileError, type AgentProfile } from '../shared/agentProfiles'
@@ -57,36 +58,14 @@ const appliedProfiles = new Map<string, AgentProfile>()
 const pendingProfiles = new Set<string>()
 let applyingProfiles = false
 let pluginLibrary: PluginLibrary | undefined
-const pendingPluginAgents = new Map<string, number>()
-let applyingPlugins = false
-
-function refreshPlugins(agentIds: string[]): void {
-  for (const id of agentIds) pendingPluginAgents.set(id, (pendingPluginAgents.get(id) ?? 0) + 1)
-  pluginLibrary?.markPending(agentIds)
-  emit({ type: 'pluginsChanged' })
-  void applyPluginChanges()
-}
-
-async function applyPluginChanges(): Promise<void> {
-  if (applyingPlugins || !sessions || !pluginLibrary) return
-  applyingPlugins = true
-  let changedWhileApplying = false
-  try {
-    for (const [id, revision] of pendingPluginAgents) {
-      if (!await sessions.restartIdleAgent(id, true)) continue
-      pluginLibrary.reconcile()
-      if (pendingPluginAgents.get(id) !== revision) { changedWhileApplying = true; continue }
-      pendingPluginAgents.delete(id)
-      pluginLibrary.refreshed(id)
-    }
-    emit({ type: 'pluginsChanged' })
-  } catch (error) {
-    console.error('[plugins] Could not refresh agent connections:', error)
-  } finally {
-    applyingPlugins = false
-    if (changedWhileApplying) void applyPluginChanges()
-  }
-}
+const pluginRefresh = new PluginRefresh({
+  // Before the session manager exists no agent is running, so there's nothing to restart.
+  restartIdleAgent: (id) => sessions ? sessions.restartIdleAgent(id, true) : Promise.resolve(true),
+  reconcile: () => pluginLibrary?.reconcile(),
+  markPending: (ids) => pluginLibrary?.markPending(ids),
+  refreshed: (id) => pluginLibrary?.refreshed(id),
+  changed: () => emit({ type: 'pluginsChanged' })
+})
 
 async function applyProfileChanges(): Promise<void> {
   if (applyingProfiles) return
@@ -455,7 +434,7 @@ function emit(event: GlossEvent): void {
     void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
   }
   if (event.type === 'turnEnd' && pendingProfiles.size) void applyProfileChanges()
-  if (event.type === 'turnEnd' && pendingPluginAgents.size) void applyPluginChanges()
+  if (event.type === 'turnEnd') pluginRefresh.retry()
 }
 
 /** The capture shortcut (SPEC → Visual feedback): the setting, what is registered now, and why it isn't. */
@@ -708,23 +687,30 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     })
     phoneApi.add(channel, handler)
   }
+  // The plugin library (SPEC → Plugins): desktop only, like the other settings. The library
+  // checks each value's shape and limits itself.
   const library = pluginLibrary!
   ipcMain.handle(IPC.pluginsList, () => library.list())
-  ipcMain.handle(IPC.pluginsCreate, (_e, name: unknown, description: unknown) => library.create(str(name, 'name'), str(description, 'description')))
+  ipcMain.handle(IPC.pluginsCreate, (_e, name: unknown, description: unknown) =>
+    library.create(str(name, 'name'), str(description, 'description')))
   ipcMain.handle(IPC.pluginsUpdate, (_e, id: unknown, change: unknown) => library.update(str(id, 'plugin'), change as PluginChange))
   ipcMain.handle(IPC.pluginsRemove, (_e, id: unknown) => library.remove(str(id, 'plugin')))
-  ipcMain.handle(IPC.pluginsAddSkill, (_e, id: unknown, name: unknown, description: unknown) => library.addSkill(str(id, 'plugin'), str(name, 'name'), str(description, 'description')))
+  ipcMain.handle(IPC.pluginsAddSkill, (_e, id: unknown, name: unknown, description: unknown) =>
+    library.addSkill(str(id, 'plugin'), str(name, 'name'), str(description, 'description')))
   ipcMain.handle(IPC.pluginsRemoveSkill, (_e, id: unknown, skillId: unknown) => library.removeSkill(str(id, 'plugin'), str(skillId, 'skill')))
   ipcMain.handle(IPC.pluginsReadFile, (_e, id: unknown, path: unknown) => library.readFile(str(id, 'plugin'), str(path, 'path')))
   ipcMain.handle(IPC.pluginsWriteFile, (_e, id: unknown, file: unknown) => library.writeFile(str(id, 'plugin'), file as PluginFile))
-  ipcMain.handle(IPC.pluginsCreateFile, (_e, id: unknown, skillId: unknown, path: unknown, content: unknown) => library.createFile(str(id, 'plugin'), str(skillId, 'skill'), str(path, 'path'), str(content, 'content')))
-  ipcMain.handle(IPC.pluginsEnable, (_e, id: unknown, agentId: unknown, enabled: unknown) => library.enable(str(id, 'plugin'), str(agentId, 'agent'), enabled as boolean))
-  ipcMain.handle(IPC.pluginsSetSkillDirectory, (_e, agentId: unknown, directory: unknown) => library.setSkillDirectory(str(agentId, 'agent'), str(directory, 'directory')))
+  ipcMain.handle(IPC.pluginsCreateFile, (_e, id: unknown, skillId: unknown, path: unknown, content: unknown) =>
+    library.createFile(str(id, 'plugin'), str(skillId, 'skill'), str(path, 'path'), str(content, 'content')))
+  ipcMain.handle(IPC.pluginsEnable, (_e, id: unknown, agentId: unknown, enabled: unknown) =>
+    library.enable(str(id, 'plugin'), str(agentId, 'agent'), enabled as boolean))
+  ipcMain.handle(IPC.pluginsSetSkillDirectory, (_e, agentId: unknown, directory: unknown) =>
+    library.setSkillDirectory(str(agentId, 'agent'), str(directory, 'directory')))
   ipcMain.handle(IPC.pluginsRefresh, (_e, agentId: unknown) => {
     const id = str(agentId, 'agent')
     if (!listAgents().some(a => a.id === id) && !settingsFile.state().global.agentProfiles?.some(p => p.id === id)) throw new Error('Unknown agent.')
     library.reconcile()
-    refreshPlugins([id])
+    pluginRefresh.request([id])
   })
   ipcMain.handle(IPC.pluginsOpenFolder, async (_e, id: unknown) => {
     const error = await shell.openPath(id === undefined ? library.directory : library.folder(str(id, 'plugin')))
@@ -1177,7 +1163,7 @@ app.whenReady().then(() => {
     agents: () => [...listAgents(), ...(settingsFile.state().global.agentProfiles ?? []).map(p => ({ id: p.id, name: p.name }))],
     connections: () => settingsFile.state().global.mcpServers,
     busy: id => sessions?.isAgentBusy(id) ?? false,
-    changed: refreshPlugins
+    changed: (ids) => pluginRefresh.request(ids)
   })
   pluginLibrary.startWatching()
   sessions = new SessionManager({

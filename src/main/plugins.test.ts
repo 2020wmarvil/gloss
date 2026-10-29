@@ -74,7 +74,7 @@ it('preserves adapter instructions and native OpenCode settings when adding plug
   const config = library.configureAgent({ ...getAgentConfig('opencode'), env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ instructions: ['native.md'], skills: ['team-skills'], providers: { local: { model: 'test' } } }) } })
   expect(JSON.parse(config.env!.OPENCODE_CONFIG_CONTENT)).toEqual({ instructions: ['native.md'], skills: ['team-skills', join(root, 'plugins/runtime/opencode/skills')], providers: { local: { model: 'test' } } })
   library.enable(id, 'codex', false)
-  expect(library.configureAgent(getAgentConfig('codex')).sessionMeta!('').new!.additionalRoots).toEqual([])
+  expect(library.configureAgent(getAgentConfig('codex')).sessionMeta!('').new).not.toHaveProperty('additionalRoots')
 })
 
 it('requires custom agent configuration and refuses pre-existing deployment content', () => {
@@ -199,12 +199,60 @@ it('rejects native executable components and malformed deployment state without 
   const id = library.create('Writing', 'Write clearly')
   mkdirSync(join(record(id).directory, 'hooks'))
   writeFileSync(join(record(id).directory, 'hooks/hooks.json'), '{}')
-  expect(() => library.enable(id, 'claude', true)).toThrow(/not loaded in phase 1/)
+  expect(() => library.enable(id, 'claude', true)).toThrow(/are not loaded/)
   const state = join(root, 'plugins/state.json'); writeFileSync(state, '{broken')
   library = make()
   expect(library.list().errors).toHaveLength(1)
   expect(() => library.enable(id, 'codex', true)).toThrow(/deployment state/)
   expect(readFileSync(state, 'utf8')).toBe('{broken')
+})
+
+it('starts agents without a plugin whose deployment has a problem, or with unreadable state', () => {
+  const id = library.create('Writing', 'Write clearly')
+  library.enable(id, 'claude', true); library.enable(id, 'codex', true)
+  const codex = deployments().find(d => d.agentId === 'codex')!
+  rmSync(codex.target); mkdirSync(codex.target)
+  expect(library.configureAgent(getAgentConfig('codex')).sessionMeta!('').new).not.toHaveProperty('additionalRoots')
+  // Only the broken agent loses it.
+  expect(library.configureAgent(getAgentConfig('claude')).sessionMeta!('').new).toHaveProperty('claudeCode.options.plugins')
+  writeFileSync(join(root, 'plugins/state.json'), '{broken')
+  library = make()
+  expect(library.configureAgent(getAgentConfig('claude')).sessionMeta!('x')).toEqual(getAgentConfig('claude').sessionMeta!('x'))
+})
+
+it('removes a partly deployed plugin when one of its skills fails to deploy', () => {
+  let links = 0
+  library = new PluginLibrary({ directory: join(root, 'plugins'), agents: () => agents, connections: () => connections, busy: () => false, changed,
+    link: ((source, target, type) => {
+      if (++links === 2) throw Object.assign(new Error('Disk full'), { code: 'ENOSPC' })
+      symlinkSync(source, target, type)
+    }) as typeof symlinkSync })
+  const id = library.create('Writing', 'Write clearly')
+  library.addSkill(id, 'Second', 'Another skill')
+  expect(() => library.enable(id, 'codex', true)).toThrow(/Disk full/)
+  expect(deployments()).toEqual([])
+  expect(existsSync(join(root, 'plugins/runtime/codex/.agents/skills/writing-instructions'))).toBe(false)
+  expect(record(id).enabledAgents).not.toContain('codex')
+})
+
+it('refuses a custom skill directory that reaches another one through a link', () => {
+  const agentsWithTwo = [...agents, { id: 'custom:other', name: 'Other agent' }]
+  library = new PluginLibrary({ directory: join(root, 'plugins'), agents: () => agentsWithTwo, connections: () => connections, busy: () => false, changed })
+  const first = join(root, 'first-skills')
+  library.setSkillDirectory('custom:local', first)
+  const alias = join(root, 'alias')
+  symlinkSync(first, alias, process.platform === 'win32' ? 'junction' : 'dir')
+  expect(() => library.setSkillDirectory('custom:other', join(alias, 'nested'))).toThrow(/its own skill directory/)
+  expect(() => library.setSkillDirectory('custom:other', join(root, 'plugins/runtime'))).toThrow(/separate from the library/)
+})
+
+it("removes Claude's generated plugin manifest once the plugin is off", () => {
+  const id = library.create('Writing', 'Write clearly')
+  library.enable(id, 'claude', true)
+  const generated = join(root, 'plugins/runtime/claude/writing')
+  expect(existsSync(join(generated, '.claude-plugin/plugin.json'))).toBe(true)
+  library.enable(id, 'claude', false)
+  expect(existsSync(generated)).toBe(false)
 })
 
 describe('external edits', () => {
