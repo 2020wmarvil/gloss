@@ -1315,10 +1315,6 @@ button.settings-button.on {
   height: 14px;
 }
 
-.settings-close {
-  margin-left: auto;
-}
-
 .settings-body h2 {
   margin: 0 0 4px;
   font-size: var(--t-20);
@@ -6646,10 +6642,6 @@ kbd {
   letter-spacing: -0.01em;
 }
 
-.worktrees-top button {
-  margin-left: auto;
-}
-
 .worktrees-body .lede {
   margin: 0 0 18px;
   font-size: var(--t-13);
@@ -6808,11 +6800,6 @@ button.danger-text {
   padding: 12px 12px 0;
 }
 
-.plugin-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 
 .plugin-settings {
   flex: 1;

@@ -119,8 +119,8 @@ it('keeps custom agent directory setup explicit and requires format confirmation
   expect(api.enable).not.toHaveBeenCalled()
 })
 
-it('closes with Done or Esc, asking first when a file has unsaved edits', async () => {
-  await click('Done')
+it('closes with Esc, asking first when a file has unsaved edits', async () => {
+  await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
   expect(onClose).toHaveBeenCalledOnce()
   await input(await edit(), 'Unsaved')
   await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })

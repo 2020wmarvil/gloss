@@ -115,9 +115,6 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
             <ExternalLink />
             Open in editor
           </button>
-          <button className="secondary settings-close" onClick={onClose} title="Close (Esc)">
-            Done
-          </button>
         </div>
         {openError && <p className="settings-problem">Couldn&apos;t open the file: {openError}</p>}
         {state.error && (

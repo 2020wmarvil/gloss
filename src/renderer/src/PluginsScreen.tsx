@@ -160,7 +160,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
     </>
   }
   return <main className="plugins-screen"><section className="plugin-settings" aria-label="Plugins">
-    <header className="plugin-library-header"><div><h2>Plugins <span>{state?.plugins.length ?? ''}</span></h2><p>Your skills and tools, kept together.</p></div><div className="plugin-header-actions"><button className="primary" disabled={busy || !state} onClick={() => navigate(() => setDialog({ kind: 'new' }))}><Plus />New plugin</button><button className="secondary" onClick={() => navigate(onClose)} title="Close (Esc)">Done</button></div></header>
+    <header className="plugin-library-header"><div><h2>Plugins <span>{state?.plugins.length ?? ''}</span></h2><p>Your skills and tools, kept together.</p></div><button className="primary" disabled={busy || !state} onClick={() => navigate(() => setDialog({ kind: 'new' }))}><Plus />New plugin</button></header>
     {error && <p className="plugin-error" role="alert">{error}</p>}{state?.errors.map(e => <p className="plugin-error" role="alert" key={e}>{e}</p>)}
     {notice && <div className="plugin-notice" role="status"><Info /><span>{notice}</span><button className="icon-button" aria-label="Dismiss notice" onClick={() => setNotice(null)}><X /></button></div>}
     <div className="plugin-workspace"><div className="plugin-library">
