@@ -86,16 +86,24 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).each(['claude', 'codex', 'opencode',
     }
     return library.configureAgent(native)
   }
-  async function start(): Promise<string> {
+  async function connect(): Promise<AgentConfig> {
     const c = config(); connection = await AgentConnection.start(c, agentEnv(c, env), {
       onUpdate: n => updates.push(n), onStderr() {}, onClosed() {},
       onPermission: async req => { const allow = req.options.find(o => o.kind === 'allow_once'); return { outcome: allow ? { outcome: 'selected', optionId: allow.optionId } : { outcome: 'cancelled' } } }
     })
-    const session = await connection.newSession(cwd, c.sessionMeta?.('Plugin test instructions').new, connections)
+    return c
+  }
+  async function start(): Promise<string> {
+    const c = await connect()
+    const session = await connection!.newSession(cwd, c.sessionMeta?.('Plugin test instructions').new, connections)
     return session.sessionId
   }
-  try {
-    const session = await start()
+  /** A new connection resuming the session, as Gloss does after a plugin refresh. */
+  async function resume(session: string): Promise<void> {
+    const c = await connect()
+    await connection!.loadSession(session, cwd, c.sessionMeta?.('Plugin test instructions').load, connections)
+  }
+  async function useSkill(session: string): Promise<void> {
     if (agentId === 'claude' || agentId === 'codex') {
       await viWait(() => updates.some(n => n.sessionId === session && n.update.sessionUpdate === 'available_commands_update' && n.update.availableCommands.some(c => c.name.includes(skill.id))))
       const command = updates.flatMap(n => n.update.sessionUpdate === 'available_commands_update' ? n.update.availableCommands : []).find(c => c.name.includes(skill.id))!
@@ -105,9 +113,22 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).each(['claude', 'codex', 'opencode',
       calls = [{ name: 'skill', args: { id: agentId.startsWith('custom:') ? `gloss-${skill.id}` : skill.id } }, { name: 'read', args: { path: join(library.folder(id), 'skills', skill.id, 'references/value.txt') } }]
       await connection!.prompt(session, [{ type: 'text', text: 'Use the native-probe skill and its supporting file.' }])
     }
+  }
+  try {
+    const session = await start()
+    await useSkill(session)
     expect(JSON.stringify(payloads).includes(marker), 'Native skill instructions reached the provider').toBe(true)
     expect(JSON.stringify(payloads).includes('plugin_probe'), 'Local MCP tool was advertised').toBe(true)
     if (agentId !== 'codex') expect(JSON.stringify(payloads).includes(resource), 'Native supporting-file read reached the provider').toBe(true)
+    // Edit the skill it just used, restart and resume the same session: the revised text reaches the provider.
+    const revised = `GLOSS_PLUGIN_REVISED_${randomUUID()}`
+    const current = library.readFile(id, skill.path)
+    library.writeFile(id, { ...current, content: current.content.replace(marker, revised) })
+    connection!.dispose(); connection = undefined
+    payloads.length = 0; updates.length = 0
+    await resume(session)
+    await useSkill(session)
+    expect(JSON.stringify(payloads).includes(revised), 'Revised skill instructions reached the provider after a resume').toBe(true)
     connection!.dispose(); connection = undefined
     library.enable(id, agentId, false)
     payloads.length = 0; updates.length = 0
