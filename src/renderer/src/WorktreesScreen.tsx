@@ -159,7 +159,7 @@ export function WorktreesScreen(props: Props): React.JSX.Element {
             <div className="settings-card">{main && row(main)}</div>
             <div className="worktrees-label">Worktrees · {others.length}</div>
             <div className="settings-card">
-              {others.length > 0 ? others.map(row) : <p className="worktree-none padded">None yet. Start one from New session ▾ → New worktree.</p>}
+              {others.length > 0 ? others.map(row) : <p className="worktree-none padded">None</p>}
             </div>
           </>
         )}
