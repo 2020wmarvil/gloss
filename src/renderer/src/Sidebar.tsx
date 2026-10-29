@@ -7,7 +7,7 @@ import { projectOf } from '@shared/worktree'
 import type { SessionOrder } from '@shared/settings'
 import type { AgentInfo, AgentSession, Project, RateLimit, Session } from '@shared/types'
 import { formatReset } from './StatusLine'
-import { AppWindow, ChevronDown, ChevronRight, ChevronsUpDown, CircleAlert, Ellipsis, Folder, FolderGit2, GitBranch, GitCompare, Info, List, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
+import { AppWindow, ChevronDown, ChevronRight, ChevronsUpDown, CircleAlert, Ellipsis, Folder, FolderGit2, GitBranch, GitCompare, Info, List, Package, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
 import { folderName } from '@shared/paths'
 
 type Props = {
@@ -59,6 +59,9 @@ type Props = {
   /** Opens the Worktrees screen. */
   onWorktrees(): void
   worktreesOpen: boolean
+  /** The Plugins screen (SPEC → Plugins), global, so shown without a project too. */
+  onPlugins(): void
+  pluginsOpen: boolean
   onImport(session: ListedAgentSession): void
   onRename(id: string, title: string): void
   onDelete(id: string): void
@@ -575,6 +578,10 @@ export function Sidebar(props: Props): React.JSX.Element {
             Worktrees
           </button>
         )}
+        <button className={props.pluginsOpen ? 'ghost settings-button on' : 'ghost settings-button'} onClick={props.onPlugins} title="Plugins">
+          <Package />
+          Plugins
+        </button>
         <button
           className={props.settingsOpen ? 'ghost settings-button on' : 'ghost settings-button'}
           onClick={props.onSettings}

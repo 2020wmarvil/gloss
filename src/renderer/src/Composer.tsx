@@ -326,9 +326,14 @@ export function Composer({
   ].filter((c) => !commands.some((agent) => agent.name === c.name))
   const availableCommands = [...commands, ...localCommands]
   const slash = /^\/(\S*)$/.exec(text)
+  const query = slash?.[1].toLowerCase() ?? ''
+  // Anywhere in the name, so `/standup` finds `gloss-standup:standup-summary`; prefix matches first.
   const matches =
     slash && dismissed !== text
-      ? availableCommands.filter((c) => c.name.toLowerCase().startsWith(slash[1].toLowerCase())).slice(0, 8)
+      ? [
+          ...availableCommands.filter((c) => c.name.toLowerCase().startsWith(query)),
+          ...availableCommands.filter((c) => !c.name.toLowerCase().startsWith(query) && c.name.toLowerCase().includes(query))
+        ].slice(0, 8)
       : []
   const picked = matches.length > 0 ? Math.min(pick, matches.length - 1) : 0
 

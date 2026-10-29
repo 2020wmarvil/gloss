@@ -192,6 +192,12 @@ describe('Composer markdown editing', () => {
     press(view, 'Enter')
     expect(onSend).toHaveBeenCalledWith('/compact', [])
   })
+
+  it('matches a slash command anywhere in its name, prefix matches first', () => {
+    const view = mount('m6', { commands: [{ name: 'gloss-standup:standup-summary', description: 'Standup' }, { name: 'standup', description: 'Other' }, { name: 'compact', description: 'Compact' }] })
+    type(view, '/standup')
+    expect([...document.querySelectorAll('.slash-menu li')].map(li => li.textContent)).toEqual([expect.stringContaining('/standup'), expect.stringContaining('gloss-standup:standup-summary')])
+  })
 })
 
 describe('Composer history', () => {

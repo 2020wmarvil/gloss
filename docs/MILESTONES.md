@@ -2,7 +2,7 @@
 
 Build in order, from M19 through M24 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1 through M18, failed-turn actions and worktrees are done. Next is shared skills and plugins, followed by sub-agent threads, performance improvements and per-turn file checkpoints before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1 through M18, failed-turn actions and worktrees are done. Next is shared skills and plugins, followed by sub-agent threads, performance improvements and custom keyboard shortcuts before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M19: Shared plugin library and marketplaces
 Build on M13's global MCP settings and M14's agent profiles. Plugins are the top-level library entries; skills, tools and other capabilities are components inside them. Implement the three phases below in order, and stop for review at the end of each phase. Design and update `SPEC.md` for the phase being implemented; later phases do not block completion of the current one.
@@ -11,7 +11,7 @@ Build on M13's global MCP settings and M14's agent profiles. Plugins are the top
 
 **Design reference:** the local [plugin-library mock](mocks/plugins.html) now covers phase 1 only: custom plugin creation, nested skill editing, connections, agent availability and removal. The library has no Discover tab or import/manage-existing entry points. Agent controls live in the plugin's Agents detail tab, without a duplicate matrix in the library list. All example data and actions are simulated; component support still needs native verification.
 
-### Phase 1: Custom plugins
+### ~~Phase 1: Custom plugins~~
 Create and maintain your own plugins in Gloss, and make them available to compatible configured agents.
 
 - **Personal plugin library:** users or agents can create a plugin containing one skill or several related skills, supporting scripts/references and supported MCP connections. Store it in persistent user data outside the app installation and automatic agent discovery roots. No publishing, marketplace, upstream provenance, version management or update subscription is required.
@@ -24,12 +24,15 @@ Create and maintain your own plugins in Gloss, and make them available to compat
 
 **Done when:** a user can create a custom plugin, edit its skills and supporting files, attach a supported connection, enable it for compatible configured agents and use the resulting workflow. Changes are shared after any required refresh, support limits are clear, and the plugin and deployment state survive restart. Disabling or removing it preserves unrelated installations and shared connections. Import and marketplace features are not required.
 
+**Done.** See SPEC → Plugins. Verified with real adapters (Claude ACP 0.89, Codex ACP 2.2.2, OpenCode 2.0.32 and a custom OpenCode profile) against a local model stub and MCP server (`src/main/plugins.integration.test.ts`, opt in with `GLOSS_PLUGIN_NATIVE=1`): each loaded a plugin's skill and its supporting file, saw the shared MCP tool, picked up an edited skill after a restart and resume, and dropped the skill but kept the tool once disabled. Codex's supporting-file read wasn't checked (its automatic reviewer needs a structured answer the stub doesn't give). Live through the built app on Haiku 5.5, a Claude session loaded `gloss-release-notes:release-notes-instructions` and quoted its edited steps. The built app with a fresh data folder covered creation, editing, files, connections, enabling, custom setup and removal, and kept all of it across a restart.
+
 ### Phase 2: Plugin import
 Bring in content the user has already selected, such as a local plugin, standalone skill, known repository or existing agent installation.
 
 - **Design ownership first:** revisit what import means for source files and native managers before implementation. Moving existing skills into Gloss and replacing them with links is not an accepted default. The source ownership, registration and transfer decisions discussed earlier are deferred to this phase.
 - **Preview the complete package:** inspect skills, supporting files, tools, hooks and dependencies, resolve naming conflicts, and show what each selected agent can use. A standalone skill can become a simple personal plugin. Keep related components together; any intentional partial import must explain the missing functionality.
 - **Review affected locations:** show exactly what will be registered, created or changed and which manager owns each installation. Preserve source content on failure, and leave native plugin caches with their manager unless a supported transfer is explicitly chosen. Importing content does not itself execute its scripts or unsupported hooks.
+- **Revisit where MCP servers are authored:** phase 1 keeps MCP servers in Settings (`mcpServers` in `settings.json`, shared by every agent), and plugins only reference them by name. Consider whether servers should instead be authored inside plugins, so a plugin carries its own tools and an imported plugin's servers arrive with it. Decide what happens to servers not tied to any plugin, a server several plugins use, and the existing global list, before building import.
 - **Use the phase 1 lifecycle:** imported content uses the same library, editing, compatibility, deployment and removal flows. Account for required tools and preserve independently used connections. There is no separate independent-copy mode or ongoing upstream synchronization requirement.
 - **Verify:** test imports from each supported source type, name collisions, dependencies, unsupported components, failed operations, restart recovery and preservation of source files and existing installations according to the reviewed ownership model.
 
@@ -77,16 +80,17 @@ Measure first, then fix what the numbers show. Keep the app's behavior unchanged
 
 **Done when:** the benchmark runs from one command, each fixed hotspot shows a measured improvement and has a deterministic test that would catch it coming back, typing and scrolling while streaming a long answer into a large, image-heavy session stay smooth (no long tasks over 50 ms in the renderer), and the numbers are recorded for the next comparison.
 
-## M22: Checkpoints and undo per turn
-Extend M17's conversation-only rewind with a separate way to inspect and undo a turn's file changes. Snapshot the working tree before each turn without adding commits to the user's history, using a hidden shadow repository or dedicated snapshot refs. Update `SPEC.md` and design the inspection and restore flows before implementation.
+## M22: Custom keyboard shortcuts
+Let the user change Gloss's keyboard shortcuts in Settings → Keyboard shortcuts, which today only lists them. Update `SPEC.md` (Keyboard shortcuts, Settings) in this milestone.
 
-- **Per-turn snapshots:** associate each turn with its checkout and before/after file state, including cancelled and failed turns. Preserve pre-existing local changes and define coverage for untracked files, ignored files and non-Git folders explicitly.
-- **Inspect a turn:** show exactly what a turn changed and allow a review session scoped to that turn's diff.
-- **Explicit file undo:** preview the affected files before restoring a checkpoint. Detect edits made since the snapshot and refuse to overwrite them silently. Keep file undo distinct from conversation rewind and explain which state each action restores.
-- **Concurrent sessions:** block restoration while a turn is running in that checkout, including M20's sub-agent threads, and account for overlapping edits from other sessions.
-- **Persistence and cleanup:** retain checkpoint associations across restart and define retention and cleanup without changing the user's Git history or deleting unrelated work.
+- **One registry:** every shortcut becomes a named command with its scope (anywhere, composer, conversation, session list, annotation canvas and the other groups the list has now) and its default keys, in one table that both the handlers and the settings screen read. Today each of the 69 is handled where it applies (about 18 `keydown` handlers) and `src/renderer/src/shortcuts.ts` only describes them, so the two can drift. Move the handlers onto the registry without changing any default.
+- **Stored in `settings.json`:** only the changed bindings, as command id to keys (empty for none), validated by the settings schema like any field, with live reload. Defaults stay in code, so a new Gloss version's new shortcuts still apply. The existing `captureShortcut` becomes one of these commands (its global, any-app registration stays as it is), and an old file's value still works.
+- **Editing:** each row of the list gets the recorder the capture shortcut uses now (`ShortcutSetting`), plus Reset to default, and the section gets Reset all. Show each binding's keys as keycaps, mark changed ones, and keep the search-friendly grouping.
+- **Conflicts:** refuse a binding already used by another command that can be active at the same time (same scope, or Anywhere against any scope), naming that command; the user frees it first or swaps. Refuse keys the platform or Electron reserves or that would stop typing (as the capture shortcut does now), and warn about keys the browser engine or OS commonly takes. Bindings written straight into `settings.json` are checked the same way, and a bad one falls back to its default with a visible problem.
+- **Platforms:** `Mod` stays Ctrl on Windows and Linux and Cmd on macOS; a stored binding that says `Mod` follows the platform.
+- **Out of scope:** key sequences (chords), per-project bindings, and remapping on the phone.
 
-**Done when:** a user can inspect a completed or cancelled turn's file changes, review that diff, restart Gloss and explicitly restore its checkpoint without silently losing pre-existing or later edits. M17's conversation rewind continues to leave files unchanged.
+**Done when:** a user can rebind, unbind and reset any shortcut in Settings, the change applies at once everywhere that command works, conflicts are refused with a clear reason, bindings survive restart and hand edits of `settings.json`, and every default is unchanged for users who never touch them.
 
 ## M23: Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
@@ -123,9 +127,9 @@ Unscheduled exploration outside the M19-M24 delivery sequence. Revisit only if m
 - ~~**M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.~~ Done: `docs/mocks/visual-feedback.html`.
 - ~~**M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.~~ Done: `docs/mocks/mobile.html`.
 - ~~**Worktrees:** the New session menu, the Worktrees screen, removal, and setup in progress or failed.~~ Done: `docs/mocks/worktrees.html`.
-- **M19:** phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh; phase 2, source ownership and import previews; phase 3, catalog browsing/search and installation previews. Review each phase separately.
+- **M19:** ~~phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh~~ (done); phase 2, source ownership and import previews; phase 3, catalog browsing/search and installation previews. Review each phase separately.
 - **M20:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
-- **M22:** per-turn diff inspection, checkpoint restore preview, conflicts and retention controls.
+- **M22:** the shortcut editor: rows with recorders, changed and conflict states, Reset and Reset all.
 
 ---
 
@@ -392,7 +396,7 @@ Point at things visually to give the agent feedback. Expect to iterate on this c
 
 ## ~~M17: Agent-native conversation rewind~~
 
-**Done.** Claude Code and Codex rewind by forking their saved native history at the selected boundary, preserving structured records without a synthetic transcript prompt. The selected prompt and attachments return to the composer; retained message IDs and thread anchors survive replay and restart. Failed fork loads can be retried. Unsupported agents offer no rewind, and transcript reconstruction and its size cap are removed except for pending legacy reconstructions. Conversation rewind leaves project files unchanged; per-turn file checkpoints and undo are scheduled in M22. Implemented in `e3d06fe`.
+**Done.** Claude Code and Codex rewind by forking their saved native history at the selected boundary, preserving structured records without a synthetic transcript prompt. The selected prompt and attachments return to the composer; retained message IDs and thread anchors survive replay and restart. Failed fork loads can be retried. Unsupported agents offer no rewind, and transcript reconstruction and its size cap are removed except for pending legacy reconstructions. Conversation rewind leaves project files unchanged. Implemented in `e3d06fe`.
 
 Replace the current fresh-session transcript prompt with native history restoration where the agent supports it. Keep the existing rewind interaction, draft restoration and conversation-only scope. Update `SPEC.md` in this milestone.
 

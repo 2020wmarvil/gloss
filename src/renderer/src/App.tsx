@@ -7,11 +7,12 @@ import { projectOf } from '@shared/worktree'
 import { projectSettings, type GlobalSettings } from '@shared/settings'
 import type { AgentSession, Project, Session, Worktree } from '@shared/types'
 import { WorktreesScreen } from './WorktreesScreen'
+import { PluginsScreen } from './PluginsScreen'
 import { hideFileList } from './ReviewView'
 import { CaptureShortcut, clearDrafts } from './Composer'
 import { errorText } from './errors'
 import { Sidebar, SidebarRail, type ListedAgentSession, type SidebarNote } from './Sidebar'
-import { SettingsScreen } from './SettingsScreen'
+import { SettingsScreen, type SettingsSection } from './SettingsScreen'
 import { SignInDialog } from './SignInDialog'
 import {
   clampWidth,
@@ -60,11 +61,23 @@ export function App(): React.JSX.Element {
   const s = useSession()
   const { load, close: closeSession, openId } = s
   const [showSettings, setShowSettings] = useState(false)
-  /** Settings opens on the project's page from the Worktrees screen. */
-  const [settingsSection, setSettingsSection] = useState<'project' | undefined>(undefined)
+  /** The section Settings opens on from another screen: the project's page from Worktrees, MCP servers from Plugins. */
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined)
   const [showSearch, setShowSearch] = useState(false)
   /** The Worktrees screen (SPEC → Worktrees), in the center like Settings. */
   const [showWorktrees, setShowWorktrees] = useState(false)
+  /** The Plugins screen (SPEC → Plugins), in the center like Worktrees. */
+  const [showPlugins, setShowPlugins] = useState(false)
+  /** Set while the Plugins screen is open: asks before its unsaved edits are dropped. */
+  const pluginGuard = useRef<((leave: () => void) => void) | null>(null)
+  const setPluginGuard = useCallback((guard: ((leave: () => void) => void) | null) => { pluginGuard.current = guard }, [])
+  /** Runs `then`, first closing the Plugins screen once its unsaved edits are dealt with. */
+  const leavePlugins = (then: () => void): void => {
+    if (!showPlugins) return then()
+    const leave = (): void => { setShowPlugins(false); then() }
+    if (pluginGuard.current) pluginGuard.current(leave)
+    else leave()
+  }
   /** The shown project's folder and worktrees; null while they are read. */
   const [worktrees, setWorktrees] = useState<Worktree[] | null>(null)
   const [worktreesError, setWorktreesError] = useState<string | null>(null)
@@ -181,6 +194,7 @@ export function App(): React.JSX.Element {
       }
       setShowSettings(false)
       setShowWorktrees(false)
+      setShowPlugins(false)
       const view = await load(id, threadId, target)
       if (view) setProjectPath(projectOf(view.session))
     },
@@ -728,16 +742,23 @@ export function App(): React.JSX.Element {
             onSelectProject={(path) => selectProject(path, sessions)}
             onOpenProject={() => void openProject()}
             onDeleteProject={(path) => void deleteProject(path)}
-            onSelect={(id) => void selectSession(id)}
-            onNew={(agentId, where) => void newSession(agentId, where)}
+            onSelect={(id) => leavePlugins(() => void selectSession(id))}
+            onNew={(agentId, where) => leavePlugins(() => void newSession(agentId, where))}
             place={place}
             placeBranch={worktrees?.find((w) => !w.main && sameFolder(w.path, place))?.branch ?? null}
             onSetPlace={setPlace}
             worktreesOpen={showWorktrees}
-            onWorktrees={() => {
+            onWorktrees={() => leavePlugins(() => {
               setShowSettings(false)
               setShowWorktrees((on) => !on)
               if (projectPath) void loadWorktrees(projectPath)
+            })}
+            pluginsOpen={showPlugins && !showSettings}
+            onPlugins={() => {
+              if (showPlugins && !showSettings) return leavePlugins(() => {})
+              setShowSettings(false)
+              setShowWorktrees(false)
+              setShowPlugins(true)
             }}
             onImport={(a) => void importSession(a)}
             onRename={(id, title) =>
@@ -748,11 +769,11 @@ export function App(): React.JSX.Element {
             onCopyMarkdown={(id) => exportMarkdown(id, 'copy')}
             onSaveMarkdown={(id) => exportMarkdown(id, 'save')}
             onSearch={() => setShowSearch(true)}
-            onSettings={() => {
+            onSettings={() => leavePlugins(() => {
               setShowWorktrees(false)
               setSettingsSection(undefined)
               setShowSettings((on) => !on)
-            }}
+            })}
             onCollapse={() => hideSidebar(true)}
           />
           <ResizeHandle
@@ -778,6 +799,15 @@ export function App(): React.JSX.Element {
               onClose={closeSettings}
             />
           )
+        ) : showPlugins ? (
+          <PluginsScreen
+            onManageConnections={() => leavePlugins(() => {
+              setSettingsSection('mcp')
+              setShowSettings(true)
+            })}
+            onClose={() => setShowPlugins(false)}
+            onNavigationGuard={setPluginGuard}
+          />
         ) : showWorktrees && project ? (
           <WorktreesScreen
             project={project}

@@ -399,10 +399,19 @@ export class SessionManager {
     return Object.fromEntries([...this.agents].map(([id, slot]) => [id, slot.rateLimits]))
   }
 
+  /** Whether one of the agent's sessions has a prompt in flight or a turn running. */
+  isAgentBusy(agentId: string): boolean {
+    return this.slot(agentId).activePrompts > 0 || this.hasTurn(agentId)
+  }
+
+  private hasTurn(agentId: string): boolean {
+    return [...this.runtimes].some(([id, rt]) => rt.turn !== undefined && this.deps.store.getSession(id)?.agentId === agentId)
+  }
+
   /** Stops the agent's process if no prompt is in flight. The next request starts a fresh one. */
   async restartIdleAgent(agentId: string, waitForResume = false): Promise<boolean> {
     const slot = this.slot(agentId)
-    const turns = (): boolean => [...this.runtimes].some(([id, rt]) => rt.turn !== undefined && this.deps.store.getSession(id)?.agentId === agentId)
+    const turns = (): boolean => this.hasTurn(agentId)
     if (slot.activePrompts > 0 || (waitForResume && turns())) return false
     // A background resume must finish before disposing the connection it is loading.
     if (waitForResume) await Promise.all([...this.runtimes].filter(([id]) => this.deps.store.getSession(id)?.agentId === agentId)
@@ -1060,7 +1069,7 @@ export class SessionManager {
       const prompt = before.findLastIndex((m) => m.role === 'user' && !m.steered)
       if (prompt < 0) return null
       const item = before.slice(prompt + 1).findLast((m) => m.role === 'agent' && m.acpMessageId)?.acpMessageId ?? before[prompt].acpMessageId
-      return item ? () => conn.forkSession(session.acpSessionId, session.cwd, item, this.mcpServers(session.cwd)) : undefined
+      return item ? () => conn.forkSession(session.acpSessionId, session.cwd, item, this.mcpServers(session.cwd), this.sessionMeta(session.agentId, 'load', !!session.review)) : undefined
     }
     let point = forkPoint()
     if (point === undefined) {

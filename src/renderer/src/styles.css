@@ -301,7 +301,8 @@ button:disabled {
    Disabled is neutral for every kind. */
 button.primary,
 button.secondary,
-button.ghost {
+button.ghost,
+.dialog-actions button.danger {
   flex: none;
   height: var(--control);
   padding: 0 12px;
@@ -369,7 +370,8 @@ button.lg {
 
 /* Disabled is a pressed-in well for every kind, never a faded gradient. */
 button.primary:disabled,
-button.secondary:disabled {
+button.secondary:disabled,
+.dialog-actions button.danger:disabled {
   opacity: 1;
   background: var(--sunken);
   color: var(--faint);
@@ -1313,10 +1315,6 @@ button.settings-button.on {
 .settings-file .ghost svg {
   width: 14px;
   height: 14px;
-}
-
-.settings-close {
-  margin-left: auto;
 }
 
 .settings-body h2 {
@@ -2949,17 +2947,8 @@ button.activity-thread:hover .activity-name {
   gap: 8px;
 }
 
-.dialog-actions button {
-  height: 36px;
-  padding: 0 14px;
-  border: 0;
-  box-shadow: inset 0 0 0 1px var(--line);
-  border-radius: var(--r-md);
-  background: var(--selected);
-}
-
+/* Danger only confirms destruction, so it's a kind only in a dialog's actions (menus use .danger for red text). */
 .dialog-actions button.danger {
-  box-shadow: none;
   background: var(--failed);
   color: var(--on-failed);
 }
@@ -6646,10 +6635,6 @@ kbd {
   letter-spacing: -0.01em;
 }
 
-.worktrees-top button {
-  margin-left: auto;
-}
-
 .worktrees-body .lede {
   margin: 0 0 18px;
   font-size: var(--t-13);
@@ -6796,4 +6781,703 @@ button.danger-text {
   padding-left: 18px;
   font-size: var(--t-13);
   color: var(--ink-2);
+}
+/* The Plugins screen: one plugin per row, agent controls only in its details. */
+/* In the center like the Worktrees screen. */
+.plugins-screen {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 12px 0;
+}
+
+
+.plugin-settings {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.plugin-library-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.plugin-library-header p {
+  margin: 5px 0 0;
+  color: var(--muted);
+}
+
+.plugin-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.plugin-library {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 240px;
+}
+
+.plugin-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 18px 14px;
+}
+
+.plugin-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  padding: 0 10px;
+  height: 32px;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--sink);
+}
+
+.plugin-search svg {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  flex: none;
+}
+
+.plugin-search input {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: var(--t-12);
+}
+
+.plugin-search:focus-within {
+  outline: 2px solid var(--focus);
+}
+
+.plugin-list {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+  padding: 0 8px 12px;
+}
+
+.plugin-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 84px;
+  padding: 12px;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid transparent;
+  border-bottom-color: var(--line-soft);
+  border-radius: var(--r-md);
+  text-align: left;
+}
+
+.plugin-list-item:hover {
+  background: var(--hover);
+}
+
+.plugin-list-item.selected {
+  background: var(--accent-tint);
+  border-color: var(--accent-mark);
+}
+
+.plugin-list-item > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.plugin-list-item strong {
+  font-size: var(--t-13);
+  font-weight: 600;
+}
+
+.plugin-list-item span span {
+  color: var(--muted);
+  font-size: var(--t-12);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.plugin-list-item small {
+  color: var(--muted);
+  font-size: var(--t-11);
+}
+
+.plugin-package-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--muted);
+}
+
+.plugin-package-mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.plugin-library-folder {
+  align-self: flex-start;
+  margin: 12px 20px;
+}
+
+.plugin-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  font-size: var(--t-12);
+  text-align: left;
+}
+
+.plugin-link svg {
+  width: 13px;
+  height: 13px;
+}
+
+.plugin-detail {
+  width: 390px;
+  min-width: 290px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.plugin-detail > header {
+  padding: 22px 22px 16px;
+}
+
+.plugin-inline-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plugin-inline-heading > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.plugin-inline-heading h3 {
+  margin: 0;
+  font-size: var(--t-17);
+  font-weight: 600;
+  letter-spacing: -.02em;
+  overflow-wrap: anywhere;
+}
+
+.plugin-inline-heading h4 {
+  margin: 0;
+  font-size: var(--t-12);
+  font-weight: 500;
+}
+
+.plugin-detail > header .plugin-inline-heading {
+  gap: 0;
+}
+
+.plugin-detail > header p {
+  color: var(--muted);
+  margin: 8px 0 0;
+  line-height: 1.6;
+  font-size: var(--t-12);
+}
+
+.plugin-badge {
+  display: inline-block;
+  flex: none;
+  border-radius: var(--r-sm);
+  padding: 3px 6px;
+  background: var(--sunken);
+  color: var(--muted);
+  font-size: var(--t-11);
+  white-space: nowrap;
+}
+
+.plugin-badge.warn {
+  background: var(--queued-tint);
+  color: var(--queued);
+}
+
+.plugin-tabs {
+  display: flex;
+  gap: 20px;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.plugin-tabs button {
+  background: none;
+  color: var(--muted);
+  padding: 9px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font-size: var(--t-12);
+}
+
+.plugin-tabs button.on {
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+}
+
+.plugin-detail-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 22px;
+}
+
+.plugin-component-group {
+  margin-bottom: 20px;
+}
+
+.plugin-component-group h4 {
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: var(--t-11);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.plugin-component {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: 13px 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.plugin-component:hover {
+  background: var(--hover);
+}
+
+.plugin-component > svg {
+  width: 15px;
+  height: 15px;
+  color: var(--muted);
+  margin-top: 3px;
+  flex: none;
+}
+
+.plugin-component > svg:last-child {
+  width: 12px;
+  margin-left: auto;
+}
+
+.plugin-component > span:not(.plugin-badge) {
+  flex: 1;
+  min-width: 0;
+}
+
+.plugin-component strong {
+  font-size: var(--t-12);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.plugin-component small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--t-11);
+  line-height: 1.7;
+  margin-top: 3px;
+}
+
+.plugin-component .plugin-badge {
+  align-self: center;
+}
+
+.plugin-connection {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 14px;
+  margin: 14px 0;
+}
+
+.plugin-connection p {
+  color: var(--muted);
+  line-height: 1.65;
+  font-size: var(--t-12);
+  margin: 10px 0;
+}
+
+.plugin-connection strong {
+  font-size: var(--t-13);
+}
+
+.plugin-agent {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.plugin-agent:first-child {
+  padding-top: 0;
+}
+
+.plugin-agent strong {
+  font-size: var(--t-13);
+  font-weight: 500;
+}
+
+.plugin-agent p {
+  color: var(--muted);
+  font-size: var(--t-12);
+  line-height: 1.65;
+  margin: 7px 0;
+}
+
+.plugin-agent-actions {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.plugin-agent-actions .plugin-link {
+  font-size: var(--t-11);
+}
+
+.plugin-availability {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 42px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--sunken);
+  color: var(--muted);
+  font-size: var(--t-11);
+}
+
+.plugin-availability svg {
+  width: 12px;
+  height: 12px;
+}
+
+.plugin-availability.ready {
+  background: var(--done-tint);
+  color: var(--done);
+}
+
+.plugin-availability.setup, .plugin-availability.pending {
+  background: var(--queued-tint);
+  color: var(--queued);
+}
+
+.plugin-availability.error {
+  background: var(--failed-tint);
+  color: var(--failed);
+}
+
+.plugin-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--t-11);
+  margin-bottom: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.plugin-breadcrumb button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+}
+
+.plugin-breadcrumb svg {
+  width: 12px;
+  height: 12px;
+}
+
+.plugin-file-tabs {
+  display: flex;
+  gap: 7px;
+  margin: 14px 0;
+}
+
+.plugin-file-tabs button {
+  border: 0;
+  border-radius: var(--r-sm);
+  padding: 5px 9px;
+  background: transparent;
+  font-size: var(--t-11);
+  color: var(--muted);
+}
+
+.plugin-file-tabs button.on {
+  background: var(--selected);
+  color: var(--ink);
+}
+
+.plugin-editor, .plugin-form-field input, .plugin-form-field textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 10px;
+  font: inherit;
+}
+
+.plugin-editor {
+  resize: vertical;
+  min-height: 300px;
+  max-height: 65vh;
+  margin: 12px 0;
+  font: var(--t-12)/1.75 var(--font-mono);
+}
+
+.plugin-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plugin-detail-content .markdown {
+  font-size: var(--t-13);
+}
+
+.plugin-file-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: var(--sunken);
+  font: var(--t-12)/1.7 var(--font-mono);
+}
+
+.plugin-file-list {
+  margin-bottom: 12px;
+}
+
+.plugin-file-list button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 0;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  font: var(--t-11) var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.plugin-file-list svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.plugin-error {
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--failed-tint);
+  color: var(--failed);
+  font-size: var(--t-12);
+}
+
+.plugin-settings > .plugin-error {
+  margin: 8px 18px;
+  flex: none;
+}
+
+.plugin-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 13px;
+  background: var(--working-tint);
+  color: var(--working);
+  font-size: var(--t-12);
+  margin: 8px 18px;
+  border-radius: var(--r-md);
+  flex: none;
+}
+
+.plugin-notice > svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 3px;
+}
+
+.plugin-notice span {
+  flex: 1;
+}
+
+.plugin-empty {
+  text-align: center;
+  padding: 50px 24px;
+  color: var(--muted);
+}
+
+.plugin-empty > svg {
+  width: 28px;
+  height: 28px;
+}
+
+.plugin-empty h3 {
+  font-size: var(--t-16);
+  color: var(--ink);
+  margin: 14px 0 18px;
+}
+
+.plugin-empty p {
+  line-height: 1.7;
+  margin: 0 auto 18px;
+  max-width: 320px;
+}
+
+.plugin-dialog {
+  width: 510px;
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.plugin-dialog .plugin-inline-heading {
+  margin-bottom: 15px;
+}
+
+.plugin-dialog .dialog-actions {
+  margin-top: 20px;
+}
+
+.plugin-form-field {
+  display: grid;
+  gap: 7px;
+  font-size: var(--t-12);
+  margin: 14px 0;
+}
+
+.plugin-form-field textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.plugin-dialog p {
+  color: var(--muted);
+  font-size: var(--t-12);
+  line-height: 1.65;
+}
+
+.plugin-dialog .dialog-error {
+  color: var(--failed);
+}
+
+.plugin-connection-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 10px;
+  background: var(--bg);
+  border-radius: var(--r-md);
+  font-size: var(--t-12);
+}
+
+.plugin-connection-choice input {
+  accent-color: var(--ink);
+  margin-top: 4px;
+}
+
+.plugin-connection-choice strong {
+  font-size: var(--t-12);
+}
+
+.plugin-connection-choice small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+  font-size: var(--t-11);
+}
+
+@media (max-width: 1150px) {
+  .plugin-detail {
+    width: 335px;
+  }
+
+  .plugin-toolbar {
+    padding: 16px 12px 12px;
+  }
+
+  .plugin-package-mark {
+    display: none;
+  }
+}
+
+@media (max-width: 850px) {
+  .plugin-workspace {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .plugin-library {
+    flex: none;
+    max-height: 42vh;
+  }
+
+  .plugin-list {
+    min-height: 110px;
+  }
+
+  .plugin-detail {
+    width: auto;
+    min-width: 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    min-height: 400px;
+  }
+
+  .plugin-library-folder {
+    margin: 8px 18px;
+  }
 }

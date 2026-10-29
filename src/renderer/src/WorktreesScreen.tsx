@@ -140,7 +140,6 @@ export function WorktreesScreen(props: Props): React.JSX.Element {
         <div>
         <div className="worktrees-top">
           <h2>Worktrees</h2>
-          <button className="secondary" onClick={props.onClose} title="Close (Esc)">Done</button>
         </div>
         <p className="lede">
           New worktrees branch from {props.base ? <code>{props.base}</code> : 'the project folder’s branch'}
