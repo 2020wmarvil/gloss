@@ -6797,21 +6797,21 @@ button.danger-text {
   font-size: var(--t-13);
   color: var(--ink-2);
 }
-/* Custom plugin library: one package per row, agent controls only in its details. */
-.settings-with-plugins .settings-body {
+/* The Plugins screen: one plugin per row, agent controls only in its details. */
+/* In the center like the Worktrees screen. */
+.plugins-screen {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   padding: 12px 12px 0;
 }
 
-.settings-with-plugins .settings-body > * {
-  max-width: none;
-}
-
-.settings-with-plugins .settings-file {
-  flex: none;
-  margin: 0 12px 0;
+.plugin-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .plugin-settings {

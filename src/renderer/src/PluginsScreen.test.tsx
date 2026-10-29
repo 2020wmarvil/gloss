@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { GlossApi } from '@shared/ipc'
 import type { PluginApi, PluginLibraryState } from '@shared/plugins'
-import { PluginSettings } from './PluginSettings'
+import { PluginsScreen } from './PluginsScreen'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 let root: Root
@@ -12,10 +12,12 @@ let container: HTMLDivElement
 let state: PluginLibraryState
 let api: PluginApi
 let guard: ((leave: () => void) => void) | null
+let onClose: ReturnType<typeof vi.fn<() => void>>
 const file = { path: 'skills/review-instructions/SKILL.md', content: '---\nname: review-instructions\ndescription: Review changes\n---\n\n# Review\n\nRead the diff.', revision: 'before' }
 
 beforeEach(async () => {
   guard = null
+  onClose = vi.fn()
   state = { directory: '/data/plugins/library', errors: [], connections: [{ name: 'Docs', transport: 'stdio', usedBy: ['Code review'] }], plugins: [{
     schemaVersion: 1, id: 'review', name: 'Code review', description: 'Review changes', connections: ['Docs'], enabledAgents: ['claude'], directory: '/data/plugins/library/review', problems: [],
     skills: [{ id: 'review-instructions', name: 'instructions', description: 'Review changes', path: file.path, files: ['SKILL.md'] }],
@@ -33,7 +35,7 @@ beforeEach(async () => {
   }
   Object.defineProperty(window, 'gloss', { configurable: true, value: { plugins: api, onEvent: () => () => {} } as unknown as GlossApi })
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
-  await act(async () => root.render(<PluginSettings onManageConnections={() => {}} onNavigationGuard={value => { guard = value }} />))
+  await act(async () => root.render(<PluginsScreen onManageConnections={() => {}} onClose={onClose} onNavigationGuard={value => { guard = value }} />))
 })
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks() })
 
@@ -115,4 +117,15 @@ it('keeps custom agent directory setup explicit and requires format confirmation
   await click('Save directory')
   expect(api.setSkillDirectory).toHaveBeenCalledWith('custom:local', 'C:/agent/skills')
   expect(api.enable).not.toHaveBeenCalled()
+})
+
+it('closes with Done or Esc, asking first when a file has unsaved edits', async () => {
+  await click('Done')
+  expect(onClose).toHaveBeenCalledOnce()
+  await input(await edit(), 'Unsaved')
+  await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+  expect(onClose).toHaveBeenCalledOnce()
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Discard unsaved changes')
+  await click('Discard changes')
+  expect(onClose).toHaveBeenCalledTimes(2)
 })

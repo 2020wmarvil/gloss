@@ -1,6 +1,6 @@
 // The settings screen (docs/mocks/target.html#settings): a list of sections on the left,
 // one section at a time on the right, each a card of rows with one control each.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { SettingsPatch, SettingsState } from '@shared/ipc'
 import type { Project } from '@shared/types'
 import { folderName, sameFolder } from '@shared/paths'
@@ -10,14 +10,13 @@ import { modKey, SHORTCUTS } from './shortcuts'
 import { McpSettings } from './McpSettings'
 import { OpenCodeSettings } from './OpenCodeSettings'
 import { AgentProfileSettings } from './AgentProfileSettings'
-import { PluginSettings } from './PluginSettings'
 import { Segmented, Select, Switch } from './Select'
 import { EditorSetting } from './EditorSetting'
 import { ShortcutSetting } from './ShortcutSetting'
 import { PhoneSettings } from './PhoneSettings'
-import { ExternalLink, Folder, Keyboard, Package, Palette, Server, SlidersVertical, Smartphone, Terminal } from 'lucide-react'
+import { ExternalLink, Folder, Keyboard, Palette, Server, SlidersVertical, Smartphone, Terminal } from 'lucide-react'
 
-export type SettingsSection = 'general' | 'appearance' | 'mcp' | 'agents' | 'plugins' | 'phone' | 'project' | 'shortcuts'
+export type SettingsSection = 'general' | 'appearance' | 'mcp' | 'agents' | 'phone' | 'project' | 'shortcuts'
 
 /** Fields shown in Appearance; the other visible global fields are General. */
 const APPEARANCE = new Set(['theme'])
@@ -39,17 +38,14 @@ type Props = {
 export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenFile, onClose, initialSection }: Props): React.JSX.Element {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
-  const pluginGuard = useRef<((leave: () => void) => void) | null>(null)
-  const setPluginGuard = useCallback((guard: ((leave: () => void) => void) | null) => { pluginGuard.current = guard }, [])
-  const navigate = useCallback((leave: () => void) => { if (pluginGuard.current) pluginGuard.current(leave); else leave() }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('[role="dialog"]')) navigate(onClose)
+      if (e.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, navigate])
+  }, [onClose])
 
   // A failed save is stale once the settings change (say, the file was fixed in an editor).
   useEffect(() => setSaveError(null), [state])
@@ -85,21 +81,20 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
   const nav = (id: SettingsSection, icon: React.JSX.Element, label: string, path?: string): React.JSX.Element => (
     <button key={path ?? id} title={path} className={section === id && (!path || path === settingsProjectPath) ? 'settings-nav-item on' : 'settings-nav-item'}
       aria-current={section === id && (!path || path === settingsProjectPath) ? 'page' : undefined}
-      onClick={() => navigate(() => { if (path) setSelectedProject(path); setSection(id) })}>
+      onClick={() => { if (path) setSelectedProject(path); setSection(id) }}>
       {icon}
       <span>{label}</span>
     </button>
   )
 
   return (
-    <main className={`settings${section === 'plugins' ? ' settings-with-plugins' : ''}`}>
+    <main className="settings">
       <nav className="settings-nav" aria-label="Settings sections">
         <h1>Settings</h1>
         {nav('general', <SlidersVertical />, 'General')}
         {nav('appearance', <Palette />, 'Appearance')}
         {nav('mcp', <Server />, 'MCP servers')}
         {nav('agents', <Terminal />, 'Agents')}
-        {nav('plugins', <Package />, 'Plugins')}
         {nav('phone', <Smartphone />, 'Phone')}
         {projectFields.length > 0 && (
           <>
@@ -113,15 +108,14 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
       </nav>
       <div className="settings-body">
         <div className="settings-file">
-          {section !== 'plugins' && <><span className="mono" title={state.path}>
+          <span className="mono" title={state.path}>
             {state.path}
           </span>
           <button className="ghost sm" onClick={() => void openFile()}>
             <ExternalLink />
             Open in editor
           </button>
-          </>}
-          <button className="secondary settings-close" onClick={() => navigate(onClose)} title="Close (Esc)">
+          <button className="secondary settings-close" onClick={onClose} title="Close (Esc)">
             Done
           </button>
         </div>
@@ -136,8 +130,6 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
           </div>
         )}
         {saveError && <p className="settings-problem">{saveError}</p>}
-
-        {section === 'plugins' && <PluginSettings onManageConnections={() => setSection('mcp')} onNavigationGuard={setPluginGuard} />}
 
         {section === 'general' && (
           <section aria-labelledby="settings-general">

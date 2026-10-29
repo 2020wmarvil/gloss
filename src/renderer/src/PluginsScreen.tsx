@@ -1,3 +1,5 @@
+// The Plugins screen (SPEC → Plugins, docs/mocks/plugins.html): the personal plugin library,
+// in the center like Worktrees. Its data lives in the plugin library folder, not settings.json.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeft, BookOpen, Check, ChevronRight, FileText, FolderOpen, Info, Package, Pencil, Plus, RefreshCw, Search, Server, Trash2, X } from 'lucide-react'
@@ -14,13 +16,19 @@ type Dialog =
   | { kind: 'file' | 'removeSkill'; plugin: PersonalPlugin; skill: PluginSkill }
   | { kind: 'custom'; agent: PluginAgentState }
   | { kind: 'discard'; leave: () => void }
-type Props = { onManageConnections(): void; onNavigationGuard?(guard: Guard | null): void }
+type Props = {
+  /** Opens Settings → MCP servers. */
+  onManageConnections(): void
+  onClose(): void
+  /** Lets the app ask before leaving with unsaved edits. */
+  onNavigationGuard?(guard: Guard | null): void
+}
 
 const count = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`
 const summary = (p: PersonalPlugin): string => [count(p.skills.length, 'skill'), ...p.connections].join(' · ')
 const stateLabel = (a: PluginAgentState): string => ({ ready: 'On', off: 'Off', setup: a.support === 'unknown' ? 'Set up' : 'Needs setup', pending: 'Pending', error: 'Review' })[a.status]
 
-export function PluginSettings({ onManageConnections, onNavigationGuard }: Props): React.JSX.Element {
+export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard }: Props): React.JSX.Element {
   const [state, setState] = useState<PluginLibraryState | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
@@ -62,6 +70,14 @@ export function PluginSettings({ onManageConnections, onNavigationGuard }: Props
     else leave()
   }, [dirty])
   useEffect(() => { onNavigationGuard?.(navigate); return () => onNavigationGuard?.(null) }, [navigate, onNavigationGuard])
+  // Esc closes the screen, unless a dialog (which handles its own Esc) is open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('[role="dialog"]')) navigate(onClose)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [navigate, onClose])
 
   function resetDetail(): void { fileRequest.current++; setFile(null); setEditing(false); setSkillId(null); setShowFiles(false); setNotice(null); setError(null) }
   function select(id: string): void { navigate(() => { setSelected(id); setTab('overview'); resetDetail() }) }
@@ -143,8 +159,8 @@ export function PluginSettings({ onManageConnections, onNavigationGuard }: Props
         </> : !error && <p className="muted">Loading file…</p>}
     </>
   }
-  return <section className="plugin-settings" aria-label="Custom plugins">
-    <header className="plugin-library-header"><div><h2>Plugins <span>{state?.plugins.length ?? ''}</span></h2><p>Your skills and tools, kept together.</p></div><button className="primary" disabled={busy || !state} onClick={() => navigate(() => setDialog({ kind: 'new' }))}><Plus />New plugin</button></header>
+  return <main className="plugins-screen"><section className="plugin-settings" aria-label="Plugins">
+    <header className="plugin-library-header"><div><h2>Plugins <span>{state?.plugins.length ?? ''}</span></h2><p>Your skills and tools, kept together.</p></div><div className="plugin-header-actions"><button className="primary" disabled={busy || !state} onClick={() => navigate(() => setDialog({ kind: 'new' }))}><Plus />New plugin</button><button className="secondary" onClick={() => navigate(onClose)} title="Close (Esc)">Done</button></div></header>
     {error && <p className="plugin-error" role="alert">{error}</p>}{state?.errors.map(e => <p className="plugin-error" role="alert" key={e}>{e}</p>)}
     {notice && <div className="plugin-notice" role="status"><Info /><span>{notice}</span><button className="icon-button" aria-label="Dismiss notice" onClick={() => setNotice(null)}><X /></button></div>}
     <div className="plugin-workspace"><div className="plugin-library">
@@ -182,7 +198,7 @@ export function PluginSettings({ onManageConnections, onNavigationGuard }: Props
       })
       setDialog(null)
     }} />}
-  </section>
+  </section></main>
 }
 
 function PluginDialog({ dialog, state, busy, onClose, onSubmit, onManageConnections }: { dialog: Dialog; state: PluginLibraryState | null; busy: boolean; onClose(): void; onSubmit(values: Record<string, string>): Promise<void>; onManageConnections(): void }): React.JSX.Element {
