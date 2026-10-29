@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PluginLibrary } from './plugins'
+import { parse as parseYaml } from 'yaml'
 import { getAgentConfig } from './agents'
+
+vi.mock('node:fs', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return { ...actual, rmSync: vi.fn(actual.rmSync) }
+})
 import type { McpServer } from '../shared/mcp'
 
 let root: string
@@ -263,4 +269,153 @@ describe('external edits', () => {
     writeFileSync(join(record(id).directory, file.path), file.content + '\nChanged by an agent\n')
     await vi.waitFor(() => expect(changed).toHaveBeenCalledWith(['claude']), { timeout: 3000 })
   })
+})
+
+
+it.each([false, true])('removes a skill from enabled plugins and cleans deployments (copy: %s)', copy => {
+  library = make(copy)
+  const id = library.create('Writing', 'Write clearly')
+  const skill = record(id).skills[0]
+  const remaining = library.addSkill(id, 'Proofread', 'Check spelling')
+  for (const agent of ['claude', 'codex', 'opencode']) library.enable(id, agent, true)
+  const removed = deployments().filter(d => d.source === join(record(id).directory, 'skills', skill.id))
+  expect(removed).toHaveLength(3)
+  changed.mockClear()
+  library.removeSkill(id, skill.id)
+  expect(record(id).enabledAgents).toEqual(['claude', 'codex', 'opencode'])
+  expect(record(id).skills.map(s => s.id)).toEqual([remaining])
+  expect(deployments()).toHaveLength(3)
+  for (const target of removed) expect(() => lstatSync(target.target)).toThrow()
+  expect(record(id).agents.filter(a => a.enabled).every(a => a.status === 'ready')).toBe(true)
+  expect(changed).toHaveBeenCalledWith(expect.arrayContaining(['claude', 'codex', 'opencode']))
+})
+
+it('keeps a skill intact during active turns and allows removal once idle', () => {
+  const id = library.create('Writing', 'Write clearly')
+  const skill = record(id).skills[0]
+  library.enable(id, 'codex', true)
+  const target = deployments()[0].target
+  busy.add('codex')
+  expect(() => library.removeSkill(id, skill.id)).toThrow(/active turns to finish/)
+  expect(library.readFile(id, skill.path).content).toContain('name:')
+  expect(existsSync(target)).toBe(true)
+  busy.clear()
+  library.removeSkill(id, skill.id)
+  expect(record(id).skills).toEqual([])
+  expect(record(id).enabledAgents).toEqual(['codex'])
+  expect(deployments()).toEqual([])
+  expect(() => lstatSync(target)).toThrow()
+})
+
+
+it('deletes supporting files while preserving skill instructions and concurrent edits', () => {
+  const id = library.create('Writing', 'Write clearly')
+  const skill = record(id).skills[0]
+  library.createFile(id, skill.id, 'references/notes.txt', 'Original')
+  const file = library.readFile(id, `skills/${skill.id}/references/notes.txt`)
+  library.enable(id, 'codex', true)
+  const instructions = library.readFile(id, skill.path)
+  expect(() => library.removeFile(id, instructions)).toThrow(/Remove the skill/)
+  library.writeFile(id, { ...file, content: 'Changed' })
+  expect(() => library.removeFile(id, file)).toThrow(/changed outside/)
+  expect(() => library.removeFile(id, { ...file, path: `skills/${skill.id}/../../plugin.json` })).toThrow(/relative file path/)
+  const updated = library.readFile(id, file.path)
+  library.removeFile(id, updated)
+  expect(record(id).skills[0].files).toEqual(['SKILL.md'])
+  expect(library.readFile(id, skill.path)).toEqual(instructions)
+  expect(existsSync(join(deployments()[0].target, 'references/notes.txt'))).toBe(false)
+  expect(record(id).enabledAgents).toEqual(['codex'])
+})
+
+
+it.each([false, true])('persists native invocation policies and updates deployments (copy: %s)', copy => {
+  library = make(copy)
+  const id = library.create('Writing', 'Write clearly')
+  const skill = record(id).skills[0]
+  expect(skill.invocation).toBe('automatic')
+  library.createFile(id, skill.id, 'agents/openai.yaml', '# Keep this comment\ninterface:\n  display_name: Writing\npolicy:\n  products: [codex]\n')
+  for (const agent of ['claude', 'codex', 'opencode']) library.enable(id, agent, true)
+  const revision = record(id).skills[0].invocationRevision
+  library.setSkillInvocation(id, skill.id, 'direct', revision)
+  expect(record(id).skills[0].invocation).toBe('direct')
+  for (const d of deployments()) {
+    const instructions = readFileSync(join(d.target, 'SKILL.md'), 'utf8')
+    expect(instructions).toContain('disable-model-invocation: true')
+    expect(instructions).toContain('user-invocable: true')
+    expect(instructions).toContain('opencode/autoinvoke: false')
+    const metadata = readFileSync(join(d.target, 'agents/openai.yaml'), 'utf8')
+    expect(metadata).toContain('allow_implicit_invocation: false')
+    expect(metadata).toContain('display_name: Writing')
+    expect(parseYaml(metadata).policy.products).toEqual(['codex'])
+    expect(metadata).toContain('# Keep this comment')
+  }
+  expect(() => library.setSkillInvocation(id, skill.id, 'automatic', revision)).toThrow(/changed/)
+  library = make(copy)
+  expect(record(id).skills[0].invocation).toBe('direct')
+  library.setSkillInvocation(id, skill.id, 'automatic', record(id).skills[0].invocationRevision)
+  expect(record(id).skills[0].invocation).toBe('automatic')
+  expect(library.readFile(id, skill.path).content).toContain('disable-model-invocation: false')
+  expect(library.readFile(id, `skills/${skill.id}/agents/openai.yaml`).content).toContain('allow_implicit_invocation: true')
+})
+
+it('detects conflicting native policies and protects external metadata edits', () => {
+  const id = library.create('Writing', 'Write clearly')
+  const skill = record(id).skills[0]
+  const file = library.readFile(id, skill.path)
+  library.writeFile(id, { ...file, content: file.content.replace('description:', 'disable-model-invocation: true\ndescription:') })
+  expect(record(id).skills[0].invocation).toBe('mixed')
+  const revision = record(id).skills[0].invocationRevision
+  library.createFile(id, skill.id, 'agents/openai.yaml', 'policy:\n  allow_implicit_invocation: false\n')
+  expect(() => library.setSkillInvocation(id, skill.id, 'automatic', revision)).toThrow(/changed/)
+  expect(record(id).skills[0].invocation).toBe('direct')
+  expect(() => library.setSkillInvocation(id, '../escape', 'direct', revision)).toThrow(/identifier/)
+  expect(() => library.setSkillInvocation(id, skill.id, 'invalid', revision)).toThrow(/Choose/)
+})
+
+it('reports unverified direct-only behavior for custom agents', () => {
+  const id = library.create('Writing', 'Write clearly')
+  const skill = record(id).skills[0]
+  library.setSkillInvocation(id, skill.id, 'direct', skill.invocationRevision)
+  expect(record(id).agents.find(a => a.id === 'custom:local')?.message).toContain('Configure')
+  library.setSkillDirectory('custom:local', join(root, 'custom'))
+  expect(record(id).agents.find(a => a.id === 'custom:local')?.message).toContain('unverified')
+})
+
+
+it('creates direct-only skills with native policies before notifying enabled agents', () => {
+  const id = library.create('Writing', 'Write clearly')
+  library.enable(id, 'codex', true)
+  const modes: string[] = []
+  changed.mockImplementation(() => { modes.push(...record(id).skills.filter(s => s.name === 'direct').map(s => s.invocation)) })
+  const skillId = library.addSkill(id, 'Direct', 'Only on request', 'direct')
+  expect(modes).toEqual(['direct'])
+  expect(record(id).skills.find(s => s.id === skillId)?.invocation).toBe('direct')
+  const deployed = deployments().find(d => d.source.endsWith(skillId))!
+  expect(readFileSync(join(deployed.target, 'SKILL.md'), 'utf8')).toContain('disable-model-invocation: true')
+  expect(parseYaml(readFileSync(join(deployed.target, 'agents/openai.yaml'), 'utf8')).policy.allow_implicit_invocation).toBe(false)
+  changed.mockReset()
+  expect(() => library.addSkill(id, 'Invalid', 'Invalid mode', 'invalid')).toThrow(/Choose/)
+  expect(record(id).skills).toHaveLength(2)
+})
+
+
+it('cleans up incomplete plugins left by an interrupted removal', () => {
+  const id = library.create('Incomplete', 'Removal test')
+  const folder = record(id).directory
+  rmSync(join(folder, 'plugin.json'))
+  expect(record(id).problems[0]).toBe('This plugin is incomplete because plugin.json is missing. Remove the plugin to clean up its remaining files.')
+  library.remove(id)
+  expect(existsSync(folder)).toBe(false)
+  expect(library.list().plugins).toEqual([])
+})
+
+it('retries plugin directory removal and explains persistent filesystem failures', () => {
+  const id = library.create('Writing', 'Write clearly')
+  const folder = record(id).directory
+  vi.mocked(rmSync).mockImplementationOnce(() => { throw Object.assign(new Error('Raw Windows filesystem details'), { code: 'ENOTEMPTY' }) })
+  expect(() => library.remove(id)).toThrow('Could not finish removing this plugin. Some files may still be in use or changing. Close apps using its files and try again.')
+  expect(rmSync).toHaveBeenCalledWith(folder, { recursive: true, maxRetries: 3, retryDelay: 100 })
+  expect(existsSync(folder)).toBe(true)
+  library.remove(id)
+  expect(existsSync(folder)).toBe(false)
 })

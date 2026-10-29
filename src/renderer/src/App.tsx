@@ -37,11 +37,22 @@ import { FullScreenHint, SessionPane } from './SessionPane'
 export type { OpenSession, Panel } from './useSession'
 export type { SignInRequest } from './useAppData'
 
-/** A place back and forward return to: the settings screen, or a session and its open thread. */
-type View = { sessionId: string; threadId: string | null } | 'settings'
+/** A screen shown in the center instead of a session. */
+type Screen = 'settings' | 'plugins' | 'worktrees'
+
+/** A place back and forward return to: a screen (Worktrees with its project), or a session and its open thread. */
+type View =
+  | { sessionId: string; threadId: string | null }
+  | { screen: 'settings' | 'plugins' }
+  | { screen: 'worktrees'; projectPath: string }
 
 function sameView(a: View | undefined, b: View): boolean {
-  return a === b || (a !== undefined && a !== 'settings' && b !== 'settings' && a.sessionId === b.sessionId && a.threadId === b.threadId)
+  if (!a) return false
+  if ('screen' in a || 'screen' in b) {
+    return 'screen' in a && 'screen' in b && a.screen === b.screen &&
+      (a.screen !== 'worktrees' || b.screen !== 'worktrees' || sameFolder(a.projectPath, b.projectPath))
+  }
+  return a.sessionId === b.sessionId && a.threadId === b.threadId
 }
 
 function agentSessionsKey(path: string, id: string): string {
@@ -481,9 +492,24 @@ export function App(): React.JSX.Element {
     done.catch((err: unknown) => s.addNotice(id, null, `Couldn't export: ${errorText(err)}`))
   }
 
-  /** A view back and forward skip: a deleted session, or one in its own window. */
+  /** A view back and forward skip: a deleted session, one in its own window, or a removed project's worktrees. */
   function gone(v: View): boolean {
-    return v !== 'settings' && (!sessions.some((x) => x.id === v.sessionId) || poppedRef.current.includes(v.sessionId))
+    if ('screen' in v) return v.screen === 'worktrees' && !projects.some((p) => sameFolder(p.path, v.projectPath))
+    return !sessions.some((x) => x.id === v.sessionId) || poppedRef.current.includes(v.sessionId)
+  }
+
+  /** Shows one screen, or none (the session) for null. */
+  function showScreen(screen: Screen | null): void {
+    setShowSettings(screen === 'settings')
+    setShowPlugins(screen === 'plugins')
+    setShowWorktrees(screen === 'worktrees')
+  }
+
+  /** Shows a screen view from the history. */
+  function restoreScreen(view: Extract<View, { screen: Screen }>): void {
+    if (view.screen === 'worktrees' && !(projectPath && sameFolder(projectPath, view.projectPath))) setProjectPath(view.projectPath)
+    else if (view.screen === 'worktrees') void loadWorktrees(view.projectPath)
+    showScreen(view.screen)
   }
 
   /**
@@ -510,12 +536,13 @@ export function App(): React.JSX.Element {
   async function leaveSession(id: string): Promise<void> {
     const h = history.current
     let i = h.at
-    while (i >= 0 && (gone(h.views[i]) || (h.views[i] !== 'settings' && (h.views[i] as { sessionId: string }).sessionId === id))) i--
+    const here = (v: View): boolean => 'sessionId' in v && v.sessionId === id
+    while (i >= 0 && (gone(h.views[i]) || here(h.views[i]))) i--
     closeSession()
     const view = h.views[i]
     if (!view) return
     h.at = i
-    if (view === 'settings') return setShowSettings(true)
+    if ('screen' in view) return restoreScreen(view)
     h.moving = true
     try {
       await selectSession(view.sessionId, view.threadId)
@@ -525,17 +552,25 @@ export function App(): React.JSX.Element {
   }
 
   /** Back (-1) or forward (1) through the views visited, skipping deleted and popped-out sessions. */
-  async function go(step: -1 | 1): Promise<void> {
+  function go(step: -1 | 1): void {
     const h = history.current
     let i = h.at + step
     while (h.views[i] && gone(h.views[i])) i += step
     const view = h.views[i]
     if (!view || h.moving) return
+    // Leaving Plugins asks first about its unsaved edits.
+    leavePlugins(() => void show(i, view))
+  }
+
+  /** Shows the view at `i` in the history. */
+  async function show(i: number, view: View): Promise<void> {
+    const h = history.current
+    if (h.moving) return
     h.at = i
-    if (view === 'settings') return setShowSettings(true)
+    if ('screen' in view) return restoreScreen(view)
     h.moving = true
     try {
-      setShowSettings(false)
+      showScreen(null)
       if (view.sessionId !== openId.current) await selectSession(view.sessionId, view.threadId)
       else if (view.threadId) s.openThread(view.threadId)
       else s.setPanel(null)
@@ -602,7 +637,7 @@ export function App(): React.JSX.Element {
       const editable = e.target instanceof HTMLElement && (e.target.isContentEditable || e.target.matches('input, textarea'))
       if (editable && modKey() === 'Cmd') return
       e.preventDefault()
-      void go(e.key === 'ArrowLeft' ? -1 : 1)
+      go(e.key === 'ArrowLeft' ? -1 : 1)
       return
     }
     if (!mod) return
@@ -643,7 +678,7 @@ export function App(): React.JSX.Element {
     const onMouse = (e: MouseEvent): void => {
       if (e.button !== 3 && e.button !== 4) return
       e.preventDefault()
-      if (e.type === 'mouseup') void goRef.current(e.button === 3 ? -1 : 1)
+      if (e.type === 'mouseup') goRef.current(e.button === 3 ? -1 : 1)
     }
     window.addEventListener('keydown', onKey)
     window.addEventListener('dragover', block)
@@ -697,13 +732,15 @@ export function App(): React.JSX.Element {
     const h = history.current
     if (h.moving) return
     let view: View
-    if (showSettings) view = 'settings'
+    if (showSettings) view = { screen: 'settings' }
+    else if (showPlugins) view = { screen: 'plugins' }
+    else if (showWorktrees && projectPath) view = { screen: 'worktrees', projectPath }
     else if (sessionId && openId.current === sessionId) view = { sessionId, threadId: panelThread }
     else return
     if (sameView(h.views[h.at], view)) return
     h.views = [...h.views.slice(0, h.at + 1), view]
     h.at = h.views.length - 1
-  }, [showSettings, sessionId, panelThread, openId])
+  }, [showSettings, showPlugins, showWorktrees, projectPath, sessionId, panelThread, openId])
 
   return (
     <CaptureShortcut.Provider value={settings?.global.captureShortcut ?? ''}>
