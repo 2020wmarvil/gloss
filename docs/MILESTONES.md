@@ -11,9 +11,7 @@ Build on M13's global MCP settings and M14's agent profiles. Plugins are the top
 
 **Design reference:** the local [plugin-library mock](mocks/plugins.html) now covers phase 1 only: custom plugin creation, nested skill editing, connections, agent availability and removal. The library has no Discover tab or import/manage-existing entry points. Agent controls live in the plugin's Agents detail tab, without a duplicate matrix in the library list. All example data and actions are simulated; component support still needs native verification.
 
-**Handoff:** phase 1 is paused partway through. Read [HANDOFF-M19.md](../HANDOFF-M19.md) before resuming: it has the recovery steps for the implementation folder, the agreed design and the remaining work.
-
-### Phase 1: Custom plugins
+### ~~Phase 1: Custom plugins~~
 Create and maintain your own plugins in Gloss, and make them available to compatible configured agents.
 
 - **Personal plugin library:** users or agents can create a plugin containing one skill or several related skills, supporting scripts/references and supported MCP connections. Store it in persistent user data outside the app installation and automatic agent discovery roots. No publishing, marketplace, upstream provenance, version management or update subscription is required.
@@ -25,6 +23,8 @@ Create and maintain your own plugins in Gloss, and make them available to compat
 - **Verify:** exercise a new one-skill plugin and a plugin with related skills plus an MCP dependency. Cover creation, editing, component requirements, enable/disable, refresh, removal and persistence across restart on known agents and one concrete custom profile. Verify naming conflicts and that existing native installations are not overwritten.
 
 **Done when:** a user can create a custom plugin, edit its skills and supporting files, attach a supported connection, enable it for compatible configured agents and use the resulting workflow. Changes are shared after any required refresh, support limits are clear, and the plugin and deployment state survive restart. Disabling or removing it preserves unrelated installations and shared connections. Import and marketplace features are not required.
+
+**Done.** See SPEC → Plugins. Verified with real adapters (Claude ACP 0.89, Codex ACP 2.2.2, OpenCode 2.0.32 and a custom OpenCode profile) against a local model stub and MCP server (`src/main/plugins.integration.test.ts`, opt in with `GLOSS_PLUGIN_NATIVE=1`): each loaded a plugin's skill and its supporting file, saw the shared MCP tool, picked up an edited skill after a restart and resume, and dropped the skill but kept the tool once disabled. Codex's supporting-file read wasn't checked (its automatic reviewer needs a structured answer the stub doesn't give). Live through the built app on Haiku 5.5, a Claude session loaded `gloss-release-notes:release-notes-instructions` and quoted its edited steps. The built app with a fresh data folder covered creation, editing, files, connections, enabling, custom setup and removal, and kept all of it across a restart.
 
 ### Phase 2: Plugin import
 Bring in content the user has already selected, such as a local plugin, standalone skill, known repository or existing agent installation.
@@ -114,7 +114,7 @@ Unscheduled exploration outside the M19-M23 delivery sequence. Revisit only if m
 - ~~**M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.~~ Done: `docs/mocks/visual-feedback.html`.
 - ~~**M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.~~ Done: `docs/mocks/mobile.html`.
 - ~~**Worktrees:** the New session menu, the Worktrees screen, removal, and setup in progress or failed.~~ Done: `docs/mocks/worktrees.html`.
-- **M19:** phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh; phase 2, source ownership and import previews; phase 3, catalog browsing/search and installation previews. Review each phase separately.
+- **M19:** ~~phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh~~ (done); phase 2, source ownership and import previews; phase 3, catalog browsing/search and installation previews. Review each phase separately.
 - **M20:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 
 ---
