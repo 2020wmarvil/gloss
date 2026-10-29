@@ -4770,8 +4770,9 @@ kbd {
   user-select: none;
 }
 
+/* Over the surface, not instead of it: the head is sticky and rows scroll under it. */
 .diff-file:not(.gone) > .diff-file-head:hover {
-  background: var(--hover);
+  background: linear-gradient(var(--hover), var(--hover)) var(--surface);
 }
 
 /* The file tree's context menu, at the pointer. */
