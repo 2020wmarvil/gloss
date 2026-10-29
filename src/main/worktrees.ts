@@ -85,10 +85,27 @@ export function hasUnfinishedWork(work: UnfinishedWork): boolean {
   return work.unpushed > 0 && work.pr?.state !== 'merged'
 }
 
-/** A generated name: four lowercase letters and digits. */
+const ADJECTIVES = [
+  'amber', 'bold', 'brave', 'brisk', 'calm', 'clever', 'cosmic', 'crisp', 'curious', 'daring', 'dusty', 'eager',
+  'fancy', 'fluffy', 'gentle', 'gleaming', 'golden', 'happy', 'hidden', 'humble', 'jolly', 'keen', 'lively', 'lucky',
+  'mellow', 'merry', 'misty', 'nimble', 'noble', 'patient', 'plucky', 'polished', 'proud', 'quiet', 'quick', 'rapid',
+  'rustic', 'sandy', 'shiny', 'silent', 'silver', 'sleepy', 'smooth', 'snowy', 'sunny', 'swift', 'tidy', 'tiny',
+  'velvet', 'vivid', 'wandering', 'warm', 'wild', 'windy', 'wise', 'witty', 'zesty', 'breezy', 'cheerful', 'cozy',
+  'dapper', 'fearless', 'frosty', 'radiant'
+]
+const NOUNS = [
+  'acorn', 'badger', 'beacon', 'birch', 'bison', 'canyon', 'cedar', 'comet', 'coral', 'crane', 'creek', 'dolphin',
+  'dune', 'ember', 'falcon', 'fern', 'finch', 'fjord', 'fox', 'glacier', 'harbor', 'hedgehog', 'heron', 'island',
+  'jaguar', 'kestrel', 'koala', 'lagoon', 'lantern', 'lark', 'lemur', 'lynx', 'maple', 'meadow', 'meteor', 'moose',
+  'nebula', 'otter', 'owl', 'panda', 'pebble', 'pine', 'planet', 'puffin', 'quartz', 'raven', 'reef', 'river',
+  'robin', 'sparrow', 'spruce', 'squirrel', 'summit', 'tiger', 'tundra', 'turtle', 'valley', 'walrus', 'willow',
+  'wombat', 'wren', 'yak', 'zebra', 'orchid'
+]
+
+/** A generated name: an adjective and a noun, like `swift-otter`. */
 export function worktreeName(): string {
-  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
-  return [...randomBytes(4)].map((b) => alphabet[b % alphabet.length]).join('')
+  const [a, b] = randomBytes(2)
+  return `${ADJECTIVES[a % ADJECTIVES.length]}-${NOUNS[b % NOUNS.length]}`
 }
 
 /**
@@ -109,15 +126,20 @@ export async function resolveBase(projectPath: string, base: string | undefined)
 }
 
 /**
- * Creates a worktree on a new `gloss/<name>` branch under `root/<repo folder>/<name>`,
+ * Creates a worktree on a new `<prefix><name>` branch under `root/<repo folder>/<name>`,
  * from the `base` setting. Retries a name that is taken.
  */
-export async function createWorktree(projectPath: string, root: string, base: string | undefined): Promise<{ path: string; branch: string }> {
+export async function createWorktree(projectPath: string, root: string, base: string | undefined, prefix = 'gloss/'): Promise<{ path: string; branch: string }> {
   const start = await resolveBase(projectPath, base)
+  // Git can't have both `dev` and `dev/x` branches.
+  const folder = prefix.endsWith('/') ? prefix.slice(0, -1) : null
+  if (folder && await git(projectPath, ['rev-parse', '--verify', '--quiet', `refs/heads/${folder}`]).then(() => true, () => false)) {
+    throw new Error(`The branch ${folder} exists, so branches can't start with ${prefix}. Change the worktree branch prefix, for example to ${folder}-.`)
+  }
   const repo = basename(resolve(projectPath))
   for (let attempt = 0; attempt < 5; attempt++) {
     const name = worktreeName()
-    const branch = `gloss/${name}`
+    const branch = `${prefix}${name}`
     const path = join(root, repo, name)
     if (existsSync(path)) continue
     const taken = await git(projectPath, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, () => false)
@@ -126,6 +148,41 @@ export async function createWorktree(projectPath: string, root: string, base: st
     return { path, branch }
   }
   throw new Error('Could not find a free name for the worktree.')
+}
+
+/** The branch prefix setting, ending in `/` (or `-`, `_`); `gloss/` when empty. */
+export function branchPrefix(setting: string | undefined): string {
+  const prefix = setting?.trim() ?? ''
+  if (!prefix) return 'gloss/'
+  return /[/_-]$/.test(prefix) ? prefix : `${prefix}/`
+}
+
+/** A branch name from a session's first message: its first words, lowercase and hyphenated, up to 40 characters. */
+export function branchSlug(text: string): string {
+  const words = text.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean)
+  let slug = ''
+  for (const word of words) {
+    const next = slug ? `${slug}-${word}` : word
+    if (next.length > 40) break
+    slug = next
+  }
+  return slug || (words[0]?.slice(0, 40) ?? '')
+}
+
+/**
+ * Renames a worktree's branch to `<prefix><slug>`, or `<prefix><slug>-2` and so on when
+ * that is taken. Resolves the new branch.
+ */
+export async function renameWorktreeBranch(path: string, from: string, prefix: string, slug: string): Promise<string> {
+  for (let n = 1; n < 10; n++) {
+    const branch = `${prefix}${slug}${n > 1 ? `-${n}` : ''}`
+    if (branch === from) return from
+    const taken = await git(path, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, () => false)
+    if (taken) continue
+    await git(path, ['branch', '-m', from, branch])
+    return branch
+  }
+  throw new Error(`Could not find a free branch name for ${slug}.`)
 }
 
 /**

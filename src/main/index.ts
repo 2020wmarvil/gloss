@@ -26,7 +26,7 @@ import { takeForeground } from './foreground'
 import { runInTerminal } from './terminal'
 import { registerCaptureIpc, startCapture } from './capture'
 import type { AnnotateRequest, AnnotateResult } from '../shared/capture'
-import { normalizeShortcut, shortcutLabel } from '../shared/shortcut'
+import { normalizeShortcut } from '../shared/shortcut'
 import { UsageSource } from './usage'
 import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
@@ -430,8 +430,8 @@ const capture = { setting: '', registered: null as string | null, error: null as
 /**
  * Registers the setting's capture shortcut in place of the last one. It is the only one, and works
  * whether Gloss or another app is in front: the renderer starts a capture for the composer used
- * last. Empty turns it off. Another app holding the keys leaves none registered, with the reason
- * kept for the settings screen. While the settings screen records a new one it is paused, or the
+ * last. Empty turns it off. Another app holding the keys leaves none registered, without a note
+ * (another Gloss holds them while testing). While the settings screen records a new one it is paused, or the
  * keys would start a capture instead of reaching it.
  */
 function setCaptureShortcut(accelerator: string | undefined): void {
@@ -447,7 +447,6 @@ function setCaptureShortcut(accelerator: string | undefined): void {
   }
   try {
     if (globalShortcut.register(keys, () => emit({ type: 'captureShortcut' }))) capture.registered = keys
-    else capture.error = `Another app is already using ${shortcutLabel(keys, process.platform === 'darwin')}.`
   } catch {
     capture.error = `${capture.setting} isn't a key combination Gloss can use.`
   }
@@ -1137,7 +1136,7 @@ app.whenReady().then(() => {
     runInTerminal,
     worktreeSettings: (project) => {
       const p = projectSettings(settingsFile.state().projects, project)
-      return { base: p.worktreeBase, setup: p.worktreeSetup, place: p.newSessionPlace }
+      return { base: p.worktreeBase, setup: p.worktreeSetup, place: p.newSessionPlace, branchPrefix: p.worktreeBranchPrefix }
     },
     placeRemoved: (project) => {
       settingsFile.update({ project: { path: project, values: { newSessionPlace: 'folder' } } })

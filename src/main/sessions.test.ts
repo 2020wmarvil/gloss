@@ -2979,15 +2979,20 @@ describe('SessionManager worktrees', () => {
   const git: WorktreeGit = {
     list: async () => trees.map(({ work: _, ...e }) => e),
     unfinished: async (path) => trees.find((t) => t.path === path)?.work ?? clean,
-    create: async (_project, root) => {
+    create: async (_project, root, _base, prefix) => {
       const name = `n${trees.length}`
-      const tree = { path: `${root}/${name}`, branch: `gloss/${name}`, head: null, main: false }
+      const tree = { path: `${root}/${name}`, branch: `${prefix}${name}`, head: null, main: false }
       trees.push(tree)
       return tree
     },
     remove: async (_project, path) => {
       removed.push(path)
       trees = trees.filter((t) => t.path !== path)
+    },
+    rename: async (path, _from, prefix, slug) => {
+      const tree = trees.find((t) => t.path === path)!
+      tree.branch = `${prefix}${slug}`
+      return tree.branch
     },
     setup: (_cwd, command) => new Promise((resolve) => setup.push({ command, release: resolve }))
   }
@@ -3028,7 +3033,9 @@ describe('SessionManager worktrees', () => {
     expect(events.some((e) => e.type === 'worktrees' && e.project === '/project')).toBe(true)
     await manager.send(session.id, 'first', null)
     await manager.send(session.id, 'second', null)
-    expect(state.prompts[0]).toBe('[You are working in a git worktree at /wt/n1, on branch gloss/n1. The project folder is /project.]\nfirst')
+    expect(state.prompts[0]).toBe('[You are working in a git worktree at /wt/n1, on branch gloss/first. The project folder is /project.]\nfirst')
+    expect(trees.find((t) => t.path === '/wt/n1')!.branch).toBe('gloss/first')
+    expect(store.listWorktrees()[0].branch).toBe('gloss/first')
     expect(state.prompts[1]).toBe('second')
     const first = store.listMessages(session.id).find((m) => m.role === 'user')!
     expect(first.text).toBe('first')

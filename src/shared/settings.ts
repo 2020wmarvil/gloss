@@ -80,6 +80,8 @@ export type ProjectSettings = {
   worktreeBase?: string
   /** Run in each new worktree before its first turn; empty for none. */
   worktreeSetup?: string
+  /** What new worktrees' branch names start with; empty (or omitted) for `gloss/`. */
+  worktreeBranchPrefix?: string
   /** Where New session starts: `folder` (default), `worktree` (a new one) or an existing worktree's path. */
   newSessionPlace?: string
 }
@@ -160,6 +162,14 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Worktree setup command',
     description: "Runs in each new worktree before its first message is sent, for example npm install. Empty runs nothing.",
     placeholder: 'npm install'
+  },
+  {
+    key: 'worktreeBranchPrefix',
+    scope: 'project',
+    type: 'string',
+    label: 'Worktree branch prefix',
+    description: "What new worktrees' branch names start with, for example dev/. Empty uses gloss/.",
+    placeholder: 'gloss/'
   },
   {
     key: 'newSessionPlace', scope: 'project', type: 'string', label: 'New session starts in',

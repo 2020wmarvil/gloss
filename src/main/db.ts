@@ -410,6 +410,10 @@ export class Store {
       .run(w.path, w.project, w.branch, w.createdAt)
   }
 
+  setWorktreeBranch(path: string, branch: string): void {
+    this.db.prepare('UPDATE worktrees SET branch = ? WHERE path = ?').run(branch, path)
+  }
+
   listWorktrees(): { path: string; project: string; branch: string | null; createdAt: number }[] {
     return this.db.prepare('SELECT * FROM worktrees ORDER BY created_at').all().map((r) => ({
       path: r.path as string,
