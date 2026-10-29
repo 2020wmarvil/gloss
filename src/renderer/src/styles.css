@@ -6879,6 +6879,7 @@ button.danger-text {
 }
 
 .plugin-list-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -6897,9 +6898,26 @@ button.danger-text {
   background: var(--hover);
 }
 
+/* The open plugin: a card with the pink "you are here" bar, like the sidebar. */
 .plugin-list-item.selected {
-  background: var(--accent-tint);
-  border-color: var(--accent-mark);
+  background: var(--surface);
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1), 0 0 0 1px var(--line);
+}
+
+:root[data-theme='dark'] .plugin-list-item.selected {
+  background: var(--raised);
+}
+
+.plugin-list-item.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
 }
 
 .plugin-list-item > span:last-child {
