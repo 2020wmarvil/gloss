@@ -1,8 +1,8 @@
 # Milestones
 
-Build in order, from M19 through M24 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
+Build in order, from M19 through M23 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1 through M18, failed-turn actions and worktrees are done. Next is shared skills and plugins, followed by sub-agent threads, performance improvements and per-turn file checkpoints before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1 through M18, failed-turn actions and worktrees are done. Next is shared skills and plugins, followed by sub-agent threads and performance improvements before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M19: Shared plugin library and marketplaces
 Build on M13's global MCP settings and M14's agent profiles. Plugins are the top-level library entries; skills, tools and other capabilities are components inside them. Implement the three phases below in order, and stop for review at the end of each phase. Design and update `SPEC.md` for the phase being implemented; later phases do not block completion of the current one.
@@ -10,6 +10,8 @@ Build on M13's global MCP settings and M14's agent profiles. Plugins are the top
 **Skill compatibility groundwork (Windows, 2026-10-26):** tested Claude ACP 0.89.1 with its bundled Claude 2.1.293, Codex ACP 2.2.2 with CLI 0.160.1, and OpenCode 2.0.32 against a local mock provider. All discovered junction and copied skill deployments. Claude required a new session for edits to the junction target; Codex loaded edited instructions but needed a restart for its command description; OpenCode loaded edited skills and supporting files. OpenCode also discovered Claude/shared skill roots, so removing its own link did not disable a skill; a native per-skill deny rule hid it and rejected loading. A custom OpenCode profile loaded a configured skill directory. Codex's supporting-file tool check was unverified because the mock did not implement its automatic-review response format. These checks validate skill delivery, not whole-plugin portability. Plugin packaging/lifecycle, other platforms and production transfer/recovery behavior remain to be verified.
 
 **Design reference:** the local [plugin-library mock](mocks/plugins.html) now covers phase 1 only: custom plugin creation, nested skill editing, connections, agent availability and removal. The library has no Discover tab or import/manage-existing entry points. Agent controls live in the plugin's Agents detail tab, without a duplicate matrix in the library list. All example data and actions are simulated; component support still needs native verification.
+
+**Handoff:** phase 1 is paused partway through. Read [HANDOFF-M19.md](../HANDOFF-M19.md) before resuming: it has the recovery steps for the implementation folder, the agreed design and the remaining work.
 
 ### Phase 1: Custom plugins
 Create and maintain your own plugins in Gloss, and make them available to compatible configured agents.
@@ -77,18 +79,7 @@ Measure first, then fix what the numbers show. Keep the app's behavior unchanged
 
 **Done when:** the benchmark runs from one command, each fixed hotspot shows a measured improvement and has a deterministic test that would catch it coming back, typing and scrolling while streaming a long answer into a large, image-heavy session stay smooth (no long tasks over 50 ms in the renderer), and the numbers are recorded for the next comparison.
 
-## M22: Checkpoints and undo per turn
-Extend M17's conversation-only rewind with a separate way to inspect and undo a turn's file changes. Snapshot the working tree before each turn without adding commits to the user's history, using a hidden shadow repository or dedicated snapshot refs. Update `SPEC.md` and design the inspection and restore flows before implementation.
-
-- **Per-turn snapshots:** associate each turn with its checkout and before/after file state, including cancelled and failed turns. Preserve pre-existing local changes and define coverage for untracked files, ignored files and non-Git folders explicitly.
-- **Inspect a turn:** show exactly what a turn changed and allow a review session scoped to that turn's diff.
-- **Explicit file undo:** preview the affected files before restoring a checkpoint. Detect edits made since the snapshot and refuse to overwrite them silently. Keep file undo distinct from conversation rewind and explain which state each action restores.
-- **Concurrent sessions:** block restoration while a turn is running in that checkout, including M20's sub-agent threads, and account for overlapping edits from other sessions.
-- **Persistence and cleanup:** retain checkpoint associations across restart and define retention and cleanup without changing the user's Git history or deleting unrelated work.
-
-**Done when:** a user can inspect a completed or cancelled turn's file changes, review that diff, restart Gloss and explicitly restore its checkpoint without silently losing pre-existing or later edits. M17's conversation rewind continues to leave files unchanged.
-
-## M23: Shipping
+## M22: Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
 - **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
 - **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
@@ -97,7 +88,7 @@ Extend M17's conversation-only rewind with a separate way to inspect and undo a 
 
 **Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place. The signing policy is documented, and release artifacts follow it.
 
-## M24: Marketing
+## M23: Marketing
 Present Gloss to people who haven't used it. Comes after Shipping, so every link points at a release people can install.
 
 - **README:** lead with what Gloss is and why threads help, with visuals near the top: screenshots in light and dark, and short GIFs of the core features (replying to an item in a thread, steering a running turn, visual feedback pins). Install from the latest GitHub Release first; building from source moves lower. Trim the feature walkthrough to the highlights and link to the docs for the rest.
@@ -109,7 +100,7 @@ Present Gloss to people who haven't used it. Comes after Shipping, so every link
 **Done when:** someone landing on the repository understands what Gloss does from the README's first screen, can install it from the release link, find the docs for their agent, and watch the demo reel.
 
 ## Exploratory milestone: Package-manager-style skill updates
-Unscheduled exploration outside the M19-M24 delivery sequence. Revisit only if maintaining externally sourced skills becomes a useful workflow; M19's manually maintained shared library does not depend on it.
+Unscheduled exploration outside the M19-M23 delivery sequence. Revisit only if maintaining externally sourced skills becomes a useful workflow; M19's manually maintained shared library does not depend on it.
 
 - Investigate optional source and version tracking for skills that have an upstream repository or package. User-authored skills and skills with unknown origins must continue to work without this metadata.
 - Explore explicit update checks and previews, version pinning, recovery, and handling local edits when upstream files change. Evaluate whether automatic updates are useful as a separate opt-in decision.
@@ -125,7 +116,6 @@ Unscheduled exploration outside the M19-M24 delivery sequence. Revisit only if m
 - ~~**Worktrees:** the New session menu, the Worktrees screen, removal, and setup in progress or failed.~~ Done: `docs/mocks/worktrees.html`.
 - **M19:** phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh; phase 2, source ownership and import previews; phase 3, catalog browsing/search and installation previews. Review each phase separately.
 - **M20:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
-- **M22:** per-turn diff inspection, checkpoint restore preview, conflicts and retention controls.
 
 ---
 
@@ -184,7 +174,7 @@ A home for Gloss's settings, editable by hand (and by agents) as well as in the 
 - **Settings screen** (from the sidebar, or `Ctrl+,`): global and current-project sections, the file's path, and "Open in editor". Saving from the screen writes the file, keeping unknown keys.
 - Validated and owned by the main process; the renderer reads and writes through the IPC API.
 - Move the dev model (Haiku) toggle into it.
-- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M23: updates). No section appears before its feature exists.
+- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M22: updates). No section appears before its feature exists.
 
 **Done when:** a setting changed in the screen shows up in the file, a change made in an editor (or by an agent) shows up in the app without a restart, and a broken edit is reported without losing the previous settings.
 
@@ -289,7 +279,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
 - **Dark mode**, following the system setting, built on the dark tokens. *A Theme setting (System, Light, Dark) and a provisional dark palette landed early; M12 replaces the palette with the designed dark tokens.* *Done: the dark tokens, applied in the screen pass.*
 - Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected. *Done.*
-- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M23 installers. *Done.*
+- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M22 installers. *Done.*
 - Polish: empty, loading and error states; window title. *Done.*
 
 **Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
@@ -392,7 +382,7 @@ Point at things visually to give the agent feedback. Expect to iterate on this c
 
 ## ~~M17: Agent-native conversation rewind~~
 
-**Done.** Claude Code and Codex rewind by forking their saved native history at the selected boundary, preserving structured records without a synthetic transcript prompt. The selected prompt and attachments return to the composer; retained message IDs and thread anchors survive replay and restart. Failed fork loads can be retried. Unsupported agents offer no rewind, and transcript reconstruction and its size cap are removed except for pending legacy reconstructions. Conversation rewind leaves project files unchanged; per-turn file checkpoints and undo are scheduled in M22. Implemented in `e3d06fe`.
+**Done.** Claude Code and Codex rewind by forking their saved native history at the selected boundary, preserving structured records without a synthetic transcript prompt. The selected prompt and attachments return to the composer; retained message IDs and thread anchors survive replay and restart. Failed fork loads can be retried. Unsupported agents offer no rewind, and transcript reconstruction and its size cap are removed except for pending legacy reconstructions. Conversation rewind leaves project files unchanged. Implemented in `e3d06fe`.
 
 Replace the current fresh-session transcript prompt with native history restoration where the agent supports it. Keep the existing rewind interaction, draft restoration and conversation-only scope. Update `SPEC.md` in this milestone.
 
