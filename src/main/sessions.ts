@@ -400,6 +400,10 @@ export class SessionManager {
   }
 
   /** Stops the agent's process if no prompt is in flight. The next request starts a fresh one. */
+  isAgentBusy(agentId: string): boolean {
+    return this.slot(agentId).activePrompts > 0 || [...this.runtimes].some(([id, rt]) => rt.turn !== undefined && this.deps.store.getSession(id)?.agentId === agentId)
+  }
+
   async restartIdleAgent(agentId: string, waitForResume = false): Promise<boolean> {
     const slot = this.slot(agentId)
     const turns = (): boolean => [...this.runtimes].some(([id, rt]) => rt.turn !== undefined && this.deps.store.getSession(id)?.agentId === agentId)

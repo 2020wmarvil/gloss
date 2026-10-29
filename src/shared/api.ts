@@ -14,6 +14,21 @@ export function makeApi(t: ApiTransport): GlossApi {
   const invoke = (channel: string, ...args: unknown[]): Promise<never> => t.invoke(channel, ...args)
   const send = (channel: string, ...args: unknown[]): void => t.send(channel, ...args)
   return {
+    plugins: {
+      list: () => invoke(IPC.pluginsList),
+      create: (name, description) => invoke(IPC.pluginsCreate, name, description),
+      update: (id, change) => invoke(IPC.pluginsUpdate, id, change),
+      remove: (id) => invoke(IPC.pluginsRemove, id),
+      addSkill: (id, name, description) => invoke(IPC.pluginsAddSkill, id, name, description),
+      removeSkill: (id, skillId) => invoke(IPC.pluginsRemoveSkill, id, skillId),
+      readFile: (id, path) => invoke(IPC.pluginsReadFile, id, path),
+      writeFile: (id, file) => invoke(IPC.pluginsWriteFile, id, file),
+      createFile: (id, skillId, path, content) => invoke(IPC.pluginsCreateFile, id, skillId, path, content),
+      enable: (id, agentId, enabled) => invoke(IPC.pluginsEnable, id, agentId, enabled),
+      setSkillDirectory: (agentId, directory) => invoke(IPC.pluginsSetSkillDirectory, agentId, directory),
+      refresh: (agentId) => invoke(IPC.pluginsRefresh, agentId),
+      openFolder: (id) => invoke(IPC.pluginsOpenFolder, id)
+    },
     confirmClose: (requestId, close) => invoke(IPC.confirmClose, requestId, close),
     composer: {
       shell: (id, command) => invoke(IPC.composerShell, id, command),

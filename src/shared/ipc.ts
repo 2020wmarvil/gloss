@@ -117,6 +117,7 @@ export type PhoneStatus = {
 }
 
 export type GlossEvent =
+  | { type: 'pluginsChanged' }
   | { type: 'agents'; agents: AgentInfo[] }
   /** An agent's plan limits changed (a report, or a window that reset). */
   | { type: 'rateLimits'; agentId: string; limits: RateLimit[] }
@@ -206,6 +207,7 @@ export type MainAction =
   | { kind: 'reviewFolder'; sessionId: string; path?: string }
 
 export type GlossApi = {
+  plugins: import('./plugins').PluginApi
   confirmClose(requestId: string, close: boolean): Promise<void>
   composer: {
     shell(sessionId: string, command: string): Promise<ShellResult>
@@ -415,6 +417,19 @@ export type GlossApi = {
 export type AppBadge = { state: 'working' | 'completed' | 'failed' | null; unseen: number }
 
 export const IPC = {
+  pluginsList: 'gloss:plugins:list',
+  pluginsCreate: 'gloss:plugins:create',
+  pluginsUpdate: 'gloss:plugins:update',
+  pluginsRemove: 'gloss:plugins:remove',
+  pluginsAddSkill: 'gloss:plugins:addSkill',
+  pluginsRemoveSkill: 'gloss:plugins:removeSkill',
+  pluginsReadFile: 'gloss:plugins:readFile',
+  pluginsWriteFile: 'gloss:plugins:writeFile',
+  pluginsCreateFile: 'gloss:plugins:createFile',
+  pluginsEnable: 'gloss:plugins:enable',
+  pluginsSetSkillDirectory: 'gloss:plugins:setSkillDirectory',
+  pluginsRefresh: 'gloss:plugins:refresh',
+  pluginsOpenFolder: 'gloss:plugins:openFolder',
   composerContexts: 'gloss:composerContexts',
   composerShell: 'gloss:composerShell',
   composerCancelShell: 'gloss:composerCancelShell',

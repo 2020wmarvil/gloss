@@ -33,6 +33,8 @@ import { obsidianUri } from '../shared/obsidian'
 import { previewMcpImport } from './mcp-import'
 import { OpenCodeSupport } from './opencode'
 import { AgentProfileSupport } from './agentProfiles'
+import { PluginLibrary } from './plugins'
+import type { PluginChange, PluginFile } from '../shared/plugins'
 import { AgentAvailability } from './agentAvailability'
 import { profileError, type AgentProfile } from '../shared/agentProfiles'
 import { boundsArg, placeSessionWindow, type Rect } from './windowPlacement'
@@ -54,6 +56,37 @@ let profileSupport: AgentProfileSupport
 const appliedProfiles = new Map<string, AgentProfile>()
 const pendingProfiles = new Set<string>()
 let applyingProfiles = false
+let pluginLibrary: PluginLibrary | undefined
+const pendingPluginAgents = new Map<string, number>()
+let applyingPlugins = false
+
+function refreshPlugins(agentIds: string[]): void {
+  for (const id of agentIds) pendingPluginAgents.set(id, (pendingPluginAgents.get(id) ?? 0) + 1)
+  pluginLibrary?.markPending(agentIds)
+  emit({ type: 'pluginsChanged' })
+  void applyPluginChanges()
+}
+
+async function applyPluginChanges(): Promise<void> {
+  if (applyingPlugins || !sessions || !pluginLibrary) return
+  applyingPlugins = true
+  let changedWhileApplying = false
+  try {
+    for (const [id, revision] of pendingPluginAgents) {
+      if (!await sessions.restartIdleAgent(id, true)) continue
+      pluginLibrary.reconcile()
+      if (pendingPluginAgents.get(id) !== revision) { changedWhileApplying = true; continue }
+      pendingPluginAgents.delete(id)
+      pluginLibrary.refreshed(id)
+    }
+    emit({ type: 'pluginsChanged' })
+  } catch (error) {
+    console.error('[plugins] Could not refresh agent connections:', error)
+  } finally {
+    applyingPlugins = false
+    if (changedWhileApplying) void applyPluginChanges()
+  }
+}
 
 async function applyProfileChanges(): Promise<void> {
   if (applyingProfiles) return
@@ -422,6 +455,7 @@ function emit(event: GlossEvent): void {
     void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
   }
   if (event.type === 'turnEnd' && pendingProfiles.size) void applyProfileChanges()
+  if (event.type === 'turnEnd' && pendingPluginAgents.size) void applyPluginChanges()
 }
 
 /** The capture shortcut (SPEC → Visual feedback): the setting, what is registered now, and why it isn't. */
@@ -674,6 +708,28 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     })
     phoneApi.add(channel, handler)
   }
+  const library = pluginLibrary!
+  ipcMain.handle(IPC.pluginsList, () => library.list())
+  ipcMain.handle(IPC.pluginsCreate, (_e, name: unknown, description: unknown) => library.create(str(name, 'name'), str(description, 'description')))
+  ipcMain.handle(IPC.pluginsUpdate, (_e, id: unknown, change: unknown) => library.update(str(id, 'plugin'), change as PluginChange))
+  ipcMain.handle(IPC.pluginsRemove, (_e, id: unknown) => library.remove(str(id, 'plugin')))
+  ipcMain.handle(IPC.pluginsAddSkill, (_e, id: unknown, name: unknown, description: unknown) => library.addSkill(str(id, 'plugin'), str(name, 'name'), str(description, 'description')))
+  ipcMain.handle(IPC.pluginsRemoveSkill, (_e, id: unknown, skillId: unknown) => library.removeSkill(str(id, 'plugin'), str(skillId, 'skill')))
+  ipcMain.handle(IPC.pluginsReadFile, (_e, id: unknown, path: unknown) => library.readFile(str(id, 'plugin'), str(path, 'path')))
+  ipcMain.handle(IPC.pluginsWriteFile, (_e, id: unknown, file: unknown) => library.writeFile(str(id, 'plugin'), file as PluginFile))
+  ipcMain.handle(IPC.pluginsCreateFile, (_e, id: unknown, skillId: unknown, path: unknown, content: unknown) => library.createFile(str(id, 'plugin'), str(skillId, 'skill'), str(path, 'path'), str(content, 'content')))
+  ipcMain.handle(IPC.pluginsEnable, (_e, id: unknown, agentId: unknown, enabled: unknown) => library.enable(str(id, 'plugin'), str(agentId, 'agent'), enabled as boolean))
+  ipcMain.handle(IPC.pluginsSetSkillDirectory, (_e, agentId: unknown, directory: unknown) => library.setSkillDirectory(str(agentId, 'agent'), str(directory, 'directory')))
+  ipcMain.handle(IPC.pluginsRefresh, (_e, agentId: unknown) => {
+    const id = str(agentId, 'agent')
+    if (!listAgents().some(a => a.id === id) && !settingsFile.state().global.agentProfiles?.some(p => p.id === id)) throw new Error('Unknown agent.')
+    library.reconcile()
+    refreshPlugins([id])
+  })
+  ipcMain.handle(IPC.pluginsOpenFolder, async (_e, id: unknown) => {
+    const error = await shell.openPath(id === undefined ? library.directory : library.folder(str(id, 'plugin')))
+    if (error) throw new Error(error)
+  })
   const agentEntries = (status?: OpenCodeStatus) => {
     const builtins = listAgents().map((agent) => agent.id === 'opencode'
       ? { ...agent, available: status?.available ?? false, setupMessage: status ? status.error ?? undefined : 'Checking OpenCode availability…' }
@@ -1106,6 +1162,7 @@ app.whenReady().then(() => {
         if (JSON.stringify(nextProfile) !== JSON.stringify(appliedProfiles.get(p.id))) pendingProfiles.add(p.id)
       }
       void applyProfileChanges()
+      if (JSON.stringify(next.global.mcpServers) !== JSON.stringify(previous.global.mcpServers) || JSON.stringify(next.global.agentProfiles) !== JSON.stringify(previous.global.agentProfiles)) pluginLibrary?.settingsChanged()
     }
   })
   settings = settingsFile
@@ -1115,16 +1172,24 @@ app.whenReady().then(() => {
   nativeTheme.themeSource = settingsFile.state().global.theme
   setCaptureShortcut(settingsFile.state().global.captureShortcut)
   settingsFile.watch()
+  pluginLibrary = new PluginLibrary({
+    directory: join(dataDir, 'plugins'),
+    agents: () => [...listAgents(), ...(settingsFile.state().global.agentProfiles ?? []).map(p => ({ id: p.id, name: p.name }))],
+    connections: () => settingsFile.state().global.mcpServers,
+    busy: id => sessions?.isAgentBusy(id) ?? false,
+    changed: refreshPlugins
+  })
+  pluginLibrary.startWatching()
   sessions = new SessionManager({
     store,
     emit,
-    getAgentConfig: (id) => id === 'opencode'
+    getAgentConfig: (id) => pluginLibrary!.configureAgent(id === 'opencode'
       ? openCode.config(settingsFile.state().global.opencodeExecutable)
       : id.startsWith('custom:') ? (() => {
         const profile = appliedProfiles.get(id)
         if (!profile) throw new Error('This agent profile was removed. Restore it with the same ID in Settings > Agents to resume this conversation.')
         return profileSupport.config(profile)
-      })() : getAgentConfig(id),
+      })() : getAgentConfig(id)),
     mcpServers: () => settingsFile.state().global.mcpServers,
     permissionMode: (cwd) => {
       const state = settingsFile.state()
@@ -1177,6 +1242,7 @@ app.on('before-quit', (event) => {
   quitting = true
   void phone?.dispose()
   settings?.close()
+  pluginLibrary?.close()
   void sessions?.dispose()
   store?.close()
 })
