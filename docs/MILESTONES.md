@@ -26,7 +26,7 @@ Create and maintain your own plugins in Gloss, and make them available to compat
 
 **Done.** See SPEC → Plugins. Verified with real adapters (Claude ACP 0.89, Codex ACP 2.2.2, OpenCode 2.0.32 and a custom OpenCode profile) against a local model stub and MCP server (`src/main/plugins.integration.test.ts`, opt in with `GLOSS_PLUGIN_NATIVE=1`): each loaded a plugin's skill and its supporting file, saw the shared MCP tool, picked up an edited skill after a restart and resume, and dropped the skill but kept the tool once disabled. Codex's supporting-file read wasn't checked (its automatic reviewer needs a structured answer the stub doesn't give). Live through the built app on Haiku 5.5, a Claude session loaded `gloss-release-notes:release-notes-instructions` and quoted its edited steps. The built app with a fresh data folder covered creation, editing, files, connections, enabling, custom setup and removal, and kept all of it across a restart.
 
-### Phase 2: Plugin import
+### ~~Phase 2: Plugin import~~
 Import is done by an agent, not by a built-in importer. The user points an agent at a plugin, skill or repository (a local folder, or a git URL it clones) and asks it to set it up in Gloss; the agent writes the plugin into the library and any servers into Settings, and Gloss validates and delivers the result through phase 1. Most of the work is moving files and editing JSON, which an agent does well, and it copes with layouts and setup notes a parser wouldn't.
 
 - **A built-in skill teaches the format:** Gloss ships a skill (for example `gloss-plugins`) that tells any agent how to create or import a plugin: the library location and layout, `plugin.json`, skill folder naming and matching frontmatter `name`, and the `mcpServers` shape in `settings.json`. It carries the import rules below as instructions. It is delivered like any plugin skill, so every supported agent gets it.
@@ -39,6 +39,8 @@ Import is done by an agent, not by a built-in importer. The user points an agent
 - **Verify:** with each supported agent, import a Claude plugin, a Codex plugin, a standalone skill, a folder of skills, a plugin from a local marketplace clone and one from a git URL. Cover a plugin with a bundled server, a server already in Settings, a name collision, a plugin with left-out components, a malformed result, and that sources are left unchanged and imports survive a restart.
 
 **Done when:** a user can ask an agent to import a plugin or skill, from a folder or a git URL, and use it through the phase 1 library on every supported agent. Left-out components are reported, mistakes show as problems instead of breaking agents, and imports persist across restart. Browsing or searching marketplaces is not required.
+
+**Done.** See SPEC → Plugins → Import. The built-in `gloss-plugins` skill reaches Claude ACP 0.89, Codex ACP 2.2.2, OpenCode 2.0.32 and a custom OpenCode profile (`src/main/plugins.integration.test.ts`, `GLOSS_PLUGIN_NATIVE=1`). Live, Haiku 5.5 through Claude and Codex in the adapter's default mode each loaded the skill unprompted and imported a Claude plugin with two skills, a command, a hook and three servers: skills renamed with their cross-reference, `${CLAUDE_PLUGIN_ROOT}` rewritten, an identical server reused, a clashing name renamed, the command and hook left out and reported, the source unchanged, and Gloss validated the result without problems. Codex's automatic approval review refused to store a token from the environment until the user agreed. Not run live: a git URL source and a marketplace clone.
 
 **Outside M19:** browsing and searching plugin catalogs (marketplaces) was dropped: an agent can install a plugin it is pointed at through phase 2. Upstream updates of imported plugins are not planned; agents, hooks and LSP servers in plugins remain a separate exploratory milestone. Presets, separate workspace dashboards and multi-device library backup are also deferred.
 
@@ -119,7 +121,7 @@ Unscheduled, outside the M19-M24 sequence. M19 limits plugins to skills and MCP 
 - ~~**M16:** the palette, the annotation canvas and its tools, and how pins look in the image and as thread anchors.~~ Done: `docs/mocks/visual-feedback.html`.
 - ~~**M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.~~ Done: `docs/mocks/mobile.html`.
 - ~~**Worktrees:** the New session menu, the Worktrees screen, removal, and setup in progress or failed.~~ Done: `docs/mocks/worktrees.html`.
-- **M19:** ~~phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh~~ (done); phase 2, agent-driven import through a built-in skill (the Plugins screen hint is the only UI). Review each phase separately.
+- **M19:** ~~phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh~~ (done); ~~phase 2, agent-driven import through a built-in skill (the Plugins screen hint is the only UI)~~ (done).
 - **M20:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
 - **M22:** the shortcut editor: rows with recorders, changed and conflict states, Reset and Reset all.
 

@@ -419,3 +419,77 @@ it('retries plugin directory removal and explains persistent filesystem failures
   library.remove(id)
   expect(existsSync(folder)).toBe(false)
 })
+
+describe('import (phase 2)', () => {
+  const settings = (): string => join(root, 'settings.json')
+  const removeConnections = vi.fn((names: string[]) => { connections = connections.filter(s => !names.includes(s.name)) })
+  function withBuiltin(): PluginLibrary { return new PluginLibrary({ directory: join(root, 'plugins'), agents: () => agents, connections: () => connections, busy: id => busy.has(id), changed, settings: settings(), removeConnections }) }
+  beforeEach(() => { removeConnections.mockClear(); library.close(); library = withBuiltin() })
+
+  it('delivers the built-in skill to every agent, with no plugin enabled, naming the library and settings', () => {
+    library.reconcile()
+    const builtin = join(root, 'plugins/runtime/builtin')
+    for (const folder of ['claude/skills', 'codex/.agents/skills', 'opencode/skills']) {
+      const content = readFileSync(join(builtin, folder, 'gloss-plugins/SKILL.md'), 'utf8')
+      expect(content).toMatch(/^---\nname: gloss-plugins\n/)
+      expect(content).toContain(library.directory)
+      expect(content).toContain(settings())
+      expect(content).toContain('`custom:local` (Local agent)')
+    }
+    expect(JSON.parse(readFileSync(join(builtin, 'claude/.claude-plugin/plugin.json'), 'utf8')).name).toBe('gloss')
+    expect(library.configureAgent(getAgentConfig('claude')).sessionMeta!('').new).toMatchObject({ claudeCode: { options: { plugins: [{ type: 'local', path: join(builtin, 'claude') }] } } })
+    expect(library.configureAgent(getAgentConfig('codex')).sessionMeta!('').new?.additionalRoots).toEqual([join(builtin, 'codex')])
+    const opencode = library.configureAgent({ ...getAgentConfig('opencode'), env: { OPENCODE_CONFIG_CONTENT: '{}' } })
+    expect(JSON.parse(opencode.env!.OPENCODE_CONFIG_CONTENT).skills).toEqual([join(builtin, 'opencode/skills')])
+    expect(library.list().plugins).toEqual([])
+    // Enabling a plugin adds its delivery after the built-in one.
+    const id = library.create('Writing', 'Write clearly'); library.enable(id, 'codex', true)
+    expect(library.configureAgent(getAgentConfig('codex')).sessionMeta!('').new?.additionalRoots).toEqual([join(builtin, 'codex'), join(root, 'plugins/runtime/codex')])
+  })
+
+  it("writes it into a custom agent's directory without replacing the user's content, and moves it with the directory", () => {
+    const first = join(root, 'custom-a'); const second = join(root, 'custom-b')
+    library.setSkillDirectory('custom:local', first)
+    expect(readFileSync(join(first, 'gloss-plugins/SKILL.md'), 'utf8')).toContain('name: gloss-plugins')
+    mkdirSync(join(second, 'gloss-plugins'), { recursive: true }); writeFileSync(join(second, 'gloss-plugins/SKILL.md'), 'Mine')
+    library.setSkillDirectory('custom:local', second)
+    expect(existsSync(join(first, 'gloss-plugins'))).toBe(false)
+    expect(readFileSync(join(second, 'gloss-plugins/SKILL.md'), 'utf8')).toBe('Mine')
+  })
+
+  it('reserves the built-in skill name', () => {
+    const id = library.create('Gloss', 'Mine')
+    expect(() => library.addSkill(id, 'plugins', 'Clash')).toThrow(/reserved/)
+    const folder = join(record(id).directory, 'skills/gloss-plugins'); mkdirSync(folder)
+    writeFileSync(join(folder, 'SKILL.md'), '---\nname: gloss-plugins\ndescription: Clash\n---\n')
+    expect(record(id).problems[0]).toMatch(/reserved/)
+  })
+
+  it('picks up and deploys a plugin an agent writes straight into the library', async () => {
+    library.startWatching(); changed.mockClear()
+    const folder = join(library.directory, 'imported')
+    mkdirSync(join(folder, 'skills/imported-review/references'), { recursive: true })
+    writeFileSync(join(folder, 'skills/imported-review/SKILL.md'), '---\nname: imported-review\ndescription: Review a change.\n---\n\nRead references/list.md.\n')
+    writeFileSync(join(folder, 'skills/imported-review/references/list.md'), 'Checklist')
+    writeFileSync(join(folder, 'plugin.json'), JSON.stringify({ schemaVersion: 1, name: 'Imported', description: 'From elsewhere', connections: ['Docs'], enabledAgents: ['codex'] }))
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith(['codex']), { timeout: 3000 })
+    expect(record('imported')).toMatchObject({ problems: [], skills: [{ id: 'imported-review', files: ['SKILL.md', 'references/list.md'] }] })
+    expect(record('imported').agents.find(a => a.id === 'codex')!.status).toBe('ready')
+    expect(readFileSync(join(root, 'plugins/runtime/codex/.agents/skills/imported-review/references/list.md'), 'utf8')).toBe('Checklist')
+  })
+
+  it("removes the servers launched from inside a removed plugin's folder and keeps the others", () => {
+    const id = library.create('Bundled', 'Has its own server')
+    const folder = record(id).directory
+    connections.push(
+      { name: 'bundled', command: 'node', args: [join(folder, 'server.js').split(sep).join('/')], env: [] },
+      { name: 'bundled-cwd', command: 'bun', args: ['run', '--cwd', folder.toUpperCase(), 'start'], env: [] },
+      { name: 'neighbour', command: 'node', args: [`${folder}-two/server.js`], env: [] },
+      { name: 'shared', command: 'npx', args: ['@playwright/mcp'], env: [] })
+    library.update(id, { connections: ['bundled', 'shared'] })
+    library.remove(id)
+    expect(removeConnections).toHaveBeenCalledWith(process.platform === 'win32' ? ['bundled', 'bundled-cwd'] : ['bundled'])
+    expect(connections.map(s => s.name)).toContain('shared')
+    expect(connections.map(s => s.name)).toContain('neighbour')
+  })
+})

@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { AgentConfig } from './agents'
 import type { McpServer } from '../shared/mcp'
 import { skillInvocation } from './skillInvocation'
+import { BUILTIN_SKILL, builtinSkill } from './pluginSkill'
 import { mcpName } from '../shared/mcp'
 import { PLUGIN_ID, pluginSlug, type PersonalPlugin, type PluginAgentState, type PluginChange, type PluginFile, type PluginLibraryState, type PluginManifest, type PluginSkill } from '../shared/plugins'
 
@@ -17,6 +18,10 @@ type Options = {
   connections(): McpServer[]
   busy?(agentId: string): boolean
   changed?(agentIds: string[]): void
+  /** Gloss's settings.json, named in the built-in skill. Without it there is no built-in skill. */
+  settings?: string
+  /** Removes these servers from the settings (the ones a removed plugin's folder held). */
+  removeConnections?(names: string[]): void
   /** Test the copy fallback without depending on OS symlink privilege. */
   link?: typeof symlinkSync
 }
@@ -52,6 +57,17 @@ function removeDirectory(folder: string, noun: string): void {
   }
 }
 function inside(root: string, file: string): boolean { const rel = relative(root, file); return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel)) }
+/** A stdio server whose command or one of its arguments is a path into `folder`. */
+export function pointsInto(server: McpServer, folder: string): boolean {
+  if ('type' in server) return false
+  const norm = (value: string): string => { const v = value.replace(/\\/g, '/'); return process.platform === 'win32' ? v.toLowerCase() : v }
+  const root = norm(resolve(folder)).replace(/\/$/, '')
+  return [server.command, ...server.args].some(value => {
+    const v = norm(value)
+    for (let i = v.indexOf(root); i >= 0; i = v.indexOf(root, i + 1)) if (i + root.length === v.length || v[i + root.length] === '/') return true
+    return false
+  })
+}
 function exists(path: string): boolean { try { lstatSync(path); return true } catch (error) { if (isMissing(error)) return false; throw error } }
 
 /** All source mutations are confined to this instance's library. Native user config is never edited. */
@@ -158,6 +174,7 @@ export class PluginLibrary {
     if (!exists(root)) return []
     return readdirSync(this.safe(root), { withFileTypes: true }).map(entry => {
       if (!entry.isDirectory() || !PLUGIN_ID.test(entry.name)) throw new Error('Each skill must be an ordinary folder with a lowercase name.')
+      if (entry.name === BUILTIN_SKILL) throw new Error(`${BUILTIN_SKILL} is reserved for Gloss’s built-in skill. Rename this skill.`)
       const dir = join(root, entry.name)
       const file = join(dir, 'SKILL.md')
       const raw = this.readText(file)
@@ -311,6 +328,7 @@ export class PluginLibrary {
     description = text(description, 'skill description', 1000)
     const skillId = `${id}-${pluginSlug(name)}`
     if (!PLUGIN_ID.test(skillId)) throw new Error('The plugin and skill names together must fit within 64 characters.')
+    if (skillId === BUILTIN_SKILL) throw new Error(`${BUILTIN_SKILL} is reserved for Gloss’s built-in skill. Choose another name.`)
     const folder = this.safe(join(this.folder(id), 'skills', skillId))
     if (exists(folder)) throw new Error('A skill with this name already exists in this plugin.')
     const initial = `---\nname: ${skillId}\ndescription: ${JSON.stringify(description)}\n---\n\n# ${name}\n\nDescribe the workflow here.\n`
@@ -372,7 +390,11 @@ export class PluginLibrary {
     if (targets.some(d => this.options.busy?.(d.agentId))) throw new Error('Wait for the agents using this plugin to finish their turns before removing it.')
     for (const target of targets) this.assertOwned(target)
     for (const target of targets) this.removeTarget(target)
-    removeDirectory(folder, 'this plugin'); this.changed()
+    const servers = this.options.connections().filter(s => pointsInto(s, folder)).map(s => s.name)
+    removeDirectory(folder, 'this plugin')
+    // A server launched from inside the plugin can't run without it (SPEC → Plugins → Import).
+    try { if (servers.length) this.options.removeConnections?.(servers) }
+    finally { this.changed() }
   }
   enable(id: string, agentId: string, enabled: boolean): void {
     this.assertState()
@@ -407,6 +429,8 @@ export class PluginLibrary {
     }
     if (sharedRoots.some(root => overlaps(real(root), canonical)) || overlaps(real(this.directory), canonical) || overlaps(real(this.runtime), canonical)) throw new Error('Use a directory separate from the library and other agents’ discovery roots.')
     if (Object.entries(this.state.customDirectories).some(([id, dir]) => id !== agentId && overlaps(real(dir), canonical))) throw new Error('Each custom agent needs its own skill directory for independent availability.')
+    const previous = this.builtinFolder(agentId)
+    if (previous && exists(previous) && this.ownsBuiltin(previous)) rmSync(previous, { recursive: true })
     this.state.customDirectories[agentId] = canonical; this.persist(); this.changed()
   }
 
@@ -502,7 +526,48 @@ export class PluginLibrary {
       if (exists(dir) && lstatSync(dir).isSymbolicLink()) throw new Error('A deployment parent was replaced by a link. Its contents were preserved.')
     }
   }
+  /** The built-in skill's folder for an agent, or undefined when it can't get it (SPEC → Plugins → Import). */
+  private builtinFolder(agentId: string): string | undefined {
+    const root = join(this.runtime, 'builtin')
+    if (agentId === 'claude') return join(root, 'claude', 'skills', BUILTIN_SKILL)
+    if (agentId === 'codex') return join(root, 'codex', '.agents', 'skills', BUILTIN_SKILL)
+    if (agentId === 'opencode') return join(root, 'opencode', 'skills', BUILTIN_SKILL)
+    const dir = this.state.customDirectories[agentId]
+    return dir ? join(dir, BUILTIN_SKILL) : undefined
+  }
+  /** A folder holding only the built-in skill, so Gloss may update or remove it. */
+  private ownsBuiltin(folder: string): boolean {
+    const stat = lstatSync(folder)
+    if (!stat.isDirectory() || stat.isSymbolicLink()) return false
+    const items = readdirSync(folder)
+    return items.length === 1 && items[0] === 'SKILL.md' && readFileSync(join(folder, 'SKILL.md'), 'utf8').startsWith(`---\nname: ${BUILTIN_SKILL}\n`)
+  }
+  /** Writes the built-in skill for every agent. It isn't part of the library and can't be turned off. */
+  private deliverBuiltin(): void {
+    if (!this.options.settings) return
+    const content = builtinSkill({ library: this.directory, settings: this.options.settings, agents: this.options.agents() })
+    for (const agent of this.options.agents()) {
+      const folder = this.builtinFolder(agent.id)
+      if (!folder) continue
+      try {
+        // A custom agent's directory may hold the user's own content: never replace it.
+        if (agent.id.startsWith('custom:') && exists(folder) && !this.ownsBuiltin(folder)) continue
+        const file = join(folder, 'SKILL.md')
+        if (!exists(file) || readFileSync(file, 'utf8') !== content) atomic(file, content)
+        if (agent.id === 'claude') {
+          const manifest = join(this.runtime, 'builtin', 'claude', '.claude-plugin', 'plugin.json')
+          const value = JSON.stringify({ name: 'gloss', description: 'Built into Gloss.' }) + '\n'
+          if (!exists(manifest) || readFileSync(manifest, 'utf8') !== value) atomic(manifest, value)
+        }
+      } catch (error) { console.warn(`[plugins] Could not write the built-in skill for ${agent.id}:`, message(error)) }
+    }
+  }
+  private hasBuiltin(agentId: string): boolean {
+    const folder = this.builtinFolder(agentId)
+    return !!this.options.settings && !!folder && exists(join(folder, 'SKILL.md'))
+  }
   reconcile(): void {
+    this.deliverBuiltin()
     if (this.stateProblem) return
     this.errors.clear()
     const expected = new Set<string>()
@@ -569,14 +634,14 @@ export class PluginLibrary {
    * shows why); it never stops the agent from starting.
    */
   configureAgent(config: AgentConfig): AgentConfig {
-    if (this.stateProblem) return config
-    const deploymentErrors = this.deploymentErrors()
-    const enabled = this.sources().filter(p => p.manifest.enabledAgents.includes(config.id)
+    const builtin = this.hasBuiltin(config.id)
+    const deploymentErrors = this.stateProblem ? new Map<string, string>() : this.deploymentErrors()
+    const enabled = this.stateProblem ? [] : this.sources().filter(p => p.manifest.enabledAgents.includes(config.id)
       && !p.problems.length
       && !this.blockers(p.manifest, config.id).length
       && !deploymentErrors.has(`${config.id}:${p.id}`))
     if (config.id === 'opencode') {
-      if (!enabled.length) return config
+      if (!enabled.length && !builtin) return config
       const raw = config.env?.OPENCODE_CONFIG_CONTENT ?? process.env.OPENCODE_CONFIG_CONTENT ?? '{}'
       let content: unknown
       try { content = JSON.parse(raw) } catch { content = null }
@@ -584,19 +649,28 @@ export class PluginLibrary {
         console.warn('[plugins] OPENCODE_CONFIG_CONTENT has no usable skills list; plugins are left out.')
         return config
       }
-      const skills = [...new Set([...(content.skills as string[] | undefined ?? []), join(this.runtime, 'opencode', 'skills')])]
+      const skills = [...new Set([
+        ...(content.skills as string[] | undefined ?? []),
+        ...(builtin ? [join(this.runtime, 'builtin', 'opencode', 'skills')] : []),
+        ...(enabled.length ? [join(this.runtime, 'opencode', 'skills')] : [])
+      ])]
       return { ...config, env: { ...config.env, OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...content, skills }) } }
     }
-    if ((config.id !== 'claude' && config.id !== 'codex') || !enabled.length) return config
+    if ((config.id !== 'claude' && config.id !== 'codex') || (!enabled.length && !builtin)) return config
     const decorate = (previous: Record<string, unknown>): Record<string, unknown> => {
       if (config.id === 'codex') {
         const roots = Array.isArray(previous.additionalRoots) ? previous.additionalRoots : []
-        return { ...previous, additionalRoots: [...roots, join(this.runtime, 'codex')] }
+        return { ...previous, additionalRoots: [
+          ...roots,
+          ...(builtin ? [join(this.runtime, 'builtin', 'codex')] : []),
+          ...(enabled.length ? [join(this.runtime, 'codex')] : [])
+        ] }
       }
       const claude = object(previous.claudeCode) ? previous.claudeCode : {}
       const options = object(claude.options) ? claude.options : {}
       const plugins = [
         ...(Array.isArray(options.plugins) ? options.plugins : []),
+        ...(builtin ? [{ type: 'local', path: join(this.runtime, 'builtin', 'claude') }] : []),
         ...enabled.map(p => ({ type: 'local', path: join(this.runtime, 'claude', p.id) }))
       ]
       return { ...previous, claudeCode: { ...claude, options: { ...options, plugins } } }
