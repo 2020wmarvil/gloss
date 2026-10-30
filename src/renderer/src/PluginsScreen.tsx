@@ -215,7 +215,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
     </>
   }
   return <main className="plugins-screen"><section className="plugin-settings" aria-label="Plugins">
-    <header className="plugin-library-header"><div><h2>Plugins</h2><p>Your skills and tools, kept together.</p></div></header>
+    <header className="plugin-library-header"><div><h2>Plugins</h2><p>Your skills and tools, kept together. To import a plugin or skill, ask any session to use the <code>gloss-plugins</code> skill.</p></div></header>
     {!dialog && error && <p className="plugin-error" role="alert">{error}</p>}{!dialog && state?.errors.map(e => <p className="plugin-error" role="alert" key={e}>{e}</p>)}
     <div className="plugin-workspace" ref={workspace}><div className="plugin-library">
       <div className="plugin-toolbar"><label className="plugin-search"><Search /><input aria-label="Find a plugin" placeholder="Find a plugin…" value={query} onChange={e => setQuery(e.target.value)} /></label><button className="primary" disabled={!state} onClick={() => navigate(() => setDialog({ kind: 'new' }))}><Plus />New plugin</button></div>

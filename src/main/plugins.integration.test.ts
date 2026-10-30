@@ -62,7 +62,7 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).for(['claude', 'codex', 'opencode', 
   mkdirSync(env.CODEX_HOME)
   writeFileSync(join(env.CODEX_HOME, 'config.toml'), `model = "gpt-5.4"\nmodel_provider = "probe"\n[model_providers.probe]\nname = "Local probe"\nbase_url = "${base}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\n`)
   const connections: McpServer[] = [{ name: 'plugin-docs', command: process.execPath, args: ['-e', mcpScript], env: [] }]
-  const library = new PluginLibrary({ directory: join(root, 'plugins'), agents: () => [{ id: agentId, name: agentId }], connections: () => connections })
+  const library = new PluginLibrary({ directory: join(root, 'plugins'), agents: () => [{ id: agentId, name: agentId }], connections: () => connections, settings: join(root, 'settings.json') })
   const id = library.create('Native probe', 'Only for plugin integration testing')
   const skill = library.list().plugins[0].skills[0]
   const file = library.readFile(id, skill.path)
@@ -120,6 +120,7 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).for(['claude', 'codex', 'opencode', 
     expect(JSON.stringify(payloads).includes(marker), 'Native skill instructions reached the provider').toBe(true)
     expect(JSON.stringify(payloads).includes('plugin_probe'), 'Local MCP tool was advertised').toBe(true)
     if (agentId !== 'codex') expect(JSON.stringify(payloads).includes(resource), 'Native supporting-file read reached the provider').toBe(true)
+    expect(JSON.stringify(payloads).includes('import an existing plugin or skill into Gloss'), 'The built-in skill is advertised').toBe(true)
     // Edit the skill it just used, restart and resume the same session: the revised text reaches the provider.
     const revised = `GLOSS_PLUGIN_REVISED_${randomUUID()}`
     const current = library.readFile(id, skill.path)
