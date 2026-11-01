@@ -441,10 +441,28 @@ describe('import (phase 2)', () => {
     expect(library.configureAgent(getAgentConfig('codex')).sessionMeta!('').new?.additionalRoots).toEqual([join(builtin, 'codex')])
     const opencode = library.configureAgent({ ...getAgentConfig('opencode'), env: { OPENCODE_CONFIG_CONTENT: '{}' } })
     expect(JSON.parse(opencode.env!.OPENCODE_CONFIG_CONTENT).skills).toEqual([join(builtin, 'opencode/skills')])
-    expect(library.list().plugins).toEqual([])
+    expect(library.list().plugins.map(p => p.id)).toEqual(['gloss:builtin'])
     // Enabling a plugin adds its delivery after the built-in one.
     const id = library.create('Writing', 'Write clearly'); library.enable(id, 'codex', true)
     expect(library.configureAgent(getAgentConfig('codex')).sessionMeta!('').new?.additionalRoots).toEqual([join(builtin, 'codex'), join(root, 'plugins/runtime/codex')])
+  })
+
+  it('lists the built-in plugin read-only and always on, and rewrites a hand edit before an agent starts', () => {
+    library.reconcile()
+    const builtin = library.list().plugins[0]
+    expect(builtin).toMatchObject({ id: 'gloss:builtin', builtin: true, problems: [], skills: [{ id: 'gloss-plugins', files: ['SKILL.md'] }] })
+    expect(builtin.skills[0].description).toMatch(/^Create a plugin in Gloss/)
+    expect(builtin.agents.map(a => [a.id, a.status])).toEqual([['claude', 'ready'], ['codex', 'ready'], ['opencode', 'ready'], ['custom:local', 'setup']])
+    const file = library.readFile('gloss:builtin', 'skills/gloss-plugins/SKILL.md')
+    expect(file.content).toContain(library.directory)
+    expect(() => library.writeFile('gloss:builtin', { ...file, content: 'Changed' })).toThrow(/Invalid plugin identifier/)
+    expect(() => library.enable('gloss:builtin', 'claude', false)).toThrow(/Invalid plugin identifier/)
+    expect(() => library.remove('gloss:builtin')).toThrow(/Invalid plugin identifier/)
+    expect(() => library.readFile('gloss:builtin', 'skills/gloss-plugins/other.md')).toThrow(/Unknown file/)
+    const generated = join(root, 'plugins/runtime/builtin/codex/.agents/skills/gloss-plugins/SKILL.md')
+    writeFileSync(generated, 'Hand edit')
+    library.configureAgent(getAgentConfig('codex'))
+    expect(readFileSync(generated, 'utf8')).toBe(file.content)
   })
 
   it("writes it into a custom agent's directory without replacing the user's content, and moves it with the directory", () => {
@@ -455,6 +473,7 @@ describe('import (phase 2)', () => {
     library.setSkillDirectory('custom:local', second)
     expect(existsSync(join(first, 'gloss-plugins'))).toBe(false)
     expect(readFileSync(join(second, 'gloss-plugins/SKILL.md'), 'utf8')).toBe('Mine')
+    expect(library.list().plugins[0].agents.find(a => a.id === 'custom:local')).toMatchObject({ status: 'error', message: expect.stringMatching(/kept/) })
   })
 
   it('reserves the built-in skill name', () => {

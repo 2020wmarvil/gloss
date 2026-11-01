@@ -7,7 +7,7 @@ import type { McpServer } from '../shared/mcp'
 import { skillInvocation } from './skillInvocation'
 import { BUILTIN_SKILL, builtinSkill } from './pluginSkill'
 import { mcpName } from '../shared/mcp'
-import { PLUGIN_ID, pluginSlug, type PersonalPlugin, type PluginAgentState, type PluginChange, type PluginFile, type PluginLibraryState, type PluginManifest, type PluginSkill } from '../shared/plugins'
+import { BUILTIN_PLUGIN_ID, PLUGIN_ID, pluginSlug, type PersonalPlugin, type PluginAgentState, type PluginChange, type PluginFile, type PluginLibraryState, type PluginManifest, type PluginSkill } from '../shared/plugins'
 
 type Agent = { id: string; name: string }
 type Deployment = { agentId: string; pluginId: string; target: string; source: string; mode: 'link' | 'copy'; hash: string }
@@ -273,6 +273,7 @@ export class PluginLibrary {
         message
       }
     }
+    const builtin = this.builtinPlugin(agents)
     const plugins: PersonalPlugin[] = sources.map(p => ({
       ...p.manifest,
       id: p.id,
@@ -287,7 +288,7 @@ export class PluginLibrary {
       usedBy: plugins.filter(p => p.connections.some(n => mcpName(n) === mcpName(s.name))).map(p => p.name)
     }))
     const errors = [this.stateProblem, this.watchProblem].filter((e): e is string => !!e)
-    return { directory: this.directory, plugins, connections, errors }
+    return { directory: this.directory, plugins: builtin ? [builtin, ...plugins] : plugins, connections, errors }
   }
 
   create(name: string, description: string): string {
@@ -344,7 +345,13 @@ export class PluginLibrary {
     if (typeof path !== 'string' || !path.startsWith('skills/') || path.includes('\\') || path.split('/').some(p => !p || p === '.' || p === '..' || p.includes(':'))) throw new Error('Choose a relative file path within a skill.')
     return this.safe(join(this.folder(id), path))
   }
-  readFile(id: string, path: string): PluginFile { const content = this.readText(this.file(id, path)); return { path, content, revision: hash(content) } }
+  readFile(id: string, path: string): PluginFile {
+    if (id === BUILTIN_PLUGIN_ID && this.options.settings) {
+      if (path !== `skills/${BUILTIN_SKILL}/SKILL.md`) throw new Error('Unknown file.')
+      const content = this.builtinContent()
+      return { path, content, revision: hash(content) }
+    }
+    const content = this.readText(this.file(id, path)); return { path, content, revision: hash(content) } }
   writeFile(id: string, file: PluginFile): void {
     if (!object(file) || typeof file.content !== 'string' || Buffer.byteLength(file.content) > MAX_FILE || file.content.includes('\0')) throw new Error('Use text content up to 1 MB.')
     const existing = this.readFile(id, file.path)
@@ -543,9 +550,37 @@ export class PluginLibrary {
     return items.length === 1 && items[0] === 'SKILL.md' && readFileSync(join(folder, 'SKILL.md'), 'utf8').startsWith(`---\nname: ${BUILTIN_SKILL}\n`)
   }
   /** Writes the built-in skill for every agent. It isn't part of the library and can't be turned off. */
+  private builtinContent(): string {
+    return builtinSkill({ library: this.directory, settings: this.options.settings ?? '', agents: this.options.agents() })
+  }
+  /** The built-in plugin as the Plugins screen shows it: read-only, on for every agent that can get it. */
+  private builtinPlugin(agents: Agent[]): PersonalPlugin | undefined {
+    if (!this.options.settings) return undefined
+    const path = `skills/${BUILTIN_SKILL}/SKILL.md`
+    const description = /^description: "(.*)"$/m.exec(this.builtinContent())?.[1] ?? ''
+    return {
+      schemaVersion: 1, id: BUILTIN_PLUGIN_ID, builtin: true, name: 'Gloss plugins',
+      description: 'Built into Gloss: lets any agent create a plugin or import one into this library.',
+      connections: [], enabledAgents: agents.map(a => a.id), directory: join(this.runtime, 'builtin'), problems: [],
+      skills: [{ id: BUILTIN_SKILL, name: BUILTIN_SKILL, description, path, files: ['SKILL.md'], invocation: 'automatic', invocationRevision: '' }],
+      agents: agents.map(agent => {
+        const custom = agent.id.startsWith('custom:')
+        const configured = !custom || !!this.state.customDirectories[agent.id]
+        const ready = this.hasBuiltin(agent.id) && (!custom || this.ownsBuiltin(this.builtinFolder(agent.id)!))
+        return {
+          ...agent, enabled: true, skillDirectory: this.state.customDirectories[agent.id],
+          support: !custom ? 'tested' : configured ? 'configured' : 'unknown',
+          status: ready ? 'ready' : configured ? 'error' : 'setup',
+          message: ready ? '' : !configured ? 'Gets it once this custom agent’s skill directory is set.'
+            : custom ? `A folder Gloss didn’t write occupies ${this.builtinFolder(agent.id)}. It was kept, so this agent doesn’t get the skill.`
+            : 'The built-in skill could not be written. Restart Gloss to retry.'
+        }
+      })
+    }
+  }
   private deliverBuiltin(): void {
     if (!this.options.settings) return
-    const content = builtinSkill({ library: this.directory, settings: this.options.settings, agents: this.options.agents() })
+    const content = this.builtinContent()
     for (const agent of this.options.agents()) {
       const folder = this.builtinFolder(agent.id)
       if (!folder) continue
@@ -634,6 +669,8 @@ export class PluginLibrary {
    * shows why); it never stops the agent from starting.
    */
   configureAgent(config: AgentConfig): AgentConfig {
+    // Rewritten on every start, so a hand edit to the generated skill never reaches a session.
+    this.deliverBuiltin()
     const builtin = this.hasBuiltin(config.id)
     const deploymentErrors = this.stateProblem ? new Map<string, string>() : this.deploymentErrors()
     const enabled = this.stateProblem ? [] : this.sources().filter(p => p.manifest.enabledAgents.includes(config.id)

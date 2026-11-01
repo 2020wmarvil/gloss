@@ -24,7 +24,11 @@ export type PersonalPlugin = PluginManifest & {
   skills: PluginSkill[]
   problems: string[]
   agents: PluginAgentState[]
+  /** Gloss's own read-only, always-on plugin (SPEC → Plugins → Import). */
+  builtin?: boolean
 }
+/** The built-in plugin's id: outside PLUGIN_ID, so no library operation accepts it. */
+export const BUILTIN_PLUGIN_ID = 'gloss:builtin'
 export type PluginLibraryState = {
   directory: string
   plugins: PersonalPlugin[]
