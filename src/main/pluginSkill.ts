@@ -1,7 +1,9 @@
 /** The built-in skill that lets any agent create or import a plugin (SPEC → Plugins → Import). */
-export const BUILTIN_SKILL = 'gloss-plugins'
-/** Its name in Claude, inside the plugin `gloss` (`gloss:plugins`), like a library plugin's skills. */
-export const BUILTIN_CLAUDE_SKILL = 'plugins'
+export const BUILTIN_SKILL = 'gloss-new-plugin'
+/** Its name in Claude, inside the plugin `gloss` (`gloss:new-plugin`), like a library plugin's skills. */
+export const BUILTIN_CLAUDE_SKILL = 'new-plugin'
+/** Earlier names of the built-in skill's folders, removed where Gloss wrote them. */
+export const LEGACY_BUILTIN_SKILLS = ['plugins', 'gloss-plugins']
 
 type Context = {
   /** The plugin library folder. */

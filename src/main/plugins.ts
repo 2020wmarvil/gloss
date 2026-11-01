@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { AgentConfig } from './agents'
 import type { McpServer } from '../shared/mcp'
 import { skillInvocation } from './skillInvocation'
-import { BUILTIN_CLAUDE_SKILL, BUILTIN_SKILL, builtinSkill } from './pluginSkill'
+import { BUILTIN_CLAUDE_SKILL, BUILTIN_SKILL, LEGACY_BUILTIN_SKILLS, builtinSkill } from './pluginSkill'
 import { mcpName } from '../shared/mcp'
 import { BUILTIN_PLUGIN_ID, PLUGIN_ID, pluginSlug, type PersonalPlugin, type PluginAgentState, type PluginChange, type PluginFile, type PluginLibraryState, type PluginManifest, type PluginSkill } from '../shared/plugins'
 
@@ -77,7 +77,7 @@ export function flatSkillName(pluginId: string, skillId: string): string { retur
 function renameSkill(content: string, name: string): string {
   return content.replace(/^(---\r?\n[\s\S]*?)^name:[^\r\n]*/m, `$1name: ${name}`)
 }
-/** The id the built-in plugin takes in Claude (`gloss:plugins`); library plugins can't use it. */
+/** The id the built-in plugin takes in Claude (`gloss:new-plugin`); library plugins can't use it. */
 const RESERVED_PLUGIN_ID = 'gloss'
 function exists(path: string): boolean { try { lstatSync(path); return true } catch (error) { if (isMissing(error)) return false; throw error } }
 
@@ -558,12 +558,12 @@ export class PluginLibrary {
     const dir = this.state.customDirectories[agentId]
     return dir ? join(dir, BUILTIN_SKILL) : undefined
   }
-  /** A folder holding only the built-in skill, so Gloss may update or remove it. */
-  private ownsBuiltin(folder: string): boolean {
+  /** A folder holding only the built-in skill (`name` its current or an earlier name), so Gloss may update or remove it. */
+  private ownsBuiltin(folder: string, name = BUILTIN_SKILL): boolean {
     const stat = lstatSync(folder)
     if (!stat.isDirectory() || stat.isSymbolicLink()) return false
     const items = readdirSync(folder)
-    return items.length === 1 && items[0] === 'SKILL.md' && readFileSync(join(folder, 'SKILL.md'), 'utf8').startsWith(`---\nname: ${BUILTIN_SKILL}\n`)
+    return items.length === 1 && items[0] === 'SKILL.md' && readFileSync(join(folder, 'SKILL.md'), 'utf8').startsWith(`---\nname: ${name}\n`)
   }
   /** Writes the built-in skill for every agent. It isn't part of the library and can't be turned off. */
   private builtinContent(name = BUILTIN_SKILL): string {
@@ -601,6 +601,7 @@ export class PluginLibrary {
       const folder = this.builtinFolder(agent.id)
       if (!folder) continue
       try {
+        this.removeLegacyBuiltin(agent.id, folder)
         // A custom agent's directory may hold the user's own content: never replace it.
         if (agent.id.startsWith('custom:') && exists(folder) && !this.ownsBuiltin(folder)) continue
         const file = join(folder, 'SKILL.md')
@@ -611,6 +612,14 @@ export class PluginLibrary {
           if (!exists(manifest) || readFileSync(manifest, 'utf8') !== value) atomic(manifest, value)
         }
       } catch (error) { console.warn(`[plugins] Could not write the built-in skill for ${agent.id}:`, message(error)) }
+    }
+  }
+  /** Removes the built-in skill's folders under an earlier name, only where Gloss wrote them. */
+  private removeLegacyBuiltin(agentId: string, folder: string): void {
+    for (const name of LEGACY_BUILTIN_SKILLS) {
+      const old = join(dirname(folder), name)
+      if (!exists(old)) continue
+      if (!agentId.startsWith('custom:') || this.ownsBuiltin(old, name)) rmSync(old, { recursive: true })
     }
   }
   private hasBuiltin(agentId: string): boolean {
