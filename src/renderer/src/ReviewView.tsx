@@ -19,7 +19,7 @@ import { threadSummaries } from './ThreadsOverview'
 import { modKey } from './shortcuts'
 import { useRightButtonLines, type LineBounds } from './lineSelect'
 import { useReviewFileSelection } from './reviewSelection'
-import { copySelection, SelectionContextMenu, type MenuItem } from './SelectionMenu'
+import { copySelection, forkItem, replyKey, SelectionContextMenu, type MenuItem } from './SelectionMenu'
 import { ChevronDown, ChevronsDownUp, ChevronsUpDown, ChevronUp, Columns2, Copy, CornerDownLeft, ExternalLink, MessageSquare, MessageSquareOff, PanelLeft, RotateCcw, Rows2, ScanSearch } from 'lucide-react'
 
 export type DiffState = { diff: ReviewDiff | null; error: string | null }
@@ -48,7 +48,10 @@ type Props = {
   onCommand(text: string): void
   onOpenThread(threadId: string): void
   /** Opens a new thread (or the existing one) on selected lines. */
-  onReplyLines(anchor: LineAnchor): void
+  /** `fork`: the thread runs in a fork of the session (SPEC → Fork threads). */
+  onReplyLines(anchor: LineAnchor, fork: boolean): void
+  /** Why the agent can't fork its sessions, if it can't. */
+  forkDisabled?: string
   /** Changes what the diff compares. */
   onSetRange(range: ReviewRange): void
   /** A session is being started. */
@@ -542,6 +545,7 @@ export function ReviewView(props: Props): React.JSX.Element {
           sources={sources}
           layout={shownLayout}
           onReply={props.onReplyLines}
+          forkDisabled={props.forkDisabled}
           onOpenFile={props.onOpenFile}
         />
       )}
@@ -559,10 +563,11 @@ function DiffSelectionMenu(props: {
   diff: ReviewDiff
   sources: Sources
   layout: Layout
-  onReply(anchor: LineAnchor): void
+  onReply(anchor: LineAnchor, fork: boolean): void
+  forkDisabled?: string
   onOpenFile(path: string, how: 'editor', line: number): void
 }): React.JSX.Element | null {
-  const { scope, diff, sources, layout, onReply, onOpenFile } = props
+  const { scope, diff, sources, layout, onReply, onOpenFile, forkDisabled } = props
   useReviewFileSelection(scope)
   /** The menu on a selection: its lines, and where it opened. */
   const [menu, setMenu] = useState<{ anchor: LineAnchor | null; x: number; y: number } | null>(null)
@@ -630,10 +635,10 @@ function DiffSelectionMenu(props: {
   })
 
   const reply = useCallback(
-    (anchor: LineAnchor) => {
+    (anchor: LineAnchor, fork = false) => {
       window.getSelection()?.removeAllRanges()
       setMenu(null)
-      onReply(anchor)
+      onReply(anchor, fork)
     },
     [onReply]
   )
@@ -641,23 +646,24 @@ function DiffSelectionMenu(props: {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement | null
-      if (e.ctrlKey || e.metaKey || e.altKey || target?.isContentEditable || target?.matches?.('input, textarea')) return
-      if (e.key !== 'r' && e.key !== 'R') return
+      if (target?.isContentEditable || target?.matches?.('input, textarea')) return
+      const how = replyKey(e)
+      if (!how || (how === 'fork' && forkDisabled)) return
       const anchor = selected()
       if (!anchor) return
       e.preventDefault()
-      reply(anchor)
+      reply(anchor, how === 'fork')
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selected, reply])
+  }, [selected, reply, forkDisabled])
 
   const close = useCallback(() => setMenu(null), [])
   if (!menu) return null
   const anchor = menu.anchor
   const file = anchor && diff.files.find((f) => f.path === anchor.file)
   const items: MenuItem[] = [
-    ...(anchor ? [{ label: 'Reply to selection', icon: CornerDownLeft, primary: true, keys: 'R', run: () => reply(anchor) }] : []),
+    ...(anchor ? [{ label: 'Reply to selection', icon: CornerDownLeft, primary: true, keys: 'R', run: () => reply(anchor) }, forkItem(forkDisabled, () => reply(anchor, true))] : []),
     { label: 'Copy', icon: Copy, separatorBefore: anchor !== null, keys: `${modKey()}+C`, run: copySelection }
   ]
   if (anchor && file && file.status !== 'deleted')

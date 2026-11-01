@@ -14,8 +14,8 @@ export type PinAnchors = {
   threadOf(messageId: string, image: number, pin: number): { id: string; replies: number } | undefined
   /** The pin whose thread the side panel shows. */
   active: { messageId: string; image: number; pin: number } | null
-  /** The thread a turn runs in. */
-  runningThread: string | null
+  /** The threads with a running turn (the session's, and its fork threads'). */
+  running: string[]
   onOpenPin(message: Message, image: number, pin: number): void
 }
 
@@ -23,7 +23,7 @@ export type PinAnchors = {
 export function pinAnchorsFor(
   open: OpenSession,
   panel: Panel | null,
-  runningThread: string | null | undefined,
+  running: string[],
   onOpenPin: PinAnchors['onOpenPin']
 ): PinAnchors {
   const replies = new Map<string, number>()
@@ -35,7 +35,7 @@ export function pinAnchorsFor(
       return t && { id: t.id, replies: replies.get(t.id) ?? 0 }
     },
     active: panel?.anchorMessageId && a?.kind === 'pin' ? { messageId: panel.anchorMessageId, image: a.image, pin: a.pin } : null,
-    runningThread: runningThread ?? null,
+    running,
     onOpenPin
   }
 }
@@ -60,7 +60,7 @@ function PinTargets({ message, image, index, anchors, width, height }: Props & {
         const n = i + 1
         const thread = anchors?.threadOf(message.id, index, n)
         const active = anchors?.active?.messageId === message.id && anchors.active.image === index && anchors.active.pin === n
-        const running = thread !== undefined && anchors?.runningThread === thread.id
+        const running = thread !== undefined && anchors?.running.includes(thread.id) === true
         const classes = ['pin-target', active && 'active', running && 'running'].filter(Boolean).join(' ')
         return (
           <button

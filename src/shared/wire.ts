@@ -63,6 +63,40 @@ export function wireText(
   return afterThread ? `${MAIN_TAG}\n${text}` : text
 }
 
+/**
+ * Follows the tag of a fork thread's first message (SPEC → Fork threads). In the message,
+ * not the agent's instructions: a fork keeps its parent's, so the prompt cache still hits.
+ */
+export const FORK_NOTE =
+  "(This conversation was forked to work on that point in a side thread. The main conversation carries on separately, including anything it was in the middle of, so don't redo or wait for that. It won't see this thread.)"
+
+/** A fork thread's message: its first is tagged and says it is a fork, later ones are sent as they are. */
+export function forkWireText(text: string, anchor: Anchor, first: boolean): string {
+  return first ? `${threadTag(anchor)}\n${FORK_NOTE}\n${text}` : text
+}
+
+/** What a fork thread asks its agent for when the user sends from it to the main conversation. */
+export const FORK_SUMMARY_PROMPT =
+  'The user is sending a message from this side thread to the main conversation, which has not seen it. Summarize, for the main conversation, what happened here since your last such summary (or since the fork, if there is none): what you found or decided, and which files you changed. Be brief, use plain markdown, and reply with the summary only.'
+
+/** The text of the fork's summary request, which isn't shown: the summary shows in the main conversation. */
+export const FORK_SUMMARY_LABEL = 'Summarize for the main conversation'
+
+/** Heads the fork's summary in a message sent to the main conversation from a fork thread. */
+const FORK_SUMMARY_HEAD = "That thread ran in a fork of this conversation, which you haven't seen. Its summary:"
+
+/** A message sent to the main conversation from a fork thread: the fork's summary goes after the user's text. */
+export function withForkSummary(wire: string, summary: string): string {
+  return `${wire}\n\n${FORK_SUMMARY_HEAD}\n${summary.trim()}`
+}
+
+/** The fork's summary a message sent to the main conversation carries, and the wire without it; null when it has none. */
+export function splitForkSummary(wire: string): { wire: string; summary: string } | null {
+  const at = wire.lastIndexOf(`\n\n${FORK_SUMMARY_HEAD}\n`)
+  if (at < 0) return null
+  return { wire: wire.slice(0, at), summary: wire.slice(at + FORK_SUMMARY_HEAD.length + 3) }
+}
+
 /** How a pin is named in the conversation: "Pin 2: <note>", or "Pin 2" without a note. */
 export function pinLabel(n: number, note: string): string {
   const text = note.replace(/\s+/g, ' ').trim()

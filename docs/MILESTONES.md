@@ -2,21 +2,22 @@
 
 Build in order, from M20 through M24 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1 through M19, failed-turn actions and worktrees are done. Next is sub-agent threads, followed by performance improvements and custom keyboard shortcuts before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1 through M19, failed-turn actions and worktrees are done, and M20 (sub-agent threads) is built and in review. Next are performance improvements and custom keyboard shortcuts before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M20: Sub-agent threads
-An opt-in alternative to view-only threads: a thread runs its own agent session instead of being tagged into the main one. Changes the core idea in `SPEC.md` (update it in this milestone).
+An opt-in alternative to view-only threads: a thread runs in its own fork of the agent session instead of being tagged into the main one. Changes the core idea in `SPEC.md` (see Fork threads there, which has the design and the verified adapter behavior).
 
-- **Thread mode setting** (M6 settings, global with a per-project override): `view-only` (default, today's behavior), `fresh` or `fork`.
-  - **fresh:** a new agent session that starts with only the anchor text (plus the user's message). Cheap.
-  - **fork:** `session/fork` of the main session at the moment the thread is created, so the sub-agent has the full context. Costs about as much as the main session.
-  Both exist so they can be compared in practice. Each thread shows its mode.
-- Each sub-agent thread has its own ACP session (stored on the Thread), resumed like any session. Turns in different sessions can run at the same time; Send is disabled per session, not everywhere. No file locking: as with several CLI sessions side by side, the user keeps their edits apart.
-- **Resolve:** a sub-agent thread can be resolved. The sub-agent is asked for a compact summary of its conclusions, which is sent to the main session (shown in the main thread as the thread's result). A resolved thread is marked as such.
-- **Cost is visible:** each sub-agent thread's context and cost appear in the status line when it is open, and in the threads overview.
-- If the mode is `fork` and the agent does not advertise `session/fork` (it is optional in ACP), creating the thread fails with a visible error. No silent fallback.
+**Decided (interview, 2026-10-28), replacing the first plan:** fork only, started per thread from the selection menu's **Reply - Fork** (`F`), with no thread mode setting and no fresh mode (it can come later on the same plumbing). A fork is made from what is already written, even mid-turn, and never waits. No resolve step: nothing reaches the main session unless the user sends to main, which first asks the fork for a summary since its last one. Same working tree, no locking. The list-item hover Reply button and its `listItemReplies` setting are removed. The phone gets the same features.
 
-**Done when:** with either mode on, a thread runs as its own agent, can run while the main thread works, and resolving it brings its summary into the main session.
+**Built (2026-10-29), in review:** each fork thread runs in a hidden child session with its own ACP session (`session/fork` without a fork point), turn, queue, steering, status and requests, shown as the thread of its parent. Verified against Claude ACP 0.89.1 on Haiku and Codex ACP 2.2.2 with an opt-in live test (`src/main/fork.integration.test.ts`): a fork made while the main turn runs a shell command answers while that turn goes on, knows the history up to the fork, and its summary reaches the main session through Send to main.
+
+- **Starting one:** **Reply - Fork** in the conversation's and the review diff's selection menus, and **Fork** in the phone's reply bar; disabled with a tooltip for agents that can't fork (OpenCode, custom profiles).
+- **Running:** a fork's turns run at the same time as the main session's and other forks'. Send, Stop, the queue and steering are per session.
+- **Visible:** a Fork tag on the thread and its Threads row, the fork's context and cost on that row, and the fork's work in the running dots, sidebar, badge, notifications and phone.
+- **Send to main:** the fork summarizes outside its thread, and the summary goes with the user's message and shows under it in the main conversation.
+- **Lifetime:** the fork goes with its thread, and its agent copy with it.
+
+**Done when:** a thread started with Reply - Fork runs as its own agent, can run while the main thread works, and sending to main from it brings its summary into the main session.
 
 ## M21: Performance
 Measure first, then fix what the numbers show. Keep the app's behavior unchanged, and don't optimize anything the measurements don't point at.
@@ -82,7 +83,7 @@ Unscheduled, outside the M19-M24 sequence. M19 limits plugins to skills and MCP 
 - ~~**M18:** the phone layout (session list, conversation, threads full screen, composer with queue and steer), pairing and the devices list.~~ Done: `docs/mocks/mobile.html`.
 - ~~**Worktrees:** the New session menu, the Worktrees screen, removal, and setup in progress or failed.~~ Done: `docs/mocks/worktrees.html`.
 - **M19:** ~~phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh~~ (done); ~~phase 2, agent-driven import through a built-in skill (the Plugins screen hint is the only UI)~~ (done).
-- **M20:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow (what the summary looks like in the main thread).
+- ~~**M20:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow.~~ Settled in the M20 interview: no mode setting or resolve flow, and the design went straight into the app.
 - **M22:** the shortcut editor: rows with recorders, changed and conflict states, Reset and Reset all.
 
 ---

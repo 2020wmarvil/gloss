@@ -23,18 +23,18 @@ it('reuses unchanged annotated content, refreshes callbacks, and invalidates vis
   const oldAction = vi.fn()
   const nextAction = vi.fn()
   const anchors = (onOpenItem = oldAction, count = 0): MessageAnchors => ({
-    replyCount: () => count, activeIndex: null, runningIndex: null,
-    onOpenItem, marks: [], threadCount: () => 0, runningThread: null, onOpenThread: vi.fn()
+    replyCount: () => count, activeIndex: null, runningIndexes: [],
+    onOpenItem, marks: [], threadCount: () => 0, running: [], onOpenThread: vi.fn()
   })
   const render = (a: MessageAnchors, text = '1. First\n2. Second') => act(() => root.render(<Markdown text={text} anchors={a} />))
   try {
-    render(anchors())
+    render(anchors(oldAction, 1))
     const firstSpan = el.querySelector('[data-src]')
     expect(parsed).toHaveBeenCalledTimes(1)
-    render(anchors(nextAction))
+    render(anchors(nextAction, 1))
     expect(parsed).toHaveBeenCalledTimes(1)
     expect(el.querySelector('[data-src]')).toBe(firstSpan)
-    act(() => el.querySelector<HTMLButtonElement>('[aria-label="Reply to item 1"]')!.click())
+    act(() => el.querySelector<HTMLButtonElement>('.item-count')!.click())
     expect(oldAction).not.toHaveBeenCalled()
     expect(nextAction).toHaveBeenCalledOnce()
     render(anchors(nextAction, 2))

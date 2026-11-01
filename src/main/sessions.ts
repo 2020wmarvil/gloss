@@ -8,7 +8,7 @@ import { readdirSync, rmdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type * as acp from '@agentclientprotocol/sdk'
 import { pathToFileURL } from 'node:url'
-import type { GlossEvent, PullRequest, SessionView, TurnResult } from '../shared/ipc'
+import type { ForkView, GlossEvent, PullRequest, SessionView, TurnResult } from '../shared/ipc'
 import type {
   AgentSession,
   Anchor,
@@ -30,8 +30,8 @@ import type {
   TurnOutcome,
   Worktree
 } from '../shared/types'
-import { canRewind, type RewindPoint } from '../shared/composer'
-import { AGENT_INSTRUCTIONS, pinAnchor, wireText, withPins } from '../shared/wire'
+import { canFork, canRewind, type RewindPoint } from '../shared/composer'
+import { AGENT_INSTRUCTIONS, FORK_NOTE, FORK_SUMMARY_LABEL, FORK_SUMMARY_PROMPT, forkWireText, pinAnchor, wireText, withForkSummary, withPins } from '../shared/wire'
 import {
   findingsBlocks,
   findingThread,
@@ -244,11 +244,77 @@ export class SessionManager {
   /** Session state the agent reported for an ACP session before Gloss registered it (during session/new). */
   private readonly pendingLive = new Map<string, Partial<SessionLive>>()
   private readonly agents = new Map<string, AgentSlot>()
+  /** A session id → the thread it is shown as, for a fork thread's session; null for others. */
+  private readonly forkHomes = new Map<string, Session['forkOf'] | null>()
   private disposed = false
+  private readonly deps: SessionManagerDeps
 
-  constructor(private readonly deps: SessionManagerDeps) {
+  constructor(deps: SessionManagerDeps) {
+    // A fork thread's session is shown as that thread of its parent (SPEC → Fork threads).
+    this.deps = { ...deps, emit: (event) => { const shown = this.shown(event); if (shown) deps.emit(shown) } }
     // Draft reviews from the last run: nothing was sent in them, and their agent sessions are gone.
     for (const s of deps.store.listSessions()) if (s.draft) deps.store.deleteSession(s.id)
+  }
+
+  /** Where a fork thread's session is shown: its parent and thread. Null for any other session. */
+  private forkHome(sessionId: string): Session['forkOf'] | null {
+    const known = this.forkHomes.get(sessionId)
+    if (known !== undefined) return known
+    const session = this.deps.store.getSession(sessionId)
+    if (!session) return null
+    const home = session.forkOf ?? null
+    this.forkHomes.set(sessionId, home)
+    return home
+  }
+
+  /**
+   * An event as the windows see it. A fork's log entries are its thread's, in the parent
+   * session; what it inherited from the parent isn't shown again, and the fork's session
+   * is never listed. Its running state (turns, queue, status, requests) keeps its own id.
+   */
+  private shown(event: GlossEvent): GlossEvent | null {
+    switch (event.type) {
+      case 'message': {
+        const home = this.forkHome(event.message.sessionId)
+        if (!home) return event
+        return event.message.threadId === home.threadId ? { ...event, message: { ...event.message, sessionId: home.sessionId } } : null
+      }
+      case 'toolCall': {
+        const home = this.forkHome(event.toolCall.sessionId)
+        if (!home) return event
+        return event.toolCall.threadId === home.threadId ? { ...event, toolCall: { ...event.toolCall, sessionId: home.sessionId } } : null
+      }
+      case 'plan': {
+        const home = this.forkHome(event.plan.sessionId)
+        if (!home) return event
+        return event.plan.threadId === home.threadId ? { ...event, plan: { ...event.plan, sessionId: home.sessionId } } : null
+      }
+      case 'messageDeleted':
+      case 'sessionSynced': {
+        const home = this.forkHome(event.sessionId)
+        return home ? { ...event, sessionId: home.sessionId } : event
+      }
+      case 'notice': {
+        const home = this.forkHome(event.sessionId)
+        return home ? { ...event, sessionId: home.sessionId, threadId: home.threadId } : event
+      }
+      case 'live':
+      case 'queue':
+      case 'requests':
+      case 'turnStart':
+      case 'turnEnd': {
+        const home = this.forkHome(event.sessionId)
+        return home ? { ...event, forkOf: home } : event
+      }
+      case 'session':
+        return this.forkHome(event.session.id) ? null : event
+      case 'sessionDeleted':
+      case 'sessionCleared':
+      case 'sessionRewound':
+        return this.forkHome(event.sessionId) ? null : event
+      default:
+        return event
+    }
   }
 
   private now(): number {
@@ -305,6 +371,12 @@ export class SessionManager {
   private sessionMeta(agentId: string, request: 'new' | 'load', review = false): Record<string, unknown> | undefined {
     const instructions = review ? `${AGENT_INSTRUCTIONS}\n${REVIEW_INSTRUCTIONS}` : AGENT_INSTRUCTIONS
     return this.deps.getAgentConfig(agentId).sessionMeta?.(instructions)[request]
+  }
+
+  /** A review session, or a fork of one: it keeps the review's instructions. */
+  private isReview(session: Session): boolean {
+    const own = session.forkOf ? this.deps.store.getSession(session.forkOf.sessionId) : session
+    return !!own?.review
   }
 
   private get git(): ReviewGit {
@@ -385,11 +457,19 @@ export class SessionManager {
    * Where each session's turn runs (its thread, null for main) and how many questions and approvals
    * it waits on, for a phone that connects mid-turn (SPEC → Remote and mobile). Idle sessions are left out.
    */
-  activity(): Record<string, { turn: string | null | undefined; requests: number; queued: number; paused: boolean }> {
-    const out: Record<string, { turn: string | null | undefined; requests: number; queued: number; paused: boolean }> = {}
+  activity(): Record<string, { turn: string | null | undefined; requests: number; queued: number; paused: boolean; forkOf?: Session['forkOf'] }> {
+    const out: Record<string, { turn: string | null | undefined; requests: number; queued: number; paused: boolean; forkOf?: Session['forkOf'] }> = {}
     for (const [id, rt] of this.runtimes) {
       if (!rt.turn && rt.requests.size === 0 && rt.queue.items.length === 0) continue
-      out[id] = { turn: rt.turn ? rt.turn.threadId : undefined, requests: rt.requests.size, queued: rt.queue.items.length, paused: rt.queue.paused }
+      // A fork thread's work shows in its parent session, in that thread (SPEC → Fork threads).
+      const home = this.forkHome(id)
+      out[id] = {
+        turn: rt.turn ? rt.turn.threadId : undefined,
+        requests: rt.requests.size,
+        queued: rt.queue.items.length,
+        paused: rt.queue.paused,
+        ...(home ? { forkOf: home } : {})
+      }
     }
     return out
   }
@@ -825,20 +905,44 @@ export class SessionManager {
   /** Its log and threads. Resumes it on the agent in the background, or checks it for changes made elsewhere. */
   openSession(id: string): SessionView {
     const session = this.session(id)
+    if (session.forkOf) throw new Error("A fork thread's session opens as its thread.")
     const rt = this.runtime(id)
     if (!rt.attachedTo) void this.resume(id)
     else void this.refreshSession(id)
+    const { store } = this.deps
+    const threads = store.listThreads(id)
+    // A fork thread's log is in its own session, after what it inherited (SPEC → Fork threads).
+    const forks = threads.flatMap((t) => (t.fork ? [{ threadId: t.id, sessionId: t.fork.sessionId }] : []))
+    const own = <T extends { sessionId: string; threadId: string | null }>(items: T[], threadId: string): T[] =>
+      items.filter((x) => x.threadId === threadId).map((x) => ({ ...x, sessionId: id }))
     return {
       session,
-      messages: this.deps.store.listMessages(id),
-      toolCalls: this.deps.store.listToolCalls(id),
-      plans: this.deps.store.listPlans(id),
-      threads: this.deps.store.listThreads(id),
+      messages: [...store.listMessages(id), ...forks.flatMap((f) => own(store.listMessages(f.sessionId), f.threadId))],
+      toolCalls: [...store.listToolCalls(id), ...forks.flatMap((f) => own(store.listToolCalls(f.sessionId), f.threadId))],
+      plans: [...store.listPlans(id), ...forks.flatMap((f) => own(store.listPlans(f.sessionId), f.threadId))],
+      threads,
       turn: rt.turn ? { threadId: rt.turn.threadId } : null,
       queue: rt.queue,
       live: rt.live,
-      requests: [...rt.requests.values()].map((r) => r.request)
+      requests: [...rt.requests.values()].map((r) => r.request),
+      forks: forks.map((f): ForkView => {
+        const fork = this.runtimes.get(f.sessionId)
+        return {
+          ...f,
+          running: !!fork?.turn,
+          queue: fork?.queue ?? { items: [], paused: false },
+          live: fork?.live ?? emptyLive(),
+          requests: fork ? [...fork.requests.values()].map((r) => r.request) : []
+        }
+      })
     }
+  }
+
+  /** Resumes a fork thread's session when its thread is shown, so the status line has its model and usage. */
+  openFork(id: string): void {
+    if (!this.session(id).forkOf) throw new Error('Not a fork thread.')
+    if (!this.runtime(id).attachedTo) void this.resume(id)
+    else void this.refreshSession(id)
   }
 
   /** Resumes the session on the agent so the status line has its model, commands and usage. */
@@ -889,6 +993,7 @@ export class SessionManager {
    */
   async deleteSession(id: string, options: { keepWorktree?: boolean } = {}): Promise<string | null> {
     const session = this.session(id)
+    if (session.forkOf) throw new Error("A fork thread's session goes with its thread.")
     const rt = this.runtime(id)
     if (rt.rewinding || rt.resetting) throw new Error('Wait for conversation reset or rewind to finish.')
     if (rt.turn) await this.cancel(id)
@@ -905,10 +1010,12 @@ export class SessionManager {
       }
     }
     this.withdrawRequests(id)
+    const forks = this.deps.store.listForks(id)
     this.deps.store.deleteSession(id)
     this.runtimes.delete(id)
     this.byAcpId.delete(session.acpSessionId)
     this.deps.emit({ type: 'sessionDeleted', sessionId: id })
+    await this.discardForks(forks)
     if (!options.keepWorktree) await this.collectWorktree(session)
     return warning
   }
@@ -925,6 +1032,7 @@ export class SessionManager {
    * along with the session's messages, tool calls, threads and queue.
    */
   async clearSession(id: string): Promise<void> {
+    if (this.session(id).forkOf) throw new Error("/clear doesn't work in a fork thread. Clear the main conversation instead.")
     const rt = this.runtime(id)
     if (rt.resetting || rt.rewinding) throw new Error('Wait for conversation reset to finish.')
     rt.resetting = true
@@ -944,7 +1052,7 @@ export class SessionManager {
     let mode!: ModeState
     const res = await this.withAgent(session.agentId, async (c) => {
       conn = c
-      const created = await c.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', !!session.review), servers)
+      const created = await c.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', this.isReview(session)), servers)
       // The fresh conversation keeps the session's mode.
       mode = await this.applyMode(session.agentId, session.cwd, session, c, created.sessionId, created.modes)
       return created
@@ -955,7 +1063,9 @@ export class SessionManager {
     const old = session.acpSessionId
     const hadMessages = this.deps.store.countUserMessages(id) > 0
     this.byAcpId.delete(old)
+    const forks = this.deps.store.listForks(id)
     this.deps.store.clearLog(id)
+    this.dropGoneForks(forks)
     session = this.deps.store.updateSession(id, { acpSessionId: res.sessionId, syncedAt: null })
     this.register(session.acpSessionId, id)
     rt.attachedTo = conn
@@ -986,6 +1096,7 @@ export class SessionManager {
    */
   rewindPoints(id: string): RewindPoint[] {
     const session = this.session(id)
+    if (session.forkOf) throw new Error("A fork thread can't be rewound.")
     if (!canRewind(session.agentId)) throw new Error(`${this.deps.getAgentConfig(session.agentId).name} doesn't support rewind.`)
     const messages = this.deps.store.listMessages(id)
     const eligible = new Set(this.rewindable(id, messages).map((m) => m.id))
@@ -1012,6 +1123,7 @@ export class SessionManager {
    */
   async rewindSession(id: string, messageId: string): Promise<void> {
     const original = this.session(id)
+    if (original.forkOf) throw new Error("A fork thread can't be rewound.")
     const rt = this.runtime(id)
     if (!canRewind(original.agentId)) throw new Error(`${this.deps.getAgentConfig(original.agentId).name} doesn't support rewind.`)
     if (rt.rewinding || rt.resetting || rt.turn || rt.queue.items.length) throw new Error('Finish or cancel the running turn and clear queued messages before rewinding.')
@@ -1027,12 +1139,14 @@ export class SessionManager {
         if (forkId) await this.discardFork(original.agentId, forkId)
         throw new Error('That rewind point no longer exists.')
       }
+      const forks = this.deps.store.listForks(id)
       this.deps.store.transaction(() => {
         this.deps.store.truncateLog(id, target.seq, target.createdAt)
         // Nothing kept: the next attach starts a new agent session.
         this.deps.store.updateSession(id, { acpSessionId: forkId ?? `gloss-new:${randomUUID()}`, syncedAt: null })
         this.deps.store.addDeletedAgentSession(original.agentId, session.acpSessionId)
       })
+      this.dropGoneForks(forks)
       const conn = rt.attachedTo
       this.byAcpId.delete(session.acpSessionId)
       rt.attachedTo = undefined
@@ -1084,6 +1198,33 @@ export class SessionManager {
   private async reload(id: string, conn: AgentConnection): Promise<void> {
     // Claude's adapter replays a session it holds without restarting it.
     await this.reattach(id, conn, this.session(id).agentId !== 'claude' && conn.canCloseSessions)
+  }
+
+  /** Discards the forks whose threads went with the messages they hung off. */
+  private dropGoneForks(forks: Session[]): void {
+    const gone = forks.filter((f) => !this.deps.store.getSession(f.id))
+    if (gone.length > 0) void this.discardForks(gone)
+  }
+
+  /**
+   * Stops fork threads' sessions whose threads are gone (or are going with their
+   * session) and deletes them, with the agent's copies.
+   */
+  private async discardForks(forks: Session[]): Promise<void> {
+    for (const fork of forks) {
+      if (this.deps.store.getSession(fork.id)) this.deps.store.deleteSession(fork.id)
+      const rt = this.runtimes.get(fork.id)
+      this.runtimes.delete(fork.id)
+      this.byAcpId.delete(fork.acpSessionId)
+      this.forkHomes.delete(fork.id)
+      if (rt) {
+        for (const r of rt.requests.values()) r.settle(null)
+        rt.requests.clear()
+        if (rt.turn) rt.turn.cancelled = true
+        if (rt.turn && rt.attachedTo) await rt.attachedTo.cancel(fork.acpSessionId).catch(() => {})
+      }
+      await this.discardFork(fork.agentId, fork.acpSessionId)
+    }
   }
 
   /** Removes a fork a rewind ended up not using. */
@@ -1413,7 +1554,7 @@ export class SessionManager {
     const { store } = this.deps
     const mine = new Map(
       store
-        .listSessions()
+        .listSessions({ forks: true })
         .filter((s) => s.agentId === agentId)
         .map((s) => [s.acpSessionId, s])
     )
@@ -1441,6 +1582,85 @@ export class SessionManager {
   /** `anchorMessageId` is null for a line anchor, which only a review session has. */
   createThread(sessionId: string, anchorMessageId: string | null, anchor: Anchor): Thread {
     const session = this.session(sessionId)
+    anchor = this.checkAnchor(session, anchorMessageId, anchor)
+    const existing = this.threadOn(sessionId, anchorMessageId, anchor)
+    if (existing) return existing
+
+    const thread: Thread = {
+      id: randomUUID(),
+      sessionId,
+      anchorMessageId,
+      anchor,
+      createdAt: this.now()
+    }
+    this.deps.store.insertThread(thread)
+    this.deps.emit({ type: 'thread', thread })
+    if (anchor.kind === 'line') this.deps.emit({ type: 'session', session: this.session(sessionId) })
+    return thread
+  }
+
+  /**
+   * Creates a fork thread (SPEC → Fork threads): a thread that runs in its own session, a
+   * fork of this one as it is now (a running turn's part so far included). An existing
+   * thread on the anchor is returned as it is.
+   */
+  async createForkThread(sessionId: string, anchorMessageId: string | null, anchor: Anchor): Promise<Thread> {
+    let session = this.session(sessionId)
+    if (session.forkOf) throw new Error("A fork thread's replies can't be forked.")
+    const name = this.deps.getAgentConfig(session.agentId).name
+    if (!canFork(session.agentId)) throw new Error(`${name} can't fork sessions.`)
+    anchor = this.checkAnchor(session, anchorMessageId, anchor)
+    const existing = this.threadOn(sessionId, anchorMessageId, anchor)
+    if (existing) return existing
+    const rt = this.runtime(sessionId)
+    if (rt.rewinding || rt.resetting) throw new Error('Wait for conversation reset or rewind to finish.')
+
+    const forkId = await this.withAgent(session.agentId, async (conn) => {
+      if (rt.attachedTo !== conn) await this.attach(sessionId, conn)
+      session = this.session(sessionId)
+      if (session.acpSessionId.startsWith('gloss-')) throw new Error(`${name} has nothing to fork yet.`)
+      return conn.forkSession(session.acpSessionId, session.cwd, null, this.mcpServers(session.cwd), this.sessionMeta(session.agentId, 'load', this.isReview(session)))
+    })
+    const again = this.threadOn(sessionId, anchorMessageId, anchor)
+    if (!this.deps.store.getSession(sessionId) || again) {
+      await this.discardFork(session.agentId, forkId)
+      if (again) return again
+      throw new SessionGoneError()
+    }
+    const thread: Thread = { id: randomUUID(), sessionId, anchorMessageId, anchor, createdAt: this.now() }
+    const fork: Session = {
+      id: randomUUID(),
+      agentId: session.agentId,
+      acpSessionId: forkId,
+      cwd: session.cwd,
+      title: session.title,
+      createdAt: this.now(),
+      ...(session.project ? { project: session.project } : {}),
+      forkOf: { sessionId, threadId: thread.id }
+    }
+    this.deps.store.transaction(() => {
+      this.deps.store.insertThread(thread)
+      this.deps.store.insertSession(fork)
+      // It starts with the parent's picks; from then on they are its own.
+      const { model, effort, mode, autoApprove } = session
+      this.deps.store.updateSession(fork.id, { model, effort, mode, autoApprove })
+    })
+    const created: Thread = { ...thread, fork: { sessionId: fork.id } }
+    this.deps.emit({ type: 'thread', thread: created })
+    if (anchor.kind === 'line') this.deps.emit({ type: 'session', session: this.session(sessionId) })
+    return created
+  }
+
+  /** The thread already on this anchor, if any. */
+  private threadOn(sessionId: string, anchorMessageId: string | null, anchor: Anchor): Thread | undefined {
+    return this.deps.store
+      .listThreads(sessionId)
+      .find((t) => t.anchorMessageId === anchorMessageId && sameAnchor(t.anchor, anchor))
+  }
+
+  /** Checks that a thread can hang off the anchor in the session; returns it as stored. */
+  private checkAnchor(session: Session, anchorMessageId: string | null, anchor: Anchor): Anchor {
+    const sessionId = session.id
     if (anchor.kind === 'line') {
       if (!session.review || anchorMessageId !== null) throw new Error('Only a review session has threads on diff lines.')
     } else if (anchor.kind === 'pin') {
@@ -1475,22 +1695,7 @@ export class SessionManager {
     if (!valid || typeof anchor.text !== 'string' || anchor.text.trim() === '') {
       throw new Error('Invalid thread anchor.')
     }
-    const existing = this.deps.store
-      .listThreads(sessionId)
-      .find((t) => t.anchorMessageId === anchorMessageId && sameAnchor(t.anchor, anchor))
-    if (existing) return existing
-
-    const thread: Thread = {
-      id: randomUUID(),
-      sessionId,
-      anchorMessageId,
-      anchor: normalizeAnchor(anchor),
-      createdAt: this.now()
-    }
-    this.deps.store.insertThread(thread)
-    this.deps.emit({ type: 'thread', thread })
-    if (anchor.kind === 'line') this.deps.emit({ type: 'session', session: this.session(sessionId) })
-    return thread
+    return normalizeAnchor(anchor)
   }
 
   /** Resolves a review thread, or reopens it (SPEC → Review sessions → Resolve). */
@@ -1558,7 +1763,7 @@ export class SessionManager {
     let loaded: acp.LoadSessionResponse | undefined
     let replay: acp.SessionUpdate[]
     try {
-      loaded = await conn.loadSession(session.acpSessionId, session.cwd, this.sessionMeta(session.agentId, 'load', !!session.review), servers)
+      loaded = await conn.loadSession(session.acpSessionId, session.cwd, this.sessionMeta(session.agentId, 'load', this.isReview(session)), servers)
     } catch (err) {
       if (isSessionInUse(err)) throw new Error('This session is open in Codex. Quit Codex to continue here.', { cause: err })
       if (isAuthRequired(err) || rt.importing) throw err
@@ -1595,7 +1800,7 @@ export class SessionManager {
     const rt = this.runtime(sessionId)
     let session = this.session(sessionId)
     const servers = this.mcpServers(session.cwd)
-    const res = await conn.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', !!session.review), servers)
+    const res = await conn.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', this.isReview(session)), servers)
     const mode = await this.applyMode(session.agentId, session.cwd, session, conn, res.sessionId, res.modes)
     // Deleting a conversation while startup is pending must not bring it back.
     if (this.disposed || !this.deps.store.getSession(sessionId)) {
@@ -1724,13 +1929,16 @@ export class SessionManager {
       })
     if (!changed) return
 
+    const forks = store.listForks(sessionId)
+    // A fork's session has its thread's messages, after what it inherited (SPEC → Fork threads).
+    const home = this.forkHome(sessionId)
     store.transaction(() => {
       for (const c of removed) {
         // Threads anchored on a removed message go with it.
         if (c.type === 'message') store.deleteMessage(c.message.id)
         else if (c.type === 'toolCall') store.deleteToolCall(sessionId, c.toolCall.id)
       }
-      const threads = store.listThreads(sessionId)
+      const threads = home ? [store.getThread(home.threadId)].filter((t): t is Thread => !!t) : store.listThreads(sessionId)
       /** Thread id → position of its latest user message, to rank threads a tag could name. */
       const active = new Map<string, number>()
       /** The thread of the latest user message: where the agent's answer goes. */
@@ -1757,7 +1965,7 @@ export class SessionManager {
 
         const entry = r!
         if (entry.type === 'user') {
-          const placed = placeUserMessage(entry.wire, threads, active)
+          const placed = home ? forkPlacement(entry.wire, threads, active, home.threadId) : placeUserMessage(entry.wire, threads, active)
           threadId = placed.threadId
           if (threadId) active.set(threadId, i)
           return {
@@ -1802,6 +2010,7 @@ export class SessionManager {
       })
       store.resequence(sessionId, entries)
     })
+    this.dropGoneForks(forks)
     this.deps.emit({ type: 'session', session: this.session(sessionId) })
     this.deps.emit({ type: 'sessionSynced', sessionId })
   }
@@ -1924,15 +2133,22 @@ export class SessionManager {
     text: string,
     threadId: string | null,
     attachments: Attachment[] = [],
-    fromThread: string | null = null
+    fromThread: string | null = null,
+    forkSummary?: string
   ): Promise<TurnResult> {
-    this.session(sessionId)
+    const session = this.session(sessionId)
     this.anchorOf(sessionId, threadId)
     if (fromThread !== null) {
       if (threadId !== null) throw new Error('Only a main-thread message can be sent from a thread.')
       this.anchorOf(sessionId, fromThread)
     }
+    // A fork thread's messages go to its own session (SPEC → Fork threads).
+    const fork = this.forkOfThread(sessionId, threadId)
+    if (fork) return this.send(fork, text, threadId, attachments)
+    if (session.forkOf && threadId !== session.forkOf.threadId) throw new Error("A fork's session only takes its thread's messages.")
+    if (forkSummary === undefined && this.forkOfThread(sessionId, fromThread)) return this.sendFromFork(sessionId, text, fromThread!, attachments)
     if (isClear(text, attachments)) {
+      if (session.forkOf) throw new Error("/clear doesn't work in a fork thread. Clear the main conversation instead.")
       await this.clearSession(sessionId)
       return { cleared: true }
     }
@@ -1940,18 +2156,52 @@ export class SessionManager {
     if (rt.rewinding || rt.resetting) throw new Error('Wait for conversation reset or rewind to finish.')
     if (rt.turn || rt.settingUp || rt.renamingBranch) {
       if (rt.turn && rt.turn.threadId === threadId && rt.live.steering) {
-        return this.steer(sessionId, text, threadId, attachments, fromThread)
+        return this.steer(sessionId, text, threadId, attachments, fromThread, forkSummary)
       }
       this.setQueue(sessionId, {
         ...rt.queue,
         items: [
           ...rt.queue.items,
-          { id: randomUUID(), threadId, text, attachments, ...(fromThread !== null ? { fromThread } : {}) }
+          { id: randomUUID(), threadId, text, attachments, ...(fromThread !== null ? { fromThread } : {}), ...(forkSummary !== undefined ? { forkSummary } : {}) }
         ]
       })
       return { queued: true }
     }
-    return this.runTurn(sessionId, text, threadId, attachments, fromThread)
+    return this.runTurn(sessionId, text, threadId, attachments, fromThread, undefined, forkSummary)
+  }
+
+  /** The session of the thread, when it is a fork thread of this session. */
+  private forkOfThread(sessionId: string, threadId: string | null): string | null {
+    if (threadId === null) return null
+    const thread = this.deps.store.getThread(threadId)
+    return thread?.sessionId === sessionId && thread.fork ? thread.fork.sessionId : null
+  }
+
+  /**
+   * Send to main from a fork thread (SPEC → Fork threads): the main conversation hasn't
+   * seen the thread, so the fork first summarizes it (since its last summary), and the
+   * summary goes with the message.
+   */
+  private async sendFromFork(sessionId: string, text: string, threadId: string, attachments: Attachment[]): Promise<TurnResult> {
+    const forkId = this.forkOfThread(sessionId, threadId)!
+    const rt = this.runtime(forkId)
+    if (rt.turn || rt.queue.items.length > 0) {
+      throw new Error("Wait for the fork's turn to finish, or stop it, before sending to main.")
+    }
+    // Outside the thread (threadId null in the fork's session): the summary shows in the main conversation instead.
+    const result = await this.runTurn(forkId, FORK_SUMMARY_LABEL, null, [], null, FORK_SUMMARY_PROMPT)
+    if (result.error || result.stopReason !== 'end_turn') {
+      throw new Error(result.error ? `The fork couldn't summarize the thread: ${result.error}` : "The fork didn't finish its summary.")
+    }
+    const log = this.deps.store.listMessages(forkId)
+    const asked = log.findLast((m) => m.role === 'user' && m.wireText === FORK_SUMMARY_PROMPT)
+    const summary = log
+      .filter((m) => m.role === 'agent' && m.threadId === null && asked !== undefined && m.seq > asked.seq)
+      .map((m) => m.text.trim())
+      .filter(Boolean)
+      .join('\n\n')
+    if (!summary) throw new Error('The fork replied with an empty summary.')
+    return this.send(sessionId, text, null, attachments, threadId, summary)
   }
 
   /**
@@ -1965,14 +2215,20 @@ export class SessionManager {
     text: string,
     threadId: string | null,
     attachments: Attachment[] = [],
-    fromThread: string | null = null
+    fromThread: string | null = null,
+    forkSummary?: string
   ): Promise<TurnResult> {
     this.session(sessionId)
-    if (isClear(text, attachments)) return this.send(sessionId, text, threadId, attachments, fromThread)
-    const wire = this.wire(sessionId, text, threadId, attachments, fromThread)
+    const fork = this.forkOfThread(sessionId, threadId)
+    if (fork) return this.steer(fork, text, threadId, attachments)
+    // Send to main from a fork summarizes first, which send does.
+    if (isClear(text, attachments) || (forkSummary === undefined && this.forkOfThread(sessionId, fromThread))) {
+      return this.send(sessionId, text, threadId, attachments, fromThread)
+    }
+    const wire = this.wire(sessionId, text, threadId, attachments, fromThread, forkSummary)
     const rt = this.runtime(sessionId)
     const turn = rt.turn
-    if (!turn) return this.send(sessionId, text, threadId, attachments, fromThread)
+    if (!turn) return this.send(sessionId, text, threadId, attachments, fromThread, forkSummary)
     if (turn.threadId !== threadId) {
       throw new Error('Only the thread the agent is working in can be steered. Queue the message instead.')
     }
@@ -1983,7 +2239,7 @@ export class SessionManager {
       // Nothing reached the agent: send it next.
       this.setQueue(sessionId, {
         ...rt.queue,
-        items: [{ id: randomUUID(), threadId, text, attachments, ...(fromThread !== null ? { fromThread } : {}) }, ...rt.queue.items]
+        items: [{ id: randomUUID(), threadId, text, attachments, ...(fromThread !== null ? { fromThread } : {}), ...(forkSummary !== undefined ? { forkSummary } : {}) }, ...rt.queue.items]
       })
       this.drain(sessionId)
       return { queued: true }
@@ -2042,8 +2298,16 @@ export class SessionManager {
     text: string,
     threadId: string | null,
     attachments: Attachment[],
-    fromThread: string | null = null
+    fromThread: string | null = null,
+    forkSummary?: string
   ): string {
+    const home = this.forkHome(sessionId)
+    if (home) {
+      // The whole session is the thread: only its first message is tagged (SPEC → Fork threads).
+      const first = !this.deps.store.listMessages(sessionId).some((m) => m.role === 'user' && m.threadId === home.threadId)
+      return withPins(forkWireText(text, this.anchorOf(sessionId, home.threadId)!, first), attachments)
+    }
+    if (forkSummary !== undefined) return withForkSummary(this.wire(sessionId, text, threadId, attachments, fromThread), forkSummary)
     const afterThread = threadId === null && (this.deps.store.lastUserMessage(sessionId)?.threadId ?? null) !== null
     const wire = withPins(wireText(text, this.anchorOf(sessionId, threadId), afterThread, this.anchorOf(sessionId, fromThread)), attachments)
     const rt = this.runtime(sessionId)
@@ -2065,7 +2329,7 @@ export class SessionManager {
   private anchorOf(sessionId: string, threadId: string | null): Anchor | null {
     if (threadId === null) return null
     const thread = this.deps.store.getThread(threadId)
-    if (!thread || thread.sessionId !== sessionId) throw new Error(`Unknown thread ${threadId}`)
+    if (!thread || (thread.sessionId !== sessionId && this.forkHome(sessionId)?.threadId !== threadId)) throw new Error(`Unknown thread ${threadId}`)
     return thread.anchor
   }
 
@@ -2075,7 +2339,8 @@ export class SessionManager {
     threadId: string | null,
     attachments: Attachment[],
     fromThread: string | null = null,
-    originalWire?: string
+    originalWire?: string,
+    forkSummary?: string
   ): Promise<TurnResult> {
     let session = this.session(sessionId)
     const rt = this.runtime(sessionId)
@@ -2083,7 +2348,7 @@ export class SessionManager {
     if (rt.turn) throw new Error('A turn is already running in this session.')
     if (rt.branchToRename && !rt.renamingBranch) await this.renameBranch(sessionId, session.titleSet ? session.title : text)
     const seed = this.deps.store.rewindState(sessionId)?.context
-    const wire = originalWire ?? `${seed?.text ?? ''}${this.wire(sessionId, text, threadId, attachments, fromThread)}`
+    const wire = originalWire ?? `${seed?.text ?? ''}${this.wire(sessionId, text, threadId, attachments, fromThread, forkSummary)}`
     // Only a session still named after its folder takes its title from the first message.
     const retitle = this.deps.store.countUserMessages(sessionId) === 0 && session.title === folderName(session.cwd)
     const message: Message = {
@@ -2240,7 +2505,7 @@ export class SessionManager {
     const [next, ...rest] = rt.queue.items
     if (!next) return
     this.setQueue(sessionId, { items: rest, paused: false })
-    this.runTurn(sessionId, next.text, next.threadId, next.attachments, next.fromThread ?? null).catch((err: unknown) =>
+    this.runTurn(sessionId, next.text, next.threadId, next.attachments, next.fromThread ?? null, undefined, next.forkSummary).catch((err: unknown) =>
       this.notice(sessionId, next.threadId, `Couldn't send a queued message: ${errorMessage(err)}`)
     )
   }
@@ -2558,6 +2823,25 @@ function modeOptions(modes: acp.SessionModeState): SessionModes['options'] {
 
 function isClear(text: string, attachments: Attachment[]): boolean {
   return text.trim() === '/clear' && attachments.length === 0
+}
+
+/**
+ * Where a replayed user message of a fork's session goes: its first message names the
+ * thread and says it is a fork; later ones follow it untagged. A summary for the main
+ * conversation stays out of the thread, like what the fork inherited.
+ */
+function forkPlacement(
+  wire: string,
+  threads: Thread[],
+  active: Map<string, number>,
+  forkThread: string
+): { threadId: string | null; text: string } {
+  if (wire === FORK_SUMMARY_PROMPT) return { threadId: null, text: FORK_SUMMARY_LABEL }
+  const placed = placeUserMessage(wire, threads, active)
+  if (placed.threadId === forkThread) {
+    return { threadId: forkThread, text: placed.text.startsWith(`${FORK_NOTE}\n`) ? placed.text.slice(FORK_NOTE.length + 1) : placed.text }
+  }
+  return placed.threadId === null && active.has(forkThread) ? { threadId: forkThread, text: wire } : placed
 }
 
 function sameAnchor(a: Anchor, b: Anchor): boolean {

@@ -26,7 +26,7 @@ const thread = (sessionId: string): object => ({
   id: `${sessionId}-t`, sessionId, anchorMessageId: `${sessionId}-m`, anchor: { kind: 'listItem', path: [0], text: 'one' }, createdAt: 1
 })
 const live = { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false }
-const global = { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }
+const global = { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }
 
 /** A window.gloss with sessions a (newest), b and c, each with one agent message and a thread on its first item. */
 function fakeGloss(extra: object = {}): {
@@ -37,7 +37,7 @@ function fakeGloss(extra: object = {}): {
   const listeners = new Set<(event: object) => void>()
   const created = { a: 3, b: 2, c: 1 } as Record<string, number>
   const opened = vi.fn(async (id: string) => ({
-    session: session(id, created[id]), messages: [message(id)], toolCalls: [], plans: [], threads: [thread(id)], turn: null, live,
+    session: session(id, created[id]), messages: [message(id)], toolCalls: [], plans: [], threads: [thread(id)], turn: null, forks: [], live,
     queue: { items: [], paused: false }, requests: []
   }))
   const windows = {

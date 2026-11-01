@@ -209,7 +209,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
       </div>
       {file ? <>
           {editing ? <><label className="sr-only" htmlFor="plugin-file-editor">File contents</label><textarea id="plugin-file-editor" className="plugin-editor" value={draft} disabled={fileBusy} spellCheck={false} onChange={e => setDraft(e.target.value)} /><div className="plugin-editor-actions"><button className="primary" aria-busy={fileBusy} onClick={() => { void saveFile().catch(() => {}) }}>Save</button><button className="ghost" disabled={fileBusy} onClick={() => navigate(() => { setEditing(false); setDraft(file.content) })}>Cancel</button></div></>
-            : file.path.endsWith('.md') ? <Markdown text={file.content.replace(/^---\r?\n[\s\S]*?\r?\n---\s*\n?/, '')} listItemReplies={false} /> : <pre className="plugin-file-content">{file.content}</pre>}
+            : file.path.endsWith('.md') ? <Markdown text={file.content.replace(/^---\r?\n[\s\S]*?\r?\n---\s*\n?/, '')} /> : <pre className="plugin-file-content">{file.content}</pre>}
         </> : !error && <p className="muted">Loading file…</p>}
       {!p.builtin && <InvocationChoice footer value={s.invocation} disabled={fileBusy || isPending(`invocation:${p.id}:${s.id}`)} onChange={invocation => navigate(() => { void changeInvocation(p, s, invocation) })} />}
     </>

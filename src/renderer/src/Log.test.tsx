@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import type { Message, Thread } from '@shared/types'
-import { threadToMainTag } from '@shared/wire'
+import { threadToMainTag, withForkSummary } from '@shared/wire'
 import type { OpenSession } from './App'
 import { Log, logItems } from './Log'
 
@@ -46,6 +46,35 @@ describe('Send to main traces', () => {
       act(() => trace.querySelector<HTMLButtonElement>('button')!.click())
       expect(reveal).toHaveBeenCalledExactlyOnceWith(continuation)
       expect(el.querySelectorAll('.sent-message')).toHaveLength(1)
+    } finally { act(() => root.unmount()) }
+  })
+})
+
+describe('Fork threads', () => {
+  const fork: Thread = { ...thread, fork: { sessionId: 'fork-session' } }
+  // The fork's messages are numbered in its own session, after what it inherited.
+  const forkReply: Message = { ...reply, seq: 40, createdAt: 10 }
+  const later: Message = { ...reply, id: 'later', seq: 42, text: 'More here', createdAt: 30 }
+  const sent: Message = {
+    ...continuation, seq: 3, createdAt: 20,
+    wireText: withForkSummary(`${threadToMainTag(thread.anchor)}\nContinue with this change`, '- Renamed `a`.')
+  }
+  const forked: OpenSession = { ...open, messages: [forkReply, sent, later], threads: [fork] }
+
+  it('places Send to main among the fork thread\'s messages by time', () => {
+    expect(logItems(forked, [], 't').map((i) => i.kind === 'message' ? i.message.id : i.kind)).toEqual(['reply', 'sentToMain', 'later'])
+  })
+
+  it('shows the fork summary under the message sent to main', () => {
+    const el = document.createElement('div')
+    document.body.replaceChildren(el)
+    const root = createRoot(el)
+    try {
+      act(() => root.render(<Log items={logItems(forked, [], null)} className="log" empty={null} renderAgent={() => null} />))
+      const summary = el.querySelector('.sent-message .fork-summary')!
+      expect(summary.textContent).toContain('Summary from the fork')
+      expect(summary.textContent).toContain('Renamed a.')
+      expect(el.querySelector('.sent-message .you')!.textContent).toBe('Continue with this change')
     } finally { act(() => root.unmount()) }
   })
 })

@@ -30,3 +30,8 @@ export type RewindDraft = { text: string; attachments: Attachment[] }
 export function canRewind(agentId: string): boolean {
   return agentId === 'claude' || agentId === 'codex'
 }
+
+/** Agents whose sessions a fork thread can fork (SPEC → Fork threads): the same adapters, verified with a running turn. */
+export function canFork(agentId: string): boolean {
+  return agentId === 'claude' || agentId === 'codex'
+}

@@ -1,14 +1,15 @@
 // The phone's view of the desktop (SPEC → Remote and mobile): the lists, what runs or waits where,
 // and the open session, kept current from the bridge's events. Everything reloads on reconnect.
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { GlossEvent, SessionView } from '@shared/ipc'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ForkOf, ForkView, GlossEvent, SessionView } from '@shared/ipc'
 import type { AgentInfo, Project, RateLimit, Session } from '@shared/types'
 import type { Notice } from '../src/Log'
 import { errorText } from '../src/errors'
 import type { Link, PhoneLink } from './transport'
 
-export type Info = { machine: string | null; defaultAgent: string; listItemReplies: boolean; theme: 'system' | 'light' | 'dark' }
-export type Activity = { turn: string | null | undefined; requests: number; queued: number; paused: boolean }
+export type Info = { machine: string | null; defaultAgent: string; theme: 'system' | 'light' | 'dark' }
+/** `forkOf`: a fork thread's session, whose work shows in its parent (SPEC → Fork threads). */
+export type Activity = { turn: string | null | undefined; requests: number; queued: number; paused: boolean; forkOf?: ForkOf }
 export type OpenView = SessionView & { notices: Notice[] }
 
 export function upsert<T extends { id: string }>(list: T[], item: T): T[] {
@@ -70,6 +71,44 @@ export function usePhone(link: PhoneLink) {
   useEffect(() => window.gloss.onEvent((event: GlossEvent) => {
     const sid = 'sessionId' in event ? event.sessionId : null
     const mine = (o: OpenView | null): o is OpenView => o !== null && o.session.id === sid
+    // A fork thread's turn, queue, status and requests are its own (SPEC → Fork threads).
+    const forkOf = 'forkOf' in event ? event.forkOf : undefined
+    if (forkOf && sid) {
+      const lane = (change: (f: ForkView) => ForkView) => setOpen((o) => {
+        if (!o || o.session.id !== forkOf.sessionId) return o
+        const known = o.forks.find((f) => f.sessionId === sid)
+        const fork = known ?? { threadId: forkOf.threadId, sessionId: sid, running: false, queue: { items: [], paused: false }, live: o.live, requests: [] }
+        return { ...o, forks: [...o.forks.filter((f) => f !== known), change(fork)] }
+      })
+      const act = (change: (a: Activity) => Activity) => setActivity((all) => {
+        const next = change(all[sid] ?? { turn: undefined, requests: 0, queued: 0, paused: false, forkOf })
+        const copy = { ...all }
+        if (next.turn === undefined && next.requests === 0 && next.queued === 0) delete copy[sid]
+        else copy[sid] = next
+        return copy
+      })
+      switch (event.type) {
+        case 'live': return lane((f) => ({ ...f, live: event.live }))
+        case 'queue':
+          act((a) => ({ ...a, queued: event.queue.items.length, paused: event.queue.paused }))
+          return lane((f) => ({ ...f, queue: event.queue }))
+        case 'requests':
+          act((a) => ({ ...a, requests: event.requests.length }))
+          return lane((f) => ({ ...f, requests: event.requests }))
+        case 'turnStart':
+          act((a) => ({ ...a, turn: event.threadId }))
+          return lane((f) => ({ ...f, running: true }))
+        case 'turnEnd':
+          act((a) => ({ ...a, turn: undefined }))
+          lane((f) => ({ ...f, running: false }))
+          setOpen((o) => {
+            if (!o || o.session.id !== forkOf.sessionId) return o
+            if (event.stopReason === 'cancelled') return addNotice(o, forkOf.threadId, 'Cancelled.')
+            return event.error ? addNotice(o, forkOf.threadId, `The turn failed: ${event.error}`, 'failed') : o
+          })
+          return
+      }
+    }
     const act = (id: string, change: (a: Activity) => Activity) => setActivity((all) => {
       const next = change(all[id] ?? { turn: undefined, requests: 0, queued: 0, paused: false })
       const copy = { ...all }
@@ -170,7 +209,22 @@ export function usePhone(link: PhoneLink) {
     setOpen((o) => o ? addNotice(o, threadId, text) : o)
   }, [])
 
-  return { link: state, info, projects, sessions, agents, rateLimits, activity, open, setOpen, openSession, notice }
+  /** What runs or waits, by listed session: a fork thread's work is its parent's, in that thread. */
+  const shownActivity = useMemo(() => {
+    const out: Record<string, Activity> = {}
+    for (const [id, a] of Object.entries(activity)) if (!a.forkOf) out[id] = a
+    for (const a of Object.values(activity)) {
+      if (!a.forkOf) continue
+      const own = out[a.forkOf.sessionId]
+      const turn = a.turn !== undefined ? a.forkOf.threadId : undefined
+      out[a.forkOf.sessionId] = own
+        ? { ...own, turn: own.turn !== undefined ? own.turn : turn, requests: own.requests + a.requests, queued: own.queued + a.queued, paused: own.paused || a.paused }
+        : { turn, requests: a.requests, queued: a.queued, paused: a.paused }
+    }
+    return out
+  }, [activity])
+
+  return { link: state, info, projects, sessions, agents, rateLimits, activity: shownActivity, open, setOpen, openSession, notice }
 }
 
 export type Phone = ReturnType<typeof usePhone>

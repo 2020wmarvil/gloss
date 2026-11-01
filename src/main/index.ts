@@ -5,7 +5,7 @@ import { isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerSaveBlocker, screen, shell, type WebContents } from 'electron'
 import { IPC, type AppBadge, type GlossEvent, type MainAction, type OpenCodeStatus, type PaneState } from '../shared/ipc'
-import type { Anchor, Attachment, Pin } from '../shared/types'
+import type { Anchor, Attachment, Pin, Session } from '../shared/types'
 import type { AnswerValue, RequestAnswer } from '../shared/requests'
 import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, listAgents } from './agents'
@@ -473,27 +473,36 @@ const notifications = new Set<Notification>()
 function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
   // A queued message starting next isn't the end of the agent's work.
   if (glossWindows().some((w) => w.isFocused()) || event.stopReason === 'cancelled' || event.continues) return
-  const session = store?.getSession(event.sessionId)
-  if (!session) return
+  const shown = shownAs(event.sessionId, event.threadId)
+  if (!shown) return
+  const { session, threadId } = shown
   const body = event.error
     ? `The turn failed: ${event.error}`
-    : event.threadId
+    : threadId
       ? 'The agent replied in a thread.'
       : 'The agent finished.'
-  phone?.notify({ title: session.title, body, sessionId: event.sessionId, threadId: event.threadId })
+  phone?.notify({ title: session.title, body, sessionId: session.id, threadId })
   if (!Notification.isSupported()) return
   // Gloss plays its own chime (or none, if the user turned it off) instead of the system's sound.
   const n = new Notification({ title: session.title, body, silent: true })
   notifications.add(n)
   n.on('click', () => {
     notifications.delete(n)
-    const win = sessionWindows.get(event.sessionId) ?? mainWindow
+    const win = sessionWindows.get(session.id) ?? mainWindow
     if (!win || win.isDestroyed()) return
     bringForward(win)
-    emit({ type: 'reveal', sessionId: event.sessionId, threadId: event.threadId })
+    emit({ type: 'reveal', sessionId: session.id, threadId })
   })
   n.on('close', () => notifications.delete(n))
   n.show()
+}
+
+/** The session and thread a session's turn or request is shown in: a fork thread's session in its parent (SPEC → Fork threads). */
+function shownAs(sessionId: string, threadId: string | null): { session: Session; threadId: string | null } | null {
+  const session = store?.getSession(sessionId)
+  if (!session?.forkOf) return session ? { session, threadId } : null
+  const parent = store?.getSession(session.forkOf.sessionId)
+  return parent ? { session: parent, threadId: session.forkOf.threadId } : null
 }
 
 /** Per session, the open requests already notified about, so a changed list only notifies for new ones. */
@@ -506,19 +515,20 @@ function notifyRequests(event: Extract<GlossEvent, { type: 'requests' }>): void 
   notifiedRequests.set(event.sessionId, new Set(event.requests.map((r) => r.id)))
   const first = fresh[0]
   if (!first || glossWindows().some((w) => w.isFocused())) return
-  const session = store?.getSession(event.sessionId)
-  if (!session) return
+  const shown = shownAs(event.sessionId, first.threadId)
+  if (!shown) return
+  const { session, threadId } = shown
   const body = first.kind === 'question' ? `Waiting for you: ${first.message}` : `Waiting for your approval: ${first.title}`
-  phone?.notify({ title: session.title, body, sessionId: event.sessionId, threadId: first.threadId })
+  phone?.notify({ title: session.title, body, sessionId: session.id, threadId })
   if (!Notification.isSupported()) return
   const n = new Notification({ title: session.title, body, silent: true })
   notifications.add(n)
   n.on('click', () => {
     notifications.delete(n)
-    const win = sessionWindows.get(event.sessionId) ?? mainWindow
+    const win = sessionWindows.get(session.id) ?? mainWindow
     if (!win || win.isDestroyed()) return
     bringForward(win)
-    emit({ type: 'reveal', sessionId: event.sessionId, threadId: first.threadId })
+    emit({ type: 'reveal', sessionId: session.id, threadId })
   })
   n.on('close', () => notifications.delete(n))
   n.show()
@@ -665,8 +675,16 @@ function exportLog(id: string, threadId: string | null): { title: string; markdo
   const s = store!
   const session = s.getSession(id)
   if (!session) throw new Error(`Unknown session ${id}`)
+  const threads = s.listThreads(id)
+  // A fork thread's log is in its own session (SPEC → Fork threads).
+  const forks = threads.flatMap((t) => (t.fork ? [{ threadId: t.id, sessionId: t.fork.sessionId }] : []))
   const markdown = toMarkdown(
-    { session, messages: s.listMessages(id), toolCalls: s.listToolCalls(id), threads: s.listThreads(id) },
+    {
+      session,
+      messages: [...s.listMessages(id), ...forks.flatMap((f) => s.listMessages(f.sessionId).filter((m) => m.threadId === f.threadId))],
+      toolCalls: [...s.listToolCalls(id), ...forks.flatMap((f) => s.listToolCalls(f.sessionId).filter((t) => t.threadId === f.threadId))],
+      threads
+    },
     threadId
   )
   return { title: session.title, markdown }
@@ -981,6 +999,14 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
       anchorArg(anchor)
     )
   )
+  share(IPC.threadsFork, (sessionId: unknown, anchorMessageId: unknown, anchor: unknown) =>
+    manager.createForkThread(
+      str(sessionId, 'sessionId'),
+      anchorMessageId === null ? null : str(anchorMessageId, 'anchorMessageId'),
+      anchorArg(anchor)
+    )
+  )
+  share(IPC.threadsOpenFork, (forkSessionId: unknown) => manager.openFork(str(forkSessionId, 'forkSessionId')))
   share(IPC.threadsResolve, (sessionId: unknown, threadId: unknown, resolved: unknown) => {
     if (typeof resolved !== 'boolean') throw new Error('Expected resolved to be a boolean')
     return manager.resolveThread(str(sessionId, 'sessionId'), str(threadId, 'threadId'), resolved)
@@ -1151,7 +1177,7 @@ app.whenReady().then(() => {
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [], captureShortcut: DEFAULT_CAPTURE_SHORTCUT, reviewWindow: true, phoneAccess: false, phonePort: 8443 },
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [], captureShortcut: DEFAULT_CAPTURE_SHORTCUT, reviewWindow: true, phoneAccess: false, phonePort: 8443 },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
       // Fires nativeTheme's 'updated', which recolors the window controls.
@@ -1226,7 +1252,7 @@ app.whenReady().then(() => {
     calls: {
       info: () => {
         const g = settingsFile.state().global
-        return { machine: phone?.status().machine ?? null, defaultAgent: g.defaultAgent, listItemReplies: g.listItemReplies, theme: g.theme }
+        return { machine: phone?.status().machine ?? null, defaultAgent: g.defaultAgent, theme: g.theme }
       },
       activity: () => sessions?.activity() ?? {}
     },

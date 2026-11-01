@@ -132,7 +132,7 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener('focus', onFocus)
   }, [clearUnseen, openId])
   // The app icon's badge: a failed turn, else a finished one, else working (SPEC → Notifications).
-  const running = s.running
+  const running = s.shownRunning
   useEffect(() => {
     const outcomes = Object.values(unseen)
     const state = outcomes.includes('failed')
@@ -268,16 +268,18 @@ export function App(): React.JSX.Element {
         break
       }
       case 'turnStart':
-        clearUnseen(event.sessionId)
+        // A fork thread's turn is its parent session's (SPEC → Fork threads).
+        clearUnseen(event.forkOf?.sessionId ?? event.sessionId)
         break
       case 'turnEnd': {
         // Work the user isn't watching (another session, or Gloss in the background) is
         // marked unseen and chimes. A cancel is the user's own; a queued follow-up isn't the end.
         // A session in its own focused window is being watched.
-        const watched = (event.sessionId === openId.current && document.hasFocus()) || event.sessionId === focusedPopped.current
+        const shownId = event.forkOf?.sessionId ?? event.sessionId
+        const watched = (shownId === openId.current && document.hasFocus()) || shownId === focusedPopped.current
         if (!event.continues && event.stopReason !== 'cancelled' && !watched) {
           const outcome = event.error ? 'failed' : 'completed'
-          setUnseen((u) => ({ ...u, [event.sessionId]: outcome }))
+          setUnseen((u) => ({ ...u, [shownId]: outcome }))
           if (chimeOn.current) playChime()
         }
         break
@@ -775,7 +777,7 @@ export function App(): React.JSX.Element {
             popped={popped}
             running={running}
             unseen={unseen}
-            waiting={s.requests}
+            waiting={s.shownRequests}
             agentSessions={listedAgentSessions}
             order={settings?.global.sessionOrder ?? 'created'}
             agentSessionsError={agentSessionsError}

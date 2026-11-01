@@ -10,7 +10,8 @@ import { ExportMenu } from './ExportMenu'
 import { Log, logItems, TurnStatus, type Notice, type Reveal } from './Log'
 import { Markdown } from './Markdown'
 import { PinCrop, pinAnchorsFor } from './CaptureFigure'
-import { ArrowLeft, Locate, PanelRight } from 'lucide-react'
+import { ArrowLeft, GitFork, Locate, PanelRight } from 'lucide-react'
+import { formatCost, formatTokens } from './StatusLine'
 
 type Props = {
   agentName: string
@@ -21,8 +22,12 @@ type Props = {
   reveal: Reveal | null
   /** The overview tab ← goes back to. */
   backTo: 'threads' | 'queue'
-  /** threadId of the running turn; undefined when idle. */
+  /** threadId of the running turn; undefined when idle. A fork thread's: its own session's. */
   runningThread: string | null | undefined
+  /** The threads with a running turn: the session's, and its fork threads'. */
+  busyThreads: string[]
+  /** A fork thread (SPEC → Fork threads), or a new one that will be. */
+  fork?: boolean
   notices: Notice[]
   live: SessionLive
   /** Messages sent in every session, newest first, for the composer's Up and Down. */
@@ -85,7 +90,8 @@ export function ThreadPanel(props: Props): React.JSX.Element {
           <ArrowLeft />
           {props.backTo === 'queue' ? 'Queue' : 'All threads'}
         </button>
-        {threadId === null && <h2 className="thread-label">New thread</h2>}
+        {props.fork && <ForkTag />}
+        {threadId === null && <h2 className="thread-label">{props.fork ? 'New fork thread' : 'New thread'}</h2>}
         {runningHere && <TurnStatus open={open} threadId={threadId} />}
         {props.onFindInMain && (
           <button className="header-button icon find-in-main" onClick={props.onFindInMain} title="Find in main session" aria-label="Find in main session">
@@ -134,19 +140,20 @@ export function ThreadPanel(props: Props): React.JSX.Element {
         renderAgent={(m) => <Markdown text={m.text} />}
         onRevealMain={props.onRevealMain}
         reveal={props.reveal}
-        pins={pinAnchorsFor(open, panel, runningThread, props.onOpenPin)}
+        pins={pinAnchorsFor(open, panel, props.busyThreads, props.onOpenPin)}
         footer={<>
           <Composer
             sessionId={open.session.id}
             agent={{ id: open.session.agentId, name: props.agentName }}
+            {...(props.fork ? { noRewind: "A fork thread can't be rewound." } : {})}
             key={`${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
             draftKey={`${open.session.id}:${panel.anchorMessageId}:${JSON.stringify(panel.anchor)}`}
             className="thread-composer"
-            placeholder={pin ? `Reply about pin ${pin.pin}` : 'Reply in thread'}
+            placeholder={pin ? `Reply about pin ${pin.pin}` : props.fork ? 'Reply in the fork' : 'Reply in thread'}
             running={running}
             autoFocus
             primary
-            commands={live.commands}
+            commands={props.fork ? live.commands.filter((c) => c.name !== 'clear') : live.commands}
             accepts={live.accepts}
             history={props.history}
             queue={props.queue}
@@ -161,6 +168,26 @@ export function ThreadPanel(props: Props): React.JSX.Element {
       />
     </aside>
   )
+}
+
+/** Marks a fork thread, which runs in its own fork of the session (SPEC → Fork threads). */
+export function ForkTag(): React.JSX.Element {
+  return (
+    <span className="fork-tag" title="Runs in its own fork of the session">
+      <GitFork aria-hidden />
+      Fork
+    </span>
+  )
+}
+
+/** What a fork thread's own session costs: its context, cost and model. */
+export function forkUsage(live: SessionLive | null): string | null {
+  const usage = live?.usage
+  if (!usage) return null
+  const pct = usage.size > 0 ? Math.min(100, Math.round((usage.used / usage.size) * 100)) : null
+  const parts = [`${formatTokens(usage.used)}${pct !== null ? ` (${pct}%)` : ''} context`]
+  if (usage.cost) parts.push(formatCost(usage.cost))
+  return parts.join(' · ')
 }
 
 /** A review thread on diff lines: its lines, the agent's finding, and Resolve. */

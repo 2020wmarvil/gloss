@@ -3,7 +3,7 @@
 // (SPEC → Session windows) each hold one.
 import type { SearchResult } from '@shared/search'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { GitStatus, GlossEvent, PaneState, PullRequest, SessionView } from '@shared/ipc'
+import type { ForkOf, GitStatus, GlossEvent, PaneState, PullRequest, SessionView } from '@shared/ipc'
 import type { Anchor, Attachment, Message, MessageQueue, Plan, QueuedMessage, Session, SessionLive, Thread, ToolCall } from '@shared/types'
 import { lineLabel, type LineAnchor, type ReviewDiff } from '@shared/review'
 import type { UserRequest } from '@shared/requests'
@@ -30,9 +30,20 @@ export type OpenSession = {
 
 /**
  * The thread shown in the side panel. threadId is null until the first message creates the thread.
- * anchorMessageId is null for a line anchor in a review session.
+ * anchorMessageId is null for a line anchor in a review session. `fork`: a new thread that will
+ * run in a fork of the session (SPEC → Fork threads).
  */
-export type Panel = { anchorMessageId: string | null; anchor: Anchor; threadId: string | null }
+export type Panel = { anchorMessageId: string | null; anchor: Anchor; threadId: string | null; fork?: true }
+
+/** A fork thread's own session: its turn, queue and status (SPEC → Fork threads). */
+export type ForkLane = {
+  sessionId: string
+  /** The fork's running turn's thread (its own), undefined when idle. */
+  runningThread: string | null | undefined
+  live: SessionLive
+  queue: MessageQueue
+  requests: UserRequest[]
+}
 
 const NO_LIVE: SessionLive = {
   attached: false,
@@ -106,6 +117,8 @@ export function useSession() {
   const [queues, setQueues] = useState<Record<string, MessageQueue>>({})
   /** sessionId → what its agent is waiting on the user for (SPEC → Questions and approvals). */
   const [requests, setRequests] = useState<Record<string, UserRequest[]>>({})
+  /** A fork thread's session id → the session and thread it shows as (SPEC → Fork threads). */
+  const [forkHomes, setForkHomes] = useState<Record<string, ForkOf>>({})
   const [git, setGit] = useState<GitStatus | null>(null)
   const [pr, setPr] = useState<PullRequest | null>(null)
 
@@ -251,13 +264,18 @@ export function useSession() {
       })
       openCwd.current = view.session.cwd
       openReview.current = view.session.review !== undefined
-      setLives((l) => ({ ...l, [id]: view.live }))
-      setQueues((q) => ({ ...q, [id]: view.queue }))
-      setRequests((r) => ({ ...r, [id]: view.requests }))
+      setLives((l) => ({ ...l, [id]: view.live, ...Object.fromEntries(view.forks.map((f) => [f.sessionId, f.live])) }))
+      setForkHomes((h) => ({ ...h, ...Object.fromEntries(view.forks.map((f) => [f.sessionId, { sessionId: id, threadId: f.threadId }])) }))
+      setQueues((q) => ({ ...q, [id]: view.queue, ...Object.fromEntries(view.forks.map((f) => [f.sessionId, f.queue])) }))
+      setRequests((r) => ({ ...r, [id]: view.requests, ...Object.fromEntries(view.forks.map((f) => [f.sessionId, f.requests])) }))
       setRunning((r) => {
         const next = { ...r }
         if (view.turn) next[id] = view.turn.threadId
         else delete next[id]
+        for (const f of view.forks) {
+          if (f.running) next[f.sessionId] = f.threadId
+          else delete next[f.sessionId]
+        }
         return next
       })
       refreshGit(view.session.cwd, id)
@@ -323,6 +341,11 @@ export function useSession() {
 
   const onEvent = useCallback(
     (event: GlossEvent) => {
+      if ('forkOf' in event && event.forkOf) {
+        const { sessionId } = event
+        const home = event.forkOf
+        setForkHomes((h) => (h[sessionId] ? h : { ...h, [sessionId]: home }))
+      }
       switch (event.type) {
         case 'session':
           setOpen((o) => (o && o.session.id === event.session.id ? { ...o, session: event.session } : o))
@@ -410,8 +433,9 @@ export function useSession() {
             label: recovery.action === 'signIn' ? 'Sign in' : 'Retry',
             run: async () => {
               await window.gloss.retry(event.sessionId, recovery.messageId)
+              const shown = event.forkOf?.sessionId ?? event.sessionId
               setNotices((all) => ({
-                ...all, [event.sessionId]: (all[event.sessionId] ?? []).map((n) => n.action === action ? { ...n, action: undefined } : n)
+                ...all, [shown]: (all[shown] ?? []).map((n) => n.action === action ? { ...n, action: undefined } : n)
               }))
             }
           } : undefined
@@ -420,13 +444,16 @@ export function useSession() {
             delete next[event.sessionId]
             return next
           })
-          if (event.error) addNotice(event.sessionId, event.threadId, `The turn failed: ${event.error}`, 'failed', action)
-          else if (event.stopReason === 'cancelled') addNotice(event.sessionId, event.threadId, 'Cancelled.')
+          // A fork thread's turn ends in its thread of the parent (SPEC → Fork threads); Retry is the fork's.
+          const shownId = event.forkOf?.sessionId ?? event.sessionId
+          const shownThread = event.forkOf?.threadId ?? event.threadId
+          if (event.error) addNotice(shownId, shownThread, `The turn failed: ${event.error}`, 'failed', action)
+          else if (event.stopReason === 'cancelled') addNotice(shownId, shownThread, 'Cancelled.')
           else if (event.stopReason && event.stopReason !== 'end_turn')
-            addNotice(event.sessionId, event.threadId, `The agent stopped: ${event.stopReason.replace(/_/g, ' ')}.`, 'failed', action)
+            addNotice(shownId, shownThread, `The agent stopped: ${event.stopReason.replace(/_/g, ' ')}.`, 'failed', action)
           // The agent may have changed files: refresh the branch's dirty marker.
-          if (event.sessionId === openId.current && openCwd.current) refreshGit(openCwd.current, event.sessionId)
-          if (event.sessionId === openId.current && openReview.current) refreshDiff(event.sessionId)
+          if (shownId === openId.current && openCwd.current) refreshGit(openCwd.current, shownId)
+          if (shownId === openId.current && openReview.current) refreshDiff(shownId)
           break
         }
         case 'notice':
@@ -489,7 +516,8 @@ export function useSession() {
     )
   }
 
-  function openSelection(message: Message, selection: SourceSelection): void {
+  /** `fork`: a new thread runs in a fork of the session (SPEC → Fork threads); an existing one opens as it is. */
+  function openSelection(message: Message, selection: SourceSelection, fork = false): void {
     if (!open) return
     const existing = open.threads.find(
       (t) =>
@@ -501,19 +529,19 @@ export function useSession() {
     showPanel(
       existing
         ? { anchorMessageId: message.id, anchor: existing.anchor, threadId: existing.id }
-        : { anchorMessageId: message.id, anchor: { kind: 'selection', ...selection }, threadId: null }
+        : { anchorMessageId: message.id, anchor: { kind: 'selection', ...selection }, threadId: null, ...(fork ? { fork: true as const } : {}) }
     )
   }
 
-  /** Opens the thread on a pin of an annotated screenshot, or a new one (SPEC → Visual feedback). */
-  function openPin(message: Message, image: number, pin: number): void {
+  /** Opens the thread on a pin of an annotated screenshot, or a new one (SPEC → Visual feedback); `fork` as for a selection. */
+  function openPin(message: Message, image: number, pin: number, fork = false): void {
     if (!open) return
     const existing = open.threads.find(
       (t) => t.anchorMessageId === message.id && t.anchor.kind === 'pin' && t.anchor.image === image && t.anchor.pin === pin
     )
     if (existing) return showPanel({ anchorMessageId: message.id, anchor: existing.anchor, threadId: existing.id })
     try {
-      showPanel({ anchorMessageId: message.id, anchor: pinAnchor(message.attachments ?? [], image, pin), threadId: null })
+      showPanel({ anchorMessageId: message.id, anchor: pinAnchor(message.attachments ?? [], image, pin), threadId: null, ...(fork ? { fork: true as const } : {}) })
     } catch {
       // Not a pin of this message: nothing to open.
     }
@@ -524,8 +552,8 @@ export function useSession() {
     if (t) showPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id })
   }
 
-  /** Opens the thread on selected diff lines, or a new one (SPEC → Review sessions → Line anchors). */
-  function openLines(anchor: LineAnchor): void {
+  /** Opens the thread on selected diff lines, or a new one (SPEC → Review sessions → Line anchors); `fork` as for a selection. */
+  function openLines(anchor: LineAnchor, fork = false): void {
     const existing = open?.threads.find(
       (t) =>
         t.anchor.kind === 'line' &&
@@ -537,7 +565,7 @@ export function useSession() {
     showPanel(
       existing
         ? { anchorMessageId: null, anchor: existing.anchor, threadId: existing.id }
-        : { anchorMessageId: null, anchor, threadId: null }
+        : { anchorMessageId: null, anchor, threadId: null, ...(fork ? { fork: true as const } : {}) }
     )
   }
 
@@ -569,8 +597,10 @@ export function useSession() {
       if (target) {
         threadId = target.threadId
         if (threadId === null) {
-          // The thread is created by its first message (SPEC → Data model).
-          const thread = await window.gloss.threads.create(sessionId, target.anchorMessageId, target.anchor)
+          // The thread is created by its first message (SPEC → Data model), a fork thread by forking the session.
+          const thread = target.fork
+            ? await window.gloss.threads.fork(sessionId, target.anchorMessageId, target.anchor)
+            : await window.gloss.threads.create(sessionId, target.anchorMessageId, target.anchor)
           threadId = thread.id
           setOpen((o) => (o && o.session.id === sessionId ? { ...o, threads: upsert(o.threads, thread) } : o))
           setPanel((p) => (p === target ? { ...target, threadId: thread.id } : p))
@@ -657,8 +687,10 @@ export function useSession() {
    * Where a turn runs (a thread or the main conversation), else where the latest message
    * was sent, with its state.
    */
+  const forkThreads = useMemo(() => new Set(open?.threads.flatMap((t) => (t.fork ? [t.id] : [])) ?? []), [open?.threads])
+  // A fork's messages are numbered in its own session: only the session's own say where it works.
   const lastMessage = open?.messages.reduce<Message | undefined>(
-    (latest, m) => (m.role === 'user' && (!latest || m.seq > latest.seq) ? m : latest),
+    (latest, m) => (m.role === 'user' && !forkThreads.has(m.threadId ?? '') && (!latest || m.seq > latest.seq) ? m : latest),
     undefined
   )
   const stripThreadId = runningThread !== undefined ? runningThread : lastMessage?.threadId
@@ -677,13 +709,56 @@ export function useSession() {
     reviewDiff && reviewDiff.sessionId === sessionId ? reviewDiff : { diff: null, error: null }
   const live = (sessionId && lives[sessionId]) || NO_LIVE
   const queue = (sessionId && queues[sessionId]) || NO_QUEUE
-  const sessionRequests = (sessionId && requests[sessionId]) || NO_REQUESTS
+  const ownRequests = (sessionId && requests[sessionId]) || NO_REQUESTS
+  /** The fork thread's own session, for a fork thread (SPEC → Fork threads). */
+  const forkLane = (threadId: string | null): ForkLane | null => {
+    const forkId = threadId === null ? undefined : open?.threads.find((t) => t.id === threadId)?.fork?.sessionId
+    if (!forkId) return null
+    return {
+      sessionId: forkId,
+      runningThread: forkId in running ? running[forkId] : undefined,
+      live: lives[forkId] ?? NO_LIVE,
+      queue: queues[forkId] ?? NO_QUEUE,
+      requests: requests[forkId] ?? NO_REQUESTS
+    }
+  }
+  const threads = open?.threads
+  /** What the session's agent and its forks wait on. */
+  const sessionRequests = useMemo(() => {
+    const forks = threads?.flatMap((t) => (t.fork ? (requests[t.fork.sessionId] ?? []) : [])) ?? []
+    return forks.length > 0 ? [...ownRequests, ...forks] : ownRequests
+  }, [ownRequests, threads, requests])
+  /** The threads with a running turn: the session's own, and its forks'. */
+  const busyThreads = useMemo(() => {
+    const own = runningThread ? [runningThread] : []
+    return [...own, ...(threads?.flatMap((t) => (t.fork && t.fork.sessionId in running ? [t.id] : [])) ?? [])]
+  }, [runningThread, threads, running])
+  /** What runs, by listed session: a fork thread's turn is its parent's, in its thread. */
+  const shownRunning = useMemo(() => {
+    const out: Record<string, string | null> = {}
+    for (const id of Object.keys(running)) {
+      const home = forkHomes[id]
+      if (home) out[home.sessionId] = home.threadId
+    }
+    // The session's own turn, when it has one, names where it runs.
+    for (const [id, thread] of Object.entries(running)) if (!forkHomes[id]) out[id] = thread
+    return out
+  }, [running, forkHomes])
+  /** What each listed session's agent, and its forks', wait on. */
+  const shownRequests = useMemo(() => {
+    const out: Record<string, UserRequest[]> = {}
+    for (const [id, list] of Object.entries(requests)) {
+      const key = forkHomes[id]?.sessionId ?? id
+      out[key] = [...(out[key] ?? []), ...(list ?? [])]
+    }
+    return out
+  }, [requests, forkHomes])
   /** The open session with what its agent waits on, for the logs. */
   const openShown = useMemo(() => (open ? { ...open, requests: sessionRequests } : null), [open, sessionRequests])
-  /** Part of the session's queue (one thread's messages) with the queue's actions, for a composer. */
-  const composerQueue = (id: string, items: QueuedMessage[]): ComposerQueue => ({
+  /** Part of a session's queue (one thread's messages) with the queue's actions, for a composer. `paused`: a fork's own queue's. */
+  const composerQueue = (id: string, items: QueuedMessage[], paused = queue.paused): ComposerQueue => ({
     items,
-    paused: queue.paused,
+    paused,
     onEdit: (itemId, text) => window.gloss.queue.edit(id, itemId, text),
     onRemove: (itemId) => window.gloss.queue.remove(id, itemId),
     onResume: () => window.gloss.queue.resume(id)
@@ -707,6 +782,9 @@ export function useSession() {
     setSideTab,
     running,
     requests,
+    shownRunning,
+    shownRequests,
+    forkHomes,
     git,
     pr,
     expandedFiles,
@@ -736,6 +814,8 @@ export function useSession() {
     shortcut,
     sessionId,
     runningThread,
+    busyThreads,
+    forkLane,
     lastThread,
     sessionNotices,
     isReview,

@@ -98,6 +98,8 @@ export function makeApi(t: ApiTransport): GlossApi {
     threads: {
       create: (sessionId, anchorMessageId, anchor) =>
         invoke(IPC.threadsCreate, sessionId, anchorMessageId, anchor),
+      fork: (sessionId, anchorMessageId, anchor) => invoke(IPC.threadsFork, sessionId, anchorMessageId, anchor),
+      openFork: (forkSessionId) => invoke(IPC.threadsOpenFork, forkSessionId),
       resolve: (sessionId, threadId, resolved) => invoke(IPC.threadsResolve, sessionId, threadId, resolved)
     },
     send: (sessionId, text, threadId, attachments, fromThread) =>

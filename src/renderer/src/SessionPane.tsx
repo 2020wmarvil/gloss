@@ -5,6 +5,7 @@ import type { SettingsState } from '@shared/ipc'
 import { projectSettings } from '@shared/settings'
 import { projectOf } from '@shared/worktree'
 import type { AgentInfo, Session, Thread } from '@shared/types'
+import { canFork } from '@shared/composer'
 import { GitCompare, SquareArrowOutDownLeft, SquareArrowOutUpRight } from 'lucide-react'
 import { Conversation } from './Conversation'
 import { GeneralPanel, ReviewThreadList } from './ReviewPanels'
@@ -94,12 +95,21 @@ export function SessionPane(props: Props): React.JSX.Element {
   const id = open.session.id
   /** The panel's thread while it is expanded. */
   const shownPanel = sideShown ? panel : null
+  /** A fork thread's own session, whose turn, queue and status the panel shows (SPEC → Fork threads). */
+  const lane = panel ? s.forkLane(panel.threadId) : null
+  const laneId = lane?.sessionId ?? id
+  // The fork is resumed when its thread is shown, so its status shows.
+  const shownFork = sideShown ? lane?.sessionId : undefined
+  useEffect(() => {
+    if (shownFork) void window.gloss.threads.openFork(shownFork).catch(() => {})
+  }, [shownFork])
   const reviewSources = useReviewSources(isReview ? id : null, open.session.review, diffState.diff, open.threads ?? NO_THREADS)
   const lineLocations = useMemo(
     () => threadLocations(open.threads, diffState.diff, reviewSources.sources),
     [open.threads, diffState.diff, reviewSources.sources]
   )
   const agentName = agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId
+  const forkDisabled = canFork(open.session.agentId) ? undefined : `${agentName} can't fork sessions.`
   const obsidianVault = settings ? projectSettings(settings.projects, projectOf(open.session)).obsidianVault : undefined
   const windowButton = <WindowButton popped={props.popped} onClick={props.onWindow} />
   const reviewButton = (
@@ -140,6 +150,7 @@ export function SessionPane(props: Props): React.JSX.Element {
           onCommand={(text) => void s.send(text, [], null)}
           onOpenThread={s.openThread}
           onReplyLines={s.openLines}
+          forkDisabled={forkDisabled}
           creating={props.creating}
           onRunReview={() => s.runReview(id)}
           onNewReview={() => props.onNewReview(open.session)}
@@ -164,13 +175,14 @@ export function SessionPane(props: Props): React.JSX.Element {
           obsidianVault={obsidianVault}
           key={id}
           open={shown}
-          listItemReplies={settings?.global.listItemReplies ?? false}
           agentName={agentName}
           live={live}
           history={sent}
           git={s.git}
           pr={s.pr}
           runningThread={runningThread}
+          busyThreads={s.busyThreads}
+          forkDisabled={forkDisabled}
           lastThread={s.lastThread}
           notices={sessionNotices}
           panel={shownPanel}
@@ -233,16 +245,22 @@ export function SessionPane(props: Props): React.JSX.Element {
               panel={panel}
               reveal={reveal}
               backTo={s.sideTab}
-              runningThread={runningThread}
+              runningThread={lane ? lane.runningThread : panel.fork ? undefined : runningThread}
+              busyThreads={s.busyThreads}
+              fork={!!lane || !!panel.fork}
               notices={sessionNotices}
-              live={live}
+              live={lane?.live ?? live}
               history={sent}
               // A thread that doesn't exist yet has nothing queued.
-              queue={s.composerQueue(id, panel.threadId === null ? [] : queue.items.filter((q) => q.threadId === panel.threadId))}
+              queue={
+                lane
+                  ? s.composerQueue(lane.sessionId, lane.queue.items, lane.queue.paused)
+                  : s.composerQueue(id, panel.threadId === null ? [] : queue.items.filter((q) => q.threadId === panel.threadId))
+              }
               onSend={(text, attachments) => void s.send(text, attachments, panel)}
               onSteer={(text, attachments) => void s.send(text, attachments, panel, 'steer')}
               onSendToMain={(text, attachments) => void s.send(text, attachments, null, 'send', panel.threadId)}
-              onCancel={() => void window.gloss.cancel(id)}
+              onCancel={() => void window.gloss.cancel(laneId)}
               onBack={() => s.setPanel(null)}
               onClose={s.collapseSide}
               onOpenPin={s.openPin}
@@ -259,6 +277,7 @@ export function SessionPane(props: Props): React.JSX.Element {
               tab={s.sideTab}
               onTab={s.setSideTab}
               runningThread={runningThread}
+              forkLane={s.forkLane}
               queue={queue}
               name={threadName}
               onOpenThread={s.openThread}

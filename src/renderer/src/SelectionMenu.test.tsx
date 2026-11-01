@@ -56,10 +56,12 @@ it.each([
     const menu = document.querySelector('[role="menu"]')!
     expect(menu.parentElement).toBe(document.body)
     const items = menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')
-    expect([...items].map((b) => b.textContent)).toEqual(['Reply to selection', 'Copy'])
+    expect([...items].map((b) => b.textContent)).toEqual(['Reply to selection', 'Reply - Fork', 'Copy'])
     expect(items[0].getAttribute('aria-disabled')).toBe(acrossMessages ? 'true' : null)
     expect(items[0].title).toBe(acrossMessages ? 'Replying requires text from a single agent message.' : '')
-    expect(items[1].getAttribute('aria-disabled')).toBeNull()
+    // Reply - Fork needs one message too; Copy doesn't.
+    expect(items[1].getAttribute('aria-disabled')).toBe(acrossMessages ? 'true' : null)
+    expect(items[2].getAttribute('aria-disabled')).toBeNull()
     if (acrossMessages) {
       await act(async () => items[0].click())
       await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' })))
@@ -77,3 +79,33 @@ it.each([
     selection.removeAllRanges()
   }
 })
+
+it.each([{ forkDisabled: undefined }, { forkDisabled: "Fake Agent can't fork sessions." }])(
+  'replies in a fork with F unless the agent cannot fork ($forkDisabled)',
+  async ({ forkDisabled }) => {
+    const host = document.createElement('div')
+    document.body.replaceChildren(host)
+    const root = createRoot(host)
+    const onReply = vi.fn()
+    const message: Message = { id: 'm', sessionId: 'session', threadId: null, role: 'agent', seq: 0, text: 'Fork this point' }
+    function Log(): React.JSX.Element {
+      const scope = useRef<HTMLDivElement>(null)
+      return <><div ref={scope}><div data-message-id="m"><p><span data-src={0} data-src-end={15}>Fork this point</span></p></div></div>
+        <SelectionMenu scope={scope} messages={[message]} onReply={onReply} forkDisabled={forkDisabled} /></>
+    }
+    try {
+      await act(async () => root.render(<Log />))
+      const text = host.querySelector('span')!.firstChild!
+      window.getSelection()!.setBaseAndExtent(text, 0, text, 4)
+      await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' })))
+      if (forkDisabled) expect(onReply).not.toHaveBeenCalled()
+      else expect(onReply).toHaveBeenCalledWith(message, { start: 0, end: 4, text: 'Fork' }, true)
+      window.getSelection()!.setBaseAndExtent(text, 0, text, 4)
+      await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' })))
+      expect(onReply).toHaveBeenLastCalledWith(message, { start: 0, end: 4, text: 'Fork' }, false)
+    } finally {
+      act(() => root.unmount())
+      window.getSelection()?.removeAllRanges()
+    }
+  }
+)
