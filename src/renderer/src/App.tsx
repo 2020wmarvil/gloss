@@ -1,3 +1,4 @@
+import { commandMatches, commandHint } from './commandBindings'
 import type { SearchResult } from '@shared/search'
 import { SearchDialog } from './SearchDialog'
 import { CloneDialog } from './CloneDialog'
@@ -636,38 +637,37 @@ export function App(): React.JSX.Element {
   // Keyboard shortcuts (SPEC → Keyboard shortcuts). Esc closes panels in their own components.
   const shortcuts = useRef<(e: KeyboardEvent) => void>(() => {})
   shortcuts.current = (e: KeyboardEvent) => {
-    const mod = e.ctrlKey || e.metaKey
-    if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+    if (e.defaultPrevented || e.isComposing) return
+    if (commandMatches(e, 'search')) {
       e.preventDefault()
       setShowSearch(true)
       return
     }
     if (showSearch) return
     // Alt+Left / Alt+Right: back and forward. Not in a text field on macOS, where Option+arrow moves by word.
-    if (e.altKey && !mod && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    if (commandMatches(e, 'back') || commandMatches(e, 'forward')) {
       const editable = e.target instanceof HTMLElement && (e.target.isContentEditable || e.target.matches('input, textarea'))
       if (editable && modKey() === 'Cmd') return
       e.preventDefault()
-      go(e.key === 'ArrowLeft' ? -1 : 1)
+      go(commandMatches(e, 'back') ? -1 : 1)
       return
     }
-    if (!mod) return
-    if (e.key === ',') {
+    if (commandMatches(e, 'settings')) {
       e.preventDefault()
       setShowSettings((on) => !on)
-    } else if (e.key.toLowerCase() === 'n' && !e.shiftKey && !e.altKey) {
+    } else if (commandMatches(e, 'newSession')) {
       e.preventDefault()
       void newSession()
-    } else if (e.key.toLowerCase() === 'w' && !e.shiftKey && !e.altKey) {
+    } else if (commandMatches(e, 'closeSession')) {
       e.preventDefault()
       const id = openId.current
       if (id && !showSettings && !e.repeat) void leaveSession(id)
-    } else if (e.key.toLowerCase() === 'd' && e.shiftKey && !e.altKey) {
+    } else if (commandMatches(e, 'review')) {
       e.preventDefault()
       void toggleReview()
-    } else if (e.key === 'Tab') {
+    } else if (commandMatches(e, 'nextSession') || commandMatches(e, 'previousSession')) {
       e.preventDefault()
-      cycleSession(e.shiftKey)
+      cycleSession(commandMatches(e, 'previousSession'))
     } else {
       const id = openId.current
       const result = s.shortcut(e, sideShown, () => {
@@ -918,7 +918,7 @@ export function App(): React.JSX.Element {
                   className="primary lg"
                   onClick={() => void newSession()}
                   disabled={!agent || creating}
-                  title={agent ? `New session with ${agent.name} (Ctrl+N)` : undefined}
+                  title={agent ? `New session with ${agent.name}${commandHint('newSession')}` : undefined}
                 >
                   {!creating && <Plus />}
                   {creating ? 'Opening session…' : 'New session'}

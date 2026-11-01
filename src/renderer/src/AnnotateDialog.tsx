@@ -1,3 +1,4 @@
+import { commandMatches, commandHint, commandLabel } from './commandBindings'
 // The annotation canvas (SPEC → Visual feedback, docs/mocks/visual-feedback.html#annotate):
 // numbered pins with a note each, and pen, highlighter, box and arrow marks over a capture.
 // The right column shows exactly the text that goes with the image. It fills its own window
@@ -34,12 +35,12 @@ type Props = {
   maximized?: boolean
 }
 
-const TOOLS: { tool: Tool; key: string; name: string; icon: React.JSX.Element }[] = [
-  { tool: 'pen', key: 'f', name: 'Pen', icon: <Pencil /> },
-  { tool: 'highlighter', key: 'h', name: 'Highlighter', icon: <Highlighter /> },
-  { tool: 'box', key: 'r', name: 'Box', icon: <Square /> },
-  { tool: 'arrow', key: 'a', name: 'Arrow', icon: <MoveUpRight /> },
-  { tool: 'pin', key: 'n', name: 'Pin', icon: <MapPin /> }
+const TOOLS: { tool: Tool; name: string; icon: React.JSX.Element }[] = [
+  { tool: 'pen', name: 'Pen', icon: <Pencil /> },
+  { tool: 'highlighter', name: 'Highlighter', icon: <Highlighter /> },
+  { tool: 'box', name: 'Box', icon: <Square /> },
+  { tool: 'arrow', name: 'Arrow', icon: <MoveUpRight /> },
+  { tool: 'pin', name: 'Pin', icon: <MapPin /> }
 ]
 
 type Marks = { shapes: Shape[]; pins: Pin[] }
@@ -352,31 +353,30 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake, windowContr
   }
 
   function onKeyDown(e: React.KeyboardEvent): void {
+    if (e.defaultPrevented) return
     // Its keys are its own.
     e.stopPropagation()
-    const mod = e.ctrlKey || e.metaKey
     const typing = e.target instanceof HTMLTextAreaElement
-    const key = e.key.toLowerCase()
-    if (mod && e.key === 'Enter') {
+    if (commandMatches(e, 'addCapture')) {
       e.preventDefault()
       void add()
-    } else if (mod && (key === 'z' || key === 'y') &&
-      (!typing || (key === 'z' && !e.shiftKey && (e.target as HTMLTextAreaElement).value === ''))) {
+    } else if ((commandMatches(e, 'annotationUndo') || commandMatches(e, 'annotationRedo')) &&
+      (!typing || (commandMatches(e, 'annotationUndo') && (e.target as HTMLTextAreaElement).value === ''))) {
       // An empty note should not trap undo after an accidental pin placement.
       e.preventDefault()
       // Undo may remove the focused note. Keep subsequent shortcuts in the dialog.
       if (typing) root.current?.focus({ preventScroll: true })
-      if (key === 'y' || e.shiftKey) redo()
+      if (commandMatches(e, 'annotationRedo')) redo()
       else undo()
-    } else if (e.key === 'Escape') {
+    } else if (commandMatches(e, 'cancelAnnotation')) {
       e.preventDefault()
       if (typing) root.current?.focus()
       else onCancel()
-    } else if (!typing && !mod && !e.altKey) {
-      if (e.key === '0') fitView()
-      else if (e.key === '1') zoomTo(1)
+    } else if (!typing) {
+      if (commandMatches(e, 'fit')) fitView()
+      else if (commandMatches(e, 'actualSize')) zoomTo(1)
       else {
-        const t = TOOLS.find((x) => x.key === key)
+        const t = TOOLS.find((x) => commandMatches(e, x.tool))
         if (t) setTool(t.tool)
       }
     }
@@ -405,7 +405,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake, windowContr
               key={t.tool}
               className={tool === t.tool ? 'on' : undefined}
               aria-pressed={tool === t.tool}
-              title={`${t.name} (${t.key.toUpperCase()})`}
+              title={`${t.name}${commandHint(t.tool)}`}
               aria-label={t.name}
               onClick={() => setTool(t.tool)}
             >
@@ -430,10 +430,10 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake, windowContr
           </span>
           <span className="annotate-group-history">
             <span className="annotate-sep" />
-            <button title="Undo (Ctrl+Z)" aria-label="Undo" disabled={past.length === 0} onClick={undo}>
+            <button title={`Undo${commandHint('annotationUndo')}`} aria-label="Undo" disabled={past.length === 0} onClick={undo}>
               <Undo2 />
             </button>
-            <button title="Redo (Ctrl+Y)" aria-label="Redo" disabled={future.length === 0} onClick={redo}>
+            <button title={`Redo${commandHint('annotationRedo')}`} aria-label="Redo" disabled={future.length === 0} onClick={redo}>
               <Redo2 />
             </button>
           </span>
@@ -444,7 +444,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake, windowContr
             </button>
             <button
               className="annotate-zoom"
-              title={fitted() ? 'Actual size (1)' : 'Fit (0)'}
+              title={fitted() ? `Actual size${commandHint('actualSize')}` : `Fit${commandHint('fit')}`}
               aria-label={fitted() ? 'Zoom to actual size' : 'Zoom to fit'}
               onClick={() => (fitted() ? zoomTo(1) : fitView())}
             >
@@ -462,7 +462,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake, windowContr
           </button>
         )}
         {windowControls}
-        <button className="icon-button" title="Cancel (Esc)" aria-label="Cancel" onClick={onCancel}>
+        <button className="icon-button" title={`Cancel${commandHint('cancelAnnotation')}`} aria-label="Cancel" onClick={onCancel}>
           <X />
         </button>
       </header>
@@ -546,7 +546,7 @@ export function AnnotateDialog({ initial, onAdd, onCancel, onRetake, windowContr
         <button className="ghost" onClick={onCancel}>
           Cancel
         </button>
-        <button className="primary" title="Ctrl+Enter" disabled={busy || !image} onClick={() => void add()}>
+        <button className="primary" title={commandLabel('addCapture')} disabled={busy || !image} onClick={() => void add()}>
           Add to message
         </button>
       </footer>

@@ -1,3 +1,4 @@
+import { COMMANDS, resolveBindings, isMac } from '../shared/commands'
 // settings.json (SPEC → Settings): loading, validation, live reload and writes.
 // No Electron imports, so it can be tested against a temp folder.
 
@@ -8,6 +9,7 @@ import { mcpError } from '../shared/mcp'
 import { PROFILE_ID, profilesError } from '../shared/agentProfiles'
 import type { SettingsPatch, SettingsState } from '../shared/ipc'
 import {
+  DEFAULT_CAPTURE_SHORTCUT,
   type GlobalSettings,
   type ProjectSettings,
   SCHEMA_FILE,
@@ -60,6 +62,7 @@ function fields(scope: SettingField['scope']): SettingField[] {
 /** Why `value` isn't valid for `field`, or null if it is. */
 function checkValue(field: SettingField, value: unknown): string | null {
   switch (field.type) {
+    case 'bindings': return null // Per-command errors are resolved without rejecting unrelated settings.
     case 'profiles': return profilesError(value)
     case 'agent': return typeof value === 'string' && (['claude', 'codex', 'opencode'].includes(value) || PROFILE_ID.test(value)) ? null : 'expected a built-in agent or custom profile ID'
     case 'mcp': return mcpError(value)
@@ -93,7 +96,7 @@ function readFields(scope: SettingField['scope'], source: Raw, target: Raw, pref
 }
 
 export type Parsed =
-  | { ok: true; global: GlobalSettings; projects: Record<string, ProjectSettings> }
+  | { ok: true; global: GlobalSettings; projects: Record<string, ProjectSettings>; warning?: string }
   | { ok: false; error: string }
 
 /** Validates settings.json's text. Missing keys take their defaults; unknown keys are ignored. */
@@ -125,7 +128,11 @@ export function parseSettings(text: string, defaults: GlobalSettings): Parsed {
     }
   }
   if (errors.length > 0) return { ok: false, error: errors.join('\n') }
+  const resolved = resolveBindings(global.shortcuts, global.captureShortcut as string | undefined, isMac(process.platform))
+  if (raw.shortcuts !== undefined) global.shortcuts = resolved.bindings
+  if (raw.shortcuts !== undefined || global.captureShortcut !== undefined) global.captureShortcut = resolved.bindings.capture ?? DEFAULT_CAPTURE_SHORTCUT
   return {
+    warning: resolved.errors.join('\n') || undefined,
     ok: true,
     global: global as GlobalSettings,
     projects: projects as Record<string, ProjectSettings>
@@ -139,7 +146,7 @@ export function settingsSchema(defaults: GlobalSettings): object {
       fields(scope).map((f) => [
         f.key,
         {
-          ...(f.type === 'mcp' ? mcpSchema : f.type === 'profiles' ? profileSchema : f.type === 'agent' ? { type: 'string', pattern: '^(claude|codex|opencode|custom:[a-z0-9][a-z0-9-]{0,63})$' } : f.type === 'port' ? { type: 'integer', minimum: 1024, maximum: 65535 } : { type: f.type === 'enum' || f.type === 'shortcut' ? 'string' : f.type }),
+          ...(f.type === 'bindings' ? { type: 'object', additionalProperties: false, properties: Object.fromEntries(COMMANDS.map(c => [c.id, { type: 'string', description: c.label }])) } : f.type === 'mcp' ? mcpSchema : f.type === 'profiles' ? profileSchema : f.type === 'agent' ? { type: 'string', pattern: '^(claude|codex|opencode|custom:[a-z0-9][a-z0-9-]{0,63})$' } : f.type === 'port' ? { type: 'integer', minimum: 1024, maximum: 65535 } : { type: f.type === 'enum' || f.type === 'shortcut' ? 'string' : f.type }),
           ...(f.options && f.type !== 'agent' ? { enum: f.options.map((o) => o.value) } : {}),
           description: f.description,
           default: defaultsFor?.[f.key]
@@ -284,7 +291,7 @@ export class SettingsFile {
     const parsed = parseSettings(text, this.opts.defaults)
     this.apply(
       parsed.ok
-        ? { path: this.path, global: parsed.global, projects: parsed.projects, error: null }
+        ? { path: this.path, global: parsed.global, projects: parsed.projects, error: parsed.warning ?? null }
         : { ...this.current, error: parsed.error }
     )
   }
@@ -319,6 +326,11 @@ export class SettingsFile {
       const key = Object.keys(projects).find((k) => samePath(k, path)) ?? path
       projects[key] = { ...(isObject(projects[key]) ? projects[key] : {}), ...values }
       raw.projects = projects
+    }
+    if (patch.global?.shortcuts !== undefined) {
+      const result = resolveBindings(raw.shortcuts, raw.captureShortcut as string | undefined, isMac(process.platform))
+      if (result.errors.length) throw new Error(result.errors.join('\n'))
+      raw.shortcuts = result.bindings
     }
     writeFileSync(this.path, serialize(raw))
     this.reload()

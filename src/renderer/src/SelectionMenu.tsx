@@ -1,3 +1,4 @@
+import { commandLabel, commandMatches } from './commandBindings'
 // The context menu for text selected in a main-view agent message: right-clicking the
 // selection, or right-clicking (and dragging over) lines to select them, opens it.
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
@@ -26,14 +27,12 @@ type Props = {
 
 /** **Reply - Fork**, after Reply: `F`, as `R` replies. */
 export function forkItem(disabledReason: string | undefined, run: () => void): MenuItem {
-  return { label: 'Reply - Fork', icon: GitFork, keys: 'F', ...(disabledReason ? { disabledReason } : {}), run }
+  return { label: 'Reply - Fork', icon: GitFork, keys: commandLabel('fork'), ...(disabledReason ? { disabledReason } : {}), run }
 }
 
 /** Whether a key replies to the selection (`R`) or replies in a fork (`F`). */
 export function replyKey(e: KeyboardEvent): 'reply' | 'fork' | null {
-  if (e.ctrlKey || e.metaKey || e.altKey) return null
-  const key = e.key.toLowerCase()
-  return key === 'r' ? 'reply' : key === 'f' ? 'fork' : null
+  return commandMatches(e, 'reply') ? 'reply' : commandMatches(e, 'fork') ? 'fork' : null
 }
 
 function isEditable(target: EventTarget | null): boolean {
@@ -199,7 +198,7 @@ export function SelectionMenu({ scope, messages, onReply, forkDisabled }: Props)
       onClose={close}
       items={[
         {
-          label: 'Reply to selection', icon: CornerDownLeft, primary: true, keys: 'R',
+          label: 'Reply to selection', icon: CornerDownLeft, primary: true, keys: commandLabel('reply'),
           disabledReason: current ? undefined : 'Replying requires text from a single agent message.',
           run: () => { if (current) reply(current) }
         },

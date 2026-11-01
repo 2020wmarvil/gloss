@@ -269,3 +269,31 @@ async function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
     await new Promise((r) => setTimeout(r, 20))
   }
 }
+
+
+describe('custom keyboard shortcuts', () => {
+  it('applies valid hand edits while reporting invalid bindings and retaining unrelated settings', () => {
+    const result = parseSettings(JSON.stringify({ theme: 'dark', shortcuts: { bold: 'Mod+I', stash: '', search: 'Ctrl+Shift+K' } }), defaults)
+    expect(result).toMatchObject({ ok: true, global: { theme: 'dark', shortcuts: { stash: '', search: 'Ctrl+Shift+K' } }, warning: expect.stringContaining('bold') })
+    expect(result.ok && result.global.shortcuts?.bold).toBeUndefined()
+  })
+  it('writes only overrides, refuses conflicting updates without changing the file, and reloads them after restart', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gloss-shortcuts-'))
+    try {
+      const file = new SettingsFile({ dir, defaults })
+      file.load()
+      file.update({ global: { shortcuts: { search: 'Ctrl+Shift+K', stash: '' } } })
+      const text = readFileSync(file.path, 'utf8')
+      expect(JSON.parse(text).shortcuts).toEqual({ search: 'Ctrl+Shift+K', stash: '' })
+      expect(() => file.update({ global: { shortcuts: { bold: 'Mod+I' } } })).toThrow(/Italic/)
+      expect(readFileSync(file.path, 'utf8')).toBe(text)
+      expect(new SettingsFile({ dir, defaults }).load().global.shortcuts).toMatchObject({ search: 'Ctrl+Shift+K', stash: '' })
+      writeFileSync(file.path, JSON.stringify({ shortcuts: { search: 'bad key', stash: '' }, theme: 'dark' }))
+      file.reload()
+      expect(file.state().error).toContain('search')
+      expect(file.state().global.theme).toBe('dark')
+      expect(file.state().global.shortcuts?.search).toBeUndefined()
+      expect(file.state().global.shortcuts?.stash).toBe('')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})

@@ -1,3 +1,4 @@
+import { configureBindings } from './commandBindings'
 // @vitest-environment jsdom
 import { EditorSelection } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
@@ -88,7 +89,7 @@ function press(view: EditorView, key: string, init: KeyboardEventInit = {}): boo
 
 const text = (view: EditorView): string => view.state.doc.toString()
 
-afterEach(unmount)
+afterEach(() => { unmount(); configureBindings({}) })
 
 describe('Composer drafts', () => {
   it.each(['ctrlKey', 'metaKey'])('sends a thread draft to main with %s+Shift+Enter, including code blocks', (modifier) => {
@@ -353,7 +354,7 @@ describe('automatic steering', () => {
 })
 
 describe('screen capture', () => {
-  afterEach(unmount)
+  afterEach(() => { unmount(); configureBindings({}) })
 
   /** The Attach menu's Capture item, after opening the menu. */
   function captureItem(): HTMLButtonElement {
@@ -778,4 +779,24 @@ it('restores a rewind draft to the main composer even if its thread panel closes
   unmount()
   await act(async () => { finish({ text: 'thread prompt', attachments: [] }) })
   expect(text(mount('rewind-thread', { sessionId: 'rewind-thread' }))).toBe('thread prompt')
+})
+
+
+it('rebinds formatting and send in an existing editor and disables the old shortcuts', () => {
+  const onSend = vi.fn()
+  const view = mount('custom-keys-editor', { onSend })
+  type(view, 'hello')
+  configureBindings({ shortcuts: { bold: 'Ctrl+Shift+K', send: 'Ctrl+Shift+U', steer: '' } })
+  press(view, 'b', { ctrlKey: true })
+  expect(view.state.doc.toString()).toBe('hello')
+  press(view, 'Enter')
+  expect(onSend).not.toHaveBeenCalled()
+  press(view, 'Enter', { ctrlKey: true })
+  expect(onSend).not.toHaveBeenCalled()
+  type(view, 'hello')
+  act(() => view.dispatch({ selection: EditorSelection.single(0, 5) }))
+  press(view, 'K', { ctrlKey: true, shiftKey: true })
+  expect(view.state.doc.toString()).toBe('**hello**')
+  press(view, 'U', { ctrlKey: true, shiftKey: true })
+  expect(onSend).toHaveBeenCalledExactlyOnceWith('**hello**', [])
 })

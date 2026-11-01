@@ -1,3 +1,4 @@
+import { bindingFor, matchesBinding, isMac } from '../shared/commands'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
@@ -25,7 +26,7 @@ import { PhoneService } from './phone'
 import { registerComposerIpc } from './composerIpc'
 import { takeForeground } from './foreground'
 import { runInTerminal } from './terminal'
-import { registerCaptureIpc, startCapture } from './capture'
+import { registerCaptureIpc, startCapture, updateCaptureBindings } from './capture'
 import type { AnnotateRequest, AnnotateResult } from '../shared/capture'
 import { normalizeShortcut } from '../shared/shortcut'
 import { UsageSource } from './usage'
@@ -182,11 +183,13 @@ function newWindow(bounds: Partial<Rect> & { width: number; height: number }, fr
   if (process.platform !== 'darwin') {
     win.on('enter-full-screen', () => win.webContents.send(IPC.event, { type: 'fullScreen' } satisfies GlossEvent))
   }
-  if (process.platform !== 'darwin') {
-    win.webContents.on('before-input-event', (event, input) => {
-      if (handleShortcut(win, input)) event.preventDefault()
-    })
-  }
+  win.webContents.on('before-input-event', (event, input) => {
+    if (process.platform === 'darwin') {
+      // The native menu must not revive the old fullscreen accelerator after a rebind.
+      win.webContents.setIgnoreMenuShortcuts(capture.paused || (input.control && input.meta && input.key.toLowerCase() === 'f'))
+    }
+    if (handleShortcut(win, input)) event.preventDefault()
+  })
 
   // Agent output is untrusted. Never open new windows or navigate away from the
   // app; send web links to the system browser instead.
@@ -356,17 +359,19 @@ function loadPage(win: BrowserWindow, page: 'index.html' | 'capture.html', query
  * The default menu's shortcuts, kept on Windows and Linux where Gloss has no menu:
  * zoom always, and DevTools and reload in development.
  */
+let shortcutBindings: Record<string, string> = {}
+
 function handleShortcut(win: BrowserWindow, input: Electron.Input): boolean {
   // AltGr arrives as Ctrl+Alt on Windows; leave it to typing.
-  if (input.type !== 'keyDown' || input.alt) return false
-  const mod = input.control
+  if (input.type !== 'keyDown' || capture.paused) return false
+  if (matchesBinding({ key: input.key, ctrlKey: input.control, metaKey: input.meta, altKey: input.alt, shiftKey: input.shift }, bindingFor('fullscreen', shortcutBindings, isMac(process.platform)), isMac(process.platform))) { win.setFullScreen(!win.isFullScreen()); return true }
+  if (input.alt) return false
+  const mod = process.platform === 'darwin' ? input.meta : input.control
   const key = input.key.toLowerCase()
   const contents = win.webContents
   if (mod && (key === '=' || key === '+')) contents.setZoomLevel(Math.min(contents.getZoomLevel() + 0.5, 5))
   else if (mod && key === '-') contents.setZoomLevel(Math.max(contents.getZoomLevel() - 0.5, -3))
   else if (mod && key === '0') contents.setZoomLevel(0)
-  // Full screen: a borderless window over the whole monitor. macOS has its own (Ctrl+Cmd+F).
-  else if (!mod && !input.shift && key === 'f11') win.setFullScreen(!win.isFullScreen())
   else if (!app.isPackaged && (key === 'f12' || (mod && input.shift && key === 'i'))) contents.toggleDevTools()
   else if (!app.isPackaged && mod && key === 'r') contents.reload()
   else return false
@@ -454,7 +459,7 @@ function setCaptureShortcut(accelerator: string | undefined): void {
   capture.error = null
   capture.setting = (accelerator ?? '').trim()
   if (!capture.setting || capture.paused) return
-  const keys = normalizeShortcut(capture.setting)
+  const keys = normalizeShortcut(capture.setting.replace(/Mod/g, process.platform === 'darwin' ? 'Super' : 'Ctrl'))
   if (!keys) {
     capture.error = `${capture.setting} isn't a key combination Gloss can use.`
     return
@@ -857,6 +862,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     }
     try {
       return await startCapture({
+        shortcuts: settingsFile.state().global.shortcuts,
         preload: join(__dirname, '../preload/capture.js'),
         load: (overlay) => loadPage(overlay, 'capture.html'),
         // Started from another app (the global shortcut), the canvas needs its window in front.
@@ -1182,6 +1188,8 @@ app.whenReady().then(() => {
       emit({ type: 'settings', state: next })
       // Fires nativeTheme's 'updated', which recolors the window controls.
       if (next.global.theme !== previous.global.theme) nativeTheme.themeSource = next.global.theme
+      shortcutBindings = next.global.shortcuts ?? {}
+      updateCaptureBindings(shortcutBindings)
       if (next.global.captureShortcut !== previous.global.captureShortcut) setCaptureShortcut(next.global.captureShortcut)
       void phone?.apply(next.global.phoneAccess ?? false, next.global.phonePort ?? 8443)
       if (next.global.opencodeExecutable !== previous.global.opencodeExecutable) {
@@ -1201,6 +1209,7 @@ app.whenReady().then(() => {
   for (const profile of settingsFile.state().global.agentProfiles ?? []) appliedProfiles.set(profile.id, profile)
   pendingProfiles.clear()
   nativeTheme.themeSource = settingsFile.state().global.theme
+  shortcutBindings = settingsFile.state().global.shortcuts ?? {}
   setCaptureShortcut(settingsFile.state().global.captureShortcut)
   settingsFile.watch()
   pluginLibrary = new PluginLibrary({

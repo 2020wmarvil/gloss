@@ -1,3 +1,4 @@
+import { commandMatches, configureBindings } from '../commandBindings'
 // The region overlay (SPEC → Visual feedback), as ShareX's region capture, one per display: a
 // frozen copy of the display, dimmed except the area that would be captured. Hover highlights the window under the
 // cursor and a click takes it; a drag takes a region (Shift: a square); Space takes the whole
@@ -221,8 +222,8 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 window.addEventListener('keydown', (e) => {
   square = e.shiftKey
   if (!frame) return
-  if (e.key === 'Escape') finish(null)
-  else if (e.key === ' ') {
+  if (commandMatches(e, 'cancelCapture')) finish(null)
+  else if (commandMatches(e, 'captureDisplay')) {
     e.preventDefault()
     finish({ rect: displayRect(), kind: 'display' })
   } else if (e.key.startsWith('Arrow') && inside) {
@@ -239,7 +240,9 @@ window.addEventListener('keyup', (e) => {
 })
 
 async function start(): Promise<void> {
+  window.glossCapture.onShortcuts(shortcuts => configureBindings({ shortcuts }))
   frame = await window.glossCapture.frame()
+  configureBindings({ shortcuts: frame.shortcuts })
   // Measured, not the display's scale: the page shares Gloss's zoom (Ctrl+=), which makes CSS pixels larger.
   k = frame.width / (canvas.clientWidth || frame.width / frame.scale)
   const bitmap = await createImageBitmap(new Blob([frame.png as Uint8Array<ArrayBuffer>], { type: 'image/png' }))

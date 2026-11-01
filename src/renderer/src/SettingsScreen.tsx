@@ -1,3 +1,5 @@
+import { commandMatches, MAC } from './commandBindings'
+import { COMMANDS, bindingFor, bindingProblem, bindingWarning, defaultBinding, type Bindings } from '@shared/commands'
 // The settings screen (docs/mocks/target.html#settings): a list of sections on the left,
 // one section at a time on the right, each a card of rows with one control each.
 import { useEffect, useState } from 'react'
@@ -6,7 +8,6 @@ import type { Project } from '@shared/types'
 import { folderName, sameFolder } from '@shared/paths'
 import { SETTING_FIELDS, projectSettings, type ProjectSettings, type GlobalSettings, type SettingField } from '@shared/settings'
 import { errorText } from './errors'
-import { modKey, SHORTCUTS } from './shortcuts'
 import { McpSettings } from './McpSettings'
 import { OpenCodeSettings } from './OpenCodeSettings'
 import { AgentProfileSettings } from './AgentProfileSettings'
@@ -41,7 +42,7 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
+      if (commandMatches(e, 'closeSettings')) onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -190,7 +191,7 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
         {section === 'shortcuts' && (
           <section aria-labelledby="settings-shortcuts">
             <h2 id="settings-shortcuts">Keyboard shortcuts</h2>
-            <Shortcuts />
+            <Shortcuts settings={state.global} onUpdate={update} />
           </section>
         )}
       </div>
@@ -198,37 +199,51 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
   )
 }
 
-function Shortcuts(): React.JSX.Element {
-  const mod = modKey()
-  return (
-    <>
-      {SHORTCUTS.map((group) => (
-        <div key={group.title} className="shortcut-group">
-          <h3>{group.title}</h3>
-          <dl className="settings-card">
-            {group.shortcuts.map((s) => (
-              <div key={s.action} className="shortcut">
-                <dt className="shortcut-keys">
-                  {s.keys.map((combo, i) => (
-                    <span className="shortcut-combo" key={i}>
-                      {i > 0 && <span className="shortcut-or muted">or</span>}
-                      {combo.map((k, j) => (
-                        <span key={j}>
-                          {j > 0 && '+'}
-                          <kbd>{k === 'Mod' ? mod : k}</kbd>
-                        </span>
-                      ))}
-                    </span>
-                  ))}
-                </dt>
-                <dd>{s.action}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      ))}
-    </>
-  )
+function Shortcuts({ settings, onUpdate }: { settings: GlobalSettings; onUpdate(patch: SettingsPatch): Promise<void> }): React.JSX.Element {
+  const [query, setQuery] = useState('')
+  const [problem, setProblem] = useState<{ id: string; message: string; conflict?: string } | null>(null)
+  useEffect(() => setProblem(null), [settings.shortcuts, settings.captureShortcut])
+  const bindings: Bindings = { ...(settings.captureShortcut !== undefined ? { capture: settings.captureShortcut } : {}), ...settings.shortcuts }
+  async function save(id: string, value: string | undefined): Promise<void> {
+    const next = { ...bindings }
+    if (value === undefined) delete next[id]
+    else next[id] = value
+    const error = bindingProblem(id, bindingFor(id, next, MAC), next, MAC)
+    if (error) { setProblem({ id, ...error }); return }
+    setProblem(null)
+    // Keep only overrides. Capture's legacy field is reset so it cannot revive a cleared override.
+    for (const c of COMMANDS) if (next[c.id] === defaultBinding(c, MAC)) delete next[c.id]
+    await onUpdate({ global: { shortcuts: next, captureShortcut: defaultBinding(COMMANDS.find(c => c.id === 'capture')!, MAC) } })
+  }
+  return <>
+    <p className="muted">Click a binding and press new keys. Clear disables it. Changes apply immediately.</p>
+    <div className="shortcut-toolbar">
+      <input className="setting-text" aria-label="Search keyboard shortcuts" placeholder="Search commands or keys" value={query} onChange={e => setQuery(e.target.value)} />
+      <button className="secondary" onClick={() => { setProblem(null); void onUpdate({ global: { shortcuts: {}, captureShortcut: bindingFor('capture', {}, MAC) } }) }}>Reset all</button>
+    </div>
+    {[...new Set(COMMANDS.map(c => c.scope))].map(scope => {
+      const commands = COMMANDS.filter(c => c.scope === scope && `${c.label} ${c.scope} ${bindingFor(c.id, bindings, MAC)}`.toLowerCase().includes(query.toLowerCase()))
+      if (!commands.length) return null
+      return <section key={scope} className="shortcut-group"><h3>{scope}</h3><div className="settings-card">
+        {commands.map(c => {
+          const value = bindingFor(c.id, bindings, MAC)
+          const changed = value !== defaultBinding(c, MAC)
+          const warning = changed && bindingWarning(value)
+          return <div key={c.id} id={`command-${c.id}`} className="shortcut-edit-row">
+            <div><label htmlFor={`binding-${c.id}`}>{c.label}</label>{changed && <small className="shortcut-modified">Modified</small>}
+              {problem?.id === c.id && <p role="alert" className="error">{problem.message} {problem.conflict && <button className="ghost sm" onClick={() => { setQuery(''); requestAnimationFrame(() => document.getElementById(`binding-${problem.conflict}`)?.focus()) }}>Go to command</button>}</p>}
+              {warning && <p className="muted">{warning}</p>}
+            </div>
+            <ShortcutSetting id={`binding-${c.id}`} label={c.label} command value={value} onChange={v => void save(c.id, v)} />
+            <button className="ghost sm" disabled={!changed} aria-label={`Reset ${c.label}`} onClick={() => void save(c.id, undefined)}>Reset</button>
+          </div>
+        })}
+      </div></section>
+    })}
+    <section className="shortcut-group"><h3>Fixed typing and gestures</h3>
+      <p className="muted">Typing /, @ and ! opens commands, context and shell mode. Shift+Enter inserts a new line; Tab and Shift+Tab indent and outdent; Backspace removes markup. Arrow keys navigate completions and history. Mouse back/forward navigates; double-click renames sessions or resets panel widths. Capture dragging, cursor nudging, wheel zoom and panning keep their usual behavior.</p>
+    </section>
+  </>
 }
 
 /** A text setting, saved when it loses focus or on Enter, with suggestions. */

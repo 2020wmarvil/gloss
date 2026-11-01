@@ -1,3 +1,4 @@
+import { commandMatches } from './commandBindings'
 // A session popped out into its own window (SPEC → Session windows): the session's view
 // alone, without the sidebar or settings.
 import { useEffect, useRef, useState } from 'react'
@@ -54,20 +55,18 @@ export function SessionWindow({ sessionId }: { sessionId: string }): React.JSX.E
   // there (SPEC → Session windows).
   const shortcuts = useRef<(e: KeyboardEvent) => void>(() => {})
   shortcuts.current = (e: KeyboardEvent) => {
-    const mod = e.ctrlKey || e.metaKey
-    if (!mod || e.altKey) return
-    const key = e.key.toLowerCase()
+    if (e.defaultPrevented || e.isComposing) return
     const toMain = (action: Parameters<typeof window.gloss.windows.toMain>[0]): void => {
       e.preventDefault()
       window.gloss.windows.toMain(action)
     }
-    if (!e.shiftKey && key === 'w') {
+    if (commandMatches(e, 'closeSession')) {
       e.preventDefault()
       if (!e.repeat) window.close()
     }
-    else if (e.shiftKey && key === 'f') toMain({ kind: 'search' })
-    else if (!e.shiftKey && key === 'n') toMain({ kind: 'newSession' })
-    else if (e.shiftKey && key === 'd') {
+    else if (commandMatches(e, 'search')) toMain({ kind: 'search' })
+    else if (commandMatches(e, 'newSession')) toMain({ kind: 'newSession' })
+    else if (commandMatches(e, 'review')) {
       // Out of a review closes its window (a draft is kept, as when closing it by hand).
       if (open?.session.review) {
         e.preventDefault()
@@ -75,9 +74,9 @@ export function SessionWindow({ sessionId }: { sessionId: string }): React.JSX.E
       } else if (open) toMain({ kind: 'reviewFolder', sessionId: open.session.id })
       else toMain({ kind: 'review' })
     }
-    else if (e.key === ',') toMain({ kind: 'settings' })
-    else if (e.key === 'Tab') {
-      toMain({ kind: 'cycleSession', back: e.shiftKey })
+    else if (commandMatches(e, 'settings')) toMain({ kind: 'settings' })
+    else if (commandMatches(e, 'nextSession') || commandMatches(e, 'previousSession')) {
+      toMain({ kind: 'cycleSession', back: commandMatches(e, 'previousSession') })
     } else if (s.shortcut(e, sideShown, popIn).handled) e.preventDefault()
   }
   useEffect(() => {

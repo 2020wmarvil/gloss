@@ -1,3 +1,4 @@
+import { configureBindings } from './commandBindings'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { LucideProvider } from 'lucide-react'
@@ -13,7 +14,10 @@ const query = new URLSearchParams(location.search)
 const popped = query.get('session')
 const annotate = query.has('annotate')
 
-createRoot(document.getElementById('root')!).render(
+const shortcutsReady = window.gloss.settings.get().then(s => configureBindings(s.global))
+window.gloss.onEvent(e => { if (e.type === 'settings') configureBindings(e.state.global) })
+
+void shortcutsReady.then(() => createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {/* One icon size and stroke everywhere (docs/mocks/design-system.html → Icons). */}
     <LucideProvider size={16} strokeWidth={1.75}>
@@ -21,4 +25,4 @@ createRoot(document.getElementById('root')!).render(
       {annotate ? <AnnotateWindow /> : popped ? <SessionWindow sessionId={popped} /> : <App />}
     </LucideProvider>
   </StrictMode>
-)
+))

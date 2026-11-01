@@ -1,8 +1,9 @@
+import { commandMatches } from './commandBindings'
 // The composer's text box: a CodeMirror markdown editor (SPEC → Composer → Markdown).
 // The source stays visible but is styled, lists continue, and a few keys format the
 // selection. What the user sees is exactly what the agent receives.
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, type Ref } from 'react'
-import { history, historyKeymap, standardKeymap } from '@codemirror/commands'
+import { history, undo, redo, standardKeymap } from '@codemirror/commands'
 import { deleteMarkupBackward, insertNewlineContinueMarkupCommand, markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language'
 import { Compartment, EditorSelection, EditorState, Prec, type ChangeSpec, type StateCommand } from '@codemirror/state'
@@ -273,7 +274,16 @@ export function MarkdownEditor(props: Props): React.JSX.Element {
           theme,
           Prec.highest(
             EditorView.domEventHandlers({
-              keydown: (e) => latest.current.onKeyDown?.(e) ?? false,
+              keydown: (e, target) => {
+                if (latest.current.onKeyDown?.(e)) return true
+                const actions: [string, (view: EditorView) => boolean][] = [
+                  ['send', v => submit('send')(v) || newline(v)], ['steer', v => submit('steer')(v)],
+                  ['bold', toggleWrap('**')], ['italic', toggleWrap('*')], ['inlineCode', toggleWrap('`')], ['link', insertLink],
+                  ['undo', undo], ['redo', redo]
+                ]
+                const action = actions.find(([id]) => commandMatches(e, id))
+                return action ? action[1](target) : false
+              },
               paste: (e) => {
                 const files = [...(e.clipboardData?.files ?? [])]
                 if (files.length === 0 || !latest.current.onPasteFiles) return false
@@ -286,22 +296,16 @@ export function MarkdownEditor(props: Props): React.JSX.Element {
           ),
           Prec.high(
             keymap.of([
-              { key: 'Enter', run: submit('send') },
               { key: 'Enter', run: newline },
-              { key: 'Mod-Enter', run: submit('steer') },
               { key: 'Shift-Enter', run: (target) => (!latest.current.plainText && continueList(target)) || newline(target) },
               { key: 'Backspace', run: deleteMarkupBackward },
               { key: 'Tab', run: shiftListItem(1) },
               { key: 'Tab', run: indentLines(1) },
               { key: 'Shift-Tab', run: shiftListItem(-1) },
-              { key: 'Shift-Tab', run: indentLines(-1) },
-              { key: 'Mod-b', run: toggleWrap('**') },
-              { key: 'Mod-i', run: toggleWrap('*') },
-              { key: 'Mod-e', run: toggleWrap('`') },
-              { key: 'Mod-k', run: insertLink }
+              { key: 'Shift-Tab', run: indentLines(-1) }
             ])
           ),
-          keymap.of([...standardKeymap, ...historyKeymap]),
+          keymap.of(standardKeymap),
           EditorView.updateListener.of((u) => {
             const main = u.state.selection.main
             lastSelection.current = [main.anchor, main.head]

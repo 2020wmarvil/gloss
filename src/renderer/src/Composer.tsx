@@ -1,3 +1,4 @@
+import { commandHint, commandMatches } from './commandBindings'
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { normalizeShortcut, shortcutLabel } from '@shared/shortcut'
 import { canRewind, type ContextItem } from '@shared/composer'
@@ -10,7 +11,6 @@ import { ComposerAttachments } from './ComposerAttachments'
 import { RewindDialog } from './RewindDialog'
 import { LogToBottom } from './logToBottom'
 import { Popover } from './Popover'
-import { modKey } from './shortcuts'
 import { loadImage, type Annotation } from './capture/annotate'
 
 /** The session's queue as one composer sees it: the messages queued from its thread. */
@@ -202,7 +202,7 @@ export function Composer({
   const browsing = useRef<number | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const startCapture = useRef<() => void>(() => {})
-  const captureKeys = normalizeShortcut(useContext(CaptureShortcut))
+  const captureKeys = normalizeShortcut(useContext(CaptureShortcut).replace(/Mod/g, /Mac/.test(navigator.userAgent) ? 'Super' : 'Ctrl'))
   const toBottom = useContext(LogToBottom)
 
   useEffect(() => {
@@ -413,7 +413,7 @@ export function Composer({
   }
 
   function escape(e: KeyboardEvent): boolean {
-    if (e.key !== 'Escape' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.isComposing) return false
+    if (!commandMatches(e, 'escapeComposer') || e.isComposing) return false
     if (e.repeat) return true
     e.stopPropagation()
     const now = Date.now()
@@ -444,7 +444,7 @@ export function Composer({
     if (!primary) return
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || document.querySelector('[role="dialog"], .popover')) return
-      if (e.key !== 'Escape') { lastEscape.current = null; return }
+      if (!commandMatches(e, 'escapeComposer')) { lastEscape.current = null; return }
       if (latestEscape.current(e)) e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
@@ -646,20 +646,18 @@ export function Composer({
             }}
             onKeyDown={(e) => {
               if (e.isComposing) return false
-              if (e.key === 'Escape' && document.querySelector('[role="dialog"], .popover')) return false
-              if (e.key !== 'Escape') lastEscape.current = null
-              if (onSendToMain && e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
+              if (commandMatches(e, 'escapeComposer') && document.querySelector('[role="dialog"], .popover')) return false
+              if (!commandMatches(e, 'escapeComposer')) lastEscape.current = null
+              if (onSendToMain && commandMatches(e, 'sendToMain')) {
                 if (!(commandMode && shell.running)) submit('main')
                 return true
               }
-              if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
-                if (e.key.toLowerCase() === 's') { stashDraft(); return true }
-                if (e.key.toLowerCase() === 'g') { void editExternally(); return true }
-              }
+              if (commandMatches(e, 'stash')) { stashDraft(); return true }
+              if (commandMatches(e, 'externalEditor')) { void editExternally(); return true }
               if (contexts.length > 0) {
                 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { setContextPick((contextPicked + (e.key === 'ArrowDown' ? 1 : contexts.length - 1)) % contexts.length); return true }
                 if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') { void chooseContext(contexts[contextPicked]); return true }
-                if (e.key === 'Escape') { lastEscape.current = null; e.stopPropagation(); setContexts([]); setDismissed(text); return true }
+                if (commandMatches(e, 'escapeComposer')) { lastEscape.current = null; e.stopPropagation(); setContexts([]); setDismissed(text); return true }
               }
               if (matches.length === 0) {
                 const plain = !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
@@ -677,7 +675,7 @@ export function Composer({
                 choose(matches[picked])
                 return true
               }
-              if (e.key === 'Escape') {
+              if (commandMatches(e, 'escapeComposer')) {
                 lastEscape.current = null
                 e.stopPropagation()
                 setDismissed(text)
@@ -752,7 +750,7 @@ export function Composer({
                   <button
                     className="to-main"
                     onClick={() => (close(), submit('main'))}
-                    title={`Send to main (${modKey()}+Shift+Enter)${running ? '. Steers the main conversation if it is active, otherwise queues' : ''}`}
+                    title={`Send to main${commandHint('sendToMain')}${running ? '. Steers the main conversation if it is active, otherwise queues' : ''}`}
                   >
                     Send to main
                   </button>
@@ -849,10 +847,10 @@ export function QueuedRow(props: {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              if (commandMatches(e, 'saveQueue') && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 void save()
-              } else if (e.key === 'Escape') {
+              } else if (commandMatches(e, 'cancelQueue')) {
                 e.preventDefault()
                 e.stopPropagation()
                 setDraft(null)
