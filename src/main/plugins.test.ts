@@ -435,6 +435,8 @@ describe('import (phase 2)', () => {
       expect(content).toContain(library.directory)
       expect(content).toContain(settings())
       expect(content).toContain('`custom:local` (Local agent)')
+      // Claude Code expands its plugin variables in a plugin skill's text, which would garble the instructions.
+      expect(content).not.toMatch(/${CLAUDE_/)
     }
     expect(JSON.parse(readFileSync(join(builtin, 'claude/.claude-plugin/plugin.json'), 'utf8')).name).toBe('gloss')
     expect(library.configureAgent(getAgentConfig('claude')).sessionMeta!('').new).toMatchObject({ claudeCode: { options: { plugins: [{ type: 'local', path: join(builtin, 'claude') }] } } })
