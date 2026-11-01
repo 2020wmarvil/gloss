@@ -1,5 +1,7 @@
 /** The built-in skill that lets any agent create or import a plugin (SPEC → Plugins → Import). */
 export const BUILTIN_SKILL = 'gloss-plugins'
+/** Its name in Claude, inside the plugin `gloss` (`gloss:plugins`), like a library plugin's skills. */
+export const BUILTIN_CLAUDE_SKILL = 'plugins'
 
 type Context = {
   /** The plugin library folder. */
@@ -10,10 +12,10 @@ type Context = {
 }
 
 /** SKILL.md for the built-in skill, with this machine's paths and agents filled in. */
-export function builtinSkill({ library, settings, agents }: Context): string {
+export function builtinSkill({ library, settings, agents }: Context, name = BUILTIN_SKILL): string {
   const ids = agents.map(a => `\`${a.id}\` (${a.name})`).join(', ')
   return `---
-name: ${BUILTIN_SKILL}
+name: ${name}
 description: "Create a plugin in Gloss, or import an existing plugin or skill into Gloss's plugin library. Use when the user asks to add, import, install or set up a plugin, skill or MCP server in Gloss."
 ---
 
@@ -30,11 +32,12 @@ Gloss keeps a library of plugins that it delivers to the agents the user picks. 
 \`\`\`
 <library>/<plugin-id>/
   plugin.json
-  skills/<plugin-id>-<skill-name>/SKILL.md
-  skills/<plugin-id>-<skill-name>/<supporting files>
+  skills/<skill-name>/SKILL.md
+  skills/<skill-name>/<supporting files>
 \`\`\`
 
-- \`<plugin-id>\`: lowercase letters, digits and dashes, starting with a letter or digit. The skill folder name is the plugin id, a dash and the skill name, at most 64 characters in all.
+- \`<plugin-id>\` and \`<skill-name>\`: lowercase letters, digits and dashes, starting with a letter or digit. The plugin id, a dash and the skill name fit in 64 characters.
+- Agents see a skill as \`<plugin-id>:<skill-name>\` in Claude Code and \`<plugin-id>-<skill-name>\` elsewhere, so skill names only need to be unique within their plugin. Don't repeat the plugin id in a skill name.
 - \`plugin.json\` has exactly these fields, no others:
   \`\`\`json
   { "schemaVersion": 1, "name": "Display name", "description": "One line.", "connections": [], "enabledAgents": [] }
@@ -43,7 +46,7 @@ Gloss keeps a library of plugins that it delivers to the agents the user picks. 
 - \`SKILL.md\` starts with frontmatter whose \`name\` equals its folder name and whose \`description\` is a single line. Other frontmatter fields may stay.
 - Only ordinary files and folders: no links. At most 1,000 files and 64 MB per plugin, 12 folder levels.
 - Other files a skill or server uses (scripts, server code) may sit anywhere in the plugin folder. Gloss refuses a plugin with \`hooks\`, \`agents\`, \`commands\`, \`.mcp.json\`, \`mcp.json\`, \`index.js\`, \`index.ts\` or \`.claude-plugin\` there.
-- \`${BUILTIN_SKILL}\` is reserved for this skill. A plugin name already in the library can't be reused (names are compared ignoring case).
+- The plugin id \`gloss\` is reserved for this skill's plugin. A plugin name already in the library can't be reused (names are compared ignoring case).
 
 ## MCP servers
 
@@ -63,7 +66,7 @@ When the user points you at a plugin, a skill, a folder of skills or a repositor
 1. **Copy, never change the source.** Copy what you import into a new plugin in the library. Don't edit, move, link or delete anything at the source.
 2. **Find the skills.** A Claude Code plugin (\`.claude-plugin/plugin.json\`) or a Codex plugin (\`.codex-plugin/plugin.json\`) keeps them in \`skills/\` unless its manifest names other paths. A marketplace (\`.claude-plugin/marketplace.json\`) lists plugins with a \`source\`: a relative path inside the repository, or another repository (clone it). An entry with \`"strict": false\` may list its skills in the marketplace itself. A standalone skill is a folder with \`SKILL.md\`; it becomes a plugin of its own.
 3. **Only skills and MCP servers.** Commands, agents (subagents), hooks, LSP servers, output styles and Codex \`.app.json\` connectors are not imported: Gloss gives every agent the same plugin, and those only work in one agent. Don't turn them into skills. Tell the user which were left out and what they would have done.
-4. **Rename the skills** to \`<plugin-id>-<skill-name>\`: rename the folder and set \`name\` in its frontmatter to match. Update references between the plugin's own skills to the new names.
+4. **Keep skill names.** Each skill keeps its folder name, and \`name\` in its frontmatter matches it. Rename only a name that isn't lowercase letters, digits and dashes, or that starts with the plugin id and a dash (drop that part). References between the plugin's own skills use these short names.
 5. **Paths.** Claude Code plugins refer to their own folders with two variables, each written as a dollar sign followed by the name in braces: \`CLAUDE_PLUGIN_ROOT\` (the plugin's folder) and \`CLAUDE_SKILL_DIR\` (the skill's folder). Replace them with the new plugin's absolute folder in the library and the skill's absolute folder, in skill files and in server commands and arguments. Other agents don't expand them.
 6. **Servers.** Read the plugin's servers from \`.mcp.json\` (either \`{ "mcpServers": { ... } }\` or the servers at its top level) or from \`mcpServers\` in its manifest, and convert each to the format above. If settings already has an identical server, use it. If the name is taken by a different server, add this one under a new name. Put the names in \`connections\`. A \`\${VAR}\` in a value can't stay: Gloss passes values as written. Use the value from your environment if it's set, otherwise ask the user, and say that settings.json stores it as plain text. Drop agent-specific fields (Codex's \`enabled\`, \`env_vars\`, \`cwd\`, timeouts, tool approval settings), turning \`env_vars\` into \`env\` values from your environment.
 7. **Don't run anything** from the source (install scripts, hooks, servers) while importing. If a server needs setup first (installing its dependencies, signing in), say so and ask before doing it.

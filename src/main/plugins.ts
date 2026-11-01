@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { AgentConfig } from './agents'
 import type { McpServer } from '../shared/mcp'
 import { skillInvocation } from './skillInvocation'
-import { BUILTIN_SKILL, builtinSkill } from './pluginSkill'
+import { BUILTIN_CLAUDE_SKILL, BUILTIN_SKILL, builtinSkill } from './pluginSkill'
 import { mcpName } from '../shared/mcp'
 import { BUILTIN_PLUGIN_ID, PLUGIN_ID, pluginSlug, type PersonalPlugin, type PluginAgentState, type PluginChange, type PluginFile, type PluginLibraryState, type PluginManifest, type PluginSkill } from '../shared/plugins'
 
@@ -68,6 +68,17 @@ export function pointsInto(server: McpServer, folder: string): boolean {
     return false
   })
 }
+/**
+ * A skill's name outside Claude, which has no plugin namespace for it: `<plugin-id>-<skill>`. Claude shows
+ * `<plugin-id>:<skill>`. A skill whose folder already starts with the plugin id (the earlier naming) keeps it.
+ */
+export function flatSkillName(pluginId: string, skillId: string): string { return skillId.startsWith(`${pluginId}-`) ? skillId : `${pluginId}-${skillId}` }
+/** Sets `name` in a SKILL.md's frontmatter. */
+function renameSkill(content: string, name: string): string {
+  return content.replace(/^(---\r?\n[\s\S]*?)^name:[^\r\n]*/m, `$1name: ${name}`)
+}
+/** The id the built-in plugin takes in Claude (`gloss:plugins`); library plugins can't use it. */
+const RESERVED_PLUGIN_ID = 'gloss'
 function exists(path: string): boolean { try { lstatSync(path); return true } catch (error) { if (isMissing(error)) return false; throw error } }
 
 /** All source mutations are confined to this instance's library. Native user config is never edited. */
@@ -174,7 +185,7 @@ export class PluginLibrary {
     if (!exists(root)) return []
     return readdirSync(this.safe(root), { withFileTypes: true }).map(entry => {
       if (!entry.isDirectory() || !PLUGIN_ID.test(entry.name)) throw new Error('Each skill must be an ordinary folder with a lowercase name.')
-      if (entry.name === BUILTIN_SKILL) throw new Error(`${BUILTIN_SKILL} is reserved for Gloss’s built-in skill. Rename this skill.`)
+      if (!PLUGIN_ID.test(flatSkillName(id, entry.name))) throw new Error(`${entry.name}: the plugin id and skill name together must fit within 64 characters.`)
       const dir = join(root, entry.name)
       const file = join(dir, 'SKILL.md')
       const raw = this.readText(file)
@@ -229,6 +240,7 @@ export class PluginLibrary {
       const problems: string[] = []
       try {
         this.id(id); manifest = this.manifest(id)
+        if (id === RESERVED_PLUGIN_ID) throw new Error(`The plugin id ${RESERVED_PLUGIN_ID} is reserved for Gloss’s built-in plugin. Rename this plugin’s folder.`)
         this.files(this.folder(id))
         if (NATIVE_PARTS.some(name => exists(join(this.folder(id), name)))) throw new Error('Native hooks, agents, commands and embedded servers are not loaded. Use skills and shared MCP connection references.')
         skills = this.scanSkills(id)
@@ -296,7 +308,7 @@ export class PluginLibrary {
     if (typeof description !== 'string' || description.length > 1000) throw new Error('Description must be at most 1000 characters.')
     if (this.sources().some(p => p.manifest.name.toLowerCase() === name.toLowerCase())) throw new Error('A plugin with this name already exists.')
     let id = pluginSlug(name)
-    if (exists(join(this.directory, id))) id = `${id}-${randomUUID().slice(0, 6)}`
+    if (id === RESERVED_PLUGIN_ID || exists(join(this.directory, id))) id = `${id}-${randomUUID().slice(0, 6)}`
     mkdirSync(this.folder(id))
     try {
       this.save(id, { schemaVersion: 1, name, description, connections: [], enabledAgents: [] })
@@ -327,9 +339,8 @@ export class PluginLibrary {
     if (invocation !== 'automatic' && invocation !== 'direct') throw new Error('Choose Automatic or Direct only.')
     name = text(name, 'skill name', 48)
     description = text(description, 'skill description', 1000)
-    const skillId = `${id}-${pluginSlug(name)}`
-    if (!PLUGIN_ID.test(skillId)) throw new Error('The plugin and skill names together must fit within 64 characters.')
-    if (skillId === BUILTIN_SKILL) throw new Error(`${BUILTIN_SKILL} is reserved for Gloss’s built-in skill. Choose another name.`)
+    const skillId = pluginSlug(name)
+    if (!PLUGIN_ID.test(flatSkillName(id, skillId))) throw new Error('The plugin and skill names together must fit within 64 characters.')
     const folder = this.safe(join(this.folder(id), 'skills', skillId))
     if (exists(folder)) throw new Error('A skill with this name already exists in this plugin.')
     const initial = `---\nname: ${skillId}\ndescription: ${JSON.stringify(description)}\n---\n\n# ${name}\n\nDescribe the workflow here.\n`
@@ -347,7 +358,7 @@ export class PluginLibrary {
   }
   readFile(id: string, path: string): PluginFile {
     if (id === BUILTIN_PLUGIN_ID && this.options.settings) {
-      if (path !== `skills/${BUILTIN_SKILL}/SKILL.md`) throw new Error('Unknown file.')
+      if (path !== `skills/${BUILTIN_CLAUDE_SKILL}/SKILL.md`) throw new Error('Unknown file.')
       const content = this.builtinContent()
       return { path, content, revision: hash(content) }
     }
@@ -443,7 +454,7 @@ export class PluginLibrary {
 
   private assertState(): void { if (this.stateProblem) throw new Error(this.stateProblem) }
   private persist(): void { this.assertState(); atomic(this.stateFile, JSON.stringify(this.state, null, 2) + '\n') }
-  private contentHash(root: string): string {
+  private contentHash(root: string, overrides: ReadonlyMap<string, string> = new Map()): string {
     const entries: string[] = []
     let bytes = 0
     const walk = (dir: string, depth = 0): void => {
@@ -455,7 +466,8 @@ export class PluginLibrary {
         else {
           bytes += lstatSync(path).size
           if (bytes > MAX_PLUGIN_BYTES) throw new Error('Deployment exceeds 64 MB.')
-          entries.push(relative(root, path), hash(readFileSync(path)))
+          const rel = relative(root, path)
+          entries.push(rel, hash(overrides.get(rel) ?? readFileSync(path)))
         }
       }
     }
@@ -490,21 +502,25 @@ export class PluginLibrary {
     }
     return errors
   }
-  private deploy(source: string, target: string, agentId: string, pluginId: string): void {
+  /** `rename`: deliver a copy whose SKILL.md is named this, for an agent that names skills by their frontmatter. */
+  private deploy(source: string, target: string, agentId: string, pluginId: string, rename?: string): void {
     this.safe(source)
     this.assertTargetParents(agentId, dirname(target))
     const recorded = this.state.deployments.find(d => d.target === target)
     if (recorded) this.assertOwned(recorded)
     else if (exists(target)) throw new Error(`An existing folder occupies ${target}. Gloss will not replace it.`)
-    if (recorded && exists(target) && recorded.source === source && recorded.mode === 'link') return
-    const digest = this.contentHash(source)
+    if (!rename && recorded && exists(target) && recorded.source === source && recorded.mode === 'link') return
+    const skillFile = rename ? renameSkill(readFileSync(join(source, 'SKILL.md'), 'utf8'), rename) : undefined
+    const digest = this.contentHash(source, skillFile === undefined ? undefined : new Map([['SKILL.md', skillFile]]))
     if (recorded && exists(target) && recorded.mode === 'copy' && recorded.hash === digest) return
     mkdirSync(dirname(target), { recursive: true })
     const staged = `${target}.gloss-${randomUUID()}`
     let mode: Deployment['mode'] = 'link'
     try {
-      try { (this.options.link ?? symlinkSync)(source, staged, process.platform === 'win32' ? 'junction' : 'dir') }
-      catch (error) {
+      try {
+        if (skillFile !== undefined) { mode = 'copy'; cpSync(source, staged, { recursive: true, errorOnExist: true, force: false }); writeFileSync(join(staged, 'SKILL.md'), skillFile) }
+        else (this.options.link ?? symlinkSync)(source, staged, process.platform === 'win32' ? 'junction' : 'dir')
+      } catch (error) {
         if (!['EPERM', 'EACCES', 'ENOTSUP'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error
         mode = 'copy'; cpSync(source, staged, { recursive: true, errorOnExist: true, force: false })
       }
@@ -517,11 +533,11 @@ export class PluginLibrary {
   }
   private target(agentId: string, pluginId: string, skillId: string): string {
     if (agentId === 'claude') return join(this.runtime, 'claude', pluginId, 'skills', skillId)
-    if (agentId === 'codex') return join(this.runtime, 'codex', '.agents', 'skills', skillId)
-    if (agentId === 'opencode') return join(this.runtime, 'opencode', 'skills', skillId)
+    if (agentId === 'codex') return join(this.runtime, 'codex', '.agents', 'skills', flatSkillName(pluginId, skillId))
+    if (agentId === 'opencode') return join(this.runtime, 'opencode', 'skills', flatSkillName(pluginId, skillId))
     const dir = this.state.customDirectories[agentId]
     if (!dir) throw new Error('Configure the custom agent’s skill directory.')
-    return join(dir, `gloss-${skillId}`)
+    return join(dir, `gloss-${flatSkillName(pluginId, skillId)}`)
   }
   private assertTargetParents(agentId: string, target: string): void {
     const root = agentId.startsWith('custom:') ? this.state.customDirectories[agentId] : this.runtime
@@ -536,7 +552,7 @@ export class PluginLibrary {
   /** The built-in skill's folder for an agent, or undefined when it can't get it (SPEC → Plugins → Import). */
   private builtinFolder(agentId: string): string | undefined {
     const root = join(this.runtime, 'builtin')
-    if (agentId === 'claude') return join(root, 'claude', 'skills', BUILTIN_SKILL)
+    if (agentId === 'claude') return join(root, 'claude', 'skills', BUILTIN_CLAUDE_SKILL)
     if (agentId === 'codex') return join(root, 'codex', '.agents', 'skills', BUILTIN_SKILL)
     if (agentId === 'opencode') return join(root, 'opencode', 'skills', BUILTIN_SKILL)
     const dir = this.state.customDirectories[agentId]
@@ -550,19 +566,19 @@ export class PluginLibrary {
     return items.length === 1 && items[0] === 'SKILL.md' && readFileSync(join(folder, 'SKILL.md'), 'utf8').startsWith(`---\nname: ${BUILTIN_SKILL}\n`)
   }
   /** Writes the built-in skill for every agent. It isn't part of the library and can't be turned off. */
-  private builtinContent(): string {
-    return builtinSkill({ library: this.directory, settings: this.options.settings ?? '', agents: this.options.agents() })
+  private builtinContent(name = BUILTIN_SKILL): string {
+    return builtinSkill({ library: this.directory, settings: this.options.settings ?? '', agents: this.options.agents() }, name)
   }
   /** The built-in plugin as the Plugins screen shows it: read-only, on for every agent that can get it. */
   private builtinPlugin(agents: Agent[]): PersonalPlugin | undefined {
     if (!this.options.settings) return undefined
-    const path = `skills/${BUILTIN_SKILL}/SKILL.md`
+    const path = `skills/${BUILTIN_CLAUDE_SKILL}/SKILL.md`
     const description = /^description: "(.*)"$/m.exec(this.builtinContent())?.[1] ?? ''
     return {
       schemaVersion: 1, id: BUILTIN_PLUGIN_ID, builtin: true, name: 'Gloss plugins',
       description: 'Built into Gloss: lets any agent create a plugin or import one into this library.',
       connections: [], enabledAgents: agents.map(a => a.id), directory: join(this.runtime, 'builtin'), problems: [],
-      skills: [{ id: BUILTIN_SKILL, name: BUILTIN_SKILL, description, path, files: ['SKILL.md'], invocation: 'automatic', invocationRevision: '' }],
+      skills: [{ id: BUILTIN_CLAUDE_SKILL, name: BUILTIN_CLAUDE_SKILL, description, path, files: ['SKILL.md'], invocation: 'automatic', invocationRevision: '' }],
       agents: agents.map(agent => {
         const custom = agent.id.startsWith('custom:')
         const configured = !custom || !!this.state.customDirectories[agent.id]
@@ -580,8 +596,8 @@ export class PluginLibrary {
   }
   private deliverBuiltin(): void {
     if (!this.options.settings) return
-    const content = this.builtinContent()
     for (const agent of this.options.agents()) {
+      const content = this.builtinContent(agent.id === 'claude' ? BUILTIN_CLAUDE_SKILL : BUILTIN_SKILL)
       const folder = this.builtinFolder(agent.id)
       if (!folder) continue
       try {
@@ -611,7 +627,8 @@ export class PluginLibrary {
       if (this.options.busy?.(agent.id)) continue
       if (!p.manifest.enabledAgents.includes(agent.id) || p.problems.length || this.blockers(p.manifest, agent.id).length) continue
       try {
-        const plans = p.skills.map(s => ({ source: join(this.folder(p.id), 'skills', s.id), target: this.target(agent.id, p.id, s.id) }))
+        // Claude namespaces plugin skills itself; elsewhere a skill is renamed <plugin-id>-<skill> unless it already is.
+        const plans = p.skills.map(s => ({ source: join(this.folder(p.id), 'skills', s.id), target: this.target(agent.id, p.id, s.id), rename: agent.id !== 'claude' && flatSkillName(p.id, s.id) !== s.id ? flatSkillName(p.id, s.id) : undefined }))
         for (const plan of plans) {
           expected.add(plan.target)
           const record = this.state.deployments.find(d => d.target === plan.target)
@@ -621,12 +638,12 @@ export class PluginLibrary {
           }
           else if (exists(plan.target)) throw new Error(`Existing content at ${plan.target} was preserved. Choose another skill name or directory.`)
         }
-        for (const plan of plans) this.deploy(plan.source, plan.target, agent.id, p.id)
+        for (const plan of plans) this.deploy(plan.source, plan.target, agent.id, p.id, plan.rename)
         if (agent.id === 'claude') {
           const parent = join(this.runtime, 'claude', p.id, '.claude-plugin')
           this.assertTargetParents(agent.id, parent)
           const file = join(parent, 'plugin.json')
-          const content = JSON.stringify({ name: `gloss-${p.id}`, description: p.manifest.description }) + '\n'
+          const content = JSON.stringify({ name: p.id, description: p.manifest.description }) + '\n'
           if (!exists(file) || lstatSync(file).isSymbolicLink() || readFileSync(file, 'utf8') !== content) atomic(file, content)
         }
       } catch (error) {

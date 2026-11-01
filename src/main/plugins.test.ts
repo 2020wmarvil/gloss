@@ -40,8 +40,9 @@ it('creates ordinary editable packages, isolates names, and persists without ena
   const id = library.create('Writing', 'My writing preferences')
   const second = library.create('Code review', 'Review changes')
   expect(record(id)).toMatchObject({ id: 'writing', name: 'Writing', enabledAgents: [] })
-  expect(record(id).skills[0]).toMatchObject({ id: 'writing-instructions', name: 'instructions' })
-  expect(record(second).skills[0].id).not.toBe(record(id).skills[0].id)
+  expect(record(id).skills[0]).toMatchObject({ id: 'instructions', name: 'instructions' })
+  // Skill names only need to be unique within their plugin: agents see them prefixed with the plugin id.
+  expect(record(second).skills[0].id).toBe('instructions')
   expect(changed.mock.calls.every(([ids]) => ids.length === 0)).toBe(true)
   library = make()
   expect(library.list().plugins).toHaveLength(2)
@@ -57,7 +58,8 @@ it('shares source files through native projections and never touches native user
   expect(targets).toHaveLength(3)
   for (const target of targets) {
     expect(target.target.startsWith(join(root, 'plugins/runtime'))).toBe(true)
-    expect(lstatSync(target.target).isSymbolicLink()).toBe(true)
+    // Claude gets a link; Codex and OpenCode name skills by their frontmatter, so they get renamed copies.
+    expect(lstatSync(target.target).isSymbolicLink()).toBe(target.agentId === 'claude')
     expect(readFileSync(join(target.target, 'references/checklist.md'), 'utf8')).toBe('First checklist')
   }
   const file = library.readFile(id, `skills/${skill.id}/references/checklist.md`)
@@ -123,8 +125,8 @@ it('rejects traversal and symlink escapes when reading or editing files', () => 
   for (const path of ['../outside/secret.txt', 'skills/../../outside/secret.txt', 'skills/x/C:/secret', 'skills\\x\\secret']) expect(() => library.readFile(id, path)).toThrow()
   const linked = join(record(id).directory, 'skills', record(id).skills[0].id, 'linked')
   symlinkSync(outside, linked, process.platform === 'win32' ? 'junction' : 'dir')
-  expect(() => library.readFile(id, `skills/writing-instructions/linked/secret.txt`)).toThrow(/Linked files/)
-  expect(() => library.createFile(id, 'writing-instructions', 'linked/new.txt', 'x')).toThrow()
+  expect(() => library.readFile(id, `skills/instructions/linked/secret.txt`)).toThrow(/Linked files/)
+  expect(() => library.createFile(id, 'instructions', 'linked/new.txt', 'x')).toThrow()
   expect(existsSync(join(outside, 'new.txt'))).toBe(false)
 })
 
@@ -145,7 +147,7 @@ it('tracks copy fallback updates and preserves diverged deployment files', () =>
 })
 
 it('does not remove a directory that replaced a managed link', () => {
-  const id = library.create('Writing', 'Write clearly'); library.enable(id, 'codex', true)
+  const id = library.create('Writing', 'Write clearly'); library.enable(id, 'claude', true)
   const target = deployments()[0].target
   rmSync(target); mkdirSync(target); writeFileSync(join(target, 'user.txt'), 'Unrelated files')
   expect(() => library.remove(id)).toThrow(/replaced outside/)
@@ -153,10 +155,10 @@ it('does not remove a directory that replaced a managed link', () => {
 })
 
 it('reports missing deployments on read and safely clears its own dangling links', () => {
-  const id = library.create('Writing', 'Write clearly'); library.enable(id, 'codex', true)
+  const id = library.create('Writing', 'Write clearly'); library.enable(id, 'claude', true)
   const d = deployments()[0]
   rmSync(d.target)
-  expect(record(id).agents.find(a => a.id === 'codex')!.status).toBe('error')
+  expect(record(id).agents.find(a => a.id === 'claude')!.status).toBe('error')
   library.reconcile()
   expect(existsSync(d.target)).toBe(true)
   rmSync(d.source, { recursive: true })
@@ -217,7 +219,7 @@ it('starts agents without a plugin whose deployment has a problem, or with unrea
   const id = library.create('Writing', 'Write clearly')
   library.enable(id, 'claude', true); library.enable(id, 'codex', true)
   const codex = deployments().find(d => d.agentId === 'codex')!
-  rmSync(codex.target); mkdirSync(codex.target)
+  rmSync(codex.target, { recursive: true }); mkdirSync(codex.target)
   expect(library.configureAgent(getAgentConfig('codex')).sessionMeta!('').new).not.toHaveProperty('additionalRoots')
   // Only the broken agent loses it.
   expect(library.configureAgent(getAgentConfig('claude')).sessionMeta!('').new).toHaveProperty('claudeCode.options.plugins')
@@ -235,10 +237,10 @@ it('removes a partly deployed plugin when one of its skills fails to deploy', ()
     }) as typeof symlinkSync })
   const id = library.create('Writing', 'Write clearly')
   library.addSkill(id, 'Second', 'Another skill')
-  expect(() => library.enable(id, 'codex', true)).toThrow(/Disk full/)
+  expect(() => library.enable(id, 'claude', true)).toThrow(/Disk full/)
   expect(deployments()).toEqual([])
-  expect(existsSync(join(root, 'plugins/runtime/codex/.agents/skills/writing-instructions'))).toBe(false)
-  expect(record(id).enabledAgents).not.toContain('codex')
+  expect(existsSync(join(root, 'plugins/runtime/claude/writing/skills/instructions'))).toBe(false)
+  expect(record(id).enabledAgents).not.toContain('claude')
 })
 
 it('refuses a custom skill directory that reaches another one through a link', () => {
@@ -429,14 +431,14 @@ describe('import (phase 2)', () => {
   it('delivers the built-in skill to every agent, with no plugin enabled, naming the library and settings', () => {
     library.reconcile()
     const builtin = join(root, 'plugins/runtime/builtin')
-    for (const folder of ['claude/skills', 'codex/.agents/skills', 'opencode/skills']) {
-      const content = readFileSync(join(builtin, folder, 'gloss-plugins/SKILL.md'), 'utf8')
-      expect(content).toMatch(/^---\nname: gloss-plugins\n/)
+    for (const [folder, name] of [['claude/skills', 'plugins'], ['codex/.agents/skills', 'gloss-plugins'], ['opencode/skills', 'gloss-plugins']]) {
+      const content = readFileSync(join(builtin, folder, name, 'SKILL.md'), 'utf8')
+      expect(content.startsWith(`---\nname: ${name}\n`)).toBe(true)
       expect(content).toContain(library.directory)
       expect(content).toContain(settings())
       expect(content).toContain('`custom:local` (Local agent)')
       // Claude Code expands its plugin variables in a plugin skill's text, which would garble the instructions.
-      expect(content).not.toMatch(/${CLAUDE_/)
+      expect(content).not.toContain('${CLAUDE_')
     }
     expect(JSON.parse(readFileSync(join(builtin, 'claude/.claude-plugin/plugin.json'), 'utf8')).name).toBe('gloss')
     expect(library.configureAgent(getAgentConfig('claude')).sessionMeta!('').new).toMatchObject({ claudeCode: { options: { plugins: [{ type: 'local', path: join(builtin, 'claude') }] } } })
@@ -452,15 +454,15 @@ describe('import (phase 2)', () => {
   it('lists the built-in plugin read-only and always on, and rewrites a hand edit before an agent starts', () => {
     library.reconcile()
     const builtin = library.list().plugins[0]
-    expect(builtin).toMatchObject({ id: 'gloss:builtin', builtin: true, problems: [], skills: [{ id: 'gloss-plugins', files: ['SKILL.md'] }] })
+    expect(builtin).toMatchObject({ id: 'gloss:builtin', builtin: true, problems: [], skills: [{ id: 'plugins', files: ['SKILL.md'] }] })
     expect(builtin.skills[0].description).toMatch(/^Create a plugin in Gloss/)
     expect(builtin.agents.map(a => [a.id, a.status])).toEqual([['claude', 'ready'], ['codex', 'ready'], ['opencode', 'ready'], ['custom:local', 'setup']])
-    const file = library.readFile('gloss:builtin', 'skills/gloss-plugins/SKILL.md')
+    const file = library.readFile('gloss:builtin', 'skills/plugins/SKILL.md')
     expect(file.content).toContain(library.directory)
     expect(() => library.writeFile('gloss:builtin', { ...file, content: 'Changed' })).toThrow(/Invalid plugin identifier/)
     expect(() => library.enable('gloss:builtin', 'claude', false)).toThrow(/Invalid plugin identifier/)
     expect(() => library.remove('gloss:builtin')).toThrow(/Invalid plugin identifier/)
-    expect(() => library.readFile('gloss:builtin', 'skills/gloss-plugins/other.md')).toThrow(/Unknown file/)
+    expect(() => library.readFile('gloss:builtin', 'skills/plugins/other.md')).toThrow(/Unknown file/)
     const generated = join(root, 'plugins/runtime/builtin/codex/.agents/skills/gloss-plugins/SKILL.md')
     writeFileSync(generated, 'Hand edit')
     library.configureAgent(getAgentConfig('codex'))
@@ -478,12 +480,46 @@ describe('import (phase 2)', () => {
     expect(library.list().plugins[0].agents.find(a => a.id === 'custom:local')).toMatchObject({ status: 'error', message: expect.stringMatching(/kept/) })
   })
 
-  it('reserves the built-in skill name', () => {
-    const id = library.create('Gloss', 'Mine')
-    expect(() => library.addSkill(id, 'plugins', 'Clash')).toThrow(/reserved/)
-    const folder = join(record(id).directory, 'skills/gloss-plugins'); mkdirSync(folder)
-    writeFileSync(join(folder, 'SKILL.md'), '---\nname: gloss-plugins\ndescription: Clash\n---\n')
-    expect(record(id).problems[0]).toMatch(/reserved/)
+  it("reserves the built-in plugin's id", () => {
+    expect(library.create('Gloss', 'Mine')).not.toBe('gloss')
+    const folder = join(library.directory, 'gloss'); mkdirSync(join(folder, 'skills/plugins'), { recursive: true })
+    writeFileSync(join(folder, 'skills/plugins/SKILL.md'), '---\nname: plugins\ndescription: Clash\n---\n')
+    writeFileSync(join(folder, 'plugin.json'), JSON.stringify({ schemaVersion: 1, name: 'Other gloss', description: '', connections: [], enabledAgents: [] }))
+    expect(record('gloss').problems[0]).toMatch(/reserved/)
+  })
+
+  it('names a skill <plugin>:<skill> in Claude and <plugin>-<skill> elsewhere, from one plain source', () => {
+    const id = library.create('Git writing', 'Commits')
+    const skill = library.addSkill(id, 'commit', 'Write a commit message')
+    expect(skill).toBe('commit')
+    library.setSkillDirectory('custom:local', join(root, 'custom'))
+    for (const agent of ['claude', 'codex', 'opencode', 'custom:local']) library.enable(id, agent, true)
+    const runtime = join(root, 'plugins/runtime')
+    expect(lstatSync(join(runtime, 'claude/git-writing/skills/commit')).isSymbolicLink()).toBe(true)
+    expect(JSON.parse(readFileSync(join(runtime, 'claude/git-writing/.claude-plugin/plugin.json'), 'utf8')).name).toBe('git-writing')
+    const copies = [join(runtime, 'codex/.agents/skills/git-writing-commit'), join(runtime, 'opencode/skills/git-writing-commit'), join(root, 'custom/gloss-git-writing-commit')]
+    for (const copy of copies) {
+      expect(lstatSync(copy).isSymbolicLink()).toBe(false)
+      expect(readFileSync(join(copy, 'SKILL.md'), 'utf8')).toMatch(/^---\nname: git-writing-commit\ndescription: "Write a commit message"/)
+    }
+    const source = library.readFile(id, 'skills/commit/SKILL.md')
+    expect(source.content).toMatch(/^---\nname: commit\n/)
+    library.writeFile(id, { ...source, content: source.content + '\nKeep the subject short.\n' })
+    for (const copy of copies) {
+      const content = readFileSync(join(copy, 'SKILL.md'), 'utf8')
+      expect(content).toContain('Keep the subject short.')
+      expect(content).toMatch(/^---\nname: git-writing-commit\n/)
+    }
+    expect(record(id).agents.every(a => a.status === 'ready')).toBe(true)
+  })
+
+  it('keeps an earlier prefixed skill name as it is, linked everywhere', () => {
+    const id = library.create('Writing', 'Write clearly')
+    const old = join(record(id).directory, 'skills/writing-review'); mkdirSync(old)
+    writeFileSync(join(old, 'SKILL.md'), '---\nname: writing-review\ndescription: Review prose\n---\n')
+    library.enable(id, 'codex', true)
+    const target = join(root, 'plugins/runtime/codex/.agents/skills/writing-review')
+    expect(lstatSync(target).isSymbolicLink()).toBe(true)
   })
 
   it('picks up and deploys a plugin an agent writes straight into the library', async () => {
