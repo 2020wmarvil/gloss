@@ -13,6 +13,7 @@ import { Store } from './db'
 import type { SearchRequest } from '../shared/search'
 import { toMarkdown } from './export'
 import { gitStatus, pullRequest } from './git'
+import { cloneRepo, listRepos } from './github'
 import { SessionManager } from './sessions'
 import { BADGE_LABEL, BADGE_SIZE, badgePixels } from './badge'
 import { patchArg, SettingsFile } from './settings'
@@ -671,8 +672,8 @@ function exportLog(id: string, threadId: string | null): { title: string; markdo
   return { title: session.title, markdown }
 }
 
-async function pickFolder(): Promise<string | null> {
-  const options: Electron.OpenDialogOptions = { properties: ['openDirectory'] }
+async function pickFolder(title?: string): Promise<string | null> {
+  const options: Electron.OpenDialogOptions = { title, properties: ['openDirectory', 'createDirectory'] }
   const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
   return result.canceled ? null : (result.filePaths[0] ?? null)
 }
@@ -763,6 +764,12 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     manager.agentSessions(folderArg(path, 'path'), str(agentId, 'agentId'))
   )
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
+  ipcMain.handle(IPC.projectsGithubRepos, () => listRepos())
+  ipcMain.handle(IPC.projectsClone, async (_e, repo: unknown) => {
+    const name = str(repo, 'repo')
+    const parent = await pickFolder(`Clone ${name} into`)
+    return parent ? manager.addProject(await cloneRepo(name, parent)) : null
+  })
   registerComposerIpc(store!, isGlossSender, () => settingsFile.state().global.externalEditor, (sender) => {
     const win = glossWindows().find((w) => w.webContents === sender)
     if (!win) return

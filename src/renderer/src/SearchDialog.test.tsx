@@ -33,7 +33,7 @@ it('searches with scope and type filters, highlights plain text safely, and open
   const { el, input, onOpen, close } = await mount(search)
   expect(document.activeElement).toBe(input)
   await type(input, 'cache')
-  expect(search).toHaveBeenCalledWith({ query: 'cache', scope: 'all', kind: 'all', sessionId: 's', cwd: '/project' })
+  expect(search).toHaveBeenCalledWith({ query: 'cache', scope: 'project', kind: 'all', sessionId: 's', cwd: '/project' })
   expect(el.querySelector('mark')!.textContent).toBe('cache')
   expect(el.querySelector('script')).toBeNull()
   expect(el.textContent).toContain('Showing the first 100')
@@ -43,10 +43,10 @@ it('searches with scope and type filters, highlights plain text safely, and open
     const item = [...el.querySelectorAll('[role="option"]')].find((o) => o.textContent === option) as HTMLElement
     await act(async () => item.click())
   }
-  await pick('Search in', 'Current project')
+  await pick('Search in', 'Everything')
   await pick('Show', 'Tool output')
   await act(async () => vi.advanceTimersByTimeAsync(151))
-  expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'project', kind: 'tool' }))
+  expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'all', kind: 'tool' }))
   await act(async () => (el.querySelector('.search-result') as HTMLButtonElement).click())
   expect(onOpen).toHaveBeenCalledWith(result)
   expect(close).toHaveBeenCalled()

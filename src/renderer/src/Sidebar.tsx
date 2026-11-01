@@ -46,6 +46,7 @@ type Props = {
   settingsError: boolean
   onSelectProject(path: string): void
   onOpenProject(): void
+  onCloneProject(): void
   onDeleteProject(path: string): void
   onSelect(id: string): void
   /** Starts a session with the given agent and place, or the defaults (SPEC → Worktrees). */
@@ -381,6 +382,9 @@ export function Sidebar(props: Props): React.JSX.Element {
               {props.projects.length > 0 && <hr />}
               <button role="menuitem" onClick={props.onOpenProject}>
                 Open project…
+              </button>
+              <button role="menuitem" onClick={props.onCloneProject}>
+                Open from GitHub…
               </button>
             </div>
           )}
