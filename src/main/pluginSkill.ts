@@ -11,10 +11,12 @@ type Context = {
   /** Gloss's settings.json. */
   settings: string
   agents: { id: string; name: string }[]
+  /** The agents a new plugin is on for. */
+  defaultAgents: string[]
 }
 
 /** SKILL.md for the built-in skill, with this machine's paths and agents filled in. */
-export function builtinSkill({ library, settings, agents }: Context, name = BUILTIN_SKILL): string {
+export function builtinSkill({ library, settings, agents, defaultAgents }: Context, name = BUILTIN_SKILL): string {
   const ids = agents.map(a => `\`${a.id}\` (${a.name})`).join(', ')
   return `---
 name: ${name}
@@ -44,7 +46,7 @@ Gloss keeps a library of plugins that it delivers to the agents the user picks. 
   \`\`\`json
   { "schemaVersion": 1, "name": "Display name", "description": "One line.", "connections": [], "enabledAgents": [] }
   \`\`\`
-  \`connections\` lists the names of MCP servers in settings this plugin needs. \`enabledAgents\` lists the agent ids that get the plugin; leave it empty unless the user said which agents should have it.
+  \`connections\` lists the names of MCP servers in settings this plugin needs. \`enabledAgents\` lists the agent ids that get the plugin. A new plugin is on by default: unless the user named other agents, set it to \`${JSON.stringify(defaultAgents)}\`.
 - \`SKILL.md\` starts with frontmatter whose \`name\` equals its folder name and whose \`description\` is a single line. Other frontmatter fields may stay.
 - Only ordinary files and folders: no links. At most 1,000 files and 64 MB per plugin, 12 folder levels.
 - Other files a skill or server uses (scripts, server code) may sit anywhere in the plugin folder. Gloss refuses a plugin with \`hooks\`, \`agents\`, \`commands\`, \`.mcp.json\`, \`mcp.json\`, \`index.js\`, \`index.ts\` or \`.claude-plugin\` there.
@@ -76,6 +78,6 @@ When the user points you at a plugin, a skill, a folder of skills or a repositor
 
 ## Afterwards
 
-Tell the user what you created: the plugin, its skills (with their new names), the servers you added or reused, and what you left out. Gloss applies the change to agents that have the plugin once their turns finish; skills reach new sessions, or a session after it's reopened. The user turns a plugin on for more agents in Gloss under Plugins → Agents, where any problem with it is shown.
+Tell the user what you created: the plugin, its skills (and how agents name them, for example git-writing:commit in Claude Code and git-writing-commit elsewhere), the servers you added or reused, and what you left out. Gloss applies the change to agents that have the plugin once their turns finish; skills reach new sessions, or a session after it's reopened. The user can turn a plugin off for an agent in Gloss under Plugins → Agents, where any problem with it is shown.
 `
 }

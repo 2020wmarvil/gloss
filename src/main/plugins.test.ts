@@ -22,6 +22,13 @@ function make(copy = false): PluginLibrary {
   return new PluginLibrary({ directory: join(root, 'plugins'), agents: () => agents, connections: () => connections, busy: id => busy.has(id), changed,
     ...(copy ? { link: (() => { throw Object.assign(new Error('No link privilege'), { code: 'EPERM' }) }) as typeof symlinkSync } : {}) })
 }
+/** A new plugin, turned off for every agent (new plugins are on by default). */
+function createOff(name: string, description: string): string {
+  const id = library.create(name, description)
+  for (const agent of record(id).enabledAgents) library.enable(id, agent, false)
+  changed.mockClear()
+  return id
+}
 function record(id: string) { return library.list().plugins.find(p => p.id === id)! }
 function deployments(): { target: string; source: string; mode: string; agentId: string }[] { return JSON.parse(readFileSync(join(root, 'plugins/state.json'), 'utf8')).deployments }
 beforeEach(() => {
@@ -36,21 +43,22 @@ afterEach(() => {
   rmSync(resolved, { recursive: true, force: true })
 })
 
-it('creates ordinary editable packages, isolates names, and persists without enabling agents', () => {
+it('creates ordinary editable packages, on for every agent that can take them, and persists them', () => {
   const id = library.create('Writing', 'My writing preferences')
   const second = library.create('Code review', 'Review changes')
-  expect(record(id)).toMatchObject({ id: 'writing', name: 'Writing', enabledAgents: [] })
+  // The custom agent has no skill directory yet, so it can't take plugins.
+  expect(record(id)).toMatchObject({ id: 'writing', name: 'Writing', enabledAgents: ['claude', 'codex', 'opencode'] })
+  expect(record(id).agents.filter(a => a.status === 'ready').map(a => a.id)).toEqual(['claude', 'codex', 'opencode'])
   expect(record(id).skills[0]).toMatchObject({ id: 'instructions', name: 'instructions' })
   // Skill names only need to be unique within their plugin: agents see them prefixed with the plugin id.
   expect(record(second).skills[0].id).toBe('instructions')
-  expect(changed.mock.calls.every(([ids]) => ids.length === 0)).toBe(true)
   library = make()
   expect(library.list().plugins).toHaveLength(2)
   expect(() => library.create('writing', '')).toThrow(/already exists/)
 })
 
 it('shares source files through native projections and never touches native user skill folders', () => {
-  const id = library.create('Review', 'Review changes')
+  const id = createOff('Review', 'Review changes')
   const skill = record(id).skills[0]
   library.createFile(id, skill.id, 'references/checklist.md', 'First checklist')
   for (const agent of ['claude', 'codex', 'opencode']) library.enable(id, agent, true)
@@ -72,7 +80,7 @@ it('shares source files through native projections and never touches native user
 })
 
 it('preserves adapter instructions and native OpenCode settings when adding plugin delivery', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   for (const agent of ['claude', 'codex', 'opencode']) library.enable(id, agent, true)
   const claude = library.configureAgent(getAgentConfig('claude')).sessionMeta!('thread guidance')
   expect(claude.new).toMatchObject({ systemPrompt: { append: 'thread guidance' }, claudeCode: { options: { plugins: [{ type: 'local', path: join(root, 'plugins/runtime/claude/writing') }] } } })
@@ -86,7 +94,7 @@ it('preserves adapter instructions and native OpenCode settings when adding plug
 })
 
 it('requires custom agent configuration and refuses pre-existing deployment content', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   const custom = join(root, 'custom-skills')
   expect(() => library.enable(id, 'custom:local', true)).toThrow(/Configure/)
   library.setSkillDirectory('custom:local', custom)
@@ -98,7 +106,7 @@ it('requires custom agent configuration and refuses pre-existing deployment cont
 })
 
 it('deploys to a configured custom root and keeps the source on disable', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   library.setSkillDirectory('custom:local', join(root, 'custom-skills'))
   library.enable(id, 'custom:local', true)
   expect(record(id).agents.find(a => a.id === 'custom:local')).toMatchObject({ enabled: true, support: 'configured', status: 'ready' })
@@ -111,7 +119,7 @@ it('deploys to a configured custom root and keeps the source on disable', () => 
 })
 
 it('blocks overwriting edits made outside the UI, even when they changed only supporting files', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   const path = record(id).skills[0].path
   const original = library.readFile(id, path)
   writeFileSync(join(record(id).directory, path), original.content + '\nExternal edit\n')
@@ -120,7 +128,7 @@ it('blocks overwriting edits made outside the UI, even when they changed only su
 })
 
 it('rejects traversal and symlink escapes when reading or editing files', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   const outside = join(root, 'outside'); mkdirSync(outside); writeFileSync(join(outside, 'secret.txt'), 'Keep me')
   for (const path of ['../outside/secret.txt', 'skills/../../outside/secret.txt', 'skills/x/C:/secret', 'skills\\x\\secret']) expect(() => library.readFile(id, path)).toThrow()
   const linked = join(record(id).directory, 'skills', record(id).skills[0].id, 'linked')
@@ -132,7 +140,7 @@ it('rejects traversal and symlink escapes when reading or editing files', () => 
 
 it('tracks copy fallback updates and preserves diverged deployment files', () => {
   library = make(true)
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   library.enable(id, 'codex', true)
   const d = deployments()[0]
   expect(d.mode).toBe('copy')
@@ -147,7 +155,7 @@ it('tracks copy fallback updates and preserves diverged deployment files', () =>
 })
 
 it('does not remove a directory that replaced a managed link', () => {
-  const id = library.create('Writing', 'Write clearly'); library.enable(id, 'claude', true)
+  const id = createOff('Writing', 'Write clearly'); library.enable(id, 'claude', true)
   const target = deployments()[0].target
   rmSync(target); mkdirSync(target); writeFileSync(join(target, 'user.txt'), 'Unrelated files')
   expect(() => library.remove(id)).toThrow(/replaced outside/)
@@ -155,7 +163,7 @@ it('does not remove a directory that replaced a managed link', () => {
 })
 
 it('reports missing deployments on read and safely clears its own dangling links', () => {
-  const id = library.create('Writing', 'Write clearly'); library.enable(id, 'claude', true)
+  const id = createOff('Writing', 'Write clearly'); library.enable(id, 'claude', true)
   const d = deployments()[0]
   rmSync(d.target)
   expect(record(id).agents.find(a => a.id === 'claude')!.status).toBe('error')
@@ -167,7 +175,7 @@ it('reports missing deployments on read and safely clears its own dangling links
 })
 
 it('refuses a tampered deployment registry pointing at an unrelated folder', () => {
-  const id = library.create('Writing', 'Write clearly'); library.enable(id, 'codex', true)
+  const id = createOff('Writing', 'Write clearly'); library.enable(id, 'codex', true)
   const unrelated = join(root, 'unrelated'); mkdirSync(unrelated); writeFileSync(join(unrelated, 'keep'), 'Keep me')
   const path = join(root, 'plugins/state.json')
   const state = JSON.parse(readFileSync(path, 'utf8'))
@@ -180,7 +188,7 @@ it('refuses a tampered deployment registry pointing at an unrelated folder', () 
 })
 
 it('keeps active deployments until the turn ends and refuses source removal while busy', () => {
-  const id = library.create('Writing', 'Write clearly'); library.enable(id, 'codex', true)
+  const id = createOff('Writing', 'Write clearly'); library.enable(id, 'codex', true)
   const target = deployments()[0].target
   busy.add('codex'); library.enable(id, 'codex', false); library.markPending(['codex'])
   expect(existsSync(target)).toBe(true)
@@ -192,10 +200,10 @@ it('keeps active deployments until the turn ends and refuses source removal whil
 })
 
 it('keeps global MCP definitions independent and reports missing or unsupported requirements', () => {
-  const id = library.create('Review', 'Review PRs')
+  const id = createOff('Review', 'Review PRs')
   library.update(id, { connections: ['Docs'] }); library.enable(id, 'codex', true)
   library.remove(id); expect(connections).toHaveLength(1)
-  const other = library.create('Other', 'Other workflow')
+  const other = createOff('Other', 'Other workflow')
   library.update(other, { connections: ['Missing'] })
   expect(() => library.enable(other, 'claude', true)).toThrow(/Configure the Missing/)
   connections = [{ name: 'Events', type: 'sse', url: 'https://example.test/sse', headers: [] }]
@@ -204,7 +212,7 @@ it('keeps global MCP definitions independent and reports missing or unsupported 
 })
 
 it('rejects native executable components and malformed deployment state without overwriting them', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   mkdirSync(join(record(id).directory, 'hooks'))
   writeFileSync(join(record(id).directory, 'hooks/hooks.json'), '{}')
   expect(() => library.enable(id, 'claude', true)).toThrow(/are not loaded/)
@@ -216,7 +224,7 @@ it('rejects native executable components and malformed deployment state without 
 })
 
 it('starts agents without a plugin whose deployment has a problem, or with unreadable state', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   library.enable(id, 'claude', true); library.enable(id, 'codex', true)
   const codex = deployments().find(d => d.agentId === 'codex')!
   rmSync(codex.target, { recursive: true }); mkdirSync(codex.target)
@@ -235,7 +243,7 @@ it('removes a partly deployed plugin when one of its skills fails to deploy', ()
       if (++links === 2) throw Object.assign(new Error('Disk full'), { code: 'ENOSPC' })
       symlinkSync(source, target, type)
     }) as typeof symlinkSync })
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   library.addSkill(id, 'Second', 'Another skill')
   expect(() => library.enable(id, 'claude', true)).toThrow(/Disk full/)
   expect(deployments()).toEqual([])
@@ -255,7 +263,7 @@ it('refuses a custom skill directory that reaches another one through a link', (
 })
 
 it("removes Claude's generated plugin manifest once the plugin is off", () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   library.enable(id, 'claude', true)
   const generated = join(root, 'plugins/runtime/claude/writing')
   expect(existsSync(join(generated, '.claude-plugin/plugin.json'))).toBe(true)
@@ -265,7 +273,7 @@ it("removes Claude's generated plugin manifest once the plugin is off", () => {
 
 describe('external edits', () => {
   it('watches authoring files and schedules refresh only for agents using the changed plugin', async () => {
-    const id = library.create('Writing', 'Write clearly'); library.enable(id, 'claude', true)
+    const id = createOff('Writing', 'Write clearly'); library.enable(id, 'claude', true)
     library.startWatching(); changed.mockClear()
     const file = library.readFile(id, record(id).skills[0].path)
     writeFileSync(join(record(id).directory, file.path), file.content + '\nChanged by an agent\n')
@@ -276,7 +284,7 @@ describe('external edits', () => {
 
 it.each([false, true])('removes a skill from enabled plugins and cleans deployments (copy: %s)', copy => {
   library = make(copy)
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   const skill = record(id).skills[0]
   const remaining = library.addSkill(id, 'Proofread', 'Check spelling')
   for (const agent of ['claude', 'codex', 'opencode']) library.enable(id, agent, true)
@@ -293,7 +301,7 @@ it.each([false, true])('removes a skill from enabled plugins and cleans deployme
 })
 
 it('keeps a skill intact during active turns and allows removal once idle', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   const skill = record(id).skills[0]
   library.enable(id, 'codex', true)
   const target = deployments()[0].target
@@ -311,7 +319,7 @@ it('keeps a skill intact during active turns and allows removal once idle', () =
 
 
 it('deletes supporting files while preserving skill instructions and concurrent edits', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   const skill = record(id).skills[0]
   library.createFile(id, skill.id, 'references/notes.txt', 'Original')
   const file = library.readFile(id, `skills/${skill.id}/references/notes.txt`)
@@ -332,7 +340,7 @@ it('deletes supporting files while preserving skill instructions and concurrent 
 
 it.each([false, true])('persists native invocation policies and updates deployments (copy: %s)', copy => {
   library = make(copy)
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   const skill = record(id).skills[0]
   expect(skill.invocation).toBe('automatic')
   library.createFile(id, skill.id, 'agents/openai.yaml', '# Keep this comment\ninterface:\n  display_name: Writing\npolicy:\n  products: [codex]\n')
@@ -361,7 +369,7 @@ it.each([false, true])('persists native invocation policies and updates deployme
 })
 
 it('detects conflicting native policies and protects external metadata edits', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   const skill = record(id).skills[0]
   const file = library.readFile(id, skill.path)
   library.writeFile(id, { ...file, content: file.content.replace('description:', 'disable-model-invocation: true\ndescription:') })
@@ -375,7 +383,7 @@ it('detects conflicting native policies and protects external metadata edits', (
 })
 
 it('reports unverified direct-only behavior for custom agents', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   const skill = record(id).skills[0]
   library.setSkillInvocation(id, skill.id, 'direct', skill.invocationRevision)
   expect(record(id).agents.find(a => a.id === 'custom:local')?.message).toContain('Configure')
@@ -385,7 +393,7 @@ it('reports unverified direct-only behavior for custom agents', () => {
 
 
 it('creates direct-only skills with native policies before notifying enabled agents', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   library.enable(id, 'codex', true)
   const modes: string[] = []
   changed.mockImplementation(() => { modes.push(...record(id).skills.filter(s => s.name === 'direct').map(s => s.invocation)) })
@@ -402,7 +410,7 @@ it('creates direct-only skills with native policies before notifying enabled age
 
 
 it('cleans up incomplete plugins left by an interrupted removal', () => {
-  const id = library.create('Incomplete', 'Removal test')
+  const id = createOff('Incomplete', 'Removal test')
   const folder = record(id).directory
   rmSync(join(folder, 'plugin.json'))
   expect(record(id).problems[0]).toBe('This plugin is incomplete because plugin.json is missing. Remove the plugin to clean up its remaining files.')
@@ -412,7 +420,7 @@ it('cleans up incomplete plugins left by an interrupted removal', () => {
 })
 
 it('retries plugin directory removal and explains persistent filesystem failures', () => {
-  const id = library.create('Writing', 'Write clearly')
+  const id = createOff('Writing', 'Write clearly')
   const folder = record(id).directory
   vi.mocked(rmSync).mockImplementationOnce(() => { throw Object.assign(new Error('Raw Windows filesystem details'), { code: 'ENOTEMPTY' }) })
   expect(() => library.remove(id)).toThrow('Could not finish removing this plugin. Some files may still be in use or changing. Close apps using its files and try again.')
@@ -437,6 +445,8 @@ describe('import (phase 2)', () => {
       expect(content).toContain(library.directory)
       expect(content).toContain(settings())
       expect(content).toContain('`custom:local` (Local agent)')
+      // New plugins are on for every agent that can take one; the custom agent has no skill directory.
+      expect(content).toContain('set it to `["claude","codex","opencode"]`')
       // Claude Code expands its plugin variables in a plugin skill's text, which would garble the instructions.
       expect(content).not.toContain('${CLAUDE_')
     }

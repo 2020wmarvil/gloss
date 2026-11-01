@@ -311,10 +311,15 @@ export class PluginLibrary {
     if (id === RESERVED_PLUGIN_ID || exists(join(this.directory, id))) id = `${id}-${randomUUID().slice(0, 6)}`
     mkdirSync(this.folder(id))
     try {
-      this.save(id, { schemaVersion: 1, name, description, connections: [], enabledAgents: [] })
+      // On by default, so a new plugin works without another step (SPEC → Plugins → Plugins screen).
+      this.save(id, { schemaVersion: 1, name, description, connections: [], enabledAgents: this.defaultAgents() })
       this.addSkill(id, 'instructions', description || `Instructions for ${name}.`)
     } catch (error) { rmSync(this.folder(id), { recursive: true }); throw error }
     return id
+  }
+  /** The agents a new plugin is on for: every agent that can take one (a custom profile needs its skill directory). */
+  private defaultAgents(): string[] {
+    return this.options.agents().filter(a => !a.id.startsWith('custom:') || !!this.state.customDirectories[a.id]).map(a => a.id)
   }
   update(id: string, change: PluginChange): void {
     if (!object(change) || Object.keys(change).some(k => !['name', 'description', 'connections'].includes(k))) throw new Error('Invalid plugin changes.')
@@ -567,7 +572,7 @@ export class PluginLibrary {
   }
   /** Writes the built-in skill for every agent. It isn't part of the library and can't be turned off. */
   private builtinContent(name = BUILTIN_SKILL): string {
-    return builtinSkill({ library: this.directory, settings: this.options.settings ?? '', agents: this.options.agents() }, name)
+    return builtinSkill({ library: this.directory, settings: this.options.settings ?? '', agents: this.options.agents(), defaultAgents: this.defaultAgents() }, name)
   }
   /** The built-in plugin as the Plugins screen shows it: read-only, on for every agent that can get it. */
   private builtinPlugin(agents: Agent[]): PersonalPlugin | undefined {
@@ -575,7 +580,7 @@ export class PluginLibrary {
     const path = `skills/${BUILTIN_CLAUDE_SKILL}/SKILL.md`
     const description = /^description: "(.*)"$/m.exec(this.builtinContent())?.[1] ?? ''
     return {
-      schemaVersion: 1, id: BUILTIN_PLUGIN_ID, builtin: true, name: 'Gloss plugins',
+      schemaVersion: 1, id: BUILTIN_PLUGIN_ID, builtin: true, name: 'Gloss',
       description: 'Built into Gloss: lets any agent create a plugin or import one into this library.',
       connections: [], enabledAgents: agents.map(a => a.id), directory: join(this.runtime, 'builtin'), problems: [],
       skills: [{ id: BUILTIN_CLAUDE_SKILL, name: BUILTIN_CLAUDE_SKILL, description, path, files: ['SKILL.md'], invocation: 'automatic', invocationRevision: '' }],
