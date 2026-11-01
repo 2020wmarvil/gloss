@@ -1,5 +1,6 @@
 import type { SearchResult } from '@shared/search'
 import { SearchDialog } from './SearchDialog'
+import { CloneDialog } from './CloneDialog'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GlossEvent, PaneState } from '@shared/ipc'
 import { sameFolder } from '@shared/paths'
@@ -75,6 +76,7 @@ export function App(): React.JSX.Element {
   /** The section Settings opens on from another screen: the project's page from Worktrees, MCP servers from Plugins. */
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined)
   const [showSearch, setShowSearch] = useState(false)
+  const [showClone, setShowClone] = useState(false)
   /** The Worktrees screen (SPEC → Worktrees), in the center like Settings. */
   const [showWorktrees, setShowWorktrees] = useState(false)
   /** The Plugins screen (SPEC → Plugins), in the center like Worktrees. */
@@ -423,6 +425,13 @@ export function App(): React.JSX.Element {
     setSidebarError(null)
     const p = await window.gloss.projects.open()
     if (!p) return
+    await refreshProjects()
+    selectProject(p.path, sessions)
+  }
+
+  async function openClonedProject(p: Project): Promise<void> {
+    setShowClone(false)
+    setSidebarError(null)
     await refreshProjects()
     selectProject(p.path, sessions)
   }
@@ -778,6 +787,7 @@ export function App(): React.JSX.Element {
             settingsError={settings?.error != null}
             onSelectProject={(path) => selectProject(path, sessions)}
             onOpenProject={() => void openProject()}
+            onCloneProject={() => setShowClone(true)}
             onDeleteProject={(path) => void deleteProject(path)}
             onSelect={(id) => leavePlugins(() => void selectSession(id))}
             onNew={(agentId, where) => leavePlugins(() => void newSession(agentId, where))}
@@ -894,7 +904,7 @@ export function App(): React.JSX.Element {
             onWindow={() => void popOut(open.session.id)}
           />
         ) : (
-          // The bead beside the wordmark, or beside the project's name, and one action.
+          // The bead beside the wordmark and the ways to open a project, or beside the project's name and New session.
           <main className="empty-state">
             {project ? (
               <>
@@ -918,16 +928,22 @@ export function App(): React.JSX.Element {
                   <BrandMark size={52} />
                   <span aria-hidden="true">gloss</span>
                 </div>
-                <button className="primary lg" onClick={() => void openProject()}>
-                  <FolderOpen />
-                  Open a project folder…
-                </button>
+                <div className="empty-actions">
+                  <button className="primary lg" onClick={() => void openProject()}>
+                    <FolderOpen />
+                    Open a project folder…
+                  </button>
+                  <button className="secondary lg" onClick={() => setShowClone(true)}>
+                    Open from GitHub…
+                  </button>
+                </div>
               </>
             )}
           </main>
         )}
       </div>
       {fullScreenHint > 0 && <FullScreenHint key={fullScreenHint} />}
+      {showClone && <CloneDialog onClose={() => setShowClone(false)} onOpened={(p) => void openClonedProject(p)} />}
       {showSearch && <SearchDialog sessionId={sessionId ?? null} cwd={projectPath} onClose={() => setShowSearch(false)} onOpen={openSearchResult} />}
       {signIn && (
         <SignInDialog

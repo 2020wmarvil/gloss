@@ -235,6 +235,10 @@ export type GlossApi = {
     agentSessions(path: string, agentId: string): Promise<AgentSession[]>
     /** Deletes the project and its sessions (the agent's copies too). Resolves to a warning if some agent copies couldn't be deleted. */
     delete(path: string): Promise<string | null>
+    /** The signed-in GitHub user's repositories, through `gh`. */
+    githubRepos(): Promise<import('./github').GithubRepo[]>
+    /** Asks for a parent folder, clones the repository into it and adds it as a project. Resolves to null if cancelled. */
+    clone(repo: string): Promise<Project | null>
   }
   sessions: {
     list(): Promise<Session[]>
@@ -450,6 +454,8 @@ export const IPC = {
   projectsOpen: 'gloss:projects:open',
   projectsAgentSessions: 'gloss:projects:agentSessions',
   projectsDelete: 'gloss:projects:delete',
+  projectsGithubRepos: 'gloss:projects:githubRepos',
+  projectsClone: 'gloss:projects:clone',
   sessionsList: 'gloss:sessions:list',
   sessionsCreate: 'gloss:sessions:create',
   sessionsCreateInWorktree: 'gloss:sessions:createInWorktree',

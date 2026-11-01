@@ -22,7 +22,7 @@ describe('PhoneApi', () => {
       IPC.openFileLink, IPC.sessionsOpenFolder, IPC.sessionsOpenObsidian, IPC.sessionsOpenReviewFile,
       IPC.sessionsSaveMarkdown, IPC.sessionsCopyMarkdown, IPC.composerShell, IPC.composerEditDraft,
       IPC.composerContexts, IPC.composerAttach, IPC.captureStart, IPC.annotateOpen, IPC.authSignIn,
-      IPC.projectsOpen, IPC.projectsDelete, IPC.sessionsDelete, IPC.sessionsCreateReview,
+      IPC.projectsOpen, IPC.projectsDelete, IPC.projectsGithubRepos, IPC.projectsClone, IPC.sessionsDelete, IPC.sessionsCreateReview,
       IPC.agentsTestOpenCode, IPC.agentsTestProfile, IPC.windowsPopOut, IPC.setBadge, IPC.confirmClose
     ]) expect(PHONE_CHANNELS.has(channel), channel).toBe(false)
   })

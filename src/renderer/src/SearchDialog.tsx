@@ -64,7 +64,8 @@ export function Snippet({ text }: { text: string }): React.JSX.Element {
 
 export function SearchDialog({ sessionId, cwd, onClose, onOpen }: Props): React.JSX.Element {
   const [query, setQuery] = useState('')
-  const [scope, setScope] = useState<SearchRequest['scope']>('all')
+  // The open project, without one everything.
+  const [scope, setScope] = useState<SearchRequest['scope']>(cwd ? 'project' : 'all')
   const [kind, setKind] = useState<SearchRequest['kind']>('all')
   const [response, setResponse] = useState<SearchResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -139,7 +140,6 @@ export function SearchDialog({ sessionId, cwd, onClose, onOpen }: Props): React.
                 }
                 if (e.key === 'Enter' && ordered[active] && !loading && !opening) void choose(ordered[active])
               }} />
-            <kbd title="Close">Esc</kbd>
           </label>
           <div className="search-filters">
             <Select ariaLabel="Search in" label="In" value={scope} onChange={(v) => setScope(v as SearchRequest['scope'])}
@@ -179,11 +179,6 @@ export function SearchDialog({ sessionId, cwd, onClose, onOpen }: Props): React.
               })}
             </section>
           ))}
-        </div>
-        <div className="search-foot">
-          <span><kbd>↑</kbd> <kbd>↓</kbd> move</span>
-          <span><kbd>Enter</kbd> open</span>
-          <span className="search-foot-hint">Words match in any order; &quot;quotes&quot; match a phrase</span>
         </div>
       </div>
     </div>

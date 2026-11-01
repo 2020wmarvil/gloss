@@ -1,6 +1,7 @@
 // A review session's diff (SPEC → Review sessions → Diff view): every file stacked under
 // a sticky header, split or unified, with threads as cards under their lines.
-import { memo, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { scrollParent, startAutoscroll } from './autoscroll'
 import { expandable, gapsOf, languageOf, type DiffFile, type DiffLine, type Location, type Side } from '@shared/review'
 import { EXPAND_STEP, gapViews, NO_EXPANSION, type Expansion, type GapView } from './diffContext'
 import { codeColors, useHighlighting } from './highlight'
@@ -211,6 +212,8 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
   const bars = useRef<Record<string, HTMLDivElement | null>>({})
   const [selecting, setSelecting] = useState<Side | null>(null)
   const split = layout === 'split'
+  const stopAutoscroll = useRef<(() => void) | null>(null)
+  useEffect(() => () => stopAutoscroll.current?.(), [])
 
   const placeOf = (c: Card): number | null =>
     c.location.kind === 'found' ? c.location.end : c.location.kind === 'outdated' ? c.location.at : null
@@ -472,6 +475,20 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
               style={{ '--sx-old': `${sx.old}px`, '--sx-new': `${sx.new}px` } as CSSProperties}
               onMouseDown={(e) => {
                 const cell = (e.target as HTMLElement).closest<HTMLElement>('.code[data-side]')
+                if (e.button === 1) {
+                  // Autoscroll: sideways moves the side pressed on (in split view, both from the gutter), up and down the review.
+                  e.preventDefault()
+                  const sides = !split ? ['both'] : cell ? [cell.dataset.side as Side] : ['old', 'new']
+                  const scroller = scrollParent(e.currentTarget)
+                  stopAutoscroll.current = startAutoscroll(e.clientX, e.clientY, (dx, dy) => {
+                    for (const s of sides) {
+                      const bar = bars.current[s]
+                      if (bar) bar.scrollLeft += dx
+                    }
+                    if (scroller) scroller.scrollTop += dy
+                  })
+                  return
+                }
                 setSelecting(split && cell ? (cell.dataset.side as Side) : null)
               }}
               onWheel={(e) => {
