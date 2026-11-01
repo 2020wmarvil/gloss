@@ -56,7 +56,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
   const request = useRef(0)
   const fileRequest = useRef(0)
   const live = useRef(true)
-  const plugin = state?.plugins.find(p => p.id === selected) ?? state?.plugins[0]
+  const plugin = state?.plugins.find(p => p.id === selected) ?? state?.plugins.find(p => !p.builtin) ?? state?.plugins[0]
   activeEditor.current = { file, editing, pluginId: plugin?.id }
   const skill = plugin?.skills.find(s => s.id === skillId)
   const dirty = editing && file !== null && draft !== file.content
@@ -184,13 +184,13 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
   }
   function agents(p: PersonalPlugin): React.JSX.Element {
     return <>{p.agents.map(agent => <div className="plugin-agent" key={agent.id}>
-      <div className="plugin-inline-heading"><strong>{agent.name}</strong><button disabled={isPending(`agent:${agent.id}`) || p.problems.length > 0 && !agent.enabled} className={`plugin-availability ${agent.status}`} aria-label={`${agent.name}: ${agent.enabled ? 'disable' : 'enable'} ${p.name}`} onClick={() => {
+      <div className="plugin-inline-heading"><strong>{agent.name}</strong>{p.builtin ? <span className={`plugin-availability ${agent.status}`}>{agent.status === 'ready' && <Check />}{agent.status === 'ready' ? 'Always on' : stateLabel(agent)}</span> : <button disabled={isPending(`agent:${agent.id}`) || p.problems.length > 0 && !agent.enabled} className={`plugin-availability ${agent.status}`} aria-label={`${agent.name}: ${agent.enabled ? 'disable' : 'enable'} ${p.name}`} onClick={() => {
         if (agent.support === 'unknown' && !agent.enabled) setDialog({ kind: 'custom', agent })
         else run(`agent:${agent.id}`, () => window.gloss.plugins.enable(p.id, agent.id, !agent.enabled))
-      }}>{agent.status === 'ready' && <Check />}{stateLabel(agent)}</button></div>
+      }}>{agent.status === 'ready' && <Check />}{stateLabel(agent)}</button>}</div>
       {agent.message && <p>{agent.message}</p>}
       <div className="plugin-agent-actions">
-        {agent.status === 'error' && <button className="plugin-link" disabled={isPending(`agent:${agent.id}`)} onClick={() => run(`agent:${agent.id}`, () => window.gloss.plugins.refresh(agent.id))}><RefreshCw />Refresh when idle</button>}
+        {agent.status === 'error' && !p.builtin && <button className="plugin-link" disabled={isPending(`agent:${agent.id}`)} onClick={() => run(`agent:${agent.id}`, () => window.gloss.plugins.refresh(agent.id))}><RefreshCw />Refresh when idle</button>}
         {agent.id.startsWith('custom:') && <button className="plugin-link" onClick={() => setDialog({ kind: 'custom', agent })}>{agent.skillDirectory ? 'Skill directory' : 'Set up skills'}</button>}
       </div>
     </div>)}</>
@@ -198,38 +198,38 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
   function skillContent(p: PersonalPlugin, s: PluginSkill): React.JSX.Element {
     const fileBusy = file !== null && isPending(`file:${p.id}:${file.path}`)
     return <><div className="plugin-breadcrumb"><button onClick={() => navigate(() => { resetDetail(); setTab('skills') })}><ArrowLeft />{p.name}</button><span>/ {s.name}</span></div>
-      <div className="plugin-inline-heading"><h3>{s.name}</h3><button className="icon-button" title="Remove skill" aria-label="Remove skill" onClick={() => setDialog({ kind: 'removeSkill', plugin: p, skill: s })}><Trash2 /></button></div>
+      <div className="plugin-inline-heading"><h3>{s.name}</h3>{!p.builtin && <button className="icon-button" title="Remove skill" aria-label="Remove skill" onClick={() => setDialog({ kind: 'removeSkill', plugin: p, skill: s })}><Trash2 /></button>}</div>
       <div className="plugin-file-toolbar">
         <select aria-label="Skill file" value={file?.path ?? s.path} onChange={e => { const path = e.target.value; navigate(() => { void openFile(p, s, path) }) }}>
           {[...new Set(['SKILL.md', ...s.files])].map(path => <option key={path} value={`skills/${s.id}/${path}`}>{path}</option>)}
         </select>
-        <button className="icon-button" title="New text file" aria-label="New text file" onClick={() => navigate(() => setDialog({ kind: 'file', plugin: p, skill: s }))}><Plus /></button>
+        {!p.builtin && <><button className="icon-button" title="New text file" aria-label="New text file" onClick={() => navigate(() => setDialog({ kind: 'file', plugin: p, skill: s }))}><Plus /></button>
         {file && !editing && <><button className="icon-button" title="Edit file" aria-label="Edit file" onClick={() => setEditing(true)}><Pencil /></button><button className="icon-button" title="Open in external editor" aria-label="Open in external editor" disabled={isPending(`editor:${p.id}:${file.path}`)} onClick={() => run(`editor:${p.id}:${file.path}`, () => window.gloss.plugins.openInEditor(p.id, file.path), false)}><ExternalLink /></button></>}
-        {file && file.path !== s.path && <button className="icon-button" title="Delete file" aria-label="Delete file" disabled={fileBusy} onClick={() => navigate(() => setDialog({ kind: 'removeFile', plugin: p, skill: s, file }))}><Trash2 /></button>}
+        {file && file.path !== s.path && <button className="icon-button" title="Delete file" aria-label="Delete file" disabled={fileBusy} onClick={() => navigate(() => setDialog({ kind: 'removeFile', plugin: p, skill: s, file }))}><Trash2 /></button>}</>}
       </div>
       {file ? <>
           {editing ? <><label className="sr-only" htmlFor="plugin-file-editor">File contents</label><textarea id="plugin-file-editor" className="plugin-editor" value={draft} disabled={fileBusy} spellCheck={false} onChange={e => setDraft(e.target.value)} /><div className="plugin-editor-actions"><button className="primary" aria-busy={fileBusy} onClick={() => { void saveFile().catch(() => {}) }}>Save</button><button className="ghost" disabled={fileBusy} onClick={() => navigate(() => { setEditing(false); setDraft(file.content) })}>Cancel</button></div></>
             : file.path.endsWith('.md') ? <Markdown text={file.content.replace(/^---\r?\n[\s\S]*?\r?\n---\s*\n?/, '')} listItemReplies={false} /> : <pre className="plugin-file-content">{file.content}</pre>}
         </> : !error && <p className="muted">Loading file…</p>}
-      <InvocationChoice footer value={s.invocation} disabled={fileBusy || isPending(`invocation:${p.id}:${s.id}`)} onChange={invocation => navigate(() => { void changeInvocation(p, s, invocation) })} />
+      {!p.builtin && <InvocationChoice footer value={s.invocation} disabled={fileBusy || isPending(`invocation:${p.id}:${s.id}`)} onChange={invocation => navigate(() => { void changeInvocation(p, s, invocation) })} />}
     </>
   }
   return <main className="plugins-screen"><section className="plugin-settings" aria-label="Plugins">
-    <header className="plugin-library-header"><div><h2>Plugins</h2><p>Your skills and tools, kept together.</p></div></header>
+    <header className="plugin-library-header"><div><h2>Plugins</h2><p>Your skills and tools, kept together. To import a plugin or skill, ask any session to use Gloss’s plugins skill (<code>gloss:new-plugin</code> in Claude, <code>gloss-new-plugin</code> elsewhere).</p></div></header>
     {!dialog && error && <p className="plugin-error" role="alert">{error}</p>}{!dialog && state?.errors.map(e => <p className="plugin-error" role="alert" key={e}>{e}</p>)}
     <div className="plugin-workspace" ref={workspace}><div className="plugin-library">
       <div className="plugin-toolbar"><label className="plugin-search"><Search /><input aria-label="Find a plugin" placeholder="Find a plugin…" value={query} onChange={e => setQuery(e.target.value)} /></label><button className="primary" disabled={!state} onClick={() => navigate(() => setDialog({ kind: 'new' }))}><Plus />New plugin</button></div>
-      <div className="plugin-list">{shown.map(p => <button key={p.id} className={`plugin-list-item ${p.id === plugin?.id ? 'selected' : ''}`} aria-pressed={p.id === plugin?.id} onClick={() => select(p.id)}><span className="plugin-package-mark"><Package /></span><span><strong>{p.name}</strong><span>{p.description}</span><small>{p.problems.length ? 'Needs attention' : summary(p)}</small></span></button>)}
+      <div className="plugin-list">{shown.map(p => <button key={p.id} className={`plugin-list-item ${p.id === plugin?.id ? 'selected' : ''}`} aria-pressed={p.id === plugin?.id} onClick={() => select(p.id)}><span className="plugin-package-mark"><Package /></span><span><strong>{p.name}</strong><span>{p.description}</span><small>{p.builtin ? 'Built in · always on' : p.problems.length ? 'Needs attention' : summary(p)}</small></span></button>)}
         {!state && !error && <p className="plugin-empty">Loading plugins…</p>}
-        {state && !shown.length && <div className="plugin-empty"><Package /><h3>{state.plugins.length ? 'No matching plugins' : 'Start with a plugin of your own'}</h3>{state.plugins.length > 0 && <button className="secondary" onClick={() => setQuery('')}>Clear search</button>}</div>}
+        {state && !shown.some(p => !p.builtin) && <div className="plugin-empty"><Package /><h3>{query && state.plugins.some(p => !p.builtin) ? 'No matching plugins' : 'Start with a plugin of your own'}</h3>{query && state.plugins.some(p => !p.builtin) && <button className="secondary" onClick={() => setQuery('')}>Clear search</button>}</div>}
       </div>
       <button className="plugin-library-folder plugin-link" disabled={isPending('folder:library')} onClick={() => run('folder:library', () => window.gloss.plugins.openFolder(), false)}><FolderOpen />Open library folder</button>
     </div>
     <ResizeHandle label="Resize plugin details" pane="after" limits={detailLimits} value={detailWidth === null ? null : clampWidth(detailWidth, detailLimits)} onResize={setDetailWidth} onReset={() => setDetailWidth(null)} />
     <aside className="plugin-detail" style={detailWidth === null ? undefined : { '--plugin-detail-width': `${clampWidth(detailWidth, detailLimits)}px` } as React.CSSProperties} aria-label="Plugin details">{plugin ? <>
-      <header><div className="plugin-inline-heading"><h3>{plugin.name}</h3><button className="icon-button" aria-label="Open plugin folder" title="Open plugin folder" disabled={isPending(`folder:${plugin.id}`)} onClick={() => run(`folder:${plugin.id}`, () => window.gloss.plugins.openFolder(plugin.id), false)}><FolderOpen /></button><button className="icon-button" aria-label="Edit plugin details" title="Edit plugin details" onClick={() => navigate(() => setDialog({ kind: 'edit', plugin }))}><Pencil /></button><button className="icon-button" aria-label="Remove plugin" title="Remove plugin" onClick={() => navigate(() => setDialog({ kind: 'remove', plugin }))}><Trash2 /></button></div><p>{plugin.description}</p></header>
-      <nav className="plugin-tabs" aria-label="Plugin sections">{(['overview', 'skills', 'tools', 'agents'] as Tab[]).map(t => <button key={t} className={tab === t ? 'on' : ''} aria-current={tab === t ? 'page' : undefined} onClick={() => navigate(() => { resetDetail(); setTab(t) })}>{t[0].toUpperCase() + t.slice(1)}</button>)}</nav>
-      <div className="plugin-detail-content">{!dialog && plugin.problems.map(problem => <p className="plugin-error" role="alert" key={problem}>{problem}</p>)}{skill ? skillContent(plugin, skill) : tab === 'overview' ? components(plugin) : tab === 'skills' ? <><div className="plugin-inline-heading"><h4>Skills in this plugin</h4><button className="ghost sm" onClick={() => setDialog({ kind: 'skill', plugin })}><Plus />Add skill</button></div>{components({ ...plugin, connections: [] })}</> : tab === 'tools' ? tools(plugin) : agents(plugin)}</div>
+      <header><div className="plugin-inline-heading"><h3>{plugin.name}</h3>{!plugin.builtin && <><button className="icon-button" aria-label="Open plugin folder" title="Open plugin folder" disabled={isPending(`folder:${plugin.id}`)} onClick={() => run(`folder:${plugin.id}`, () => window.gloss.plugins.openFolder(plugin.id), false)}><FolderOpen /></button><button className="icon-button" aria-label="Edit plugin details" title="Edit plugin details" onClick={() => navigate(() => setDialog({ kind: 'edit', plugin }))}><Pencil /></button><button className="icon-button" aria-label="Remove plugin" title="Remove plugin" onClick={() => navigate(() => setDialog({ kind: 'remove', plugin }))}><Trash2 /></button></>}</div><p>{plugin.description}</p>{plugin.builtin && <p className="muted">Gloss maintains this plugin and updates it with each version. It’s read-only and on for every agent.</p>}</header>
+      <nav className="plugin-tabs" aria-label="Plugin sections">{(plugin.builtin ? ['overview', 'skills', 'agents'] as Tab[] : ['overview', 'skills', 'tools', 'agents'] as Tab[]).map(t => <button key={t} className={tab === t ? 'on' : ''} aria-current={tab === t ? 'page' : undefined} onClick={() => navigate(() => { resetDetail(); setTab(t) })}>{t[0].toUpperCase() + t.slice(1)}</button>)}</nav>
+      <div className="plugin-detail-content">{!dialog && plugin.problems.map(problem => <p className="plugin-error" role="alert" key={problem}>{problem}</p>)}{skill ? skillContent(plugin, skill) : tab === 'overview' ? components(plugin) : tab === 'skills' ? <><div className="plugin-inline-heading"><h4>Skills in this plugin</h4>{!plugin.builtin && <button className="ghost sm" onClick={() => setDialog({ kind: 'skill', plugin })}><Plus />Add skill</button>}</div>{components({ ...plugin, connections: [] })}</> : tab === 'tools' ? tools(plugin) : agents(plugin)}</div>
     </> : <div className="plugin-empty"><Package /><h3>One place for each workflow</h3></div>}</aside></div>
     {dialog && <PluginDialog key={dialog.kind + ('plugin' in dialog ? dialog.plugin.id : '')} dialog={dialog} state={state} busy={isPending('dialog')} onClose={() => setDialog(null)} onManageConnections={onManageConnections} onSubmit={async values => {
       if (pendingRef.current.has('dialog')) return

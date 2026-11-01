@@ -62,9 +62,9 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).for(['claude', 'codex', 'opencode', 
   mkdirSync(env.CODEX_HOME)
   writeFileSync(join(env.CODEX_HOME, 'config.toml'), `model = "gpt-5.4"\nmodel_provider = "probe"\n[model_providers.probe]\nname = "Local probe"\nbase_url = "${base}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\n`)
   const connections: McpServer[] = [{ name: 'plugin-docs', command: process.execPath, args: ['-e', mcpScript], env: [] }]
-  const library = new PluginLibrary({ directory: join(root, 'plugins'), agents: () => [{ id: agentId, name: agentId }], connections: () => connections })
+  const library = new PluginLibrary({ directory: join(root, 'plugins'), agents: () => [{ id: agentId, name: agentId }], connections: () => connections, settings: join(root, 'settings.json') })
   const id = library.create('Native probe', 'Only for plugin integration testing')
-  const skill = library.list().plugins[0].skills[0]
+  const skill = library.list().plugins.find(p => !p.builtin)!.skills[0]
   const file = library.readFile(id, skill.path)
   library.writeFile(id, { ...file, content: file.content + `\n${marker}\nRead references/value.txt.\n` })
   library.createFile(id, skill.id, 'references/value.txt', resource)
@@ -105,12 +105,15 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).for(['claude', 'codex', 'opencode', 
   }
   async function useSkill(session: string): Promise<void> {
     if (agentId === 'claude' || agentId === 'codex') {
-      await viWait(() => updates.some(n => n.sessionId === session && n.update.sessionUpdate === 'available_commands_update' && n.update.availableCommands.some(c => c.name.includes(skill.id))))
-      const command = updates.flatMap(n => n.update.sessionUpdate === 'available_commands_update' ? n.update.availableCommands : []).find(c => c.name.includes(skill.id))!
+      // Claude namespaces the plugin's skill itself; Codex gets it renamed <plugin-id>-<skill>.
+      const expected = agentId === 'claude' ? `${id}:${skill.id}` : `${id}-${skill.id}`
+      const matches = (name: string): boolean => name.replace(/^\$/, '') === expected
+      await viWait(() => updates.some(n => n.sessionId === session && n.update.sessionUpdate === 'available_commands_update' && n.update.availableCommands.some(c => matches(c.name))))
+      const command = updates.flatMap(n => n.update.sessionUpdate === 'available_commands_update' ? n.update.availableCommands : []).find(c => matches(c.name))!
       if (agentId === 'claude') calls = [{ name: 'Read', args: { file_path: join(library.folder(id), 'skills', skill.id, 'references/value.txt') } }]
       await connection!.prompt(session, [{ type: 'text', text: agentId === 'claude' ? `/${command.name}` : command.name }])
     } else {
-      calls = [{ name: 'skill', args: { id: agentId.startsWith('custom:') ? `gloss-${skill.id}` : skill.id } }, { name: 'read', args: { path: join(library.folder(id), 'skills', skill.id, 'references/value.txt') } }]
+      calls = [{ name: 'skill', args: { id: agentId.startsWith('custom:') ? `gloss-${id}-${skill.id}` : `${id}-${skill.id}` } }, { name: 'read', args: { path: join(library.folder(id), 'skills', skill.id, 'references/value.txt') } }]
       await connection!.prompt(session, [{ type: 'text', text: 'Use the native-probe skill and its supporting file.' }])
     }
   }
@@ -120,6 +123,7 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).for(['claude', 'codex', 'opencode', 
     expect(JSON.stringify(payloads).includes(marker), 'Native skill instructions reached the provider').toBe(true)
     expect(JSON.stringify(payloads).includes('plugin_probe'), 'Local MCP tool was advertised').toBe(true)
     if (agentId !== 'codex') expect(JSON.stringify(payloads).includes(resource), 'Native supporting-file read reached the provider').toBe(true)
+    expect(JSON.stringify(payloads).includes('import an existing plugin or skill into Gloss'), 'The built-in skill is advertised').toBe(true)
     // Edit the skill it just used, restart and resume the same session: the revised text reaches the provider.
     const revised = `GLOSS_PLUGIN_REVISED_${randomUUID()}`
     const current = library.readFile(id, skill.path)
@@ -131,7 +135,7 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).for(['claude', 'codex', 'opencode', 
     expect(JSON.stringify(payloads).includes(revised), 'Revised skill instructions reached the provider after a resume').toBe(true)
     connection!.dispose(); connection = undefined
     // Direct-only removes discovery while preserving native explicit loading.
-    const policy = library.list().plugins[0].skills[0]
+    const policy = library.list().plugins.find(p => !p.builtin)!.skills[0]
     library.setSkillInvocation(id, skill.id, 'direct', policy.invocationRevision)
     payloads.length = 0; updates.length = 0
     const direct = await start()
@@ -140,7 +144,7 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).for(['claude', 'codex', 'opencode', 
     await useSkill(direct)
     expect(JSON.stringify(payloads).includes(revised), 'Direct-only skill can still be explicitly loaded').toBe(true)
     connection!.dispose(); connection = undefined
-    const directPolicy = library.list().plugins[0].skills[0]
+    const directPolicy = library.list().plugins.find(p => !p.builtin)!.skills[0]
     library.setSkillInvocation(id, skill.id, 'automatic', directPolicy.invocationRevision)
     payloads.length = 0; updates.length = 0
     const automatic = await start()

@@ -1175,7 +1175,11 @@ app.whenReady().then(() => {
     agents: () => [...listAgents(), ...(settingsFile.state().global.agentProfiles ?? []).map(p => ({ id: p.id, name: p.name }))],
     connections: () => settingsFile.state().global.mcpServers,
     busy: id => sessions?.isAgentBusy(id) ?? false,
-    changed: (ids) => pluginRefresh.request(ids)
+    changed: (ids) => pluginRefresh.request(ids),
+    settings: settingsFile.path,
+    removeConnections: (names) => {
+      settingsFile.update({ global: { mcpServers: settingsFile.state().global.mcpServers.filter(s => !names.includes(s.name)) } })
+    }
   })
   pluginLibrary.startWatching()
   sessions = new SessionManager({

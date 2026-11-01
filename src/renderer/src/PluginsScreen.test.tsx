@@ -596,3 +596,30 @@ it('keeps plugin health errors behind a failed removal dialog out of view', asyn
   await click('Cancel', document.querySelector('[role="dialog"]')!)
   expect(container.querySelectorAll('[role="alert"]')).toHaveLength(2)
 })
+
+it('shows the built-in plugin read-only and always on, without selecting it by default', async () => {
+  state.plugins.unshift({
+    schemaVersion: 1, id: 'gloss:builtin', builtin: true, name: 'Gloss plugins', description: 'Built into Gloss.', connections: [], enabledAgents: ['claude', 'custom:local'], directory: '/data/plugins/runtime/builtin', problems: [],
+    skills: [{ id: 'new-plugin', name: 'new-plugin', description: 'Create or import a plugin.', path: 'skills/new-plugin/SKILL.md', files: ['SKILL.md'], invocation: 'automatic', invocationRevision: '' }],
+    agents: [{ id: 'claude', name: 'Claude Code', enabled: true, status: 'ready', support: 'tested', message: '' }, { id: 'custom:local', name: 'Local agent', enabled: true, status: 'setup', support: 'unknown', message: 'Gets it once this custom agent’s skill directory is set.' }]
+  })
+  await act(async () => emit({ type: 'pluginsChanged' }))
+  expect(container.querySelector('.plugin-detail h3')!.textContent).toBe('Code review')
+  const item = [...container.querySelectorAll<HTMLButtonElement>('.plugin-list-item')].find(b => b.textContent?.includes('Gloss plugins'))!
+  expect(item.textContent).toContain('Built in · always on')
+  await act(async () => item.click())
+  const detail = container.querySelector('.plugin-detail')!
+  expect(detail.textContent).toContain('read-only')
+  for (const label of ['Open plugin folder', 'Edit plugin details', 'Remove plugin']) expect(detail.querySelector(`[aria-label="${label}"]`)).toBeNull()
+  expect([...detail.querySelectorAll('.plugin-tabs button')].map(b => b.textContent)).toEqual(['Overview', 'Skills', 'Agents'])
+  await click('Agents', detail)
+  expect(detail.querySelector('.plugin-agent button.plugin-availability')).toBeNull()
+  expect(detail.textContent).toContain('Always on')
+  expect(detail.textContent).toContain('Gets it once')
+  await click('Skills', detail)
+  expect(detail.textContent).not.toContain('Add skill')
+  await act(async () => detail.querySelector<HTMLButtonElement>('.plugin-component')!.click())
+  expect(api.readFile).toHaveBeenLastCalledWith('gloss:builtin', 'skills/new-plugin/SKILL.md')
+  for (const label of ['Edit file', 'Open in external editor', 'New text file', 'Remove skill', 'Delete file']) expect(detail.querySelector(`[aria-label="${label}"]`)).toBeNull()
+  expect(detail.textContent).not.toContain('Direct only')
+})
