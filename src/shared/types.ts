@@ -31,6 +31,8 @@ export type Session = {
   draft?: true
   /** The project folder, for a session working in one of its worktrees (`cwd` is the worktree's folder). */
   project?: string
+  /** A fork thread's own session (SPEC → Fork threads): never listed, shown as that thread of its parent. */
+  forkOf?: { sessionId: string; threadId: string }
 }
 
 /** One of a project's worktrees, or the project folder itself (SPEC → Worktrees). */
@@ -90,6 +92,8 @@ export type QueuedMessage = {
   threadId: string | null
   /** A main-thread message sent from this thread's composer (SPEC → Send to main). */
   fromThread?: string
+  /** Sent from a fork thread: the fork's summary, which goes with it (SPEC → Fork threads). */
+  forkSummary?: string
   text: string
   attachments: Attachment[]
 }
@@ -164,6 +168,8 @@ export type Thread = {
   finding?: Finding
   /** Review threads: when the user resolved it. */
   resolvedAt?: number
+  /** A fork thread (SPEC → Fork threads): it runs in its own session, a fork of this one. */
+  fork?: { sessionId: string }
   createdAt: number
 }
 

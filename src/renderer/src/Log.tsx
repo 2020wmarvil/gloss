@@ -4,14 +4,14 @@ import { afterPaintIdle } from './idle'
 import { LogToBottom } from './logToBottom'
 import { useScrollMemory, type ScrollAnchors } from './scrollMemory'
 import type { Message, Plan, ToolCall } from '@shared/types'
-import { threadToMainTag } from '@shared/wire'
+import { splitForkSummary, threadToMainTag } from '@shared/wire'
 import type { OpenSession } from './App'
 import { Markdown, MarkdownImageDirectory } from './Markdown'
 import { RequestCard } from './RequestCard'
 import { CaptureFigure, type PinAnchors } from './CaptureFigure'
 import type { UserRequest } from '@shared/requests'
 import { hasDetails, ToolDetails } from './ToolDetails'
-import { ArrowDown, Brain, Check, ChevronDown, ChevronRight, CircleAlert, FilePen, FileText, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
+import { ArrowDown, Brain, Check, ChevronDown, ChevronRight, CircleAlert, FilePen, FileText, GitFork, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
 
 /** A transient, client-side note shown in a log (not part of the conversation). */
 export type Notice = { id: string; threadId: string | null; text: string; afterSeq: number; tone?: 'failed'; action?: { label: string; run(): Promise<unknown> } }
@@ -30,6 +30,12 @@ export function logItems(open: OpenSession, notices: Notice[], threadId: string 
   // These are references to existing main messages, not additional agent messages.
   // Derive them from persisted wire tags so older conversations also show them.
   const continuations: LogItem[] = []
+  // A fork thread's messages are numbered in the fork's own session (SPEC → Fork threads):
+  // a message sent to main from it goes after the fork's latest one sent before it.
+  const isFork = threadId !== null && open.threads.some((t) => t.id === threadId && t.fork)
+  const own = isFork ? open.messages.filter((m) => m.threadId === threadId) : []
+  const placed = (m: Message): number =>
+    isFork ? Math.max(-1, ...own.filter((x) => (x.createdAt ?? 0) <= (m.createdAt ?? 0)).map((x) => x.seq)) + 0.5 : m.seq
   if (threadId !== null) {
     const active = new Map<string, number>()
     for (const m of [...open.messages].sort((a, b) => a.seq - b.seq)) {
@@ -39,7 +45,7 @@ export function logItems(open: OpenSession, notices: Notice[], threadId: string 
       const source = open.threads.filter((t) => threadToMainTag(t.anchor) === tag)
         .sort((a, b) => (active.get(b.id) ?? -1) - (active.get(a.id) ?? -1) || b.createdAt - a.createdAt)[0]
       if (source) active.set(source.id, m.seq)
-      if (source?.id === threadId) continuations.push({ kind: 'sentToMain', seq: m.seq, message: m })
+      if (source?.id === threadId) continuations.push({ kind: 'sentToMain', seq: placed(m), message: m })
     }
   }
   return [
@@ -60,6 +66,21 @@ export function logItems(open: OpenSession, notices: Notice[], threadId: string 
       .filter((r) => r.threadId === threadId)
       .map((r): LogItem => ({ kind: 'request', seq: Number.MAX_SAFE_INTEGER, request: r }))
   ].sort((a, b) => a.seq - b.seq)
+}
+
+/** The fork's summary sent with a message from a fork thread (SPEC → Fork threads), under it. */
+export function ForkSummary({ message }: { message: Message }): React.JSX.Element | null {
+  const summary = message.wireText ? splitForkSummary(message.wireText)?.summary : undefined
+  if (!summary) return null
+  return (
+    <details className="fork-summary" open>
+      <summary>
+        <GitFork aria-hidden />
+        Summary from the fork, sent with this message
+      </summary>
+      <Markdown text={summary} />
+    </details>
+  )
 }
 
 /**
@@ -277,6 +298,7 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
                           a.kind === 'image' ? <CaptureFigure key={i} message={item.message} image={a} index={i} anchors={pins} /> : null
                         )}
                       </div>}
+                      <ForkSummary message={item.message} />
                     </div>
                   ) : (
                     <div key={item.message.id} className="agent" data-message-id={item.message.id}>

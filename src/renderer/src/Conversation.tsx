@@ -19,7 +19,6 @@ import { StatusLine } from './StatusLine'
 
 type Props = {
   open: OpenSession
-  listItemReplies: boolean
   agentName: string
   live: SessionLive
   /** Messages sent in every session, newest first, for the composer's Up and Down. */
@@ -29,6 +28,8 @@ type Props = {
   obsidianVault?: string
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
+  /** The threads with a running turn: the session's, and its fork threads'. */
+  busyThreads: string[]
   notices: Notice[]
   panel: Panel | null
   reveal: Reveal | null
@@ -44,7 +45,10 @@ type Props = {
   onCancel(): void
   onSetChoice(kind: 'model' | 'effort', value: string): Promise<void>
   onOpenItem(message: Message, span: ListItemSpan): void
-  onOpenSelection(message: Message, selection: SourceSelection): void
+  /** `fork`: a new thread runs in a fork of the session (SPEC → Fork threads). */
+  onOpenSelection(message: Message, selection: SourceSelection, fork: boolean): void
+  /** Why the agent can't fork its sessions, if it can't. */
+  forkDisabled?: string
   /** Opens the thread on a pin of an annotated screenshot (SPEC → Visual feedback). */
   onOpenPin(message: Message, image: number, pin: number): void
   onOpenThread(threadId: string): void
@@ -100,26 +104,23 @@ export function Conversation(props: Props): React.JSX.Element {
       panel?.anchorMessageId === message.id && panel.anchor.kind === 'listItem'
         ? panel.anchor.path[0]
         : null
-    const runningThreadRow = open.threads.find((t) => t.id === runningThread)
-    const runningIndex =
-      runningThreadRow?.anchorMessageId === message.id && runningThreadRow.anchor.kind === 'listItem'
-        ? runningThreadRow.anchor.path[0]
-        : null
+    const runningIndexes = open.threads.flatMap((t) =>
+      props.busyThreads.includes(t.id) && t.anchorMessageId === message.id && t.anchor.kind === 'listItem' ? [t.anchor.path[0]] : []
+    )
     return (
       <Markdown
         text={message.text}
-        listItemReplies={props.listItemReplies}
         anchors={{
           replyCount: (index) => {
             const t = itemThread(message.id, index)
             return t ? (replyCounts.get(t.id) ?? 0) : 0
           },
           activeIndex,
-          runningIndex,
+          runningIndexes,
           onOpenItem: (span) => props.onOpenItem(message, span),
           marks: marksFor(message),
           threadCount: (threadId) => replyCounts.get(threadId) ?? 0,
-          runningThread: runningThread ?? null,
+          running: props.busyThreads,
           onOpenThread: props.onOpenThread
         }}
       />
@@ -144,7 +145,7 @@ export function Conversation(props: Props): React.JSX.Element {
         empty={<h2 className="new-hint">What should {agentName} do in {folderName(projectOf(session))}?</h2>}
         renderAgent={renderAgent}
         reveal={props.reveal}
-        pins={pinAnchorsFor(open, panel, runningThread, props.onOpenPin)}
+        pins={pinAnchorsFor(open, panel, props.busyThreads, props.onOpenPin)}
         footer={<>
           <ActivityStrip
             thread={props.lastThread}
@@ -192,7 +193,7 @@ export function Conversation(props: Props): React.JSX.Element {
           />
         </>}
       />
-      <SelectionMenu scope={mainRef} messages={open.messages} onReply={props.onOpenSelection} />
+      <SelectionMenu scope={mainRef} messages={open.messages} onReply={props.onOpenSelection} forkDisabled={props.forkDisabled} />
     </main>
   )
 }

@@ -275,16 +275,17 @@ export class AgentConnection {
    * session/fork into a new saved session that keeps the history up to the turn of
    * `messageId`, through the fork point the Claude and Codex adapters take in
    * `_meta.jetbrains.air.fork` (not standard ACP, which forks the whole session).
-   * An id the agent can't find is an error, never a full copy. `meta` is the agent's
-   * session/load `_meta`: Codex keeps the fork's `additionalRoots` (plugin skills) for its turns.
+   * An id the agent can't find is an error, never a full copy. Without `messageId`, the
+   * whole session as it is now, a running turn's part so far included (SPEC → Fork threads).
+   * `meta` is the agent's session/load `_meta`: Codex keeps the fork's `additionalRoots` (plugin skills) for its turns.
    */
-  async forkSession(sessionId: string, cwd: string, messageId: string, mcpServers: acp.McpServer[] = [], meta?: Record<string, unknown>): Promise<string> {
+  async forkSession(sessionId: string, cwd: string, messageId: string | null, mcpServers: acp.McpServer[] = [], meta?: Record<string, unknown>): Promise<string> {
     this.validateMcp(mcpServers)
     const res = await this.guard(this.conn.agent.request(acp.methods.agent.session.fork, {
       sessionId,
       cwd,
       mcpServers,
-      _meta: { ...meta, jetbrains: { air: { fork: { version: 1, messageId } } } }
+      ...(messageId !== null ? { _meta: { ...meta, jetbrains: { air: { fork: { version: 1, messageId } } } } } : meta ? { _meta: meta } : {})
     }))
     return res.sessionId
   }

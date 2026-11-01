@@ -3390,63 +3390,16 @@ a.status-item {
   margin-left: 4px;
 }
 
-/* List-item anchors (top-level items of agent messages in the main view) */
-
-/* The list stays a list. On hover an item is tinted (bleeding a little past its text)
-   and Reply shows in its left margin, over the marker. */
+/* List-item anchors: top-level items of agent messages that have a thread (made
+   before threads started only from a selection). The open one is tinted. */
 .md li.anchor-item {
   position: relative;
   border-radius: var(--r-sm);
 }
 
-.md.with-anchors > ol,
-.md.with-anchors > ul {
-  padding-left: 26px;
-}
-
-li.anchor-item:hover,
-li.anchor-item:focus-within,
-li.anchor-item.active {
-  background: var(--hover-soft);
-  box-shadow: -8px 0 0 var(--hover-soft), 8px 0 0 var(--hover-soft);
-}
-
 li.anchor-item.active {
   background: var(--accent-tint);
   box-shadow: -8px 0 0 var(--accent-tint), 8px 0 0 var(--accent-tint);
-}
-
-li.anchor-item:hover::marker,
-li.anchor-item:focus-within::marker {
-  color: transparent;
-}
-
-.item-reply {
-  position: absolute;
-  left: -30px;
-  top: 1px;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  box-shadow: var(--card);
-  color: var(--ink-2);
-  opacity: 0;
-  transition: opacity var(--d-fast) var(--ease);
-}
-
-.item-reply svg {
-  width: 14px;
-  height: 14px;
-}
-
-li.anchor-item:hover > .item-reply,
-li.anchor-item:focus-within > .item-reply {
-  opacity: 1;
 }
 
 /* In a loose list, the count follows the item's last paragraph rather than wrapping. */
@@ -3529,6 +3482,32 @@ button.status.link {
 .thread-panel .back:hover {
   background: var(--hover);
   color: var(--ink);
+}
+
+/* A fork thread (SPEC → Fork threads): its tag. */
+.fork-tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--accent-tint);
+  color: var(--ink-2);
+  font-size: var(--t-11);
+  font-weight: 600;
+}
+
+.fork-tag svg {
+  width: 12px;
+  height: 12px;
+}
+
+.thread-row .thread-fork {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-12);
 }
 
 .thread-panel .thread-label {
@@ -6319,6 +6298,37 @@ html.autoscrolling * {
 .sent-message { display: flex; flex-direction: column; min-width: 0; }
 .sent-images { align-self: flex-end; max-width: min(560px, 85%); }
 .sent-images .capture-figure { margin: 10px 0 0; }
+
+/* The fork's summary sent with a message from a fork thread, under it (SPEC → Fork threads). */
+.fork-summary {
+  margin: 8px 0 0;
+  padding: 6px 12px 2px;
+  border-left: 3px solid var(--accent-tint);
+  color: var(--ink-2);
+}
+
+.fork-summary > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: var(--t-12);
+  color: var(--muted);
+  list-style: none;
+}
+
+.fork-summary > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fork-summary > summary svg {
+  width: 12px;
+  height: 12px;
+}
+
+.fork-summary[open] > summary {
+  margin-bottom: 4px;
+}
 
 .capture-figure {
   margin: 10px 0 2px;

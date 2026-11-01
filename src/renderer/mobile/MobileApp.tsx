@@ -1,18 +1,21 @@
 // The phone client (SPEC → Remote and mobile; docs/mocks/mobile.html): sessions, the conversation,
 // threads full screen, the composer with queue and steer, questions and approvals, and the status sheet.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft, ArrowUp, Check, ChevronDown, ChevronRight, Clock, CornerDownRight, Folder, GitBranch, Hand, Lock,
+  ArrowLeft, ArrowUp, Check, ChevronDown, ChevronRight, Clock, CornerDownRight, Folder, GitBranch, GitFork, Hand, Lock,
   MessageSquare, MessageSquareReply, Pencil, Plus, Shield, Square, Trash2, WifiOff, X
 } from 'lucide-react'
 import type { Anchor, Attachment, Message, Plan, PlanUsage, Session, Thread, ToolCall } from '@shared/types'
 import { lineLabel } from '@shared/review'
+import { canFork } from '@shared/composer'
+import type { ForkView } from '@shared/ipc'
 import { truncate } from '@shared/wire'
 import { projectOf } from '@shared/worktree'
 import { errorText } from '../src/errors'
-import { logItems, type LogItem, type Notice } from '../src/Log'
+import { ForkSummary, logItems, type LogItem, type Notice } from '../src/Log'
 import { Markdown } from '../src/Markdown'
 import { RequestCard } from '../src/RequestCard'
+import { forkUsage } from '../src/ThreadPanel'
 import { resetIn } from '../src/UsagePanel'
 import { hasDetails, ToolDetails } from '../src/ToolDetails'
 import { rangeToSource } from '../src/selection'
@@ -24,7 +27,18 @@ import { usePhone, upsert, type OpenView, type Phone } from './usePhone'
 import type { PhoneLink } from './transport'
 import { NotifyCard } from './notify'
 
-type Panel = { anchorMessageId: string | null; anchor: Anchor; threadId: string | null }
+/** `fork`: a new thread that runs in a fork of the session (SPEC → Fork threads). */
+type Panel = { anchorMessageId: string | null; anchor: Anchor; threadId: string | null; fork?: true }
+
+/** A fork thread's own session, in the open session's view. */
+function forkOf(open: OpenView, threadId: string | null): ForkView | undefined {
+  return threadId === null ? undefined : open.forks.find((f) => f.threadId === threadId)
+}
+
+/** The threads with a running turn: the session's own, and its forks'. */
+function busyThreads(open: OpenView): string[] {
+  return [...(open.turn?.threadId ? [open.turn.threadId] : []), ...open.forks.filter((f) => f.running).map((f) => f.threadId)]
+}
 /** What the bottom bar offers to reply to: a tapped block or a selection in an agent message. */
 type Target = { message: Message; anchor: Anchor; selection: boolean }
 
@@ -255,19 +269,23 @@ function SessionScreen(props: {
   const threadId = panel?.threadId ?? null
   const inThread = panel !== null
   const agentName = phone.agents.find((a) => a.id === open.session.agentId)?.name ?? open.session.agentId
-  const runningThread = open.turn ? open.turn.threadId : undefined
   const thread = threadId ? open.threads.find((t) => t.id === threadId) : undefined
+  const isFork = !!thread?.fork || !!panel?.fork
+  const forkDisabled = canFork(open.session.agentId) ? undefined : `${agentName} can't fork sessions.`
   const visibleThreads = open.threads.filter((t) => t.anchor.kind !== 'line' && !t.finding)
 
   useEffect(() => setTarget(null), [panel, open.session.id])
 
-  function reply(): void {
+  /** `fork`: a new thread runs in a fork of the session; an existing thread opens as it is. */
+  function reply(fork = false): void {
     if (!target) return
     const { message, anchor } = target
     const existing = open.threads.find((t) => t.anchorMessageId === message.id && sameAnchor(t.anchor, anchor))
     window.getSelection()?.removeAllRanges()
     setTarget(null)
-    setPanel(existing ? { anchorMessageId: message.id, anchor: existing.anchor, threadId: existing.id } : { anchorMessageId: message.id, anchor, threadId: null })
+    setPanel(existing
+      ? { anchorMessageId: message.id, anchor: existing.anchor, threadId: existing.id }
+      : { anchorMessageId: message.id, anchor, threadId: null, ...(fork ? { fork: true as const } : {}) })
   }
 
   return (
@@ -288,14 +306,13 @@ function SessionScreen(props: {
         )}
       </div>
       {inThread && (
-        <div className="m-quote"><small>Thread</small>{thread ? (thread.anchor.kind === 'line' ? lineLabel(thread.anchor) : thread.anchor.text) : panel.anchor.kind === 'line' ? lineLabel(panel.anchor) : panel.anchor.text}</div>
+        <div className="m-quote"><small>{isFork ? <span className="m-fork"><GitFork size={12} />Fork thread{forkUsage(forkOf(open, threadId)?.live ?? null) ? ` · ${forkUsage(forkOf(open, threadId)?.live ?? null)}` : ''}</span> : 'Thread'}</small>{thread ? (thread.anchor.kind === 'line' ? lineLabel(thread.anchor) : thread.anchor.text) : panel.anchor.kind === 'line' ? lineLabel(panel.anchor) : panel.anchor.text}</div>
       )}
       <LogView
         open={open}
         threadId={threadId}
         inThread={inThread}
-        listItemReplies={phone.info?.listItemReplies ?? false}
-        runningThread={runningThread}
+        busy={busyThreads(open)}
         target={target}
         onTarget={setTarget}
         onOpenThread={(id) => {
@@ -308,7 +325,8 @@ function SessionScreen(props: {
         <div className="m-selbar">
           <button className="m-act" onClick={() => { window.getSelection()?.removeAllRanges(); setTarget(null) }} aria-label="Dismiss"><X size={16} /></button>
           {!target.selection && <button className="m-act" onClick={() => { void navigator.clipboard.writeText(target.anchor.kind === 'line' ? '' : target.anchor.text); setTarget(null) }}>Copy</button>}
-          <button className="m-act m-pri" onClick={reply}><MessageSquareReply size={16} />{target.selection ? 'Reply to selection' : 'Reply in thread'}</button>
+          <button className="m-act" onClick={() => reply(true)} disabled={!!forkDisabled} title={forkDisabled}><GitFork size={16} />Fork</button>
+          <button className="m-act m-pri" onClick={() => reply()}><MessageSquareReply size={16} />{target.selection ? 'Reply to selection' : 'Reply in thread'}</button>
         </div>
       ) : (
         <div className="m-foot">
@@ -348,14 +366,17 @@ function sameAnchor(a: Anchor, b: Anchor): boolean {
 // The log
 
 function LogView(props: {
-  open: OpenView; threadId: string | null; inThread: boolean; listItemReplies: boolean; runningThread: string | null | undefined
+  open: OpenView; threadId: string | null; inThread: boolean
+  /** The threads with a running turn: the session's, and its forks'. */
+  busy: string[]
   target: Target | null; onTarget(t: Target | null): void; onOpenThread(id: string): void
 }): React.JSX.Element {
   const { open, threadId, target } = props
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
   const items = useMemo(
-    () => props.inThread && threadId === null ? [] : logItems({ ...open, requests: open.requests }, open.notices, threadId),
+    // A fork thread's questions and approvals come from its own session.
+    () => props.inThread && threadId === null ? [] : logItems({ ...open, requests: [...open.requests, ...open.forks.flatMap((f) => f.requests)] }, open.notices, threadId),
     [open, threadId, props.inThread]
   )
   const replyCounts = useMemo(() => {
@@ -408,11 +429,6 @@ function LogView(props: {
       props.onTarget(null)
       return
     }
-    const li = el.closest<HTMLElement>('li.anchor-item')
-    if (li && found.root.contains(li)) {
-      li.querySelector<HTMLButtonElement>(':scope > .item-reply')?.click()
-      return
-    }
     const block = el.closest<HTMLElement>('p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th')
     if (!block || !found.root.contains(block)) return
     const range = document.createRange()
@@ -438,16 +454,14 @@ function LogView(props: {
   function agent(message: Message): React.JSX.Element {
     if (props.inThread) return <Markdown text={message.text} />
     const itemThread = (index: number) => open.threads.find((t) => t.anchorMessageId === message.id && t.anchor.kind === 'listItem' && t.anchor.path[0] === index)
-    const running = open.threads.find((t) => t.id === props.runningThread)
     const activeIndex = target?.message.id === message.id && target.anchor.kind === 'listItem' ? target.anchor.path[0] : null
     return (
       <Markdown
         text={message.text}
-        listItemReplies
         anchors={{
           replyCount: (i) => { const t = itemThread(i); return t ? replyCounts.get(t.id) ?? 0 : 0 },
           activeIndex,
-          runningIndex: running?.anchorMessageId === message.id && running.anchor.kind === 'listItem' ? running.anchor.path[0] : null,
+          runningIndexes: open.threads.flatMap((t) => props.busy.includes(t.id) && t.anchorMessageId === message.id && t.anchor.kind === 'listItem' ? [t.anchor.path[0]] : []),
           onOpenItem: (span: ListItemSpan) => {
             const t = itemThread(span.index)
             // A reply badge opens its thread; a tap on the item offers to reply.
@@ -456,7 +470,7 @@ function LogView(props: {
           },
           marks: marksFor(message),
           threadCount: (id) => replyCounts.get(id) ?? 0,
-          runningThread: props.runningThread ?? null,
+          running: props.busy,
           onOpenThread: props.onOpenThread
         }}
       />
@@ -485,11 +499,14 @@ function LogView(props: {
         switch (g.kind) {
           case 'message':
             return g.message.role === 'user' ? (
-              <div key={g.message.id} className="m-you">
-                <Markdown text={g.message.text} breaks />
-                <SentImages attachments={g.message.attachments} />
-                <span className="m-meta">{g.message.steered ? 'steered · ' : ''}{g.message.createdAt ? new Date(g.message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}</span>
-              </div>
+              <Fragment key={g.message.id}>
+                <div className="m-you">
+                  <Markdown text={g.message.text} breaks />
+                  <SentImages attachments={g.message.attachments} />
+                  <span className="m-meta">{g.message.steered ? 'steered · ' : ''}{g.message.createdAt ? new Date(g.message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}</span>
+                </div>
+                <ForkSummary message={g.message} />
+              </Fragment>
             ) : (
               <div key={g.message.id} className="m-agent" data-message-id={g.message.id}>{agent(g.message)}</div>
             )
@@ -585,10 +602,18 @@ function Composer(props: { phone: Phone; open: OpenView; panel: Panel | null; on
   const file = useRef<HTMLInputElement>(null)
   const area = useRef<HTMLTextAreaElement>(null)
   const threadId = panel?.threadId ?? null
-  const runningHere = open.turn !== null && open.turn.threadId === threadId && (panel === null || panel.threadId !== null)
-  const mode: 'send' | 'steer' | 'queue' = runningHere && open.live.steering ? 'steer' : open.turn ? 'queue' : 'send'
-  const queued = open.queue.items.filter((q) => q.threadId === threadId && (panel === null || panel.threadId !== null))
-  const commands = text.startsWith('/') && !/\s/.test(text) ? open.live.commands.filter((c) => c.name.startsWith(text.slice(1))).slice(0, 6) : []
+  // A fork thread's turn, queue and status are its own session's (SPEC → Fork threads).
+  const fork = forkOf(open, threadId)
+  const laneId = fork?.sessionId ?? open.session.id
+  const turn = fork ? (fork.running ? { threadId } : null) : panel?.fork ? null : open.turn
+  const live = fork?.live ?? open.live
+  const queue = fork?.queue ?? open.queue
+  const runningHere = turn !== null && turn.threadId === threadId && (panel === null || panel.threadId !== null)
+  const mode: 'send' | 'steer' | 'queue' = runningHere && live.steering ? 'steer' : turn ? 'queue' : 'send'
+  const queued = queue.items.filter((q) => q.threadId === threadId && (panel === null || panel.threadId !== null))
+  const commands = text.startsWith('/') && !/\s/.test(text)
+    ? live.commands.filter((c) => c.name.startsWith(text.slice(1)) && !(fork && c.name === 'clear')).slice(0, 6)
+    : []
 
   useEffect(() => {
     const el = area.current
@@ -608,7 +633,9 @@ function Composer(props: { phone: Phone; open: OpenView; panel: Panel | null; on
     try {
       let id = threadId
       if (panel && id === null) {
-        const t = await window.gloss.threads.create(open.session.id, panel.anchorMessageId, panel.anchor)
+        const t = panel.fork
+          ? await window.gloss.threads.fork(open.session.id, panel.anchorMessageId, panel.anchor)
+          : await window.gloss.threads.create(open.session.id, panel.anchorMessageId, panel.anchor)
         props.phone.setOpen((o) => o && o.session.id === t.sessionId ? { ...o, threads: upsert(o.threads, t) } : o)
         props.onThread(t)
         id = t.id
@@ -640,20 +667,20 @@ function Composer(props: { phone: Phone; open: OpenView; panel: Panel | null; on
     <>
       {queued.length > 0 && (
         <div className="m-qlist">
-          <div className={`m-qhead${open.queue.paused ? ' paused' : ''}`}>
-            <Clock size={14} /><span className="m-grow">{queued.length} queued{open.queue.paused ? ', paused' : ''}</span>
-            {open.queue.paused && <button className="m-resume" onClick={() => void window.gloss.queue.resume(open.session.id).catch((e: unknown) => setError(errorText(e)))}>Resume</button>}
+          <div className={`m-qhead${queue.paused ? ' paused' : ''}`}>
+            <Clock size={14} /><span className="m-grow">{queued.length} queued{queue.paused ? ', paused' : ''}</span>
+            {queue.paused && <button className="m-resume" onClick={() => void window.gloss.queue.resume(laneId).catch((e: unknown) => setError(errorText(e)))}>Resume</button>}
           </div>
           {queued.slice().reverse().map((q) => editing?.id === q.id ? (
-            <div key={q.id} className={`m-qi${open.queue.paused ? ' paused' : ''}`}>
+            <div key={q.id} className={`m-qi${queue.paused ? ' paused' : ''}`}>
               <textarea className="m-qedit" value={editing.text} onChange={(e) => setEditing({ id: q.id, text: e.target.value })} autoFocus />
-              <button className="m-ib sm" aria-label="Save" onClick={() => { void window.gloss.queue.edit(open.session.id, q.id, editing.text); setEditing(null) }}><Check size={16} /></button>
+              <button className="m-ib sm" aria-label="Save" onClick={() => { void window.gloss.queue.edit(laneId, q.id, editing.text); setEditing(null) }}><Check size={16} /></button>
             </div>
           ) : (
-            <div key={q.id} className={`m-qi${open.queue.paused ? ' paused' : ''}`}>
+            <div key={q.id} className={`m-qi${queue.paused ? ' paused' : ''}`}>
               <span className="m-grow m-ellipsis">{q.text}</span>
               <button className="m-ib sm" aria-label="Edit" onClick={() => setEditing({ id: q.id, text: q.text })}><Pencil size={14} /></button>
-              <button className="m-ib sm" aria-label="Remove" onClick={() => void window.gloss.queue.remove(open.session.id, q.id)}><Trash2 size={14} /></button>
+              <button className="m-ib sm" aria-label="Remove" onClick={() => void window.gloss.queue.remove(laneId, q.id)}><Trash2 size={14} /></button>
             </div>
           ))}
         </div>
@@ -679,7 +706,7 @@ function Composer(props: { phone: Phone; open: OpenView; panel: Panel | null; on
         </div>
       )}
       <div className="m-comp">
-        {open.live.accepts.image && (
+        {live.accepts.image && (
           <>
             <button className="m-ib" aria-label="Attach images" onClick={() => file.current?.click()} disabled={props.offline}><Plus size={20} /></button>
             <input ref={file} type="file" accept="image/*" multiple hidden onChange={(e) => { void addImages(e.target.files); e.target.value = '' }} />
@@ -690,7 +717,7 @@ function Composer(props: { phone: Phone; open: OpenView; panel: Panel | null; on
           className="m-txt"
           rows={1}
           value={text}
-          placeholder={panel ? 'Reply in thread' : 'Message'}
+          placeholder={fork || panel?.fork ? 'Reply in the fork' : panel ? 'Reply in thread' : 'Message'}
           disabled={props.offline}
           onChange={(e) => setText(e.target.value)}
         />
@@ -703,7 +730,7 @@ function Composer(props: { phone: Phone; open: OpenView; panel: Panel | null; on
           {mode === 'send' ? <ArrowUp size={18} /> : mode === 'steer' ? <><CornerDownRight size={15} />Steer</> : <><Clock size={15} />Queue</>}
         </button>
         {runningHere && (
-          <button className="m-send stop" aria-label="Stop" disabled={props.offline} onClick={() => void window.gloss.cancel(open.session.id).catch((e: unknown) => setError(errorText(e)))}>
+          <button className="m-send stop" aria-label="Stop" disabled={props.offline} onClick={() => void window.gloss.cancel(laneId).catch((e: unknown) => setError(errorText(e)))}>
             <Square size={14} />
           </button>
         )}
@@ -870,14 +897,18 @@ function ThreadsList({ open, onBack, onOpen }: { open: OpenView; onBack(): void;
         {tab === 'threads' ? (
           threads.length === 0 ? <p className="m-empty">No threads yet. Tap a list item or paragraph, or select text, to reply in a thread.</p>
             : threads.map((t) => {
-              const queued = open.queue.items.filter((q) => q.threadId === t.id).length
+              const fork = forkOf(open, t.id)
+              const queue = fork?.queue ?? open.queue
+              const queued = queue.items.filter((q) => q.threadId === t.id).length
+              const working = fork ? fork.running : open.turn?.threadId === t.id
               return (
                 <button key={t.id} className="m-row" onClick={() => onOpen(t)}>
                   <span className="m-row-main">
                     <b className="m-wrap">{threadName(t)}</b>
                     <small>
-                      {open.turn?.threadId === t.id && <><span className="m-dot m-pulse s-working" />working ·</>}
-                      {queued > 0 && <span className={open.queue.paused ? 's-paused' : 's-queued'}>{queued} queued{open.queue.paused ? ', paused' : ''} ·</span>}
+                      {t.fork && <span className="m-fork"><GitFork size={12} />Fork ·</span>}
+                      {working && <><span className="m-dot m-pulse s-working" />working ·</>}
+                      {queued > 0 && <span className={queue.paused ? 's-paused' : 's-queued'}>{queued} queued{queue.paused ? ', paused' : ''} ·</span>}
                       {replies(t)} {replies(t) === 1 ? 'reply' : 'replies'}
                     </small>
                   </span>

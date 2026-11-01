@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { SettingsState } from '../shared/ipc'
 import { parseSettings, patchArg, samePath, SettingsFile } from './settings'
 
-const defaults = { defaultAgent: 'claude' as const, theme: 'system' as const, sessionOrder: 'created' as const, listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }
+const defaults = { defaultAgent: 'claude' as const, theme: 'system' as const, sessionOrder: 'created' as const, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }
 
 describe('parseSettings', () => {
   it('validates Obsidian vaults as project strings', () => {
@@ -49,15 +49,10 @@ describe('parseSettings', () => {
       expect(() => patchArg({ project: { path: '/project', values: { mcpServers } } })).toThrow()
     }
   })
-  it('accepts and validates the list item replies toggle', () => {
-    for (const listItemReplies of [true, false]) {
-      expect(parseSettings(JSON.stringify({ listItemReplies }), defaults)).toMatchObject({
-        ok: true, global: { listItemReplies }
-      })
-      expect(patchArg({ global: { listItemReplies } })).toEqual({ global: { listItemReplies } })
-    }
-    expect(parseSettings('{"listItemReplies":"false"}', defaults).ok).toBe(false)
-    expect(() => patchArg({ global: { listItemReplies: 'false' } })).toThrow(/listItemReplies/)
+  it('ignores the removed list item replies toggle in an older file', () => {
+    const parsed = parseSettings('{"listItemReplies":true,"theme":"dark"}', defaults)
+    expect(parsed).toMatchObject({ ok: true, global: { theme: 'dark' } })
+    expect(parsed.ok && 'listItemReplies' in parsed.global).toBe(false)
   })
 
   it('accepts Codex as the default agent and rejects unknown agents', () => {
@@ -75,7 +70,7 @@ describe('parseSettings', () => {
   it('fills in defaults and ignores unknown and retired keys', () => {
     expect(parseSettings('{"$schema": "x", "future": 1, "devModel": true}', defaults)).toEqual({
       ok: true,
-      global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] },
+      global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] },
       projects: {}
     })
   })
@@ -91,7 +86,7 @@ describe('parseSettings', () => {
   it('reads known values and projects', () => {
     expect(parseSettings('{"theme": "dark", "projects": {"C:\\\\a": {"x": 1}}}', defaults)).toEqual({
       ok: true,
-      global: { defaultAgent: 'claude', theme: 'dark', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] },
+      global: { defaultAgent: 'claude', theme: 'dark', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] },
       projects: { 'C:\\a': {} }
     })
   })
@@ -158,8 +153,8 @@ describe('SettingsFile', () => {
 
   it('creates the file and its schema on first load', () => {
     const state = file.load()
-    expect(state).toEqual({ path: path(), global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }, projects: {}, error: null })
-    expect(onDisk()).toEqual({ $schema: './settings.schema.json', defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] })
+    expect(state).toEqual({ path: path(), global: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }, projects: {}, error: null })
+    expect(onDisk()).toEqual({ $schema: './settings.schema.json', defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] })
     const schema = JSON.parse(readFileSync(join(dir, 'settings.schema.json'), 'utf8')) as {
       properties: Record<string, { type: string; default?: unknown; enum?: unknown[] }>
     }

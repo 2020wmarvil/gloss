@@ -22,6 +22,8 @@ export const PHONE_CHANNELS: ReadonlySet<string> = new Set([
   IPC.sessionsPlanUsage,
   IPC.requestsAnswer,
   IPC.threadsCreate,
+  IPC.threadsFork,
+  IPC.threadsOpenFork,
   IPC.threadsResolve,
   IPC.history,
   IPC.send,

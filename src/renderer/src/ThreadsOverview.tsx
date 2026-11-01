@@ -5,6 +5,8 @@ import type { Message, MessageQueue, Thread } from '@shared/types'
 import type { OpenSession } from './App'
 import { QueuedRow } from './Composer'
 import { errorText } from './errors'
+import { ForkTag, forkUsage } from './ThreadPanel'
+import type { ForkLane } from './useSession'
 import { ago } from './Sidebar'
 import { Locate, MessageSquare, PanelRight } from 'lucide-react'
 
@@ -75,6 +77,8 @@ type Props = {
   onTab(tab: SideTab): void
   /** threadId of the running turn; undefined when idle. */
   runningThread: string | null | undefined
+  /** A fork thread's own session: its turn, queue and status (SPEC → Fork threads). */
+  forkLane(threadId: string): ForkLane | null
   /** The session's queued messages, in the order they will run. */
   queue: MessageQueue
   /** A thread's name, from the start of what it replies to. */
@@ -148,12 +152,21 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
             </p>
           )}
           {summaries.map(({ thread, replies, lastActivity }) => {
-            const running = props.runningThread === thread.id
+            const lane = thread.fork ? props.forkLane(thread.id) : null
+            const running = lane ? lane.runningThread !== undefined : props.runningThread === thread.id
             const waiting = props.open.requests?.some((r) => r.threadId === thread.id) ?? false
-            const queued = queue.items.filter((q) => q.threadId === thread.id).length
+            const rowQueue = lane?.queue ?? queue
+            const queued = rowQueue.items.filter((q) => q.threadId === thread.id).length
+            const usage = lane ? forkUsage(lane.live) : null
             return (
               <div key={thread.id} className="thread-row">
                 <button className="thread-open" onClick={() => props.onOpenThread(thread.id)}>
+                  {thread.fork && (
+                    <span className="thread-fork">
+                      <ForkTag />
+                      {usage && <span className="muted">{usage}</span>}
+                    </span>
+                  )}
                   <span className="thread-quote">{thread.anchor.text}</span>
                   {anchorText(thread) && <span className="thread-where">in “{anchorText(thread)}”</span>}
                   <span className="thread-meta">
@@ -167,7 +180,7 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
                       {replies} {replies === 1 ? 'reply' : 'replies'}
                     </span>
                     {queued > 0 && <span className="thread-queued">· {queued} queued</span>}
-                    {queued > 0 && queue.paused && <span className="thread-paused">paused</span>}
+                    {queued > 0 && rowQueue.paused && <span className="thread-paused">paused</span>}
                     {!running && (
                       <span title={new Date(lastActivity).toLocaleString()}>
                         · {ago(lastActivity) === 'now' ? 'just now' : `${ago(lastActivity)} ago`}
@@ -201,7 +214,8 @@ function QueueTimeline(
 ): React.JSX.Element {
   const { queue, open, queueAction } = props
   const now = useRef<HTMLDivElement>(null)
-  const sent = open.messages.filter((m) => m.role === 'user').sort((a, b) => b.seq - a.seq)
+  // By time: a fork thread's messages are numbered in its own session (SPEC → Fork threads).
+  const sent = open.messages.filter((m) => m.role === 'user').sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0) || b.seq - a.seq)
   const working = props.runningThread !== undefined ? sent[0] : undefined
   const threadOf = (threadId: string | null): Thread | undefined =>
     threadId === null ? undefined : open.threads.find((t) => t.id === threadId)

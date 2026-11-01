@@ -2,7 +2,7 @@
 // selection, or right-clicking (and dragging over) lines to select them, opens it.
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { Copy, CornerDownLeft, type LucideIcon } from 'lucide-react'
+import { Copy, CornerDownLeft, GitFork, type LucideIcon } from 'lucide-react'
 import type { Message } from '@shared/types'
 import { rangeToSource } from './selection'
 import { renderedText } from './source'
@@ -18,7 +18,22 @@ type Props = {
   /** The element containing the main log; selections elsewhere are ignored. */
   scope: RefObject<HTMLElement | null>
   messages: Message[]
-  onReply(message: Message, selection: SourceSelection): void
+  /** `fork`: the thread runs in a fork of the session (SPEC → Fork threads). */
+  onReply(message: Message, selection: SourceSelection, fork: boolean): void
+  /** Why the agent can't fork its sessions, if it can't: **Reply - Fork** shows disabled. */
+  forkDisabled?: string
+}
+
+/** **Reply - Fork**, after Reply: `F`, as `R` replies. */
+export function forkItem(disabledReason: string | undefined, run: () => void): MenuItem {
+  return { label: 'Reply - Fork', icon: GitFork, keys: 'F', ...(disabledReason ? { disabledReason } : {}), run }
+}
+
+/** Whether a key replies to the selection (`R`) or replies in a fork (`F`). */
+export function replyKey(e: KeyboardEvent): 'reply' | 'fork' | null {
+  if (e.ctrlKey || e.metaKey || e.altKey) return null
+  const key = e.key.toLowerCase()
+  return key === 'r' ? 'reply' : key === 'f' ? 'fork' : null
 }
 
 function isEditable(target: EventTarget | null): boolean {
@@ -115,7 +130,7 @@ function agentRoot(node: Node, scope: HTMLElement | null, messages: Message[]): 
   return messages.find((m) => m.id === root.dataset.messageId)?.role === 'agent' ? root : null
 }
 
-export function SelectionMenu({ scope, messages, onReply }: Props): React.JSX.Element | null {
+export function SelectionMenu({ scope, messages, onReply, forkDisabled }: Props): React.JSX.Element | null {
   const [menu, setMenu] = useState<{ x: number; y: number; current: Current | null } | null>(null)
 
   const read = useCallback((): Current | null => {
@@ -152,26 +167,27 @@ export function SelectionMenu({ scope, messages, onReply }: Props): React.JSX.El
   })
 
   const reply = useCallback(
-    (current: Current) => {
+    (current: Current, fork = false) => {
       const { message, start, end, text } = current
       window.getSelection()?.removeAllRanges()
       setMenu(null)
-      onReply(message, { start, end, text })
+      onReply(message, { start, end, text }, fork)
     },
     [onReply]
   )
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.ctrlKey || e.metaKey || e.altKey || isEditable(e.target) || (e.key !== 'r' && e.key !== 'R')) return
+      const how = replyKey(e)
+      if (!how || isEditable(e.target) || (how === 'fork' && forkDisabled)) return
       const current = read()
       if (!current) return
       e.preventDefault()
-      reply(current)
+      reply(current, how === 'fork')
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [read, reply])
+  }, [read, reply, forkDisabled])
 
   const close = useCallback(() => setMenu(null), [])
   if (!menu) return null
@@ -187,6 +203,7 @@ export function SelectionMenu({ scope, messages, onReply }: Props): React.JSX.El
           disabledReason: current ? undefined : 'Replying requires text from a single agent message.',
           run: () => { if (current) reply(current) }
         },
+        forkItem(current ? forkDisabled : 'Replying requires text from a single agent message.', () => { if (current) reply(current, true) }),
         { label: 'Copy', icon: Copy, separatorBefore: true, keys: `${modKey()}+C`, run: copySelection }
       ]}
     />

@@ -26,12 +26,12 @@ it('focuses a new composer before the agent attaches and preserves typing when i
   discovery.mockImplementationOnce(() => new Promise((resolve) => { finishDiscovery = () => resolve([]) }))
   window.gloss = {
     history: async () => [],
-    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'opencode', name: 'OpenCode', available: false }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: discovery },
     sessions: {
       list: async () => [], create: async () => session, refresh: async () => {},
-      open: async () => ({ session, messages: [], toolCalls: [], plans: [], threads: [], turn: null, live, queue: { items: [], paused: false }, requests: [] })
+      open: async () => ({ session, messages: [], toolCalls: [], plans: [], threads: [], turn: null, forks: [], live, queue: { items: [], paused: false }, requests: [] })
     },
     git: { status: async () => null, pullRequest: async () => null },
     onEvent: (listener: (event: GlossEvent) => void) => { listeners.push(listener); return () => {} }
@@ -65,7 +65,7 @@ it("starts sessions with the default agent or one from the menu, and lists every
   const createReview = vi.fn(async () => { throw new Error('review observed') })
   const createInWorktree = vi.fn(async () => { throw new Error('worktree observed') })
   const resetsAt = new Date(2026, 9, 26, 15, 40).getTime()
-  const state = { global: { defaultAgent: 'codex', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }
+  const state = { global: { defaultAgent: 'codex', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }
   const update = vi.fn(async (patch: { global: object }) => ({ ...state, global: { ...state.global, ...patch.global } }))
   window.gloss = {
     history: async () => [],
@@ -140,13 +140,13 @@ it('goes back and forward through the sessions and settings visited with the mou
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
   const session = (id: string): object => ({ id, title: id, cwd: '/project', agentId: 'claude', createdAt: id === 'a' ? 2 : 1 })
   const opened = vi.fn(async (id: string) => ({
-    session: session(id), messages: [], toolCalls: [], plans: [], threads: [], turn: null,
+    session: session(id), messages: [], toolCalls: [], plans: [], threads: [], turn: null, forks: [],
     live: { attached: false, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
     queue: { items: [], paused: false }
   }))
   window.gloss = {
     history: async () => [],
-    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: { list: async () => [session('a'), session('b')], open: opened, refresh: async () => {} },
@@ -196,7 +196,7 @@ it('shows where the agent works and what waits, jumps there, and lists the queue
   const remove = vi.fn(async () => {})
   window.gloss = {
     history: async () => [],
-    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
@@ -209,7 +209,7 @@ it('shows where the agent works and what waits, jumps there, and lists the queue
           { id: 'u2', sessionId: 's', seq: 2, role: 'user', text: 'in the thread', threadId: 't1' }
         ],
         threads: [thread('late', 'Second thread', 20), thread('t1', 'Make forward and backward buttons work in the app', 10)],
-        turn: { threadId: 't1' },
+        turn: { threadId: 't1' }, forks: [],
         live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [{ id: 'q1', threadId: 't1', text: 'then this', attachments: [] }, { id: 'q2', threadId: null, text: 'main next', attachments: [] }], paused: false }
       })
@@ -302,14 +302,14 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
   }
   window.gloss = {
     history: async () => [],
-    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
       list: async () => [session('a', 3), session('b', 2), session('c', 1)],
       refresh: async () => {},
       open: async (id: string) => ({
-        session: session(id, { a: 3, b: 2, c: 1 }[id]!), toolCalls: [], plans: [], turn: null, ...views[id],
+        session: session(id, { a: 3, b: 2, c: 1 }[id]!), toolCalls: [], plans: [], turn: null, forks: [], ...views[id],
         live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })
@@ -360,7 +360,7 @@ it('opens search anywhere and reveals matches in another session, its thread, or
       { id: 'reply', sessionId: id, seq: 1, role: 'agent', text: 'cache thread response', threadId: 't' }
     ],
     toolCalls: id === 'a' ? [] : [{ id: 'tool', sessionId: id, messageSeq: 2, threadId: 't', title: 'Read cache', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'cache tool output' } }] }],
-    plans: [], threads: id === 'a' ? [] : [thread], turn: null,
+    plans: [], threads: id === 'a' ? [] : [thread], turn: null, forks: [],
     live: { attached: false, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
     queue: { items: [], paused: false }
   }))
@@ -369,7 +369,7 @@ it('opens search anywhere and reveals matches in another session, its thread, or
   ].map((r) => ({ ...r, sessionId: 'b', sessionTitle: 'b', cwd: '/project', threadQuote: r.threadId ? 'cache' : null, snippet: 'cache match' })), more: false }))
   window.gloss = {
     search, history: async () => [],
-    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: { list: async () => [session('a'), session('b')], open: opened, refresh: async () => {} },
@@ -402,7 +402,7 @@ it("finds a thread's anchor in the main conversation from the thread panel", asy
   const session = { id: 's', title: 's', cwd: '/project', agentId: 'claude', createdAt: 1 }
   window.gloss = {
     history: async () => [],
-    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
@@ -412,7 +412,7 @@ it("finds a thread's anchor in the main conversation from the thread panel", asy
         session, toolCalls: [], plans: [],
         messages: [{ id: 'm', sessionId: 's', seq: 1, role: 'agent', text: 'Hello world', threadId: null }],
         threads: [{ id: 't1', sessionId: 's', anchorMessageId: 'm', anchor: { kind: 'selection', start: 6, end: 11, text: 'world' }, createdAt: 1 }],
-        turn: null,
+        turn: null, forks: [],
         live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })
@@ -434,7 +434,7 @@ it("finds a thread's anchor in the main conversation from the thread panel", asy
 
 it("marks, badges and chimes a turn that finishes where the user isn't looking", async () => {
   const session = (id: string, createdAt: number): object => ({ id, title: id, cwd: '/project', agentId: 'claude', createdAt })
-  const global = { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }
+  const global = { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }
   const listeners = new Set<(event: object) => void>()
   const emit = (event: object): void => listeners.forEach((l) => l(event))
   const setBadge = vi.fn()
@@ -447,7 +447,7 @@ it("marks, badges and chimes a turn that finishes where the user isn't looking",
       list: async () => [session('a', 2), session('b', 1)],
       refresh: async () => {},
       open: async (id: string) => ({
-        session: session(id, id === 'a' ? 2 : 1), toolCalls: [], plans: [], turn: null, messages: [], threads: [],
+        session: session(id, id === 'a' ? 2 : 1), toolCalls: [], plans: [], turn: null, forks: [], messages: [], threads: [],
         live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })
@@ -526,13 +526,13 @@ it('keeps background completions and syncs from taking focus or closing settings
   const retry = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
   window.gloss = {
     history: async () => [],
-    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', listItemReplies: false, turnEndSound: false, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', turnEndSound: false, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
       list: async () => [session('a'), session('b')], refresh: async () => {},
       open: async (id: string) => ({
-        session: session(id), messages: [], toolCalls: [], plans: [], threads: [], turn: null,
+        session: session(id), messages: [], toolCalls: [], plans: [], threads: [], turn: null, forks: [],
         live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })

@@ -53,6 +53,18 @@ export type SessionView = {
   live: SessionLive
   /** Questions and approvals the agent is waiting on (SPEC → Questions and approvals). */
   requests: UserRequest[]
+  /** The fork threads' sessions, whose turns, queues and status are their own (SPEC → Fork threads). */
+  forks: ForkView[]
+}
+
+/** A fork thread's own session, as the session's view has it. Its log is in the session's. */
+export type ForkView = {
+  threadId: string
+  sessionId: string
+  running: boolean
+  queue: MessageQueue
+  live: SessionLive
+  requests: UserRequest[]
 }
 
 export type GitStatus = {
@@ -116,6 +128,12 @@ export type PhoneStatus = {
   devices: (Device & { connected: boolean })[]
 }
 
+/**
+ * On a fork thread's session's events (its turns, queue, status and requests keep its own
+ * id): the session and thread it shows as (SPEC → Fork threads).
+ */
+export type ForkOf = { sessionId: string; threadId: string }
+
 export type GlossEvent =
   | { type: 'pluginsChanged' }
   | { type: 'agents'; agents: AgentInfo[] }
@@ -132,7 +150,7 @@ export type GlossEvent =
   | { type: 'sessionRewound'; sessionId: string }
   /** The log was synced from the agent's copy: reload it (SPEC → Shared sessions). */
   | { type: 'sessionSynced'; sessionId: string }
-  | { type: 'live'; sessionId: string; live: SessionLive }
+  | { type: 'live'; sessionId: string; live: SessionLive; forkOf?: ForkOf }
   /** The user clicked a notification: show this session (and thread). */
   | { type: 'reveal'; sessionId: string; threadId: string | null }
   | { type: 'message'; message: Message }
@@ -142,11 +160,12 @@ export type GlossEvent =
   /** A plan was reported, or its entries changed (SPEC → Plans). */
   | { type: 'plan'; plan: Plan }
   | { type: 'thread'; thread: Thread }
-  | { type: 'turnStart'; sessionId: string; threadId: string | null }
+  | { type: 'turnStart'; sessionId: string; threadId: string | null; forkOf?: ForkOf }
   | {
       type: 'turnEnd'
       sessionId: string
       threadId: string | null
+      forkOf?: ForkOf
       stopReason?: string
       error?: string
       /** Recovery offered on the failed-turn notice. */
@@ -154,9 +173,9 @@ export type GlossEvent =
       /** A queued message starts right away. */
       continues?: true
     }
-  | { type: 'queue'; sessionId: string; queue: MessageQueue }
+  | { type: 'queue'; sessionId: string; queue: MessageQueue; forkOf?: ForkOf }
   /** The questions and approvals the session's agent is waiting on changed. */
-  | { type: 'requests'; sessionId: string; requests: UserRequest[] }
+  | { type: 'requests'; sessionId: string; requests: UserRequest[]; forkOf?: ForkOf }
   /** Something the user should know that is not part of the conversation, shown in `threadId`. */
   | { type: 'notice'; sessionId: string; threadId: string | null; text: string }
   /** The window went full screen (F11): show how to leave it. */
@@ -314,6 +333,10 @@ export type GlossApi = {
   threads: {
     /** Creates the thread for an anchor, or returns the existing one for the same anchor. Line anchors have no message. */
     create(sessionId: string, anchorMessageId: string | null, anchor: Anchor): Promise<Thread>
+    /** Creates a fork thread for an anchor (SPEC → Fork threads), or returns the existing thread for the same anchor. */
+    fork(sessionId: string, anchorMessageId: string | null, anchor: Anchor): Promise<Thread>
+    /** Resumes a fork thread's session as its thread is shown, for its status line. `forkSessionId`: its own session. */
+    openFork(forkSessionId: string): Promise<void>
     /** Resolves a review thread, or reopens it. */
     resolve(sessionId: string, threadId: string, resolved: boolean): Promise<Thread>
   }
@@ -488,6 +511,8 @@ export const IPC = {
   gitStatus: 'gloss:git:status',
   gitPullRequest: 'gloss:git:pullRequest',
   threadsCreate: 'gloss:threads:create',
+  threadsFork: 'gloss:threads:fork',
+  threadsOpenFork: 'gloss:threads:openFork',
   threadsResolve: 'gloss:threads:resolve',
   history: 'gloss:history',
   send: 'gloss:send',

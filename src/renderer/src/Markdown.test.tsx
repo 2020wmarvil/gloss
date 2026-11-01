@@ -44,59 +44,57 @@ describe('Markdown', () => {
     expect(html).not.toContain('<a ')
   })
 
-  it('adds reply affordances to top-level list items only', () => {
+  it('shows reply counts on top-level list items that have threads, without a Reply button', () => {
     const md = 'Intro\n\n1. First\n   - nested\n2. Second\n\n- Third\n'
     const html = renderToStaticMarkup(
       <Markdown
         text={md}
         anchors={{
           replyCount: (i) => (i === 1 ? 3 : 0),
-          activeIndex: 1,
-          runningIndex: null,
+          activeIndex: null,
+          runningIndexes: [2],
           onOpenItem: () => {},
           marks: [],
           threadCount: () => 0,
-          runningThread: null,
+          running: [],
           onOpenThread: () => {}
         }}
       />
     )
-    expect(html.match(/class="anchor-item/g)).toHaveLength(3)
-    expect(html).toContain('aria-label="Reply to item 1"')
-    expect(html).toContain('aria-label="Open thread on item 2"')
+    // Item 2 has replies, item 3 a running thread; item 1 is a plain list item.
+    expect(html.match(/class="anchor-item/g)).toHaveLength(2)
     expect(html).toContain('aria-label="3 replies"')
-    expect(html).toContain('class="anchor-item active"')
+    expect(html).toContain('aria-label="Running"')
+    expect(html).not.toContain('item-reply')
+    expect(html).not.toContain('Reply to item')
     // Still a list, with the list's own markers.
     expect(html).toContain('<ol>')
     // The nested item is a plain list item (its text wrapped in source spans).
     expect(html).toMatch(/<li><span><span data-src="\d+" data-src-end="\d+">nested<\/span><\/span><\/li>/)
   })
 
-  it('renders ordinary lists when list item replies are off, keeping selection anchors', () => {
+  it('keeps selection anchors in lists', () => {
     const html = renderToStaticMarkup(
       <Markdown
         text={'1. First\n   - nested\n2. Second\n\n- Third'}
-        listItemReplies={false}
         anchors={{
-          replyCount: () => 3,
-          activeIndex: 0,
-          runningIndex: null,
+          replyCount: () => 0,
+          activeIndex: null,
+          runningIndexes: [],
           onOpenItem: () => {},
           marks: [{ start: 3, end: 8, threadId: 'selection-thread' }],
           threadCount: () => 2,
-          runningThread: null,
+          running: ['selection-thread'],
           onOpenThread: () => {}
         }}
       />
     )
     expect(html).toContain('<ol>')
     expect(html).toContain('<ul>')
-    expect(html).not.toContain('with-anchors')
     expect(html).not.toContain('anchor-item')
-    expect(html).not.toContain('Reply to item')
-    expect(html).not.toContain('Open thread on item')
     expect(html).toContain('data-src=')
     expect(html).toContain('aria-label="Open thread, 2 replies"')
+    expect(html).toContain('aria-label="Running"')
   })
 
   it('keeps remote images as placeholders', () => {

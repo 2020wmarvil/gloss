@@ -10,7 +10,7 @@ import type { AgentConfig } from './agents'
 import { Store } from './db'
 import { folderWhere, SessionManager, type WorktreeGit } from './sessions'
 import type { UnfinishedWork, WorktreeEntry } from './worktrees'
-import { threadTag, toMainTag, wireTag } from '../shared/wire'
+import { FORK_NOTE, FORK_SUMMARY_LABEL, FORK_SUMMARY_PROMPT, splitForkSummary, threadTag, toMainTag, wireTag, withForkSummary } from '../shared/wire'
 import { isFirstPass, REVIEW_INSTRUCTIONS, type ReviewDiff } from '../shared/review'
 import type { Session } from '../shared/types'
 
@@ -241,10 +241,13 @@ function agentApp(state: FakeAgent): acp.AgentApp {
     .onRequest(acp.methods.agent.session.fork, (ctx) => {
       // Codex's: everything up to the end of the turn of the item named.
       const { sessionId } = ctx.params
-      const messageId = (ctx.params._meta as { jetbrains?: { air?: { fork?: { messageId?: string } } } } | undefined)?.jetbrains?.air?.fork?.messageId ?? ''
+      const point = (ctx.params._meta as { jetbrains?: { air?: { fork?: { messageId?: string } } } } | undefined)?.jetbrains?.air?.fork
+      const messageId = point?.messageId ?? ''
       state.forks.push({ sessionId, messageId })
       state.forkMeta.push(ctx.params._meta ?? {})
       const transcript = state.transcripts.get(sessionId) ?? []
+      // No fork point: the whole session as saved so far, a running turn's part included.
+      if (!point) return { sessionId: forkInto(state, sessionId, transcript, false) }
       const at = transcript.findLastIndex((u) => idOf(u) === messageId)
       if (at < 0) throw acp.RequestError.invalidParams({ messageId }, `Fork point message ${messageId} was not found`)
       const prompt = transcript.slice(0, at + 1).findLast((u) => u.sessionUpdate === 'user_message_chunk')
@@ -2969,6 +2972,191 @@ describe('SessionManager', () => {
       expect(store.listMessages(session.id).find((m) => m.text === 'cli answer')?.threadId).toBe(thread.id)
       // Line threads have no message to go with: they survive the sync.
       expect(store.getThread(thread.id)).toBeDefined()
+    })
+  })
+
+  describe('fork threads', () => {
+    const anchor = { kind: 'listItem' as const, path: [0], text: 'Rename the helper' }
+
+    /** A Claude session with one answered turn, the anchor's message, and a fork thread on it. */
+    async function forked(): Promise<{ sessionId: string; threadId: string; forkId: string; source: string }> {
+      state.script = async ({ say, sessionId, text }) => {
+        await say(sessionId.startsWith('fork-') ? `fork says: ${text.split('\n').at(-1)}` : `main says: ${text}`)
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/project', 'claude')
+      await manager.send(session.id, 'list the work', null)
+      const answer = store.listMessages(session.id).find((m) => m.role === 'agent')!
+      const thread = await manager.createForkThread(session.id, answer.id, anchor)
+      return { sessionId: session.id, threadId: thread.id, forkId: thread.fork!.sessionId, source: store.getSession(session.id)!.acpSessionId }
+    }
+
+    it('forks the whole session into a hidden session that runs the thread', async () => {
+      const { sessionId, threadId, forkId, source } = await forked()
+      expect(state.forks).toEqual([{ sessionId: source, messageId: '' }])
+      const fork = store.getSession(forkId)!
+      expect(fork.forkOf).toEqual({ sessionId, threadId })
+      expect(fork.acpSessionId).toMatch(/^fork-/)
+      expect(manager.listSessions().map((s) => s.id)).toEqual([sessionId])
+      expect(events).toContainEqual({ type: 'thread', thread: expect.objectContaining({ id: threadId, fork: { sessionId: forkId } }) })
+
+      events = []
+      await expect(manager.send(sessionId, 'do it', threadId)).resolves.toEqual({ stopReason: 'end_turn' })
+      // The first message names the point and says it is a fork; the session is the fork's.
+      expect(state.prompts.at(-1)).toBe(`${threadTag(anchor)}\n${FORK_NOTE}\ndo it`)
+      expect(state.loads.at(-1)).toBe(fork.acpSessionId)
+      expect(events).toContainEqual({ type: 'turnStart', sessionId: forkId, threadId, forkOf: { sessionId, threadId } })
+      // Its log shows as the thread of the parent; what it inherited isn't shown again.
+      const shown = events.flatMap((e) => (e.type === 'message' ? [e.message] : []))
+      expect(shown.every((m) => m.sessionId === sessionId && m.threadId === threadId)).toBe(true)
+      expect(events.some((e) => e.type === 'session' && e.session.id === forkId)).toBe(false)
+
+      await manager.send(sessionId, 'and test it', threadId)
+      expect(state.prompts.at(-1)).toBe('and test it')
+      const view = manager.openSession(sessionId)
+      expect(view.messages.filter((m) => m.threadId === threadId).map((m) => [m.sessionId, m.role, m.text])).toEqual([
+        [sessionId, 'user', 'do it'],
+        [sessionId, 'agent', 'fork says: do it'],
+        [sessionId, 'user', 'and test it'],
+        [sessionId, 'agent', 'fork says: and test it']
+      ])
+      expect(view.messages.filter((m) => m.threadId === null).map((m) => m.text)).toEqual(['list the work', 'main says: list the work'])
+      expect(view.forks).toEqual([expect.objectContaining({ threadId, sessionId: forkId, running: false })])
+      // The parent's own conversation never got the thread's messages.
+      expect(state.transcripts.get(source)!.filter((u) => u.sessionUpdate === 'user_message_chunk')).toHaveLength(1)
+    })
+
+    it('runs a fork turn while the main turn is still going', async () => {
+      const { sessionId, threadId, forkId } = await forked()
+      let release!: () => void
+      const gate = new Promise<void>((r) => (release = r))
+      state.script = async ({ say, sessionId: acpId, text }) => {
+        if (!acpId.startsWith('fork-')) await gate
+        await say(acpId.startsWith('fork-') ? 'fork done' : `main says: ${text}`)
+        return 'end_turn'
+      }
+      const main = manager.send(sessionId, 'long job', null)
+      await vi.waitFor(() => expect(state.prompts.at(-1)).toBe('long job'))
+      await expect(manager.send(sessionId, 'side question', threadId)).resolves.toEqual({ stopReason: 'end_turn' })
+      expect(manager.openSession(sessionId).turn).toEqual({ threadId: null })
+      release()
+      await main
+      expect(store.listMessages(forkId).filter((m) => m.threadId === threadId).map((m) => m.text)).toEqual([
+        'side question',
+        'fork done'
+      ])
+    })
+
+    it("refuses a fork for an agent that can't fork, and keeps forks out of /clear and rewind", async () => {
+      const plain = await manager.createSession('/project', 'opencode')
+      await manager.send(plain.id, 'hi', null)
+      const answer = store.listMessages(plain.id).find((m) => m.role === 'agent')!
+      await expect(manager.createForkThread(plain.id, answer.id, anchor)).rejects.toThrow("Fake Agent can't fork sessions.")
+      expect(store.listThreads(plain.id)).toEqual([])
+
+      const { sessionId, threadId, forkId } = await forked()
+      await expect(manager.send(sessionId, '/clear', threadId)).rejects.toThrow("/clear doesn't work in a fork thread")
+      await expect(manager.rewindSession(forkId, 'x')).rejects.toThrow("can't be rewound")
+      expect(() => manager.openSession(forkId)).toThrow()
+    })
+
+    it('sends to main with the fork summary since its last one', async () => {
+      const { sessionId, threadId, forkId } = await forked()
+      await manager.send(sessionId, 'do it', threadId)
+      state.script = async ({ say, sessionId: acpId, text }) => {
+        await say(acpId.startsWith('fork-') ? (text === FORK_SUMMARY_PROMPT ? 'Renamed it in a.ts.' : 'ok') : `main says: ${text.split('\n')[0]}`)
+        return 'end_turn'
+      }
+      await expect(manager.send(sessionId, 'looks good', null, [], threadId)).resolves.toEqual({ stopReason: 'end_turn' })
+      const prompts = state.prompts.slice(-2)
+      expect(prompts[0]).toBe(FORK_SUMMARY_PROMPT)
+      expect(prompts[1]).toBe(withForkSummary(`${toMainTag(anchor.text)}\nlooks good`, 'Renamed it in a.ts.'))
+      // The summary turn stays out of the thread; main shows the user's text, with the summary in its wire.
+      const view = manager.openSession(sessionId)
+      expect(view.messages.filter((m) => m.threadId === threadId).map((m) => m.text)).toEqual(['do it', 'fork says: do it'])
+      expect(store.listMessages(forkId).filter((m) => m.threadId === null).map((m) => m.text).slice(-2)).toEqual([
+        FORK_SUMMARY_LABEL,
+        'Renamed it in a.ts.'
+      ])
+      const sent = view.messages.find((m) => m.text === 'looks good')!
+      expect(sent.threadId).toBeNull()
+      expect(splitForkSummary(sent.wireText!)).toEqual({ wire: `${toMainTag(anchor.text)}\nlooks good`, summary: 'Renamed it in a.ts.' })
+
+      // The next message in the thread isn't taken for the fork's first.
+      await manager.send(sessionId, 'one more', threadId)
+      expect(state.prompts.at(-1)).toBe('one more')
+
+      // Not while the fork is working.
+      let release!: () => void
+      const gate = new Promise<void>((r) => (release = r))
+      state.script = async ({ say }) => { await gate; await say('ok'); return 'end_turn' }
+      const busy = manager.send(sessionId, 'more', threadId)
+      await vi.waitFor(() => expect(manager.openSession(sessionId).forks[0].running).toBe(true))
+      await expect(manager.send(sessionId, 'now', null, [], threadId)).rejects.toThrow("Wait for the fork's turn to finish")
+      release()
+      await busy
+    })
+
+    it("keeps a fork's thread across a restart, sending later messages untagged", async () => {
+      const { sessionId, threadId, forkId } = await forked()
+      await manager.send(sessionId, 'do it', threadId)
+      await manager.dispose()
+      manager = makeManager()
+      await manager.send(sessionId, 'again', threadId)
+      expect(state.prompts.at(-1)).toBe('again')
+      const inThread = store.listMessages(forkId).filter((m) => m.threadId === threadId)
+      expect(inThread.map((m) => m.text)).toEqual(['do it', 'fork says: do it', 'again', 'fork says: again'])
+      // The inherited conversation stays out of the thread.
+      expect(store.listMessages(forkId).filter((m) => m.threadId === null).map((m) => m.text)).toEqual([
+        'list the work',
+        'main says: list the work'
+      ])
+    })
+
+    it('places messages sent to the fork elsewhere in its thread', async () => {
+      state.canList = true
+      state.canClose = true
+      const { sessionId, threadId, forkId } = await forked()
+      await manager.send(sessionId, 'do it', threadId)
+      const fork = store.getSession(forkId)!
+      save(
+        state,
+        fork.acpSessionId,
+        { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'from the cli' }, messageId: 'cli-u' },
+        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'cli answer' }, messageId: 'cli-a' }
+      )
+      manager.openFork(forkId)
+      await vi.waitFor(() => expect(store.listMessages(forkId).some((m) => m.text === 'from the cli')).toBe(true))
+      expect(store.listMessages(forkId).filter((m) => m.threadId === threadId).map((m) => m.text)).toEqual([
+        'do it',
+        'fork says: do it',
+        'from the cli',
+        'cli answer'
+      ])
+    })
+
+    it('deletes the fork with its thread and its session, on the agent too', async () => {
+      state.canDelete = true
+      const { sessionId, threadId, forkId } = await forked()
+      await manager.send(sessionId, 'do it', threadId)
+      const forkAcp = store.getSession(forkId)!.acpSessionId
+      await manager.clearSession(sessionId)
+      expect(store.getSession(forkId)).toBeUndefined()
+      await vi.waitFor(() => expect(state.deleted).toContain(forkAcp))
+
+      const again = await forked()
+      await manager.send(again.sessionId, 'do it', again.threadId)
+      const againAcp = store.getSession(again.forkId)!.acpSessionId
+      await manager.deleteSession(again.sessionId)
+      expect(store.getSession(again.forkId)).toBeUndefined()
+      expect(state.deleted).toContain(againAcp)
+    })
+
+    it("finds a fork's messages in its thread, without what it inherited", async () => {
+      const { sessionId, threadId } = await forked()
+      await manager.send(sessionId, 'do it', threadId)
+      const found = store.search({ query: 'says', scope: 'session', sessionId, kind: 'agent' }).results
+      expect(found.map((r) => [r.sessionId, r.threadId]).sort()).toEqual([[sessionId, null], [sessionId, threadId]].sort())
     })
   })
 })

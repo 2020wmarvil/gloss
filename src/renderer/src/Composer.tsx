@@ -26,6 +26,8 @@ type Props = {
   sessionId?: string
   /** The session's agent: rewind is offered only where it forks sessions (SPEC → Rewind). */
   agent?: { id: string; name: string }
+  /** Why this conversation can't be rewound (a fork thread, SPEC → Fork threads), shown on double Escape. */
+  noRewind?: string
   /** Which composer this is (session, and thread anchor), so its unsent draft survives switching away. */
   draftKey: string
   className: string
@@ -151,6 +153,7 @@ const REWIND_NOTE_MS = 3000
 export function Composer({
   sessionId,
   agent,
+  noRewind,
   draftKey,
   className,
   placeholder,
@@ -175,7 +178,7 @@ export function Composer({
   const [rewindOpen, setRewindOpen] = useState(false)
   /** Counts double Escapes on an agent without rewind; each shows the note again. */
   const [rewindNote, setRewindNote] = useState(0)
-  const rewindable = Boolean(sessionId) && (!agent || canRewind(agent.id))
+  const rewindable = Boolean(sessionId) && !noRewind && (!agent || canRewind(agent.id))
   useEffect(() => {
     if (!rewindNote) return
     const timer = setTimeout(() => setRewindNote(0), REWIND_NOTE_MS)
@@ -773,7 +776,7 @@ export function Composer({
         <span>Running shell command. Esc to stop.</span>
       </div>}
       {shell.error && <p className="composer-error" role="alert">{shell.error}</p>}
-      {rewindNote > 0 && agent && <p key={rewindNote} className="rewind-note" role="status">{agent.name} doesn't support rewind.</p>}
+      {rewindNote > 0 && (noRewind || agent) && <p key={rewindNote} className="rewind-note" role="status">{noRewind ?? `${agent!.name} doesn't support rewind.`}</p>}
       {rewindOpen && sessionId && <RewindDialog sessionId={sessionId} running={running} onRewind={(draft) => {
         // Rewind closes thread panels, so restore into the session's main composer.
         const key = sessionId

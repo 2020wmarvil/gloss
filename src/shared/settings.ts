@@ -49,8 +49,6 @@ export type GlobalSettings = {
   theme: ThemeSetting
   /** How the sidebar sorts a project's sessions. */
   sessionOrder: SessionOrder
-  /** Show reply buttons on top-level numbered and bulleted list items. */
-  listItemReplies: boolean
   /** Play a sound when a turn finishes in a session that isn't in front of the user. */
   turnEndSound: boolean
   /** The permission mode new sessions start in. */
@@ -174,13 +172,6 @@ export const SETTING_FIELDS: readonly SettingField[] = [
   {
     key: 'newSessionPlace', scope: 'project', type: 'string', label: 'New session starts in',
     description: 'Star a place in the New session menu: folder, worktree (a new one) or an existing worktree\'s path.', hidden: true
-  },
-  {
-    key: 'listItemReplies',
-    scope: 'global',
-    type: 'boolean',
-    label: 'List item replies',
-    description: 'Show Reply on list items.'
   },
   {
     key: 'turnEndSound',

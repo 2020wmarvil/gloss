@@ -24,11 +24,11 @@ function anchors(marks: Mark[] = []): MessageAnchors {
     // The first item has replies, so its count chip is UI text after "First item".
     replyCount: (i) => (i === 0 ? 7 : 0),
     activeIndex: null,
-    runningIndex: null,
+    runningIndexes: [],
     onOpenItem: () => {},
     marks,
     threadCount: () => 3,
-    runningThread: null,
+    running: [],
     onOpenThread: () => {}
   }
 }

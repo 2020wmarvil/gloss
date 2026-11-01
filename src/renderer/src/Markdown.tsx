@@ -11,7 +11,7 @@ import remarkGfm from 'remark-gfm'
 import { listItemSpans, type ListItemSpan } from './anchors'
 import { codeColors, useHighlighting } from './highlight'
 import { remarkSourceSpans, type Mark } from './sourceSpans'
-import { MessageSquare, Reply } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 
 type Node = { type: string; children?: Node[] }
 type HastNode = { type: string; value?: string; children?: HastNode[] }
@@ -121,14 +121,15 @@ export type MessageAnchors = {
   /** Replies in the thread on each top-level list item, by item index. */
   replyCount(index: number): number
   activeIndex: number | null
-  /** The item whose thread has a running turn. */
-  runningIndex: number | null
+  /** The items whose threads have a running turn. */
+  runningIndexes: number[]
   onOpenItem(span: ListItemSpan): void
   /** Selection anchors (and a draft one) to mark. */
   marks: Mark[]
   /** Replies in a thread, by thread id. */
   threadCount(threadId: string): number
-  runningThread: string | null
+  /** The threads with a running turn: the session's, and its fork threads' (SPEC → Fork threads). */
+  running: string[]
   onOpenThread(threadId: string): void
 }
 
@@ -144,20 +145,12 @@ function anchorComponents(spans: ListItemSpan[], anchors: MessageAnchors): Compo
       if (!span) return <li>{children}</li>
       const count = anchors.replyCount(span.index)
       const active = anchors.activeIndex === span.index
-      const running = anchors.runningIndex === span.index
-      const n = span.index + 1
-      // The list stays a list: Reply sits in the item's margin (shown on hover), and once
-      // there are replies their count follows the item's last line, like a selection's.
+      const running = anchors.runningIndexes.includes(span.index)
+      // A thread on a list item (made before threads started only from a selection) has its
+      // reply count after the item's last line, like a selection's.
+      if (count === 0 && !running && !active) return <li>{children}</li>
       return (
         <li className={`anchor-item${active ? ' active' : ''}`}>
-          <button
-            className="item-reply"
-            aria-label={count > 0 ? `Open thread on item ${n}` : `Reply to item ${n}`}
-            title={count > 0 ? 'Open the thread' : 'Reply in a thread'}
-            onClick={() => anchors.onOpenItem(span)}
-          >
-            <Reply />
-          </button>
           {children}
           {(count > 0 || running) && (
             <button
@@ -186,7 +179,7 @@ function anchorComponents(spans: ListItemSpan[], anchors: MessageAnchors): Compo
             aria-label={`Open thread, ${count} ${count === 1 ? 'reply' : 'replies'}`}
             onClick={() => anchors.onOpenThread(threadId)}
           >
-            {anchors.runningThread === threadId ? <span className="running-dot" aria-label="Running" /> : replyIcon}
+            {anchors.running.includes(threadId) ? <span className="running-dot" aria-label="Running" /> : replyIcon}
             {count}
           </button>
         )
@@ -214,24 +207,24 @@ function anchorComponents(spans: ListItemSpan[], anchors: MessageAnchors): Compo
   }
 }
 
-type MarkdownProps = { text: string; anchors?: MessageAnchors; breaks?: boolean; listItemReplies?: boolean }
-type AnchorState = Pick<MessageAnchors, 'activeIndex' | 'runningIndex' | 'runningThread' | 'marks'> & {
+type MarkdownProps = { text: string; anchors?: MessageAnchors; breaks?: boolean }
+type AnchorState = Pick<MessageAnchors, 'activeIndex' | 'runningIndexes' | 'running' | 'marks'> & {
   itemCounts: [number, number][]
   threadCounts: [string, number][]
 }
 
 /** `breaks`: a newline is a line break (the user's messages, typed as chat), not a space. */
-export const Markdown = memo(function Markdown({ text, anchors, breaks, listItemReplies = true }: MarkdownProps): React.JSX.Element {
+export const Markdown = memo(function Markdown({ text, anchors, breaks }: MarkdownProps): React.JSX.Element {
   const version = useHighlighting()
   const actions = useRef(anchors)
   actions.current = anchors
   const hasAnchors = anchors !== undefined
-  const spans = useMemo(() => hasAnchors && listItemReplies ? listItemSpans(text) : [], [text, hasAnchors, listItemReplies])
+  const spans = useMemo(() => hasAnchors ? listItemSpans(text) : [], [text, hasAnchors])
   // Callbacks are fresh as the conversation updates. Only their visible results
   // belong in the parse cache; event handlers always use the latest callbacks.
   const state: AnchorState | null = anchors ? {
-    activeIndex: anchors.activeIndex, runningIndex: anchors.runningIndex,
-    runningThread: anchors.runningThread, marks: anchors.marks,
+    activeIndex: anchors.activeIndex, runningIndexes: anchors.runningIndexes,
+    running: anchors.running, marks: anchors.marks,
     itemCounts: spans.map((s) => [s.index, anchors.replyCount(s.index)]),
     threadCounts: [...new Set(anchors.marks.flatMap((m) => m.threadId === null ? [] : [m.threadId]))].map((id) => [id, anchors.threadCount(id)])
   } : null
@@ -249,13 +242,13 @@ export const Markdown = memo(function Markdown({ text, anchors, breaks, listItem
       onOpenThread: (id) => actions.current?.onOpenThread(id)
     }
   }, [stateKey])
-  return <ParsedMarkdown text={text} anchors={stableAnchors} breaks={breaks} listItemReplies={listItemReplies} spans={spans} version={version} />
+  return <ParsedMarkdown text={text} anchors={stableAnchors} breaks={breaks} spans={spans} version={version} />
 })
 
 /** Retain the parsed React tree until content, annotations or highlighting changes. */
-const ParsedMarkdown = memo(function ParsedMarkdown({ text, anchors, breaks, listItemReplies, spans }: MarkdownProps & { spans: ListItemSpan[]; version: number }): React.JSX.Element {
+const ParsedMarkdown = memo(function ParsedMarkdown({ text, anchors, breaks, spans }: MarkdownProps & { spans: ListItemSpan[]; version: number }): React.JSX.Element {
   return (
-    <div className={anchors && listItemReplies ? 'md with-anchors' : 'md'}>
+    <div className="md">
       <ReactMarkdown
         urlTransform={(url, key) => key === 'src' ? (imageLink(url) !== null ? url : '') : fileLink(url) ? url : defaultUrlTransform(url)}
         remarkPlugins={[

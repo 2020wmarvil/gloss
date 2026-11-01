@@ -29,7 +29,7 @@ type Props = {
   onCommand(text: string): void
 }
 
-function formatCost(cost: { amount: number; currency: string }): string {
+export function formatCost(cost: { amount: number; currency: string }): string {
   try {
     return new Intl.NumberFormat(undefined, { style: 'currency', currency: cost.currency, maximumFractionDigits: 2 }).format(cost.amount)
   } catch {

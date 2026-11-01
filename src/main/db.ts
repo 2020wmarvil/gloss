@@ -225,6 +225,14 @@ const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
       branch TEXT,
       created_at INTEGER NOT NULL
     )`)
+  },
+  // Fork threads (SPEC → Fork threads): a thread's own session, a fork of its parent's,
+  // which goes with the thread.
+  (db) => {
+    const columns = db.prepare('PRAGMA table_info(sessions)').all()
+    if (!columns.some((c) => c.name === 'fork_session')) db.exec('ALTER TABLE sessions ADD COLUMN fork_session TEXT')
+    if (!columns.some((c) => c.name === 'fork_thread')) db.exec('ALTER TABLE sessions ADD COLUMN fork_thread TEXT REFERENCES threads(id) ON DELETE CASCADE')
+    db.exec('CREATE INDEX IF NOT EXISTS sessions_by_fork_thread ON sessions (fork_thread)')
   }
 ]
 
@@ -258,7 +266,8 @@ function toSession(r: Row): Session {
         }
       : {}),
     ...(r.draft ? { draft: true as const } : {}),
-    ...(r.project != null ? { project: r.project as string } : {})
+    ...(r.project != null ? { project: r.project as string } : {}),
+    ...(r.fork_thread != null ? { forkOf: { sessionId: r.fork_session as string, threadId: r.fork_thread as string } } : {})
   }
 }
 
@@ -318,9 +327,13 @@ function toThread(r: Row): Thread {
     anchor: JSON.parse(r.anchor as string) as Anchor,
     ...(r.finding != null ? { finding: JSON.parse(r.finding as string) as Finding } : {}),
     ...(r.resolved_at != null ? { resolvedAt: Number(r.resolved_at) } : {}),
+    ...(r.fork_session_id != null ? { fork: { sessionId: r.fork_session_id as string } } : {}),
     createdAt: Number(r.created_at)
   }
 }
+
+/** Threads with their fork's session, if they run in one. */
+const THREADS = `SELECT t.*, (SELECT f.id FROM sessions f WHERE f.fork_thread = t.id) AS fork_session_id FROM threads t`
 
 export class Store {
   private readonly db: DatabaseSync
@@ -371,10 +384,19 @@ export class Store {
   // Sessions
 
   /** Most recent activity first. */
-  listSessions(): Session[] {
+  /** The sessions to list: not fork threads' own sessions, unless `forks`. */
+  listSessions(options: { forks?: boolean } = {}): Session[] {
     return this.db
-      .prepare(`${SESSIONS} ORDER BY COALESCE(active_at, s.created_at) DESC, s.created_at DESC`)
+      .prepare(`${SESSIONS} ${options.forks ? '' : 'WHERE s.fork_thread IS NULL'} ORDER BY COALESCE(active_at, s.created_at) DESC, s.created_at DESC`)
       .all()
+      .map((r) => toSession(r as Row))
+  }
+
+  /** The sessions of the session's fork threads. */
+  listForks(sessionId: string): Session[] {
+    return this.db
+      .prepare(`${SESSIONS} WHERE s.fork_session = ? ORDER BY s.created_at`)
+      .all(sessionId)
       .map((r) => toSession(r as Row))
   }
 
@@ -386,7 +408,7 @@ export class Store {
   insertSession(s: Session): void {
     this.db
       .prepare(
-        'INSERT INTO sessions (id, agent_id, acp_session_id, cwd, title, created_at, title_set, review_base, review_head, draft, project) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO sessions (id, agent_id, acp_session_id, cwd, title, created_at, title_set, review_base, review_head, draft, project, fork_session, fork_thread) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
       .run(
         s.id,
@@ -399,7 +421,9 @@ export class Store {
         s.review?.baseRef ?? null,
         s.review?.headRef ?? null,
         s.draft ? 1 : null,
-        s.project ?? null
+        s.project ?? null,
+        s.forkOf?.sessionId ?? null,
+        s.forkOf?.threadId ?? null
       )
   }
 
@@ -510,7 +534,10 @@ export class Store {
     const terms = (request.query.match(/"[^"]+"|[^\s"]+/gu) ?? []).filter((term) => /[\p{L}\p{N}]/u.test(term))
     const query = terms.map((term) => '"' + term.replace(/^"|"$/g, '').replace(/"/g, '""') + '"').join(' AND ')
     if (!query || !/[\p{L}\p{N}]/u.test(query)) return { results: [], more: false }
-    const sessionIds = request.scope === 'session' ? [request.sessionId!] : request.scope === 'project'
+    // A fork thread's messages are in its own session (SPEC → Fork threads).
+    const sessionIds = request.scope === 'session'
+      ? (this.db.prepare('SELECT id FROM sessions WHERE id = ? OR fork_session = ?').all(request.sessionId!, request.sessionId!) as { id: string }[]).map((s) => s.id)
+      : request.scope === 'project'
       ? (this.db.prepare('SELECT id, cwd FROM sessions').all() as { id: string; cwd: string }[])
         .filter((s) => sameFolder(s.cwd, request.cwd!)).map((s) => s.id)
       : null
@@ -534,11 +561,14 @@ export class Store {
         WHERE tool_search MATCH ? ${scopeSql('t')}`)
       args.push(query, ...(sessionIds ?? []))
     }
-    const rows = this.db.prepare(`SELECT r.*, s.title, s.cwd, th.anchor FROM (${parts.join(' UNION ALL ')}) r
-      JOIN sessions s ON s.id = r.session_id LEFT JOIN threads th ON th.id = r.thread_id
+    // A fork's session found as its thread of the parent; what it inherited isn't searched twice.
+    const rows = this.db.prepare(`SELECT r.*, s.id AS shown_session, s.title, s.cwd, th.anchor FROM (${parts.join(' UNION ALL ')}) r
+      JOIN sessions own ON own.id = r.session_id JOIN sessions s ON s.id = COALESCE(own.fork_session, own.id)
+      LEFT JOIN threads th ON th.id = r.thread_id
+      WHERE own.fork_thread IS NULL OR own.fork_thread = r.thread_id
       ORDER BY r.score, s.created_at DESC, r.id LIMIT 101`).all(...args) as Row[]
     const results: SearchResult[] = rows.slice(0, 100).map((r) => ({
-      id: r.id as string, sessionId: r.session_id as string, sessionTitle: r.title as string,
+      id: r.id as string, sessionId: r.shown_session as string, sessionTitle: r.title as string,
       cwd: r.cwd as string, threadId: r.thread_id as string | null,
       threadQuote: r.anchor ? (JSON.parse(r.anchor as string) as Anchor).text : null,
       kind: r.kind as SearchResult['kind'], snippet: r.snippet as string
@@ -796,13 +826,13 @@ export class Store {
   }
 
   getThread(id: string): Thread | undefined {
-    const r = this.db.prepare('SELECT * FROM threads WHERE id = ?').get(id)
+    const r = this.db.prepare(`${THREADS} WHERE t.id = ?`).get(id)
     return r ? toThread(r as Row) : undefined
   }
 
   listThreads(sessionId: string): Thread[] {
     return this.db
-      .prepare('SELECT * FROM threads WHERE session_id = ? ORDER BY created_at, rowid')
+      .prepare(`${THREADS} WHERE t.session_id = ? ORDER BY t.created_at, t.rowid`)
       .all(sessionId)
       .map((r) => toThread(r as Row))
   }
