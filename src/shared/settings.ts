@@ -2,6 +2,7 @@
 // The main process validates the file and generates its JSON Schema from the table;
 // the renderer builds the settings screen from it. Pure data, no Node or DOM imports.
 
+import { bindingFor } from './commands'
 import { sameFolder } from './paths'
 
 export function projectSettings(projects: Record<string, ProjectSettings>, cwd: string): ProjectSettings {
@@ -23,7 +24,7 @@ export type PermissionModeSetting = 'bypass' | 'agent'
 export const DEFAULT_EXTERNAL_EDITOR = 'code -g {file}:{line}'
 
 /** Starts a capture from anywhere (SPEC → Visual feedback). Rarely taken by other apps, unlike Ctrl+Shift+S (Save As). */
-export const DEFAULT_CAPTURE_SHORTCUT = 'Ctrl+Shift+PrintScreen'
+export const DEFAULT_CAPTURE_SHORTCUT = bindingFor('capture')
 
 /** Commands use each editor's CLI launcher, which must be installed on PATH. */
 export const EDITOR_PRESETS = [
@@ -60,6 +61,7 @@ export type GlobalSettings = {
   /** New reviews open in their own window (SPEC → Review sessions); omitted means on. */
   reviewWindow?: boolean
   /** The key combination that starts a capture, in Gloss or any app (an Electron accelerator); empty turns it off. */
+  shortcuts?: Record<string, string>
   captureShortcut?: string
   /** Paired phones may connect over Tailscale (SPEC → Remote and mobile). */
   phoneAccess?: boolean
@@ -87,7 +89,7 @@ export type ProjectSettings = {
 export type SettingField = {
   key: string
   scope: 'global' | 'project'
-  type: 'boolean' | 'enum' | 'string' | 'mcp' | 'profiles' | 'agent' | 'shortcut' | 'port'
+  type: 'boolean' | 'enum' | 'string' | 'mcp' | 'profiles' | 'agent' | 'shortcut' | 'port' | 'bindings'
   label: string
   description: string
   /** For enum fields: the allowed values and how the screen labels them. */
@@ -100,6 +102,7 @@ export type SettingField = {
 }
 
 export const SETTING_FIELDS: readonly SettingField[] = [
+  { key: 'shortcuts', scope: 'global', type: 'bindings', label: 'Keyboard shortcuts', description: 'Changed command bindings; empty disables a command.', hidden: true },
   {
     key: 'agentProfiles', scope: 'global', type: 'profiles', label: 'Custom ACP agents',
     description: 'Launch settings for custom ACP agents.', hidden: true
@@ -242,7 +245,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     description: 'The port phones connect to (1024 to 65535).', hidden: true
   },
   {
-    key: 'captureShortcut',
+    key: 'captureShortcut', hidden: true,
     scope: 'global',
     type: 'shortcut',
     label: 'Capture shortcut',

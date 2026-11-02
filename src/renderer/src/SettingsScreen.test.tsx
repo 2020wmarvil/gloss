@@ -16,7 +16,7 @@ const state: SettingsState = {
 }
 
 it('lists every open project and writes overrides to the selected project without an active session', async () => {
-  const update = vi.fn(async () => {})
+  const update = vi.fn<(patch: import('@shared/ipc').SettingsPatch) => Promise<void>>(async () => {})
   const el = document.createElement('div')
   root = createRoot(el)
   await act(async () => root!.render(<SettingsScreen state={state} projects={projects} projectPath={null}
@@ -35,4 +35,39 @@ it('lists every open project and writes overrides to the selected project withou
   await act(async () => nav().find((button) => button.textContent === 'notes')!.click())
   expect(el.querySelector<HTMLInputElement>('#setting-obsidianVault')!.value).toBe('')
   expect(nav().find((button) => button.getAttribute('aria-current') === 'page')?.textContent).toBe('notes')
+})
+
+
+it('records, clears and resets commands, and refuses a conflicting recording', async () => {
+  const update = vi.fn<(patch: import('@shared/ipc').SettingsPatch) => Promise<void>>(async () => {})
+  const close = vi.fn()
+  const el = document.createElement('div')
+  document.body.append(el)
+  root = createRoot(el)
+  const render = async (shortcuts: Record<string, string> = {}) => act(async () => root!.render(<SettingsScreen state={{ ...state, global: { ...state.global, shortcuts } }} projects={[]} projectPath={null} initialSection="shortcuts" onUpdate={update} onOpenFile={async () => null} onClose={close} />))
+  await render()
+  const record = async (id: string, key: string, extra = {}) => {
+    const button = el.querySelector<HTMLButtonElement>(`#binding-${id}`)!
+    await act(async () => button.click())
+    await act(async () => button.dispatchEvent(new KeyboardEvent('keydown', { key, code: `Key${key.toUpperCase()}`, bubbles: true, cancelable: true, ...extra })))
+  }
+  await record('stash', 'i', { ctrlKey: true })
+  expect(el.textContent).toContain('Already used by Italic')
+  expect(update).not.toHaveBeenCalled()
+  await record('stash', 'k', { ctrlKey: true, shiftKey: true })
+  expect(update).toHaveBeenLastCalledWith({ global: { shortcuts: { stash: 'Mod+Shift+K' }, captureShortcut: 'Ctrl+Shift+PrintScreen' } })
+  await render({ stash: 'Mod+Shift+K' })
+  await act(async () => el.querySelector<HTMLButtonElement>('[aria-label="Clear Stash, restore or swap draft"]')!.click())
+  expect(update.mock.lastCall).toEqual([{ global: { shortcuts: { stash: '' }, captureShortcut: 'Ctrl+Shift+PrintScreen' } }])
+  await act(async () => el.querySelector<HTMLButtonElement>('[aria-label="Reset Stash, restore or swap draft"]')!.click())
+  expect(update.mock.lastCall).toEqual([{ global: { shortcuts: {}, captureShortcut: 'Ctrl+Shift+PrintScreen' } }])
+  expect(el.querySelector('#binding-bold')).toBeNull()
+  expect(el.querySelector('#binding-closeSettings')).toBeNull()
+  expect(el.querySelector('#binding-option1')).toBeNull()
+  expect(el.textContent).not.toContain('Modified')
+  await record('stash', 'Escape')
+  expect(close).not.toHaveBeenCalled()
+  await act(async () => [...el.querySelectorAll('button')].find(b => b.textContent === 'Reset all')!.click())
+  expect(update.mock.lastCall).toEqual([{ global: { shortcuts: {}, captureShortcut: 'Ctrl+Shift+PrintScreen' } }])
+  el.remove()
 })

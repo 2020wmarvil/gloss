@@ -18,7 +18,15 @@ type Pending = {
 
 let pending: Pending | null = null
 
+export function updateCaptureBindings(bindings: Record<string, string>): void {
+  for (const overlay of pending?.overlays ?? []) {
+    overlay.frame.shortcuts = bindings
+    if (!overlay.win.isDestroyed()) overlay.win.webContents.send(CAPTURE_IPC.shortcuts, bindings)
+  }
+}
+
 export type CaptureOptions = {
+  shortcuts?: Record<string, string>
   /** The overlay's preload script. */
   preload: string
   /** Loads the overlay's page into a window. */
@@ -48,6 +56,7 @@ export async function startCapture(options: CaptureOptions): Promise<Capture | n
   const overlays = shown.map((display): Overlay => {
     const image = images.get(display.id)!
     const frame = frameOf(display, image, windows, display.id === active.id ? cursor : null)
+    frame.shortcuts = options.shortcuts
     return { win: overlayWindow(display, options.preload), display, image, frame }
   })
 

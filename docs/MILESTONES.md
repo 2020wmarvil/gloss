@@ -1,25 +1,31 @@
 # Milestones
 
-Build in order, from M20 through M24 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
+Build in order, from M22 through M26 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1 through M19, failed-turn actions and worktrees are done, and M20 (sub-agent threads) is built and in review. Next are performance improvements and custom keyboard shortcuts before shipping, then marketing. Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1 through M21, failed-turn actions and worktrees are done. Next are exploration of agents, hooks and LSP servers in plugins (M22), Perforce support (M23), performance improvements (M24), shipping (M25), then marketing (M26). Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
-## M20: Sub-agent threads
-An opt-in alternative to view-only threads: a thread runs in its own fork of the agent session instead of being tagged into the main one. Changes the core idea in `SPEC.md` (see Fork threads there, which has the design and the verified adapter behavior).
+## M22: Agents, hooks and LSP servers in plugins
+Explore plugin component support after custom keyboard shortcuts and before Perforce support. M19 limits plugins to skills and MCP servers because those are the only components every agent supports; Claude Code plugins can also carry subagent definitions (`agents/`), hooks (`hooks/hooks.json`) and LSP servers (`lspServers`), which today only Claude Code loads. Gloss is agent agnostic, so none of these ship for one agent alone.
 
-**Decided (interview, 2026-10-28), replacing the first plan:** fork only, started per thread from the selection menu's **Reply - Fork** (`F`), with no thread mode setting and no fresh mode (it can come later on the same plumbing). A fork is made from what is already written, even mid-turn, and never waits. No resolve step: nothing reaches the main session unless the user sends to main, which first asks the fork for a summary since its last one. Same working tree, no locking. The list-item hover Reply button and its `listItemReplies` setting are removed. The phone gets the same features.
+- Survey what Codex, OpenCode and other ACP agents offer for each (their own formats, if any) and whether one plugin definition can be delivered to all of them, or translated per agent. Agents and hooks often name an agent's own tools (`Bash`, `Write`), which may not translate.
+- Hooks run commands automatically on agent events: decide how a plugin shows that before it is imported or enabled, and never run them on import.
+- Commands are not in scope: they are a legacy form of user-invoked skills.
 
-**Built (2026-10-29), in review:** each fork thread runs in a hidden child session with its own ACP session (`session/fork` without a fork point), turn, queue, steering, status and requests, shown as the thread of its parent. Verified against Claude ACP 0.89.1 on Haiku and Codex ACP 2.2.2 with an opt-in live test (`src/main/fork.integration.test.ts`): a fork made while the main turn runs a shell command answers while that turn goes on, knows the history up to the fork, and its summary reaches the main session through Send to main.
+**Done when:** the exploration records, per component and per agent, what can be delivered and how, and recommends whether to proceed with a scope that works on every supported agent.
 
-- **Starting one:** **Reply - Fork** in the conversation's and the review diff's selection menus, and **Fork** in the phone's reply bar; disabled with a tooltip for agents that can't fork (OpenCode, custom profiles).
-- **Running:** a fork's turns run at the same time as the main session's and other forks'. Send, Stop, the queue and steering are per session.
-- **Visible:** a Fork tag on the thread and its Threads row, the fork's context and cost on that row, and the fork's work in the running dots, sidebar, badge, notifications and phone.
-- **Send to main:** the fork summarizes outside its thread, and the summary goes with the user's message and shows under it in the main conversation.
-- **Lifetime:** the fork goes with its thread, and its agent copy with it.
+## M23: Perforce support
+Let Gloss work with projects in Perforce workspaces, including reviewing their changes with any supported agent. Update `SPEC.md` (Projects and sessions, Review sessions, Status line, Worktrees) in this milestone.
 
-**Done when:** a thread started with Reply - Fork runs as its own agent, can run while the main thread works, and sending to main from it brings its summary into the main session.
+- **Spike first:** inventory the app's Git assumptions and verify the installed `p4` CLI's workspace detection, connection and authentication behavior, file status and diff output. Record the supported review ranges and any limitations before building the UI.
+- **Workspace detection:** resolve the Perforce client and project folder using the user's existing configuration. Report missing CLI, expired login, unavailable server and unmapped folders with actionable errors. Keep credentials out of Gloss's settings and logs.
+- **Reviews:** show local workspace changes and let the user select a pending changelist. Reuse the diff viewer, line threads, Run review and agent fixes, with the selected workspace and changelist in the agent's context. Cover added, edited, deleted and moved files, binary files and files outside the selected project folder explicitly.
+- **Project UI:** show Perforce workspace and changelist information where appropriate. Make Git-only branch, pull request and worktree actions unavailable with a clear reason in Perforce projects. Existing Git projects keep their behavior.
+- **Agent workflow:** sessions run in the mapped local folder. Document how agents open files for edit and how refreshed reviews pick up their changes, including files changed without being opened in Perforce. No automatic submit, sync, revert or workspace creation.
+- **Verification:** use an isolated test server and workspace to cover detection, changelist selection, diffs, review threads after edits, authentication failures and Git regressions. Document setup and supported workflows.
 
-## M21: Performance
+**Done when:** a user can open a Perforce project, run a session with any supported agent, review workspace or pending-changelist changes with line threads, and refresh the review after agent edits, without Git-only controls or changes to existing Git behavior.
+
+## M24: Performance
 Measure first, then fix what the numbers show. Keep the app's behavior unchanged, and don't optimize anything the measurements don't point at.
 
 - **Latency needs attention:** application startup until the UI is responsive, starting and opening sessions, and opening, navigating and scrolling large diffs in the diff viewer. Measure these paths and reduce the delays.
@@ -35,19 +41,7 @@ Measure first, then fix what the numbers show. Keep the app's behavior unchanged
 
 **Done when:** the benchmark runs from one command, each fixed hotspot shows a measured improvement and has a deterministic test that would catch it coming back, typing and scrolling while streaming a long answer into a large, image-heavy session stay smooth (no long tasks over 50 ms in the renderer), and the numbers are recorded for the next comparison.
 
-## M22: Custom keyboard shortcuts
-Let the user change Gloss's keyboard shortcuts in Settings → Keyboard shortcuts, which today only lists them. Update `SPEC.md` (Keyboard shortcuts, Settings) in this milestone.
-
-- **One registry:** every shortcut becomes a named command with its scope (anywhere, composer, conversation, session list, annotation canvas and the other groups the list has now) and its default keys, in one table that both the handlers and the settings screen read. Today each of the 69 is handled where it applies (about 18 `keydown` handlers) and `src/renderer/src/shortcuts.ts` only describes them, so the two can drift. Move the handlers onto the registry without changing any default.
-- **Stored in `settings.json`:** only the changed bindings, as command id to keys (empty for none), validated by the settings schema like any field, with live reload. Defaults stay in code, so a new Gloss version's new shortcuts still apply. The existing `captureShortcut` becomes one of these commands (its global, any-app registration stays as it is), and an old file's value still works.
-- **Editing:** each row of the list gets the recorder the capture shortcut uses now (`ShortcutSetting`), plus Reset to default, and the section gets Reset all. Show each binding's keys as keycaps, mark changed ones, and keep the search-friendly grouping.
-- **Conflicts:** refuse a binding already used by another command that can be active at the same time (same scope, or Anywhere against any scope), naming that command; the user frees it first or swaps. Refuse keys the platform or Electron reserves or that would stop typing (as the capture shortcut does now), and warn about keys the browser engine or OS commonly takes. Bindings written straight into `settings.json` are checked the same way, and a bad one falls back to its default with a visible problem.
-- **Platforms:** `Mod` stays Ctrl on Windows and Linux and Cmd on macOS; a stored binding that says `Mod` follows the platform.
-- **Out of scope:** key sequences (chords), per-project bindings, and remapping on the phone.
-
-**Done when:** a user can rebind, unbind and reset any shortcut in Settings, the change applies at once everywhere that command works, conflicts are refused with a clear reason, bindings survive restart and hand edits of `settings.json`, and every default is unchanged for users who never touch them.
-
-## M23: Shipping
+## M25: Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
 - **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
 - **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
@@ -56,7 +50,7 @@ Let the user change Gloss's keyboard shortcuts in Settings → Keyboard shortcut
 
 **Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place. The signing policy is documented, and release artifacts follow it.
 
-## M24: Marketing
+## M26: Marketing
 Present Gloss to people who haven't used it. Comes after Shipping, so every link points at a release people can install.
 
 - **README:** lead with what Gloss is and why threads help, with visuals near the top: screenshots in light and dark, and short GIFs of the core features (replying to an item in a thread, steering a running turn, visual feedback pins). Install from the latest GitHub Release first; building from source moves lower. Trim the feature walkthrough to the highlights and link to the docs for the rest.
@@ -67,15 +61,6 @@ Present Gloss to people who haven't used it. Comes after Shipping, so every link
 
 **Done when:** someone landing on the repository understands what Gloss does from the README's first screen, can install it from the release link, find the docs for their agent, and watch the demo reel.
 
-## Exploratory milestone: Agents, hooks and LSP servers in plugins
-Unscheduled, outside the M19-M24 sequence. M19 limits plugins to skills and MCP servers because those are the only components every agent supports; Claude Code plugins can also carry subagent definitions (`agents/`), hooks (`hooks/hooks.json`) and LSP servers (`lspServers`), which today only Claude Code loads. Gloss is agent agnostic, so none of these ship for one agent alone.
-
-- Survey what Codex, OpenCode and other ACP agents offer for each (their own formats, if any) and whether one plugin definition can be delivered to all of them, or translated per agent. Agents and hooks often name an agent's own tools (`Bash`, `Write`), which may not translate.
-- Hooks run commands automatically on agent events: decide how a plugin shows that before it is imported or enabled, and never run them on import.
-- Commands are not in scope: they are a legacy form of user-invoked skills.
-
-**Done when:** the exploration records, per component and per agent, what can be delivered and how, and recommends whether to proceed with a scope that works on every supported agent.
-
 ## Design passes needed
 - ~~**M14:** agent profiles and connection testing, guided open source/local-model setup, capability indicators, and actionable launch or model-server errors.~~ Done.
 - ~~**M15:** the question dialog (inline in the thread or modal), the approval prompt, and the mode picker.~~ Done.
@@ -84,7 +69,7 @@ Unscheduled, outside the M19-M24 sequence. M19 limits plugins to skills and MCP 
 - ~~**Worktrees:** the New session menu, the Worktrees screen, removal, and setup in progress or failed.~~ Done: `docs/mocks/worktrees.html`.
 - **M19:** ~~phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh~~ (done); ~~phase 2, agent-driven import through a built-in skill (the Plugins screen hint is the only UI)~~ (done).
 - ~~**M20:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow.~~ Settled in the M20 interview: no mode setting or resolve flow, and the design went straight into the app.
-- **M22:** the shortcut editor: rows with recorders, changed and conflict states, Reset and Reset all.
+- ~~**M21:** the shortcut editor: rows with recorders and conflict states, Reset and Reset all; standard shortcuts stay fixed.~~ Done.
 
 ---
 
@@ -143,7 +128,7 @@ A home for Gloss's settings, editable by hand (and by agents) as well as in the 
 - **Settings screen** (from the sidebar, or `Ctrl+,`): global and current-project sections, the file's path, and "Open in editor". Saving from the screen writes the file, keeping unknown keys.
 - Validated and owned by the main process; the renderer reads and writes through the IPC API.
 - Move the dev model (Haiku) toggle into it.
-- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M23: updates). No section appears before its feature exists.
+- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M25: updates). No section appears before its feature exists.
 
 **Done when:** a setting changed in the screen shows up in the file, a change made in an editor (or by an agent) shows up in the app without a restart, and a broken edit is reported without losing the previous settings.
 
@@ -248,7 +233,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
 - **Dark mode**, following the system setting, built on the dark tokens. *A Theme setting (System, Light, Dark) and a provisional dark palette landed early; M12 replaces the palette with the designed dark tokens.* *Done: the dark tokens, applied in the screen pass.*
 - Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected. *Done.*
-- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M23 installers. *Done.*
+- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M25 installers. *Done.*
 - Polish: empty, loading and error states; window title. *Done.*
 
 **Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
@@ -446,7 +431,7 @@ Import is done by an agent, not by a built-in importer. The user points an agent
 
 - **A built-in skill teaches the format:** Gloss ships a skill (`new-plugin`) that tells any agent how to create or import a plugin: the library location and layout, `plugin.json`, skill folder naming and matching frontmatter `name`, and the `mcpServers` shape in `settings.json`. It carries the import rules below as instructions. It is delivered like any plugin skill, so every supported agent gets it.
 - **Import is a copy:** the content is copied into the library and becomes an ordinary personal plugin, independent of its source from then on. No provenance is recorded, and the source is never changed, linked or removed. An agent's own installations (native skill roots, plugin caches) are not meant as a source; if one is copied anyway, the original stays active for that agent beside the copy, without a warning.
-- **Skills and MCP servers only:** Gloss is agent agnostic, so only the components every agent can use are imported: skills (with their supporting files) and MCP servers. Commands (legacy), agents, hooks, LSP servers and Codex `.app.json` connectors are left out (see the exploratory milestone below), and the agent tells the user what was left out and what it would have added. Importing never runs the source's scripts or hooks; setup the servers need (installing dependencies, tokens) is done with the user's agreement.
+- **Skills and MCP servers only:** Gloss is agent agnostic, so only the components every agent can use are imported: skills (with their supporting files) and MCP servers. Commands (legacy), agents, hooks, LSP servers and Codex `.app.json` connectors are left out (see M22 above), and the agent tells the user what was left out and what it would have added. Importing never runs the source's scripts or hooks; setup the servers need (installing dependencies, tokens) is done with the user's agreement.
 - **MCP servers stay in Settings:** as in phase 1, servers live only in the global list (`mcpServers` in `settings.json`, shared by every agent) and plugins reference them by name. The agent adds each server a plugin declares there, reusing an identical existing entry, renaming one whose name is taken by a different server, keeping `${VAR}` placeholders or asking instead of writing secrets, and rewriting paths relative to the plugin root (`${CLAUDE_PLUGIN_ROOT}`, also in skill instructions) to the plugin's folder in the library. Removing a plugin removes the servers that point into its folder; other servers stay, as in phase 1.
 - **Gloss checks the result:** a plugin or server an agent writes is picked up like any outside edit (the library watcher, the settings reload) and validated by phase 1's rules; a malformed one shows a problem on the Plugins screen and is left out, without breaking anything else. Verify that a brand-new plugin folder is picked up, not just edits, and that each agent can write to the library (Claude asks permission; Codex in workspace-write mode may be blocked outside its workspace).
 - **No import UI:** the user asks any session; there is no import button or dialog on the Plugins screen. The screen has a quiet hint instead, saying that any session can create or import a plugin with the skill (naming it).
@@ -457,4 +442,35 @@ Import is done by an agent, not by a built-in importer. The user points an agent
 
 **Done.** See SPEC → Plugins → Import. The built-in `new-plugin` skill reaches Claude ACP 0.89, Codex ACP 2.2.2, OpenCode 2.0.32 and a custom OpenCode profile (`src/main/plugins.integration.test.ts`, `GLOSS_PLUGIN_NATIVE=1`). Live, Haiku 5.5 through Claude and Codex in the adapter's default mode each loaded the skill unprompted and imported a Claude plugin with two skills, a command, a hook and three servers: skills renamed with their cross-reference, `${CLAUDE_PLUGIN_ROOT}` rewritten, an identical server reused, a clashing name renamed, the command and hook left out and reported, the source unchanged, and Gloss validated the result without problems. Codex's automatic approval review refused to store a token from the environment until the user agreed. Not run live: a git URL source and a marketplace clone.
 
-**Outside M19:** browsing and searching plugin catalogs (marketplaces) was dropped: an agent can install a plugin it is pointed at through phase 2. Upstream updates of imported plugins are not planned; agents, hooks and LSP servers in plugins remain a separate exploratory milestone. Presets, separate workspace dashboards and multi-device library backup are also deferred.
+**Outside M19:** browsing and searching plugin catalogs (marketplaces) was dropped: an agent can install a plugin it is pointed at through phase 2. Upstream updates of imported plugins are not planned; agents, hooks and LSP servers in plugins are scheduled for exploration in M22. Presets, separate workspace dashboards and multi-device library backup are also deferred.
+
+## ~~M20: Sub-agent threads~~
+An opt-in alternative to view-only threads: a thread runs in its own fork of the agent session instead of being tagged into the main one. Changes the core idea in `SPEC.md` (see Fork threads there, which has the design and the verified adapter behavior).
+
+**Decided (interview, 2026-10-28), replacing the first plan:** fork only, started per thread from the selection menu's **Reply - Fork** (`F`), with no thread mode setting and no fresh mode (it can come later on the same plumbing). A fork is made from what is already written, even mid-turn, and never waits. No resolve step: nothing reaches the main session unless the user sends to main, which first asks the fork for a summary since its last one. Same working tree, no locking. The list-item hover Reply button and its `listItemReplies` setting are removed. The phone gets the same features.
+
+**Done.** Built 2026-10-29, reviewed and merged: each fork thread runs in a hidden child session with its own ACP session (`session/fork` without a fork point), turn, queue, steering, status and requests, shown as the thread of its parent. Verified against Claude ACP 0.89.1 on Haiku and Codex ACP 2.2.2 with an opt-in live test (`src/main/fork.integration.test.ts`): a fork made while the main turn runs a shell command answers while that turn goes on, knows the history up to the fork, and its summary reaches the main session through Send to main.
+
+- **Starting one:** **Reply - Fork** in the conversation's and the review diff's selection menus, and **Fork** in the phone's reply bar; disabled with a tooltip for agents that can't fork (OpenCode, custom profiles).
+- **Running:** a fork's turns run at the same time as the main session's and other forks'. Send, Stop, the queue and steering are per session.
+- **Visible:** a Fork tag on the thread and its Threads row, the fork's context and cost on that row, and the fork's work in the running dots, sidebar, badge, notifications and phone.
+- **Send to main:** the fork summarizes outside its thread, and the summary goes with the user's message and shows under it in the main conversation.
+- **Lifetime:** the fork goes with its thread, and its agent copy with it.
+
+**Done when:** a thread started with Reply - Fork runs as its own agent, can run while the main thread works, and sending to main from it brings its summary into the main session.
+
+## ~~M21: Custom keyboard shortcuts~~
+
+**Completed:** Settings now edits 30 Gloss-specific commands from a shared registry, with one custom binding per command, Clear, Reset, Reset all, search and linked conflict messages. Standard editing, Escape, Space, numbered choices, canvas undo/redo and zoom, basic navigation and mouse gestures stay fixed. The old list's obsolete Alt+Enter queue entry was removed without changing automatic steering. Validated with the full test suite, build/lint and a Windows Electron smoke check covering recording, conflicts, persistence and live file reload; light/dark layouts inspected.
+
+Agreed scope: typing triggers and basic editor behaviors stay fixed. One custom binding per command; paired actions get separate commands. Conflicts account for focus and event precedence. Conflicts use an inline message and Go to command; no automatic swap.
+Let the user change Gloss-specific keyboard shortcuts in Settings → Keyboard shortcuts, which today only lists them. Update `SPEC.md` (Keyboard shortcuts, Settings) in this milestone.
+
+- **One registry:** every shortcut becomes a named command with its scope (anywhere, composer, conversation, session list, annotation canvas and the other groups the list has now) and its default keys, in one table that both the handlers and the settings screen read. Today each of the 69 is handled where it applies (about 18 `keydown` handlers) and `src/renderer/src/shortcuts.ts` only describes them, so the two can drift. Move the handlers onto the registry without changing any default.
+- **Stored in `settings.json`:** only the changed bindings, as command id to keys (empty for none), validated by the settings schema like any field, with live reload. Defaults stay in code, so a new Gloss version's new shortcuts still apply. The existing `captureShortcut` becomes one of these commands (its global, any-app registration stays as it is), and an old file's value still works.
+- **Editing:** each editable command gets the recorder the capture shortcut uses now (`ShortcutSetting`), plus Reset to default, and the section gets Reset all. Show each binding's keys as keycaps, keep the search-friendly grouping, and omit standard shortcuts from this screen.
+- **Conflicts:** refuse a binding already used by another command that can be active at the same time (same scope, or Anywhere against any scope), naming that command; the user frees it first or swaps. Refuse keys the platform or Electron reserves or that would stop typing (as the capture shortcut does now), and show actual capture registration failures without generic interception warnings. Bindings written straight into `settings.json` are checked the same way, and a bad one falls back to its default with a visible problem.
+- **Platforms:** `Mod` stays Ctrl on Windows and Linux and Cmd on macOS; a stored binding that says `Mod` follows the platform.
+- **Out of scope:** key sequences (chords), per-project bindings, and remapping on the phone.
+
+**Completion criteria (met):** a user can rebind, unbind and reset supported Gloss-specific shortcuts in Settings, the change applies at once everywhere that command works, conflicts are refused with a clear reason, bindings survive restart and hand edits of `settings.json`, and every default is unchanged for users who never touch them.

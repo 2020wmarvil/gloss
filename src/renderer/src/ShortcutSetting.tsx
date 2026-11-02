@@ -1,10 +1,11 @@
+import { MAC } from './commandBindings'
+import { normalizeBinding } from '@shared/commands'
 // A key combination setting (SPEC → Visual feedback → capture shortcut), as shortcut fields in
 // other apps work: one field, the same width as the other settings' controls. Click it (or press
 // Enter on it) and press the keys; Backspace or Delete clears it, Esc keeps what was there.
 import { useEffect, useRef, useState } from 'react'
 import { heldModifiers, shortcutFromKey, shortcutKeys } from '@shared/shortcut'
 
-const MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent)
 
 function Keys({ keys }: { keys: string[] }): React.JSX.Element {
   return (
@@ -16,7 +17,7 @@ function Keys({ keys }: { keys: string[] }): React.JSX.Element {
   )
 }
 
-export function ShortcutSetting(props: { id: string; value: string; onChange(value: string): void }): React.JSX.Element {
+export function ShortcutSetting(props: { id: string; value: string; onChange(value: string): void; label?: string; command?: boolean }): React.JSX.Element {
   const { id, value, onChange } = props
   const [recording, setRecording] = useState(false)
   /** The modifiers held so far while recording. */
@@ -29,11 +30,11 @@ export function ShortcutSetting(props: { id: string; value: string; onChange(val
 
   useEffect(() => {
     let current = true
-    if (!recording) void window.gloss?.capture?.shortcutStatus().then((s) => current && setError(s.error))
+    if (!recording && (!props.command || props.id === 'binding-capture')) void window.gloss?.capture?.shortcutStatus().then((s) => current && setError(s.error))
     return () => {
       current = false
     }
-  }, [value, recording])
+  }, [value, recording, props.command])
 
   // Don't leave the shortcut paused if the screen closes mid-recording.
   useEffect(
@@ -62,11 +63,20 @@ export function ShortcutSetting(props: { id: string; value: string; onChange(val
     e.preventDefault()
     e.stopPropagation()
     const press = e.nativeEvent
+    if (press.isComposing) return
     const plain = !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey
-    if (!up && plain && e.key === 'Escape') return setRecordingTo(false)
-    if (!up && plain && (e.key === 'Backspace' || e.key === 'Delete')) return save('')
+    if (!props.command && !up && plain && e.key === 'Escape') return setRecordingTo(false)
+    if (!props.command && !up && plain && (e.key === 'Backspace' || e.key === 'Delete')) return save('')
     // Windows sends no keydown for PrintScreen, only its keyup.
     if (up && press.code !== 'PrintScreen') return setHeld(heldModifiers(press).map((m) => shortcutKeys(m, MAC)[0]))
+    if (props.command && !/^(Control|Alt|Shift|Meta|OS)(Left|Right)?$/.test(press.code)) {
+      const key = press.key === ' ' ? 'Space' : press.key === '+' ? 'Plus' : press.key
+      const mods = [...(press.ctrlKey ? [MAC ? 'Ctrl' : 'Mod'] : []), ...(press.altKey ? ['Alt'] : []), ...(press.shiftKey ? ['Shift'] : []), ...(press.metaKey ? [MAC ? 'Mod' : 'Super'] : [])]
+      const next = normalizeBinding([...mods, key].join('+'))
+      if (next !== null) save(next)
+      else setHint("That key can't be used.")
+      return
+    }
     const result = shortcutFromKey(press)
     if (result === null) setHeld(heldModifiers(press).map((m) => shortcutKeys(m, MAC)[0]))
     else if ('error' in result) setHint(result.error)
@@ -80,8 +90,8 @@ export function ShortcutSetting(props: { id: string; value: string; onChange(val
         id={id}
         type="button"
         className={`shortcut-field${recording ? ' recording' : ''}`}
-        aria-describedby={`${id}-description`}
-        aria-label={recording ? 'Press the new shortcut' : `Capture shortcut: ${value ? shortcutKeys(value, MAC).join(' ') : 'none'}`}
+        aria-describedby={note ? `${id}-description` : undefined}
+        aria-label={recording ? 'Press the new shortcut' : `${props.label ?? 'Capture shortcut'}: ${value ? shortcutKeys(value.replace(/Mod/g, MAC ? 'Super' : 'Ctrl'), MAC).join(' ') : 'none'}`}
         onClick={() => !recording && setRecordingTo(true)}
         onKeyDown={(e) => onKey(e, false)}
         onKeyUp={(e) => onKey(e, true)}
@@ -90,12 +100,16 @@ export function ShortcutSetting(props: { id: string; value: string; onChange(val
         {recording ? (
           held.length > 0 ? <Keys keys={held} /> : <span className="shortcut-placeholder">Press keys…</span>
         ) : value ? (
-          <Keys keys={shortcutKeys(value, MAC)} />
+          <Keys keys={shortcutKeys(value.replace(/Mod/g, MAC ? 'Super' : 'Ctrl'), MAC)} />
         ) : (
           <span className="shortcut-placeholder">None</span>
         )}
       </button>
-      {note && <p className={recording ? 'shortcut-note' : 'shortcut-note error'}>{note}</p>}
+      {props.command && <span className="shortcut-buttons">
+        {recording && <button className="ghost sm" type="button" onMouseDown={e => e.preventDefault()} onClick={() => setRecordingTo(false)}>Cancel</button>}
+        {value && <button className="ghost sm" type="button" aria-label={`Clear ${props.label}`} onClick={() => save('')}>Clear</button>}
+      </span>}
+      {note && <p id={`${id}-description`} className={recording ? 'shortcut-note' : 'shortcut-note error'}>{note}</p>}
     </div>
   )
 }

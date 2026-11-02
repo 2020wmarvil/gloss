@@ -11,6 +11,7 @@ export type CaptureWindow = { title: string; rect: CaptureRect }
 
 /** What the overlay draws: the frozen display, in its pixels, and the windows on it. */
 export type CaptureFrame = {
+  shortcuts?: Record<string, string>
   png: Uint8Array
   width: number
   height: number
@@ -52,6 +53,7 @@ export type AnnotateResult = { image: Extract<Attachment, { kind: 'image' }>; an
 /** The overlay's preload API. */
 export type CaptureOverlayApi = {
   frame(): Promise<CaptureFrame>
+  onShortcuts(listener: (bindings: Record<string, string>) => void): () => void
   done(choice: CaptureChoice): Promise<void>
   /** The cursor came onto this overlay's display: it takes the keys. */
   enter(): void
@@ -60,6 +62,7 @@ export type CaptureOverlayApi = {
 /** The overlay's channels. The main window's `capture.start` is in IPC (shared/ipc.ts), so the two preloads share no module. */
 export const CAPTURE_IPC = {
   frame: 'gloss:capture:frame',
+  shortcuts: 'gloss:capture:shortcuts',
   done: 'gloss:capture:done',
   enter: 'gloss:capture:enter'
 } as const

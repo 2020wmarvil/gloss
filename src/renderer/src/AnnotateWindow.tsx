@@ -12,6 +12,7 @@ export function AnnotateWindow(): React.JSX.Element {
   const [request, setRequest] = useState<AnnotateRequest | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [theme, setTheme] = useState<ThemeSetting>('system')
+  const [, refreshBindings] = useState(0)
   const [maximized, setMaximized] = useState(false)
 
   useEffect(() => {
@@ -22,7 +23,7 @@ export function AnnotateWindow(): React.JSX.Element {
       .then((r) => (r ? setRequest(r) : setError('Nothing to annotate.')))
       .catch((err: unknown) => setError(errorText(err)))
     return window.gloss.onEvent((event) => {
-      if (event.type === 'settings') setTheme(event.state.global.theme)
+      if (event.type === 'settings') { setTheme(event.state.global.theme); refreshBindings(n => n + 1) }
       else if (event.type === 'annotateMaximized') setMaximized(event.maximized)
     })
   }, [])

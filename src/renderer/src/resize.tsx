@@ -1,3 +1,4 @@
+import { commandMatches } from './commandBindings'
 // Drag handles that resize the sidebar and the thread panel. Widths are UI state,
 // not settings: they are remembered in localStorage.
 import { useEffect, useState } from 'react'
@@ -144,11 +145,11 @@ export function ResizeHandle(props: HandleProps): React.JSX.Element {
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    if (!commandMatches(e, 'resizeLeft') && !commandMatches(e, 'resizeRight')) return
     const width = paneWidth(e.currentTarget)
     if (width === null) return
     e.preventDefault()
-    const step = (e.key === 'ArrowRight' ? 1 : -1) * sign * KEY_STEP
+    const step = (commandMatches(e, 'resizeRight') ? 1 : -1) * sign * KEY_STEP
     props.onResize(clampWidth(width + step, limits))
   }
 

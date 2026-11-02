@@ -1,3 +1,4 @@
+import { configureBindings } from './commandBindings'
 // @vitest-environment jsdom
 import { EditorSelection } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
@@ -88,7 +89,7 @@ function press(view: EditorView, key: string, init: KeyboardEventInit = {}): boo
 
 const text = (view: EditorView): string => view.state.doc.toString()
 
-afterEach(unmount)
+afterEach(() => { unmount(); configureBindings({}) })
 
 describe('Composer drafts', () => {
   it.each(['ctrlKey', 'metaKey'])('sends a thread draft to main with %s+Shift+Enter, including code blocks', (modifier) => {
@@ -353,7 +354,7 @@ describe('automatic steering', () => {
 })
 
 describe('screen capture', () => {
-  afterEach(unmount)
+  afterEach(() => { unmount(); configureBindings({}) })
 
   /** The Attach menu's Capture item, after opening the menu. */
   function captureItem(): HTMLButtonElement {
@@ -778,4 +779,17 @@ it('restores a rewind draft to the main composer even if its thread panel closes
   unmount()
   await act(async () => { finish({ text: 'thread prompt', attachments: [] }) })
   expect(text(mount('rewind-thread', { sessionId: 'rewind-thread' }))).toBe('thread prompt')
+})
+
+
+it('keeps standard formatting and sending fixed despite obsolete overrides', () => {
+  const onSend = vi.fn()
+  const view = mount('fixed-keys-editor', { onSend })
+  configureBindings({ shortcuts: { bold: '', send: 'Ctrl+Shift+U', steer: '' } })
+  type(view, 'hello')
+  act(() => view.dispatch({ selection: EditorSelection.single(0, 5) }))
+  press(view, 'b', { ctrlKey: true })
+  expect(view.state.doc.toString()).toBe('**hello**')
+  press(view, 'Enter')
+  expect(onSend).toHaveBeenCalledExactlyOnceWith('**hello**', [])
 })

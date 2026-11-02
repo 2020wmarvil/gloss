@@ -1,3 +1,4 @@
+import { commandLabel, commandHint, commandMatches } from './commandBindings'
 // A review session's main view (docs/mocks/target.html#review): the branch's diff with
 // threads on its lines. The general conversation lives in the side panel.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -182,6 +183,7 @@ export function ReviewView(props: Props): React.JSX.Element {
     if (!fileMenu) return
     const close = (): void => setFileMenu(null)
     const onKey = (e: KeyboardEvent): void => {
+      if (e.defaultPrevented || e.isComposing) return
       if (e.key === 'Escape') close()
     }
     window.addEventListener('mousedown', close)
@@ -278,16 +280,16 @@ export function ReviewView(props: Props): React.JSX.Element {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      const mod = e.ctrlKey || e.metaKey
-      if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'h') {
+      if (e.defaultPrevented || e.isComposing) return
+      if (commandMatches(e, 'toggleComments')) {
         e.preventDefault()
         setComments(commentsRef.current === 'shown' ? 'hidden' : 'shown')
         return
       }
       const target = e.target as HTMLElement | null
-      if (mod || e.altKey || target?.isContentEditable || target?.matches?.('input, textarea')) return
-      if (e.key === 'n' || e.key === 'N') stepRef.current(1)
-      else if (e.key === 'p' || e.key === 'P') stepRef.current(-1)
+      if (target?.isContentEditable || target?.matches?.('input, textarea')) return
+      if (commandMatches(e, 'nextChange')) stepRef.current(1)
+      else if (commandMatches(e, 'previousChange')) stepRef.current(-1)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -379,7 +381,7 @@ export function ReviewView(props: Props): React.JSX.Element {
               className={`tool-button icon${comments === 'shown' ? ' on' : ''}`}
               aria-pressed={comments === 'shown'}
               aria-label="Comments"
-              title={`${comments === 'shown' ? 'Hide' : 'Show'} comments (${modKey()}+Shift+H)`}
+              title={`${comments === 'shown' ? 'Hide' : 'Show'} comments${commandHint('toggleComments')}`}
               onClick={() => setComments(comments === 'shown' ? 'hidden' : 'shown')}
             >
               {comments === 'shown' ? ICONS.comments : ICONS.commentsHidden}
@@ -645,6 +647,7 @@ function DiffSelectionMenu(props: {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      if (e.defaultPrevented || e.isComposing) return
       const target = e.target as HTMLElement | null
       if (target?.isContentEditable || target?.matches?.('input, textarea')) return
       const how = replyKey(e)
@@ -663,7 +666,7 @@ function DiffSelectionMenu(props: {
   const anchor = menu.anchor
   const file = anchor && diff.files.find((f) => f.path === anchor.file)
   const items: MenuItem[] = [
-    ...(anchor ? [{ label: 'Reply to selection', icon: CornerDownLeft, primary: true, keys: 'R', run: () => reply(anchor) }, forkItem(forkDisabled, () => reply(anchor, true))] : []),
+    ...(anchor ? [{ label: 'Reply to selection', icon: CornerDownLeft, primary: true, keys: commandLabel('reply'), run: () => reply(anchor) }, forkItem(forkDisabled, () => reply(anchor, true))] : []),
     { label: 'Copy', icon: Copy, separatorBefore: anchor !== null, keys: `${modKey()}+C`, run: copySelection }
   ]
   if (anchor && file && file.status !== 'deleted')

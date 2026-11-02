@@ -1,4 +1,4 @@
-import { modKey } from './shortcuts'
+import { commandHint, commandMatches } from './commandBindings'
 // The sidebar (docs/mocks/target.html): a project switcher and one list of
 // the project's sessions, Gloss's and the agent's own (SPEC → Projects and sessions).
 import { useEffect, useRef, useState } from 'react'
@@ -179,7 +179,7 @@ export function Sidebar(props: Props): React.JSX.Element {
 
   const existing = props.place !== 'folder' && props.place !== 'worktree' ? props.place : null
   /** The starred place's shortcut: New session with the default agent. */
-  const keysFor = (place: string): string => (place === props.place ? ` (${modKey()}+N)` : '')
+  const keysFor = (place: string): string => (place === props.place ? `${commandHint('newSession')}` : '')
   const placeName = (place: string): string =>
     place === 'folder' ? 'the project folder' : place === 'worktree' ? 'a new worktree' : (props.placeBranch ?? folderName(place))
 
@@ -254,8 +254,8 @@ export function Sidebar(props: Props): React.JSX.Element {
           setAgentMenuOpen(false)
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') props.onSelect(s.id)
-          if (e.key === 'F2') setRenaming(s.id)
+          if (commandMatches(e, 'openSession')) props.onSelect(s.id)
+          if (commandMatches(e, 'renameSession')) setRenaming(s.id)
         }}
       >
         {/* One lead slot: running, else an unseen failure or finish, else the review icon. One trail slot: the time, and … on hover. */}
@@ -572,7 +572,7 @@ export function Sidebar(props: Props): React.JSX.Element {
       </div>
 
       <div className="sidebar-foot">
-        <button className="ghost settings-button" onClick={props.onSearch} title={`Search conversations (${modKey()}+Shift+F)`}>
+        <button className="ghost settings-button" onClick={props.onSearch} title={`Search conversations${commandHint('search')}`}>
           <Search />
           Search
         </button>
@@ -653,8 +653,8 @@ function RenameInput({ title, onDone }: { title: string; onDone(title: string | 
       onFocus={(e) => e.target.select()}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') finish(true)
-        if (e.key === 'Escape') finish(false)
+        if (commandMatches(e, 'saveRename')) { e.stopPropagation(); finish(true) }
+        if (commandMatches(e, 'cancelRename')) { e.stopPropagation(); finish(false) }
       }}
       onBlur={() => finish(true)}
     />

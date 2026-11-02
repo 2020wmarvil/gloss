@@ -1,3 +1,4 @@
+import { commandMatches } from './commandBindings'
 // The open session's state and actions: its log, side panel, review diff and status,
 // kept current from main-process events. The main window and a session window
 // (SPEC → Session windows) each hold one.
@@ -658,23 +659,21 @@ export function useSession() {
    */
   function shortcut(e: KeyboardEvent, sideShown: boolean, onWindow: () => void): { handled: boolean; leaveSettings: boolean } {
     const none = { handled: false, leaveSettings: false }
-    if (!(e.ctrlKey || e.metaKey) || e.altKey) return none
-    const key = e.key.toLowerCase()
-    if (key === 't' && e.shiftKey) {
+    if (commandMatches(e, 'sidePanel')) {
       if (sideShown) collapseSide()
       else openSide()
       return { handled: true, leaveSettings: false }
     }
-    if (key === 'q' && e.shiftKey) {
+    if (commandMatches(e, 'queue')) {
       if (open) showQueue()
       return { handled: true, leaveSettings: open !== null }
     }
-    if (key === 'j' && !e.shiftKey) return { handled: true, leaveSettings: jumpToWork() }
-    if (key === 'l' && !e.shiftKey) {
+    if (commandMatches(e, 'jumpToWork')) return { handled: true, leaveSettings: jumpToWork() }
+    if (commandMatches(e, 'focusComposer')) {
       window.dispatchEvent(new Event(FOCUS_COMPOSER))
       return { handled: true, leaveSettings: true }
     }
-    if (key === 'o' && e.shiftKey) {
+    if (commandMatches(e, 'popOut')) {
       if (open) onWindow()
       return { handled: true, leaveSettings: false }
     }

@@ -1,3 +1,4 @@
+import { commandHint, commandLabel } from './commandBindings'
 // The open session's view: the conversation or review in the center and the side panel,
 // in the main window or in the session's own window (SPEC → Session windows).
 import { useEffect, useMemo, useState } from 'react'
@@ -13,7 +14,6 @@ import { locations as threadLocations } from './reviewThreads'
 import { useReviewSources } from './reviewSources'
 import { ReviewView } from './ReviewView'
 import { ResizeHandle, type WidthLimits } from './resize'
-import { modKey } from './shortcuts'
 import { ThreadPanel } from './ThreadPanel'
 import { SideRail, ThreadsOverview } from './ThreadsOverview'
 import { errorText } from './errors'
@@ -28,10 +28,10 @@ export function FullScreenHint(): React.JSX.Element | null {
     const timer = setTimeout(() => setShown(false), 3000)
     return () => clearTimeout(timer)
   }, [])
-  if (!shown) return null
+  if (!shown || !commandLabel('fullscreen')) return null
   return (
     <div className="fullscreen-hint" role="status">
-      Press <kbd>F11</kbd> to exit full screen
+      Press <kbd>{commandLabel('fullscreen')}</kbd> to exit full screen
     </div>
   )
 }
@@ -55,7 +55,7 @@ export function WindowButton(props: { popped: boolean; onClick(): void }): React
   return (
     <button
       className="tool-button icon window-button"
-      title={`${props.popped ? 'Return to main window' : 'Pop out into its own window'} (${modKey()}+Shift+O)`}
+      title={`${props.popped ? 'Return to main window' : 'Pop out into its own window'}${commandHint('popOut')}`}
       aria-label={label}
       onClick={props.onClick}
     >
@@ -115,7 +115,7 @@ export function SessionPane(props: Props): React.JSX.Element {
   const reviewButton = (
     <button
       className="tool-button icon review-folder-button"
-      title={`Review changes: this session's folder (${modKey()}+Shift+D)`}
+      title={`Review changes: this session's folder${commandHint('review')}`}
       aria-label="Review changes"
       onClick={() => props.onReviewFolder(open.session)}
     >

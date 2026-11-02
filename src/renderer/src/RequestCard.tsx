@@ -1,3 +1,4 @@
+import { commandMatches, commandLabel, commandHint } from './commandBindings'
 // What the agent is waiting on the user for, in the log of the thread whose turn asked
 // (SPEC → Questions and approvals): an approval with the agent's options, or a question
 // as a form built from its JSON Schema. A card takes focus when it appears, unless the
@@ -90,8 +91,7 @@ function useTakeFocus(ref: React.RefObject<HTMLElement | null>): void {
 
 /** 1 to 9 for a plain digit key, else null. */
 function digit(e: React.KeyboardEvent): number | null {
-  if (e.ctrlKey || e.altKey || e.metaKey || !/^[1-9]$/.test(e.key)) return null
-  return Number(e.key)
+  return Array.from({ length: 9 }, (_, i) => i + 1).find(n => commandMatches(e, `option${n}`)) ?? null
 }
 
 /** A key hint, shown while the card has focus. */
@@ -125,9 +125,9 @@ function PermissionCard({ request, pending, error, onAnswer }: CardProps<Permiss
   function onKeyDown(e: React.KeyboardEvent): void {
     if (pending) return
     const n = digit(e)
-    const option = n !== null ? options[n - 1] : e.key === 'Escape' ? firstReject : undefined
+    const option = n !== null ? options[n - 1] : commandMatches(e, 'rejectRequest') ? firstReject : undefined
     // Enter on a focused button presses that button.
-    const enter = e.key === 'Enter' && !(e.target instanceof HTMLButtonElement) ? firstAllow : undefined
+    const enter = commandMatches(e, 'submitRequest') && !(e.target instanceof HTMLButtonElement) ? firstAllow : undefined
     const chosen = option ?? enter
     if (!chosen) return
     e.preventDefault()
@@ -157,11 +157,11 @@ function PermissionCard({ request, pending, error, onAnswer }: CardProps<Permiss
             disabled={pending}
             title={[
               OPTION_TITLES[o.kind],
-              i < 9 ? `Press ${i + 1}${o === firstAllow ? ' or Enter' : o === firstReject ? ' or Esc' : ''}.` : ''
+              [i < 9 ? commandLabel(`option${i + 1}`) : '', o === firstAllow ? commandLabel('submitRequest') : o === firstReject ? commandLabel('rejectRequest') : ''].filter(Boolean).join(' or ')
             ].filter(Boolean).join(' ')}
             onClick={() => pick(o.id)}
           >
-            {i < 9 && <Key>{String(i + 1)}</Key>}
+            {i < 9 && commandLabel(`option${i + 1}`) && <Key>{commandLabel(`option${i + 1}`)}</Key>}
             {o.name}
           </button>
         ))}
@@ -218,19 +218,26 @@ function QuestionCard({ request, pending, error, onAnswer }: CardProps<Question>
   }
   function onKeyDown(e: React.KeyboardEvent): void {
     if (pending) return
-    if (e.key === 'Escape') {
+    if (commandMatches(e, 'rejectRequest')) {
       e.preventDefault()
       e.stopPropagation()
       onAnswer({ kind: 'question', action: 'decline' })
       return
     }
-    // Typed text keeps its digits; Enter in a field submits the form natively.
+    // Intercept form submission so native Enter cannot revive an unbound command.
+    if (commandMatches(e, 'submitRequest') && !(e.target instanceof HTMLButtonElement && e.key === 'Enter')) {
+      e.preventDefault()
+      e.stopPropagation()
+      submit()
+      return
+    }
+    if (e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) e.preventDefault()
     if (isTextEntry(e.target)) return
     const n = digit(e)
     if (n !== null && active && active.options[n - 1]) {
       e.preventDefault()
       set(active.key, toggled(active, values[active.key], active.options[n - 1].value))
-    } else if (e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) {
+    } else if (commandMatches(e, 'submitRequest') && !(e.target instanceof HTMLButtonElement)) {
       e.preventDefault()
       submit()
     }
@@ -273,7 +280,7 @@ function QuestionCard({ request, pending, error, onAnswer }: CardProps<Question>
           type="submit"
           className="primary sm"
           disabled={pending || problem !== null}
-          title={problem ?? 'Press Enter.'}
+          title={problem ?? commandLabel('submitRequest')}
         >
           Submit
         </button>
@@ -281,7 +288,7 @@ function QuestionCard({ request, pending, error, onAnswer }: CardProps<Question>
           type="button"
           className="sm"
           disabled={pending}
-          title="Answer without the information: the agent carries on. Press Esc."
+          title={`Answer without the information: the agent carries on.${commandHint('rejectRequest')}`}
           onClick={() => onAnswer({ kind: 'question', action: 'decline' })}
         >
           Decline

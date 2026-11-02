@@ -7746,3 +7746,19 @@ button.danger-text {
     margin: 8px 18px;
   }
 }
+
+.shortcut-toolbar { display: flex; gap: 12px; margin: 16px 0; }
+.shortcut-toolbar input { flex: 1; }
+.shortcut-edit-row { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(230px, 280px) auto; gap: 12px; padding: 14px 18px; align-items: center; }
+.shortcut-edit-row + .shortcut-edit-row { border-top: 1px solid var(--line); }
+.shortcut-edit-row p { font-size: 12px; margin: 6px 0 0; }
+.shortcut-buttons { display: flex; gap: 8px; }
+@media (max-width: 760px) { .shortcut-edit-row { grid-template-columns: 1fr; gap: 8px; } }
+
+.shortcut-toolbar input { min-width: 0; height: var(--control); padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--surface); color: var(--ink); font: inherit; font-size: var(--t-13); }
+.shortcut-edit-row { font-size: var(--t-13); }
+.shortcut-edit-row .shortcut-setting { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
+.shortcut-edit-row .shortcut-field { flex: 1; min-width: 120px; }
+.shortcut-edit-row .shortcut-note { width: 100%; }
+.shortcut-edit-row .error { color: var(--failed); }
+
