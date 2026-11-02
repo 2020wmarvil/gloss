@@ -2,13 +2,13 @@
 // in the center like Worktrees. Its data lives in the plugin library folder, not settings.json.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, BookOpen, Check, ChevronRight, ExternalLink, FolderOpen, Package, Pencil, Plus, RefreshCw, Search, Server, Trash2, X } from 'lucide-react'
-import type { PersonalPlugin, PluginAgentState, PluginFile, PluginLibraryState, PluginSkill, SkillInvocation } from '@shared/plugins'
+import { ArrowLeft, BookOpen, Bot, Check, ChevronRight, ExternalLink, FolderOpen, Package, Pencil, Plus, RefreshCw, Search, Server, Trash2, Webhook, X } from 'lucide-react'
+import type { PersonalPlugin, PluginAgentState, PluginFile, PluginHook, PluginLibraryState, PluginSkill, PluginSubagent, SkillInvocation } from '@shared/plugins'
 import { Markdown } from './Markdown'
 import { errorText } from './errors'
 import { clampWidth, ResizeHandle, useStoredWidth } from './resize'
 
-type Tab = 'overview' | 'skills' | 'tools' | 'agents'
+type Tab = 'overview' | 'skills' | 'subagents' | 'hooks' | 'tools' | 'agents'
 type Guard = (leave: () => void) => void
 type Dialog =
   | { kind: 'new' }
@@ -16,6 +16,7 @@ type Dialog =
   | { kind: 'file' | 'removeSkill'; plugin: PersonalPlugin; skill: PluginSkill }
   | { kind: 'removeFile'; plugin: PersonalPlugin; skill: PluginSkill; file: PluginFile }
   | { kind: 'custom'; agent: PluginAgentState }
+  | { kind: 'hooks'; plugin: PersonalPlugin; agent: PluginAgentState }
   | { kind: 'discard'; leave: () => void }
 type Props = {
   /** Opens Settings → MCP servers. */
@@ -26,7 +27,13 @@ type Props = {
 }
 
 const count = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`
-const summary = (p: PersonalPlugin): string => [count(p.skills.length, 'skill'), ...p.connections].join(' · ')
+const summary = (p: PersonalPlugin): string => [count(p.skills.length, 'skill'), ...(p.subagents.length ? [count(p.subagents.length, 'subagent')] : []), ...(p.hooks.length ? [count(p.hooks.length, 'hook')] : []), ...p.connections].join(' · ')
+const EVENTS: Record<string, string> = { sessionStart: 'Session starts', userPrompt: 'Prompt is sent', beforeTool: 'Before a tool runs', afterTool: 'After a tool runs', stop: 'Turn ends' }
+const TOOLS: Record<string, string> = { shell: 'Shell commands', edit: 'File edits', read: 'File reads', any: 'Every tool' }
+const toolLabel = (h: PluginHook): string | undefined => h.matcher === undefined ? (h.event === 'beforeTool' || h.event === 'afterTool' ? 'Every tool' : undefined)
+  : TOOLS[h.matcher] ?? (h.matcher.startsWith('mcp:') ? `${h.matcher.slice(4)} tools` : h.matcher)
+/** The hooks an agent would run if the plugin were on for it. Custom agents get skills only. */
+const hooksFor = (p: PersonalPlugin, agentId: string): PluginHook[] => agentId.startsWith('custom:') ? [] : p.hooks.filter(h => !h.agents || h.agents.includes(agentId))
 const stateLabel = (a: PluginAgentState): string => ({ ready: 'On', off: 'Off', setup: a.support === 'unknown' ? 'Set up' : 'Needs setup', pending: 'Pending', error: 'Review' })[a.status]
 
 export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard }: Props): React.JSX.Element {
@@ -39,6 +46,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
   const pendingRef = useRef(new Set<string>())
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [skillId, setSkillId] = useState<string | null>(null)
+  const [subagentId, setSubagentId] = useState<string | null>(null)
   const [file, setFile] = useState<PluginFile | null>(null)
   const [draft, setDraft] = useState('')
   const [editing, setEditing] = useState(false)
@@ -59,6 +67,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
   const plugin = state?.plugins.find(p => p.id === selected) ?? state?.plugins.find(p => !p.builtin) ?? state?.plugins[0]
   activeEditor.current = { file, editing, pluginId: plugin?.id }
   const skill = plugin?.skills.find(s => s.id === skillId)
+  const subagent = plugin?.subagents.find(s => s.id === subagentId)
   const dirty = editing && file !== null && draft !== file.content
 
   const reload = useCallback(async (): Promise<PluginLibraryState> => {
@@ -105,7 +114,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
     return () => window.removeEventListener('keydown', onKey)
   }, [navigate, onClose])
 
-  function resetDetail(): void { fileRequest.current++; setFile(null); setEditing(false); setSkillId(null); setError(null) }
+  function resetDetail(): void { fileRequest.current++; setFile(null); setEditing(false); setSkillId(null); setSubagentId(null); setError(null) }
   function select(id: string): void { navigate(() => { setSelected(id); setTab('overview'); resetDetail() }) }
   function isPending(key: string): boolean { return pending.has(key) }
   async function execute(key: string, operation: () => Promise<unknown>, reportError = true, refresh = true): Promise<void> {
@@ -119,10 +128,12 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
     }
   }
   function run(key: string, operation: () => Promise<unknown>, refresh = true): void { void execute(key, operation, true, refresh).catch(() => {}) }
-  async function openFile(p: PersonalPlugin, s: PluginSkill, path = s.path): Promise<void> {
+  function openFile(p: PersonalPlugin, s: PluginSkill, path = s.path): Promise<void> { return openPart(p, path, 'skills', s.id) }
+  /** Opens a plugin file: a skill's (`id` the skill), a subagent's (`id` the subagent) or the hooks file. */
+  async function openPart(p: PersonalPlugin, path: string, nextTab: Tab, id: string | null = null): Promise<void> {
     const serial = ++fileRequest.current
     const sameFile = activeEditor.current.file?.path === path
-    setSelected(p.id); setTab('skills'); setSkillId(s.id); setEditing(false); if (!sameFile) setFile(null); setError(null)
+    setSelected(p.id); setTab(nextTab); setSkillId(nextTab === 'skills' ? id : null); setSubagentId(nextTab === 'subagents' ? id : null); setEditing(false); if (!sameFile) setFile(null); setError(null)
     try {
       const next = await window.gloss.plugins.readFile(p.id, path)
       if (live.current && serial === fileRequest.current && !(sameFile && activeEditor.current.editing)) { setFile(next); setDraft(next.content) }
@@ -154,13 +165,19 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
   }
   const shown = state?.plugins.filter(p => `${p.name} ${p.description} ${p.skills.map(s => s.name).join(' ')}`.toLowerCase().includes(query.toLowerCase())) ?? []
 
-  function components(p: PersonalPlugin): React.JSX.Element {
+  function components(p: PersonalPlugin, withSkills = true): React.JSX.Element {
     return <>
-      <div className="plugin-component-group"><h4>Skills</h4>
+      {withSkills && <div className="plugin-component-group"><h4>Skills</h4>
         {p.skills.length ? p.skills.map(s => <button className="plugin-component" key={s.id} onClick={() => navigate(() => { void openFile(p, s) })}>
           <BookOpen /><span><strong>{s.name}</strong><small>{s.description}</small>{p.connections.length > 0 && <small>Uses {p.connections.join(', ')}</small>}</span><ChevronRight />
         </button>) : <p className="muted">No skills yet.</p>}
-      </div>
+      </div>}
+      {p.subagents.length > 0 && <div className="plugin-component-group">{withSkills && <h4>Subagents</h4>}{p.subagents.map(s => <button className="plugin-component" key={s.id} onClick={() => navigate(() => { void openPart(p, s.path, 'subagents', s.id) })}>
+        <Bot /><span><strong>{s.id}</strong><small>{s.description}</small></span><ChevronRight />
+      </button>)}</div>}
+      {p.hooks.length > 0 && <div className="plugin-component-group"><h4>Hooks</h4><button className="plugin-component" onClick={() => navigate(() => { void openPart(p, 'hooks/hooks.json', 'hooks') })}>
+        <Webhook /><span><strong>{count(p.hooks.length, 'hook')}</strong><small>{[...new Set(p.hooks.map(h => EVENTS[h.event] ?? h.event))].join(' · ')}</small></span><ChevronRight />
+      </button></div>}
       {p.connections.length > 0 && <div className="plugin-component-group"><h4>Tools &amp; connections</h4>{p.connections.map(name => {
         const connection = state?.connections.find(c => c.name === name)
         return <button className="plugin-component" key={name} onClick={() => { setTab('tools'); setSkillId(null) }}>
@@ -186,6 +203,8 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
     return <>{p.agents.map(agent => <div className="plugin-agent" key={agent.id}>
       <div className="plugin-inline-heading"><strong>{agent.name}</strong>{p.builtin ? <span className={`plugin-availability ${agent.status}`}>{agent.status === 'ready' && <Check />}{agent.status === 'ready' ? 'Always on' : stateLabel(agent)}</span> : <button disabled={isPending(`agent:${agent.id}`) || p.problems.length > 0 && !agent.enabled} className={`plugin-availability ${agent.status}`} aria-label={`${agent.name}: ${agent.enabled ? 'disable' : 'enable'} ${p.name}`} onClick={() => {
         if (agent.support === 'unknown' && !agent.enabled) setDialog({ kind: 'custom', agent })
+        // Hooks run commands without asking: show them before they're turned on.
+        else if (!agent.enabled && hooksFor(p, agent.id).length) setDialog({ kind: 'hooks', plugin: p, agent })
         else run(`agent:${agent.id}`, () => window.gloss.plugins.enable(p.id, agent.id, !agent.enabled))
       }}>{agent.status === 'ready' && <Check />}{stateLabel(agent)}</button>}</div>
       {agent.message && <p>{agent.message}</p>}
@@ -194,6 +213,40 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
         {agent.id.startsWith('custom:') && <button className="plugin-link" onClick={() => setDialog({ kind: 'custom', agent })}>{agent.skillDirectory ? 'Skill directory' : 'Set up skills'}</button>}
       </div>
     </div>)}</>
+  }
+  /** The open file: its editor, or a preview (`preview` replaces the default one). */
+  function fileView(p: PersonalPlugin, preview?: React.JSX.Element): React.JSX.Element | false {
+    const fileBusy = file !== null && isPending(`file:${p.id}:${file.path}`)
+    return file ? <>
+        {editing ? <><label className="sr-only" htmlFor="plugin-file-editor">File contents</label><textarea id="plugin-file-editor" className="plugin-editor" value={draft} disabled={fileBusy} spellCheck={false} onChange={e => setDraft(e.target.value)} /><div className="plugin-editor-actions"><button className="primary" aria-busy={fileBusy} onClick={() => { void saveFile().catch(() => {}) }}>Save</button><button className="ghost" disabled={fileBusy} onClick={() => navigate(() => { setEditing(false); setDraft(file.content) })}>Cancel</button></div></>
+          : preview ?? (file.path.endsWith('.md') ? <Markdown text={file.content.replace(/^---\r?\n[\s\S]*?\r?\n---\s*\n?/, '')} /> : <pre className="plugin-file-content">{file.content}</pre>)}
+      </> : !error && <p className="muted">Loading file…</p>
+  }
+  /** Edit and external-editor buttons for the open file. */
+  function fileActions(p: PersonalPlugin): React.JSX.Element | false {
+    return !!file && !editing && <><button className="icon-button" title="Edit file" aria-label="Edit file" onClick={() => setEditing(true)}><Pencil /></button><button className="icon-button" title="Open in external editor" aria-label="Open in external editor" disabled={isPending(`editor:${p.id}:${file.path}`)} onClick={() => run(`editor:${p.id}:${file.path}`, () => window.gloss.plugins.openInEditor(p.id, file.path), false)}><ExternalLink /></button></>
+  }
+  function subagentContent(p: PersonalPlugin, s: PluginSubagent): React.JSX.Element {
+    const names = (agentIds: string[]): string => agentIds.map(id => p.agents.find(a => a.id === id)?.name ?? id).join(', ')
+    return <><div className="plugin-breadcrumb"><button onClick={() => navigate(() => { resetDetail(); setTab('subagents') })}><ArrowLeft />{p.name}</button><span>/ {s.id}</span></div>
+      <div className="plugin-inline-heading"><h3>{s.id}</h3><span className="plugin-file-toolbar">{fileActions(p)}</span></div>
+      <p className="plugin-part-note">{s.description}</p>
+      <p className="plugin-part-note">{s.tools === 'read-only' ? 'Read-only: it can’t edit files or run shell commands.' : 'Uses whatever the calling session may do.'}{Object.keys(s.models).length > 0 && ` Model: ${Object.entries(s.models).map(([agent, model]) => `${model} (${names([agent])})`).join(', ')}.`}</p>
+      {fileView(p)}
+    </>
+  }
+  function hookList(p: PersonalPlugin, hooks: PluginHook[]): React.JSX.Element {
+    return <>{hooks.map((h, i) => <div className="plugin-hook" key={i}>
+      <div className="plugin-inline-heading"><strong>{EVENTS[h.event] ?? h.event}</strong>{toolLabel(h) && <span className="plugin-badge">{toolLabel(h)}</span>}</div>
+      <code className="plugin-hook-command">{h.command}</code>
+      <small>{h.agents ? `Only ${h.agents.map(id => p.agents.find(a => a.id === id)?.name ?? id).join(', ')}` : 'Every agent'} · stops after {h.timeout} s</small>
+    </div>)}</>
+  }
+  function hooksContent(p: PersonalPlugin): React.JSX.Element {
+    return <><div className="plugin-inline-heading"><h4>Hooks in this plugin</h4><span className="plugin-file-toolbar">{fileActions(p)}</span></div>
+      <p className="plugin-part-note">Agents run these commands automatically, with your permissions, in the sessions of agents this plugin is on for.</p>
+      {fileView(p, hookList(p, p.hooks))}
+    </>
   }
   function skillContent(p: PersonalPlugin, s: PluginSkill): React.JSX.Element {
     const fileBusy = file !== null && isPending(`file:${p.id}:${file.path}`)
@@ -204,13 +257,10 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
           {[...new Set(['SKILL.md', ...s.files])].map(path => <option key={path} value={`skills/${s.id}/${path}`}>{path}</option>)}
         </select>
         {!p.builtin && <><button className="icon-button" title="New text file" aria-label="New text file" onClick={() => navigate(() => setDialog({ kind: 'file', plugin: p, skill: s }))}><Plus /></button>
-        {file && !editing && <><button className="icon-button" title="Edit file" aria-label="Edit file" onClick={() => setEditing(true)}><Pencil /></button><button className="icon-button" title="Open in external editor" aria-label="Open in external editor" disabled={isPending(`editor:${p.id}:${file.path}`)} onClick={() => run(`editor:${p.id}:${file.path}`, () => window.gloss.plugins.openInEditor(p.id, file.path), false)}><ExternalLink /></button></>}
+        {fileActions(p)}
         {file && file.path !== s.path && <button className="icon-button" title="Delete file" aria-label="Delete file" disabled={fileBusy} onClick={() => navigate(() => setDialog({ kind: 'removeFile', plugin: p, skill: s, file }))}><Trash2 /></button>}</>}
       </div>
-      {file ? <>
-          {editing ? <><label className="sr-only" htmlFor="plugin-file-editor">File contents</label><textarea id="plugin-file-editor" className="plugin-editor" value={draft} disabled={fileBusy} spellCheck={false} onChange={e => setDraft(e.target.value)} /><div className="plugin-editor-actions"><button className="primary" aria-busy={fileBusy} onClick={() => { void saveFile().catch(() => {}) }}>Save</button><button className="ghost" disabled={fileBusy} onClick={() => navigate(() => { setEditing(false); setDraft(file.content) })}>Cancel</button></div></>
-            : file.path.endsWith('.md') ? <Markdown text={file.content.replace(/^---\r?\n[\s\S]*?\r?\n---\s*\n?/, '')} /> : <pre className="plugin-file-content">{file.content}</pre>}
-        </> : !error && <p className="muted">Loading file…</p>}
+      {fileView(p)}
       {!p.builtin && <InvocationChoice footer value={s.invocation} disabled={fileBusy || isPending(`invocation:${p.id}:${s.id}`)} onChange={invocation => navigate(() => { void changeInvocation(p, s, invocation) })} />}
     </>
   }
@@ -228,8 +278,8 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
     <ResizeHandle label="Resize plugin details" pane="after" limits={detailLimits} value={detailWidth === null ? null : clampWidth(detailWidth, detailLimits)} onResize={setDetailWidth} onReset={() => setDetailWidth(null)} />
     <aside className="plugin-detail" style={detailWidth === null ? undefined : { '--plugin-detail-width': `${clampWidth(detailWidth, detailLimits)}px` } as React.CSSProperties} aria-label="Plugin details">{plugin ? <>
       <header><div className="plugin-inline-heading"><h3>{plugin.name}</h3>{!plugin.builtin && <><button className="icon-button" aria-label="Open plugin folder" title="Open plugin folder" disabled={isPending(`folder:${plugin.id}`)} onClick={() => run(`folder:${plugin.id}`, () => window.gloss.plugins.openFolder(plugin.id), false)}><FolderOpen /></button><button className="icon-button" aria-label="Edit plugin details" title="Edit plugin details" onClick={() => navigate(() => setDialog({ kind: 'edit', plugin }))}><Pencil /></button><button className="icon-button" aria-label="Remove plugin" title="Remove plugin" onClick={() => navigate(() => setDialog({ kind: 'remove', plugin }))}><Trash2 /></button></>}</div><p>{plugin.description}</p>{plugin.builtin && <p className="muted">Gloss maintains this plugin and updates it with each version. It’s read-only and on for every agent.</p>}</header>
-      <nav className="plugin-tabs" aria-label="Plugin sections">{(plugin.builtin ? ['overview', 'skills', 'agents'] as Tab[] : ['overview', 'skills', 'tools', 'agents'] as Tab[]).map(t => <button key={t} className={tab === t ? 'on' : ''} aria-current={tab === t ? 'page' : undefined} onClick={() => navigate(() => { resetDetail(); setTab(t) })}>{t[0].toUpperCase() + t.slice(1)}</button>)}</nav>
-      <div className="plugin-detail-content">{!dialog && plugin.problems.map(problem => <p className="plugin-error" role="alert" key={problem}>{problem}</p>)}{skill ? skillContent(plugin, skill) : tab === 'overview' ? components(plugin) : tab === 'skills' ? <><div className="plugin-inline-heading"><h4>Skills in this plugin</h4>{!plugin.builtin && <button className="ghost sm" onClick={() => setDialog({ kind: 'skill', plugin })}><Plus />Add skill</button>}</div>{components({ ...plugin, connections: [] })}</> : tab === 'tools' ? tools(plugin) : agents(plugin)}</div>
+      <nav className="plugin-tabs" aria-label="Plugin sections">{(plugin.builtin ? ['overview', 'skills', 'agents'] as Tab[] : ['overview', 'skills', ...(plugin.subagents.length ? ['subagents'] : []), ...(plugin.hooks.length ? ['hooks'] : []), 'tools', 'agents'] as Tab[]).map(t => <button key={t} className={tab === t ? 'on' : ''} aria-current={tab === t ? 'page' : undefined} onClick={() => navigate(() => { resetDetail(); if (t === 'hooks') void openPart(plugin, 'hooks/hooks.json', 'hooks'); else setTab(t) })}>{t[0].toUpperCase() + t.slice(1)}</button>)}</nav>
+      <div className="plugin-detail-content">{!dialog && plugin.problems.map(problem => <p className="plugin-error" role="alert" key={problem}>{problem}</p>)}{skill ? skillContent(plugin, skill) : subagent ? subagentContent(plugin, subagent) : tab === 'overview' ? components(plugin) : tab === 'skills' ? <><div className="plugin-inline-heading"><h4>Skills in this plugin</h4>{!plugin.builtin && <button className="ghost sm" onClick={() => setDialog({ kind: 'skill', plugin })}><Plus />Add skill</button>}</div>{components({ ...plugin, connections: [], subagents: [], hooks: [] })}</> : tab === 'subagents' ? <><h4>Subagents in this plugin</h4>{components({ ...plugin, skills: [], connections: [], hooks: [] }, false)}</> : tab === 'hooks' ? hooksContent(plugin) : tab === 'tools' ? tools(plugin) : agents(plugin)}</div>
     </> : <div className="plugin-empty"><Package /><h3>One place for each workflow</h3></div>}</aside></div>
     {dialog && <PluginDialog key={dialog.kind + ('plugin' in dialog ? dialog.plugin.id : '')} dialog={dialog} state={state} busy={isPending('dialog')} onClose={() => setDialog(null)} onManageConnections={onManageConnections} onSubmit={async values => {
       if (pendingRef.current.has('dialog')) return
@@ -249,6 +299,7 @@ export function PluginsScreen({ onManageConnections, onClose, onNavigationGuard 
           await openFile(dialog.plugin, dialog.skill, `skills/${dialog.skill.id}/${values.path}`)
         } else if (dialog.kind === 'connections') await window.gloss.plugins.update(dialog.plugin.id, { connections: JSON.parse(values.connections) })
         else if (dialog.kind === 'custom') await window.gloss.plugins.setSkillDirectory(dialog.agent.id, values.directory)
+        else if (dialog.kind === 'hooks') await window.gloss.plugins.enable(dialog.plugin.id, dialog.agent.id, true)
         else if (dialog.kind === 'remove') { await window.gloss.plugins.remove(dialog.plugin.id); setSelected(null); resetDetail() }
         else if (dialog.kind === 'removeFile') { await window.gloss.plugins.removeFile(dialog.plugin.id, dialog.file); await openFile(dialog.plugin, dialog.skill) }
         else if (dialog.kind === 'removeSkill') { await window.gloss.plugins.removeSkill(dialog.plugin.id, dialog.skill.id); resetDetail(); setTab('skills') }
@@ -292,11 +343,11 @@ function PluginDialog({ dialog, state, busy, onClose, onSubmit, onManageConnecti
     return () => { window.removeEventListener('keydown', key, true); if (previous?.isConnected) previous.focus() }
   }, [])
   const field = (name: string, label: string, multiline = false, placeholder?: string): React.JSX.Element => <label className="plugin-form-field" key={name}><span title={dialog.kind === 'new' || dialog.kind === 'skill' ? name === 'name' ? `A short name for your ${dialog.kind === 'skill' ? 'skill' : 'plugin'}.` : dialog.kind === 'skill' ? 'Describe when the agent should use this skill.' : 'Describe what this plugin helps you do.' : undefined}>{label}</span>{multiline ? <textarea disabled={busy} placeholder={placeholder} value={values[name]} onChange={e => setValues(v => ({ ...v, [name]: e.target.value }))} /> : <input disabled={busy} placeholder={placeholder} value={values[name]} onChange={e => setValues(v => ({ ...v, [name]: e.target.value }))} />}</label>
-  const title = { new: 'New plugin', edit: 'Edit plugin', skill: 'Add skill', file: 'New text file', connections: 'Plugin connections', custom: 'Custom agent skills', remove: 'Remove plugin?', removeSkill: 'Remove skill?', removeFile: 'Delete file?', discard: 'Discard unsaved changes?' }[dialog.kind]
+  const title = { new: 'New plugin', edit: 'Edit plugin', skill: 'Add skill', file: 'New text file', connections: 'Plugin connections', custom: 'Custom agent skills', hooks: 'Turn on hooks?', remove: 'Remove plugin?', removeSkill: 'Remove skill?', removeFile: 'Delete file?', discard: 'Discard unsaved changes?' }[dialog.kind]
   const creating = dialog.kind === 'new' || dialog.kind === 'skill'
   const needsName = ['new', 'edit', 'skill'].includes(dialog.kind)
   const disabled = busy || needsName && !values.name.trim() || dialog.kind === 'skill' && !values.description.trim() || dialog.kind === 'file' && !values.path.trim() || dialog.kind === 'custom' && (!confirmedFormat || !values.directory.trim())
-  const action = { new: 'Create plugin', edit: 'Save details', skill: 'Add skill', file: 'Create file', connections: 'Save connections', custom: 'Save directory', remove: 'Remove plugin', removeSkill: 'Remove skill', removeFile: 'Delete file', discard: 'Discard changes' }[dialog.kind]
+  const action = { new: 'Create plugin', edit: 'Save details', skill: 'Add skill', file: 'Create file', connections: 'Save connections', custom: 'Save directory', hooks: 'Turn on', remove: 'Remove plugin', removeSkill: 'Remove skill', removeFile: 'Delete file', discard: 'Discard changes' }[dialog.kind]
   return createPortal(<div className="dialog-backdrop" onClick={e => { if (e.target === e.currentTarget && !busy) onClose() }}><div className={`dialog plugin-dialog${creating ? ' plugin-create-dialog' : ''}`} ref={ref} role="dialog" aria-modal="true" aria-labelledby="plugin-dialog-title">
     <div className="plugin-inline-heading">{creating ? <div className="plugin-create-heading"><span className="plugin-create-mark" aria-hidden="true">{dialog.kind === 'skill' ? <BookOpen /> : <Package />}</span><h2 id="plugin-dialog-title">{title}</h2></div> : <h2 id="plugin-dialog-title">{title}</h2>}<button className="icon-button" disabled={busy} aria-label="Close dialog" onClick={onClose}><X /></button></div>
     <form onSubmit={e => { e.preventDefault(); if (!disabled) { setError(null); void onSubmit(values).catch(err => setError(errorText(err))) } }}>
@@ -305,6 +356,8 @@ function PluginDialog({ dialog, state, busy, onClose, onSubmit, onManageConnecti
       {dialog.kind === 'file' && <>{field('path', 'Path within the skill, such as references/checklist.md')}{field('content', 'Contents', true)}</>}
       {dialog.kind === 'connections' && <>{state?.connections.length ? state.connections.map(c => <label className="plugin-connection-choice" key={c.name}><input type="checkbox" disabled={busy} checked={(JSON.parse(values.connections) as string[]).includes(c.name)} onChange={e => { const current: string[] = JSON.parse(values.connections); setValues(v => ({ ...v, connections: JSON.stringify(e.target.checked ? [...current, c.name] : current.filter(n => n !== c.name)) })) }} /><span><strong>{c.name}</strong><small>{c.transport.toUpperCase()}{c.usedBy.length ? ` · used by ${c.usedBy.join(', ')}` : ''}</small></span></label>) : <p>No MCP connections have been configured yet.</p>}<p>These are shared global connections. Removing a reference from this plugin preserves their other uses. Authentication is handled by the agent.</p><button type="button" className="plugin-link" disabled={busy} onClick={onManageConnections}>Configure MCP servers</button></>}
       {dialog.kind === 'custom' && <><p>{dialog.agent.name} needs its own skill directory. This configures skill delivery only; it does not establish native plugin or remote MCP support.</p>{field('directory', 'Absolute skill-directory path')}<label className="plugin-connection-choice"><input type="checkbox" disabled={busy} checked={confirmedFormat} onChange={e => setConfirmedFormat(e.target.checked)} />This agent supports SKILL.md skill folders.</label><p>Gloss creates only its own namespaced links here. Existing files are preserved. Turn off this agent’s plugins before changing the directory.</p></>}
+      {dialog.kind === 'hooks' && <><p><strong>{dialog.plugin.name}</strong> has hooks: {dialog.agent.name} will run these commands automatically, with your permissions, in its sessions.</p>
+        <ul className="plugin-hook-confirm">{hooksFor(dialog.plugin, dialog.agent.id).map((h, i) => <li key={i}><span>{EVENTS[h.event] ?? h.event}{toolLabel(h) ? ` · ${toolLabel(h)}` : ''}</span><code>{h.command}</code></li>)}</ul></>}
       {dialog.kind === 'remove' && <p>Remove <strong>{dialog.plugin.name}</strong>, its files, and its Gloss-managed deployments?</p>}
       {dialog.kind === 'removeSkill' && <p>Remove <strong>{dialog.skill.name}</strong> and its supporting files?</p>}
       {dialog.kind === 'removeFile' && <p>Delete <strong>{dialog.file.path.split('/').slice(2).join('/')}</strong>?</p>}

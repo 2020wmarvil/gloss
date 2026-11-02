@@ -2,16 +2,22 @@ import { createHash, randomUUID } from 'node:crypto'
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { AgentConfig } from './agents'
 import type { McpServer } from '../shared/mcp'
 import { skillInvocation } from './skillInvocation'
-import { BUILTIN_CLAUDE_SKILL, BUILTIN_SKILL, LEGACY_BUILTIN_SKILLS, builtinSkill } from './pluginSkill'
+import { BUILTIN_SKILLS, LEGACY_BUILTIN_SKILLS, type BuiltinSkill } from './pluginSkill'
 import { mcpName } from '../shared/mcp'
-import { BUILTIN_PLUGIN_ID, PLUGIN_ID, pluginSlug, type PersonalPlugin, type PluginAgentState, type PluginChange, type PluginFile, type PluginLibraryState, type PluginManifest, type PluginSkill } from '../shared/plugins'
+import { OPENCODE_HOOK_PLUGIN, claudeSubagent, codexRole, flatName, isPartAgent, nativeHooks, openCodeHooks, openCodeSubagent, parseHooks, parseSubagent, planHook, type PartAgent } from './pluginParts'
+import { BUILTIN_PLUGIN_ID, PLUGIN_ID, pluginSlug, type PersonalPlugin, type PluginAgentState, type PluginChange, type PluginFile, type PluginLibraryState, type PluginHook, type PluginManifest, type PluginSkill, type PluginSubagent } from '../shared/plugins'
 
 type Agent = { id: string; name: string }
 type Deployment = { agentId: string; pluginId: string; target: string; source: string; mode: 'link' | 'copy'; hash: string }
-type State = { schemaVersion: 1; customDirectories: Record<string, string>; deployments: Deployment[] }
+/** `codexHookTrust`: the hash Codex reported for each hook Gloss gave it (its key → hash), passed back as trusted. */
+type State = { schemaVersion: 1; customDirectories: Record<string, string>; deployments: Deployment[]; codexHookTrust?: Record<string, string> }
+type Subagent = PluginSubagent & { instructions: string }
+/** One of Codex's hooks, as `_codex/hooks/list` reports it. */
+export type CodexHook = { key: string; currentHash: string; trustStatus: string; source?: string }
 type Options = {
   directory: string
   agents(): Agent[]
@@ -27,7 +33,7 @@ type Options = {
 }
 const MANIFEST_KEYS = ['schemaVersion', 'name', 'description', 'connections', 'enabledAgents']
 /** Native plugin parts Gloss doesn't deliver (SPEC → Plugins): a plugin with one shows a problem instead. */
-const NATIVE_PARTS = ['hooks', 'agents', 'commands', '.mcp.json', 'mcp.json', 'index.js', 'index.ts', '.claude-plugin']
+const NATIVE_PARTS = ['commands', '.mcp.json', 'mcp.json', 'index.js', 'index.ts', '.claude-plugin']
 const MAX_FILE = 1024 * 1024
 const MAX_FILES = 1000
 const MAX_PLUGIN_BYTES = 64 * 1024 * 1024
@@ -127,7 +133,8 @@ export class PluginLibrary {
       && typeof d.source === 'string' && inside(join(this.directory, d.pluginId), d.source)
       && (d.mode === 'link' || d.mode === 'copy')
       && typeof d.hash === 'string'
-    return directories && state.deployments.every(deployment)
+    const trust = state.codexHookTrust === undefined || (object(state.codexHookTrust) && Object.values(state.codexHookTrust).every(v => typeof v === 'string'))
+    return directories && state.deployments.every(deployment) && trust
   }
 
   private id(id: unknown): string { if (typeof id !== 'string' || !PLUGIN_ID.test(id)) throw new Error('Invalid plugin identifier.'); return id }
@@ -232,21 +239,37 @@ export class PluginLibrary {
     if (content.includes('\0')) throw new Error('This file is binary. Open the plugin folder to inspect it.')
     return content
   }
-  private sources(): { id: string; manifest: PluginManifest; skills: PluginSkill[]; problems: string[] }[] {
+  private sources(): { id: string; manifest: PluginManifest; skills: PluginSkill[]; subagents: Subagent[]; hooks: PluginHook[]; problems: string[] }[] {
     return readdirSync(this.directory, { withFileTypes: true }).filter(d => !d.name.startsWith('.')).map(d => {
       const id = d.name
       let manifest: PluginManifest = { schemaVersion: 1, name: id, description: '', connections: [], enabledAgents: [] }
       let skills: PluginSkill[] = []
+      let subagents: Subagent[] = []
+      let hooks: PluginHook[] = []
       const problems: string[] = []
       try {
         this.id(id); manifest = this.manifest(id)
         if (id === RESERVED_PLUGIN_ID) throw new Error(`The plugin id ${RESERVED_PLUGIN_ID} is reserved for Gloss’s built-in plugin. Rename this plugin’s folder.`)
         this.files(this.folder(id))
-        if (NATIVE_PARTS.some(name => exists(join(this.folder(id), name)))) throw new Error('Native hooks, agents, commands and embedded servers are not loaded. Use skills and shared MCP connection references.')
+        if (NATIVE_PARTS.some(name => exists(join(this.folder(id), name)))) throw new Error('Commands, embedded servers and native plugin manifests are not loaded. Use skills, subagents, hooks and shared MCP connection references.')
         skills = this.scanSkills(id)
+        subagents = this.scanSubagents(id)
+        hooks = this.scanHooks(id)
       } catch (error) { problems.push(message(error)) }
-      return { id, manifest, skills, problems }
+      return { id, manifest, skills, subagents, hooks, problems }
     })
+  }
+  private scanSubagents(id: string): Subagent[] {
+    const root = join(this.folder(id), 'agents')
+    if (!exists(root)) return []
+    return readdirSync(this.safe(root), { withFileTypes: true }).map(entry => {
+      if (!entry.isFile()) throw new Error('agents/ holds one .md file per subagent, no folders.')
+      return parseSubagent(id, entry.name, this.readText(join(root, entry.name)))
+    })
+  }
+  private scanHooks(id: string): PluginHook[] {
+    const file = join(this.folder(id), 'hooks', 'hooks.json')
+    return exists(file) ? parseHooks(this.readText(file)) : []
   }
   private blockers(manifest: PluginManifest, agentId: string): string[] {
     const connections = this.options.connections()
@@ -291,6 +314,8 @@ export class PluginLibrary {
       id: p.id,
       directory: join(this.directory, p.id),
       skills: p.skills,
+      subagents: p.subagents.map(({ instructions: _, ...s }) => s),
+      hooks: p.hooks,
       problems: p.problems,
       agents: agents.map(agent => agentState(p, agent))
     }))
@@ -358,13 +383,15 @@ export class PluginLibrary {
     this.changed(); return skillId
   }
   private file(id: string, path: string): string {
-    if (typeof path !== 'string' || !path.startsWith('skills/') || path.includes('\\') || path.split('/').some(p => !p || p === '.' || p === '..' || p.includes(':'))) throw new Error('Choose a relative file path within a skill.')
+    const part = typeof path === 'string' && (/^agents\/[a-z0-9][a-z0-9-]{0,63}\.md$/.test(path) || path === 'hooks/hooks.json')
+    if (typeof path !== 'string' || (!path.startsWith('skills/') && !part) || path.includes('\\') || path.split('/').some(p => !p || p === '.' || p === '..' || p.includes(':'))) throw new Error('Choose a relative file path within a skill, a subagent or the hooks file.')
     return this.safe(join(this.folder(id), path))
   }
   readFile(id: string, path: string): PluginFile {
     if (id === BUILTIN_PLUGIN_ID && this.options.settings) {
-      if (path !== `skills/${BUILTIN_CLAUDE_SKILL}/SKILL.md`) throw new Error('Unknown file.')
-      const content = this.builtinContent()
+      const skill = BUILTIN_SKILLS.find(b => path === `skills/${b.claude}/SKILL.md`)
+      if (!skill) throw new Error('Unknown file.')
+      const content = this.builtinContent(skill)
       return { path, content, revision: hash(content) }
     }
     const content = this.readText(this.file(id, path)); return { path, content, revision: hash(content) } }
@@ -452,8 +479,10 @@ export class PluginLibrary {
     }
     if (sharedRoots.some(root => overlaps(real(root), canonical)) || overlaps(real(this.directory), canonical) || overlaps(real(this.runtime), canonical)) throw new Error('Use a directory separate from the library and other agents’ discovery roots.')
     if (Object.entries(this.state.customDirectories).some(([id, dir]) => id !== agentId && overlaps(real(dir), canonical))) throw new Error('Each custom agent needs its own skill directory for independent availability.')
-    const previous = this.builtinFolder(agentId)
-    if (previous && exists(previous) && this.ownsBuiltin(previous)) rmSync(previous, { recursive: true })
+    for (const skill of BUILTIN_SKILLS) {
+      const previous = this.builtinFolder(agentId, skill)
+      if (previous && exists(previous) && this.ownsBuiltin(previous, skill.flat)) rmSync(previous, { recursive: true })
+    }
     this.state.customDirectories[agentId] = canonical; this.persist(); this.changed()
   }
 
@@ -554,61 +583,62 @@ export class PluginLibrary {
       if (exists(dir) && lstatSync(dir).isSymbolicLink()) throw new Error('A deployment parent was replaced by a link. Its contents were preserved.')
     }
   }
-  /** The built-in skill's folder for an agent, or undefined when it can't get it (SPEC → Plugins → Import). */
-  private builtinFolder(agentId: string): string | undefined {
+  /** A built-in skill's folder for an agent, or undefined when it can't get it (SPEC → Plugins → Import). */
+  private builtinFolder(agentId: string, skill: BuiltinSkill = BUILTIN_SKILLS[0]): string | undefined {
     const root = join(this.runtime, 'builtin')
-    if (agentId === 'claude') return join(root, 'claude', 'skills', BUILTIN_CLAUDE_SKILL)
-    if (agentId === 'codex') return join(root, 'codex', '.agents', 'skills', BUILTIN_SKILL)
-    if (agentId === 'opencode') return join(root, 'opencode', 'skills', BUILTIN_SKILL)
+    if (agentId === 'claude') return join(root, 'claude', 'skills', skill.claude)
+    if (agentId === 'codex') return join(root, 'codex', '.agents', 'skills', skill.flat)
+    if (agentId === 'opencode') return join(root, 'opencode', 'skills', skill.flat)
     const dir = this.state.customDirectories[agentId]
-    return dir ? join(dir, BUILTIN_SKILL) : undefined
+    return dir ? join(dir, skill.flat) : undefined
   }
-  /** A folder holding only the built-in skill (`name` its current or an earlier name), so Gloss may update or remove it. */
-  private ownsBuiltin(folder: string, name = BUILTIN_SKILL): boolean {
+  /** A folder holding only a built-in skill (`name` its current or an earlier name), so Gloss may update or remove it. */
+  private ownsBuiltin(folder: string, name: string): boolean {
     const stat = lstatSync(folder)
     if (!stat.isDirectory() || stat.isSymbolicLink()) return false
     const items = readdirSync(folder)
     return items.length === 1 && items[0] === 'SKILL.md' && readFileSync(join(folder, 'SKILL.md'), 'utf8').startsWith(`---\nname: ${name}\n`)
   }
-  /** Writes the built-in skill for every agent. It isn't part of the library and can't be turned off. */
-  private builtinContent(name = BUILTIN_SKILL): string {
-    return builtinSkill({ library: this.directory, settings: this.options.settings ?? '', agents: this.options.agents(), defaultAgents: this.defaultAgents() }, name)
+  /** A built-in skill's SKILL.md with this machine's paths. They aren't part of the library and can't be turned off. */
+  private builtinContent(skill: BuiltinSkill, name = skill.flat): string {
+    return skill.render({ library: this.directory, settings: this.options.settings ?? '', runtime: this.runtime, agents: this.options.agents(), defaultAgents: this.defaultAgents() }, name)
   }
   /** The built-in plugin as the Plugins screen shows it: read-only, on for every agent that can get it. */
   private builtinPlugin(agents: Agent[]): PersonalPlugin | undefined {
     if (!this.options.settings) return undefined
-    const path = `skills/${BUILTIN_CLAUDE_SKILL}/SKILL.md`
-    const description = /^description: "(.*)"$/m.exec(this.builtinContent())?.[1] ?? ''
     return {
       schemaVersion: 1, id: BUILTIN_PLUGIN_ID, builtin: true, name: 'Gloss',
-      description: 'Built into Gloss: lets any agent create a plugin or import one into this library.',
-      connections: [], enabledAgents: agents.map(a => a.id), directory: join(this.runtime, 'builtin'), problems: [],
-      skills: [{ id: BUILTIN_CLAUDE_SKILL, name: BUILTIN_CLAUDE_SKILL, description, path, files: ['SKILL.md'], invocation: 'automatic', invocationRevision: '' }],
+      description: 'Built into Gloss: lets any agent create or import a plugin, and work out why one doesn’t behave as expected.',
+      connections: [], enabledAgents: agents.map(a => a.id), directory: join(this.runtime, 'builtin'), problems: [], subagents: [], hooks: [],
+      skills: BUILTIN_SKILLS.map(skill => ({
+        id: skill.claude, name: skill.claude, description: /^description: "(.*)"$/m.exec(this.builtinContent(skill))?.[1] ?? '',
+        path: `skills/${skill.claude}/SKILL.md`, files: ['SKILL.md'], invocation: 'automatic' as const, invocationRevision: ''
+      })),
       agents: agents.map(agent => {
         const custom = agent.id.startsWith('custom:')
         const configured = !custom || !!this.state.customDirectories[agent.id]
-        const ready = this.hasBuiltin(agent.id) && (!custom || this.ownsBuiltin(this.builtinFolder(agent.id)!))
+        const blocked = BUILTIN_SKILLS.find(skill => !this.hasBuiltin(agent.id, skill) || (custom && !this.ownsBuiltin(this.builtinFolder(agent.id, skill)!, skill.flat)))
         return {
           ...agent, enabled: true, skillDirectory: this.state.customDirectories[agent.id],
           support: !custom ? 'tested' : configured ? 'configured' : 'unknown',
-          status: ready ? 'ready' : configured ? 'error' : 'setup',
-          message: ready ? '' : !configured ? 'Gets it once this custom agent’s skill directory is set.'
-            : custom ? `A folder Gloss didn’t write occupies ${this.builtinFolder(agent.id)}. It was kept, so this agent doesn’t get the skill.`
-            : 'The built-in skill could not be written. Restart Gloss to retry.'
+          status: !blocked ? 'ready' : configured ? 'error' : 'setup',
+          message: !blocked ? '' : !configured ? 'Gets it once this custom agent’s skill directory is set.'
+            : custom ? `A folder Gloss didn’t write occupies ${this.builtinFolder(agent.id, blocked)}. It was kept, so this agent doesn’t get that skill.`
+            : 'The built-in skills could not be written. Restart Gloss to retry.'
         }
       })
     }
   }
   private deliverBuiltin(): void {
     if (!this.options.settings) return
-    for (const agent of this.options.agents()) {
-      const content = this.builtinContent(agent.id === 'claude' ? BUILTIN_CLAUDE_SKILL : BUILTIN_SKILL)
-      const folder = this.builtinFolder(agent.id)
+    for (const agent of this.options.agents()) for (const skill of BUILTIN_SKILLS) {
+      const folder = this.builtinFolder(agent.id, skill)
       if (!folder) continue
       try {
-        this.removeLegacyBuiltin(agent.id, folder)
+        if (skill === BUILTIN_SKILLS[0]) this.removeLegacyBuiltin(agent.id, folder)
         // A custom agent's directory may hold the user's own content: never replace it.
-        if (agent.id.startsWith('custom:') && exists(folder) && !this.ownsBuiltin(folder)) continue
+        if (agent.id.startsWith('custom:') && exists(folder) && !this.ownsBuiltin(folder, skill.flat)) continue
+        const content = this.builtinContent(skill, agent.id === 'claude' ? skill.claude : skill.flat)
         const file = join(folder, 'SKILL.md')
         if (!exists(file) || readFileSync(file, 'utf8') !== content) atomic(file, content)
         if (agent.id === 'claude') {
@@ -616,7 +646,7 @@ export class PluginLibrary {
           const value = JSON.stringify({ name: 'gloss', description: 'Built into Gloss.' }) + '\n'
           if (!exists(manifest) || readFileSync(manifest, 'utf8') !== value) atomic(manifest, value)
         }
-      } catch (error) { console.warn(`[plugins] Could not write the built-in skill for ${agent.id}:`, message(error)) }
+      } catch (error) { console.warn(`[plugins] Could not write the built-in skill ${skill.flat} for ${agent.id}:`, message(error)) }
     }
   }
   /** Removes the built-in skill's folders under an earlier name, only where Gloss wrote them. */
@@ -627,8 +657,8 @@ export class PluginLibrary {
       if (!agentId.startsWith('custom:') || this.ownsBuiltin(old, name)) rmSync(old, { recursive: true })
     }
   }
-  private hasBuiltin(agentId: string): boolean {
-    const folder = this.builtinFolder(agentId)
+  private hasBuiltin(agentId: string, skill: BuiltinSkill = BUILTIN_SKILLS[0]): boolean {
+    const folder = this.builtinFolder(agentId, skill)
     return !!this.options.settings && !!folder && exists(join(folder, 'SKILL.md'))
   }
   reconcile(): void {
@@ -676,6 +706,7 @@ export class PluginLibrary {
       }
     }
     this.removeStaleClaudePlugins()
+    this.writeReport()
   }
   /** Drops the generated `.claude-plugin` of a plugin Claude no longer gets, once its skills are gone. */
   private removeStaleClaudePlugins(): void {
@@ -687,7 +718,7 @@ export class PluginLibrary {
       const dir = join(root, id)
       try {
         this.assertTargetParents('claude', dir)
-        rmSync(join(dir, '.claude-plugin'), { recursive: true, force: true })
+        for (const generated of ['.claude-plugin', 'agents', 'hooks']) rmSync(join(dir, generated), { recursive: true, force: true })
         const skills = join(dir, 'skills')
         if (exists(skills) && readdirSync(skills).length === 0) rmSync(skills, { recursive: true })
         if (readdirSync(dir).length === 0) rmSync(dir, { recursive: true })
@@ -699,15 +730,96 @@ export class PluginLibrary {
    * never to native user settings. A plugin with a problem is left out (the Plugins screen
    * shows why); it never stops the agent from starting.
    */
+  /** The plugins an agent gets: on for it, without a problem, a missing connection or a failed deployment. */
+  private deliverable(agentId: string, sources = this.sources(), deploymentErrors = this.deploymentErrors()): ReturnType<PluginLibrary['sources']> {
+    if (this.stateProblem) return []
+    return sources.filter(p => p.manifest.enabledAgents.includes(agentId)
+      && !p.problems.length
+      && !this.blockers(p.manifest, agentId).length
+      && !deploymentErrors.has(`${agentId}:${p.id}`))
+  }
+  /** Makes a generated runtime folder hold exactly `files` (flat), writing only what changed. No files: no folder. */
+  private generate(agentId: string, folder: string, files: Record<string, string>): void {
+    this.assertTargetParents(agentId, folder)
+    const names = Object.keys(files)
+    if (exists(folder)) {
+      if (lstatSync(folder).isSymbolicLink() || !lstatSync(folder).isDirectory()) throw new Error(`Something other than Gloss’s generated folder is at ${folder}.`)
+      for (const name of readdirSync(folder)) if (!names.includes(name)) rmSync(join(folder, name), { recursive: true, force: true })
+      if (!names.length) { rmSync(folder, { recursive: true, force: true }); return }
+    }
+    for (const name of names) {
+      const file = join(folder, name)
+      if (!exists(file) || readFileSync(file, 'utf8') !== files[name]) atomic(file, files[name])
+    }
+  }
+  /**
+   * Writes an agent's generated subagents and hooks (SPEC → Plugins → Subagents and hooks). Like the
+   * built-in skill, rewritten on each start; a busy agent keeps what it has until it's idle.
+   */
+  private generateParts(agentId: PartAgent, plugins: ReturnType<PluginLibrary['sources']>): void {
+    if (this.options.busy?.(agentId)) return
+    try {
+      if (agentId === 'claude') for (const p of plugins) {
+        const hooks = nativeHooks(p.hooks, 'claude')
+        this.generate(agentId, join(this.runtime, 'claude', p.id, 'agents'), Object.fromEntries(p.subagents.map(s => [`${s.id}.md`, claudeSubagent(s)])))
+        this.generate(agentId, join(this.runtime, 'claude', p.id, 'hooks'), Object.keys(hooks).length ? { 'hooks.json': JSON.stringify({ hooks }, null, 2) + '\n' } : {})
+      }
+      if (agentId === 'codex') this.generate(agentId, join(this.runtime, 'codex', 'agents'), Object.fromEntries(plugins.flatMap(p => p.subagents.map(s => [`${flatName(p.id, s.id)}.toml`, codexRole(s)]))))
+      if (agentId === 'opencode') {
+        const hooks = plugins.flatMap(p => openCodeHooks(p.hooks))
+        this.generate(agentId, join(this.runtime, 'opencode', 'hooks'), hooks.length ? {
+          'package.json': JSON.stringify({ name: 'gloss-hooks', private: true, type: 'module', exports: { '.': './index.js' } }, null, 2) + '\n',
+          'index.js': OPENCODE_HOOK_PLUGIN,
+          'hooks.json': JSON.stringify(hooks, null, 2) + '\n'
+        } : {})
+      }
+    } catch (error) { console.warn(`[plugins] Could not write subagents and hooks for ${agentId}:`, message(error)) }
+  }
+  /**
+   * Records Codex's hashes for the hooks Gloss passed it, so the next start marks them trusted:
+   * Codex skips untrusted hooks, and trusting them through Codex writes to `~/.codex/config.toml`.
+   * Gloss trusts only hooks from its own process configuration (`sessionFlags`). True when a
+   * hook was untrusted and its hash is new, so the agent needs one restart to run it.
+   */
+  trustCodexHooks(hooks: CodexHook[]): boolean {
+    if (this.stateProblem) return false
+    const flags = hooks.filter(h => h.source === 'sessionFlags' && typeof h.key === 'string' && typeof h.currentHash === 'string')
+    const previous = this.state.codexHookTrust ?? {}
+    const next = Object.fromEntries(flags.map(h => [h.key, h.currentHash]))
+    const restart = flags.some(h => h.trustStatus !== 'trusted' && previous[h.key] !== h.currentHash)
+    if (JSON.stringify(next) !== JSON.stringify(previous)) { this.state.codexHookTrust = next; this.persist() }
+    return restart
+  }
+  /** Gloss's additions to Codex's `CODEX_CONFIG` (hooks with their trust, and subagent roles), merged into the user's. */
+  private codexConfig(config: AgentConfig, plugins: ReturnType<PluginLibrary['sources']>): { env?: string; hooks: boolean } {
+    const hooks: Record<string, unknown[]> = {}
+    for (const p of plugins) for (const [event, groups] of Object.entries(nativeHooks(p.hooks, 'codex'))) (hooks[event] ??= []).push(...groups)
+    const roles = Object.fromEntries(plugins.flatMap(p => p.subagents.map(s => {
+      const name = flatName(p.id, s.id)
+      return [name, { description: s.description, config_file: join(this.runtime, 'codex', 'agents', `${name}.toml`) }]
+    })))
+    if (!Object.keys(hooks).length && !Object.keys(roles).length) return { hooks: false }
+    const raw = config.env?.CODEX_CONFIG ?? process.env.CODEX_CONFIG ?? '{}'
+    let content: unknown
+    try { content = JSON.parse(raw) } catch { content = null }
+    if (!object(content) || (content.hooks !== undefined && !object(content.hooks)) || (content.agents !== undefined && !object(content.agents))) {
+      console.warn('[plugins] CODEX_CONFIG must be a JSON object with object hooks and agents; subagents and hooks are left out.')
+      return { hooks: false }
+    }
+    const own = object(content.hooks) ? content.hooks : {}
+    const merged: Record<string, unknown> = { ...own }
+    for (const [event, groups] of Object.entries(hooks)) merged[event] = [...(Array.isArray(own[event]) ? own[event] : []), ...groups]
+    if (Object.keys(hooks).length) merged.state = { ...(object(own.state) ? own.state : {}), ...Object.fromEntries(Object.entries(this.state.codexHookTrust ?? {}).map(([key, hash]) => [key, { trusted_hash: hash }])) }
+    const next = { ...content, ...(Object.keys(merged).length ? { hooks: merged } : {}), ...(Object.keys(roles).length ? { agents: { ...(object(content.agents) ? content.agents : {}), ...roles } } : {}) }
+    return { env: JSON.stringify(next), hooks: Object.keys(hooks).length > 0 }
+  }
   configureAgent(config: AgentConfig): AgentConfig {
     // Rewritten on every start, so a hand edit to the generated skill never reaches a session.
     this.deliverBuiltin()
     const builtin = this.hasBuiltin(config.id)
-    const deploymentErrors = this.stateProblem ? new Map<string, string>() : this.deploymentErrors()
-    const enabled = this.stateProblem ? [] : this.sources().filter(p => p.manifest.enabledAgents.includes(config.id)
-      && !p.problems.length
-      && !this.blockers(p.manifest, config.id).length
-      && !deploymentErrors.has(`${config.id}:${p.id}`))
+    const sources = this.stateProblem ? [] : this.sources()
+    const enabled = this.deliverable(config.id, sources)
+    if (isPartAgent(config.id)) this.generateParts(config.id, enabled)
     if (config.id === 'opencode') {
       if (!enabled.length && !builtin) return config
       const raw = config.env?.OPENCODE_CONFIG_CONTENT ?? process.env.OPENCODE_CONFIG_CONTENT ?? '{}'
@@ -722,9 +834,21 @@ export class PluginLibrary {
         ...(builtin ? [join(this.runtime, 'builtin', 'opencode', 'skills')] : []),
         ...(enabled.length ? [join(this.runtime, 'opencode', 'skills')] : [])
       ])]
-      return { ...config, env: { ...config.env, OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...content, skills }) } }
+      const next: Record<string, unknown> = { ...content, skills }
+      const subagents = Object.fromEntries(enabled.flatMap(p => p.subagents.map(s => [flatName(p.id, s.id), openCodeSubagent(s)])))
+      const hooks = enabled.some(p => openCodeHooks(p.hooks).length)
+      if (Object.keys(subagents).length || hooks) {
+        if ((content.agents !== undefined && !object(content.agents)) || (content.plugins !== undefined && !Array.isArray(content.plugins))) {
+          console.warn('[plugins] OPENCODE_CONFIG_CONTENT has unusable agents or plugins; subagents and hooks are left out.')
+        } else {
+          if (Object.keys(subagents).length) next.agents = { ...(object(content.agents) ? content.agents : {}), ...subagents }
+          if (hooks) next.plugins = [...(Array.isArray(content.plugins) ? content.plugins : []), pathToFileURL(join(this.runtime, 'opencode', 'hooks')).href]
+        }
+      }
+      return { ...config, env: { ...config.env, OPENCODE_CONFIG_CONTENT: JSON.stringify(next) } }
     }
     if ((config.id !== 'claude' && config.id !== 'codex') || (!enabled.length && !builtin)) return config
+    const codex = config.id === 'codex' ? this.codexConfig(config, enabled) : { hooks: false }
     const decorate = (previous: Record<string, unknown>): Record<string, unknown> => {
       if (config.id === 'codex') {
         const roots = Array.isArray(previous.additionalRoots) ? previous.additionalRoots : []
@@ -745,11 +869,53 @@ export class PluginLibrary {
     }
     return {
       ...config,
+      ...(codex.env ? { env: { ...config.env, CODEX_CONFIG: codex.env } } : {}),
+      ...(codex.hooks ? {
+        afterStart: async (conn: { extRequest(method: string, params: Record<string, unknown>): Promise<unknown> }) => {
+          // Hooks from Gloss's own configuration don't depend on a project; any folder lists them.
+          const listed = await conn.extRequest('_codex/hooks/list', { cwd: homedir() })
+          const hooks = object(listed) && Array.isArray(listed.hooks) ? listed.hooks as CodexHook[] : []
+          return this.trustCodexHooks(hooks) ? this.configureAgent(config) : undefined
+        }
+      } : {}),
       sessionMeta: instructions => {
         const meta = config.sessionMeta?.(instructions) ?? {}
         return { new: decorate(meta.new ?? {}), load: decorate(meta.load ?? {}) }
       }
     }
+  }
+  /**
+   * `runtime/delivery.json`: what each agent gets from each plugin and why it skips the rest, for
+   * the doctor skill (SPEC → Plugins → Doctor). Gloss shows none of it on screen.
+   */
+  private writeReport(): void {
+    try {
+      const sources = this.sources()
+      const errors = this.deploymentErrors()
+      const report = { agents: Object.fromEntries(this.options.agents().map(agent => {
+        const deliverable = new Set(this.deliverable(agent.id, sources, errors).map(p => p.id))
+        const part = isPartAgent(agent.id) ? agent.id : undefined
+        return [agent.id, { name: agent.name, plugins: Object.fromEntries(sources.map(p => {
+          const on = p.manifest.enabledAgents.includes(agent.id)
+          const delivered = deliverable.has(p.id)
+          const reason = !on ? 'Off for this agent.' : delivered ? undefined
+            : p.problems[0] ?? this.blockers(p.manifest, agent.id)[0] ?? errors.get(`${agent.id}:${p.id}`) ?? this.stateProblem ?? 'Not delivered.'
+          const name = (id: string): string => agent.id === 'claude' ? `${p.id}:${id}` : flatName(p.id, id)
+          return [p.id, {
+            on, delivered, ...(reason ? { reason } : {}),
+            skills: p.skills.map(s => agent.id === 'claude' ? `${p.id}:${s.name}` : agent.id.startsWith('custom:') ? `gloss-${flatSkillName(p.id, s.id)}` : flatSkillName(p.id, s.id)),
+            subagents: p.subagents.map(s => part ? { name: name(s.id), delivered } : { name: s.id, delivered: false, reason: 'Custom agents get skills only.' }),
+            hooks: p.hooks.map(h => {
+              const plan = part ? planHook(h, part) : { delivered: false as const, reason: 'Custom agents get skills only.' }
+              return { event: h.event, ...(h.matcher ? { matcher: h.matcher } : {}), command: h.command, ...(plan.delivered ? { delivered, as: { event: plan.event, ...(plan.matcher ? { matcher: plan.matcher } : {}) } } : { delivered: false, reason: plan.reason }) }
+            })
+          }]
+        })) }]
+      })) }
+      const file = join(this.runtime, 'delivery.json')
+      const content = JSON.stringify(report, null, 2) + '\n'
+      if (!exists(file) || readFileSync(file, 'utf8') !== content) atomic(file, content)
+    } catch (error) { console.warn('[plugins] Could not write the delivery report:', message(error)) }
   }
   markPending(agentIds: string[]): void { for (const id of agentIds) this.pending.add(id) }
   refreshed(agentId: string): void { this.pending.delete(agentId) }

@@ -1,6 +1,7 @@
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, lstatSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PluginLibrary } from './plugins'
 import { parse as parseYaml } from 'yaml'
@@ -213,9 +214,13 @@ it('keeps global MCP definitions independent and reports missing or unsupported 
 
 it('rejects native executable components and malformed deployment state without overwriting them', () => {
   const id = createOff('Writing', 'Write clearly')
-  mkdirSync(join(record(id).directory, 'hooks'))
-  writeFileSync(join(record(id).directory, 'hooks/hooks.json'), '{}')
+  mkdirSync(join(record(id).directory, 'commands'))
   expect(() => library.enable(id, 'claude', true)).toThrow(/are not loaded/)
+  rmSync(join(record(id).directory, 'commands'), { recursive: true })
+  // A Claude Code plugin's own hooks file isn't Gloss's format.
+  mkdirSync(join(record(id).directory, 'hooks'))
+  writeFileSync(join(record(id).directory, 'hooks/hooks.json'), JSON.stringify({ hooks: { PreToolUse: [] } }))
+  expect(() => library.enable(id, 'claude', true)).toThrow(/Gloss’s hook format/)
   const state = join(root, 'plugins/state.json'); writeFileSync(state, '{broken')
   library = make()
   expect(library.list().errors).toHaveLength(1)
@@ -464,8 +469,15 @@ describe('import (phase 2)', () => {
   it('lists the built-in plugin read-only and always on, and rewrites a hand edit before an agent starts', () => {
     library.reconcile()
     const builtin = library.list().plugins[0]
-    expect(builtin).toMatchObject({ id: 'gloss:builtin', builtin: true, problems: [], skills: [{ id: 'new-plugin', files: ['SKILL.md'] }] })
+    expect(builtin).toMatchObject({ id: 'gloss:builtin', builtin: true, problems: [], skills: [{ id: 'new-plugin', files: ['SKILL.md'] }, { id: 'doctor', files: ['SKILL.md'] }] })
     expect(builtin.skills[0].description).toMatch(/^Create a plugin in Gloss/)
+    expect(builtin.skills[1].description).toMatch(/^Work out why a Gloss plugin/)
+    const doctor = library.readFile('gloss:builtin', 'skills/doctor/SKILL.md').content
+    expect(doctor).toContain(join(root, 'plugins/runtime/delivery.json'))
+    expect(doctor).toContain(join(root, 'plugins/state.json'))
+    expect(doctor).not.toContain('${CLAUDE_')
+    expect(readFileSync(join(root, 'plugins/runtime/builtin/codex/.agents/skills/gloss-doctor/SKILL.md'), 'utf8')).toMatch(/^---\nname: gloss-doctor\n/)
+    expect(readFileSync(join(root, 'plugins/runtime/builtin/claude/skills/doctor/SKILL.md'), 'utf8')).toMatch(/^---\nname: doctor\n/)
     expect(builtin.agents.map(a => [a.id, a.status])).toEqual([['claude', 'ready'], ['codex', 'ready'], ['opencode', 'ready'], ['custom:local', 'setup']])
     const file = library.readFile('gloss:builtin', 'skills/new-plugin/SKILL.md')
     expect(file.content).toContain(library.directory)
@@ -483,9 +495,12 @@ describe('import (phase 2)', () => {
     const first = join(root, 'custom-a'); const second = join(root, 'custom-b')
     library.setSkillDirectory('custom:local', first)
     expect(readFileSync(join(first, 'gloss-new-plugin/SKILL.md'), 'utf8')).toContain('name: gloss-new-plugin')
+    expect(readFileSync(join(first, 'gloss-doctor/SKILL.md'), 'utf8')).toContain('name: gloss-doctor')
     mkdirSync(join(second, 'gloss-new-plugin'), { recursive: true }); writeFileSync(join(second, 'gloss-new-plugin/SKILL.md'), 'Mine')
     library.setSkillDirectory('custom:local', second)
     expect(existsSync(join(first, 'gloss-new-plugin'))).toBe(false)
+    expect(existsSync(join(first, 'gloss-doctor'))).toBe(false)
+    expect(existsSync(join(second, 'gloss-doctor/SKILL.md'))).toBe(true)
     expect(readFileSync(join(second, 'gloss-new-plugin/SKILL.md'), 'utf8')).toBe('Mine')
     expect(library.list().plugins[0].agents.find(a => a.id === 'custom:local')).toMatchObject({ status: 'error', message: expect.stringMatching(/kept/) })
   })
@@ -572,5 +587,121 @@ describe('import (phase 2)', () => {
     expect(removeConnections).toHaveBeenCalledWith(process.platform === 'win32' ? ['bundled', 'bundled-cwd'] : ['bundled'])
     expect(connections.map(s => s.name)).toContain('shared')
     expect(connections.map(s => s.name)).toContain('neighbour')
+  })
+})
+
+describe('subagents and hooks', () => {
+  const runtime = (...parts: string[]) => join(root, 'plugins/runtime', ...parts)
+  /** A plugin, on for every agent, with a subagent and hooks in Gloss's formats. */
+  function withParts(hooks: unknown[] = [
+    { event: 'beforeTool', matcher: 'shell', command: 'check-shell' },
+    { event: 'afterTool', matcher: 'read', command: 'log-read' },
+    { event: 'PreCompact', command: 'save', agents: ['claude'] }
+  ]): string {
+    const id = library.create('Kit', 'Tools')
+    const folder = record(id).directory
+    mkdirSync(join(folder, 'agents')); mkdirSync(join(folder, 'hooks'))
+    writeFileSync(join(folder, 'agents/reviewer.md'), '---\nname: reviewer\ndescription: Reviews changes.\ntools: read-only\nmodel:\n  claude: haiku\n---\n\nReview the diff.\n')
+    writeFileSync(join(folder, 'hooks/hooks.json'), JSON.stringify({ hooks }))
+    library.settingsChanged()
+    return id
+  }
+
+  it('lists a plugin’s subagents and hooks, and shows a malformed one as a problem', () => {
+    const id = withParts()
+    expect(record(id)).toMatchObject({ problems: [], subagents: [{ id: 'reviewer', description: 'Reviews changes.', tools: 'read-only', models: { claude: 'haiku' }, path: 'agents/reviewer.md' }], hooks: [{ event: 'beforeTool', matcher: 'shell', command: 'check-shell', timeout: 60 }, expect.anything(), expect.anything()] })
+    expect(library.readFile(id, 'hooks/hooks.json').content).toContain('check-shell')
+    expect(library.readFile(id, 'agents/reviewer.md').content).toContain('Review the diff.')
+    writeFileSync(join(record(id).directory, 'agents/reviewer.md'), '---\nname: other\ndescription: x\n---\n\nBody\n')
+    expect(record(id).problems).toEqual(['agents/reviewer.md: name must match the file name (reviewer).'])
+  })
+
+  it('gives Claude plugin agent and hook files, with an agent-specific hook only for it', () => {
+    const id = withParts()
+    const meta = library.configureAgent(getAgentConfig('claude')).sessionMeta!('').new
+    expect(meta).toMatchObject({ claudeCode: { options: { plugins: [{ type: 'local', path: runtime('claude', id) }] } } })
+    expect(readFileSync(runtime('claude', id, 'agents/reviewer.md'), 'utf8')).toBe('---\nname: reviewer\ndescription: "Reviews changes."\ntools: Read, Grep, Glob, WebFetch, WebSearch\nmodel: "haiku"\n---\n\nReview the diff.\n')
+    expect(JSON.parse(readFileSync(runtime('claude', id, 'hooks/hooks.json'), 'utf8')).hooks).toEqual({
+      PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'check-shell', timeout: 60 }] }],
+      PostToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'log-read', timeout: 60 }] }],
+      PreCompact: [{ hooks: [{ type: 'command', command: 'save', timeout: 60 }] }]
+    })
+    // Turned off: the generated files go with its manifest.
+    library.enable(id, 'claude', false)
+    expect(existsSync(runtime('claude', id))).toBe(false)
+  })
+
+  it('gives Codex hooks and roles through CODEX_CONFIG, merged into the user’s, and trusts its own hooks once', async () => {
+    const id = withParts()
+    const user = { model: 'gpt-5.5', hooks: { Stop: [{ hooks: [{ type: 'command', command: 'mine' }] }] }, agents: { mine: { description: 'Mine', config_file: '/x.toml' } } }
+    const base = { ...getAgentConfig('codex'), env: { ...getAgentConfig('codex').env, CODEX_CONFIG: JSON.stringify(user) } }
+    const config = library.configureAgent(base)
+    const content = JSON.parse(config.env!.CODEX_CONFIG)
+    const role = runtime('codex', 'agents', `${id}-reviewer.toml`)
+    expect(content).toEqual({
+      model: 'gpt-5.5',
+      hooks: { Stop: user.hooks.Stop, PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'check-shell', timeout: 60 }] }], state: {} },
+      agents: { mine: user.agents.mine, [`${id}-reviewer`]: { description: 'Reviews changes.', config_file: role } }
+    })
+    expect(readFileSync(role, 'utf8')).toBe('developer_instructions = "Review the diff."\nsandbox_mode = "read-only"\n')
+    // Codex lists the hooks as untrusted: Gloss records their hashes and asks for one restart with them.
+    const hooks = [
+      { key: 'C:\\<session-flags>\\config.toml:pre_tool_use:0:0', currentHash: 'sha256:a', trustStatus: 'untrusted', source: 'sessionFlags' },
+      { key: 'C:\\.codex\\hooks.json:stop:0:0', currentHash: 'sha256:b', trustStatus: 'untrusted', source: 'user' }
+    ]
+    const conn = { extRequest: vi.fn(async () => ({ hooks })) }
+    const restarted = await config.afterStart!(conn)
+    expect(conn.extRequest).toHaveBeenCalledWith('_codex/hooks/list', expect.objectContaining({ cwd: expect.any(String) }))
+    expect(JSON.parse(restarted!.env!.CODEX_CONFIG).hooks.state).toEqual({ 'C:\\<session-flags>\\config.toml:pre_tool_use:0:0': { trusted_hash: 'sha256:a' } })
+    // Trusted now, or untrusted with a hash it already passed: no further restart.
+    expect(await restarted!.afterStart!({ extRequest: async () => ({ hooks: [{ ...hooks[0], trustStatus: 'trusted' }] }) })).toBeUndefined()
+    expect(library.trustCodexHooks([hooks[0]])).toBe(false)
+    expect(JSON.parse(readFileSync(join(root, 'plugins/state.json'), 'utf8')).codexHookTrust).toEqual({ [hooks[0].key]: 'sha256:a' })
+    // Not Gloss's hooks, or none at all: nothing to do after start.
+    expect(library.trustCodexHooks([hooks[1]])).toBe(false)
+    library.enable(id, 'codex', false)
+    expect(library.configureAgent(base).afterStart).toBeUndefined()
+    expect(existsSync(role)).toBe(false)
+  })
+
+  it('gives OpenCode subagents and a generated hook plugin through OPENCODE_CONFIG_CONTENT', () => {
+    const id = withParts()
+    const config = library.configureAgent({ ...getAgentConfig('opencode'), env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ agents: { mine: { mode: 'primary' } }, plugins: ['team-plugin'] }) } })
+    const content = JSON.parse(config.env!.OPENCODE_CONFIG_CONTENT)
+    expect(content.agents).toEqual({ mine: { mode: 'primary' }, [`${id}-reviewer`]: { description: 'Reviews changes.', mode: 'subagent', system: 'Review the diff.', permissions: [{ action: 'edit', resource: '*', effect: 'deny' }, { action: 'shell', resource: '*', effect: 'deny' }] } })
+    expect(content.plugins).toEqual(['team-plugin', pathToFileURL(runtime('opencode', 'hooks')).href])
+    expect(JSON.parse(readFileSync(runtime('opencode', 'hooks/hooks.json'), 'utf8'))).toEqual([
+      { event: 'beforeTool', matcher: '^(?:shell)$', command: 'check-shell', timeout: 60 },
+      { event: 'afterTool', matcher: '^(?:read)$', command: 'log-read', timeout: 60 }
+    ])
+    expect(readFileSync(runtime('opencode', 'hooks/index.js'), 'utf8')).toContain('Generated by Gloss')
+  })
+
+  it('records what each agent got and skipped for the doctor, and gives custom agents skills only', () => {
+    const id = withParts()
+    const report = JSON.parse(readFileSync(runtime('delivery.json'), 'utf8'))
+    expect(report.agents.codex.plugins[id]).toMatchObject({
+      on: true, delivered: true, skills: [`${id}-instructions`], subagents: [{ name: `${id}-reviewer`, delivered: true }],
+      hooks: [
+        { event: 'beforeTool', delivered: true, as: { event: 'PreToolUse', matcher: 'Bash' } },
+        { event: 'afterTool', delivered: false, reason: 'codex has no read tool.' },
+        { event: 'PreCompact', delivered: false, reason: 'Only for claude.' }
+      ]
+    })
+    expect(report.agents.claude.plugins[id].subagents).toEqual([{ name: `${id}:reviewer`, delivered: true }])
+    expect(report.agents['custom:local'].plugins[id]).toMatchObject({ on: false, reason: 'Off for this agent.', subagents: [{ delivered: false, reason: 'Custom agents get skills only.' }] })
+  })
+
+  it('leaves a busy agent’s generated files alone until it’s idle', () => {
+    const id = withParts()
+    library.configureAgent(getAgentConfig('claude'))
+    const file = runtime('claude', id, 'hooks/hooks.json')
+    writeFileSync(join(record(id).directory, 'hooks/hooks.json'), JSON.stringify({ hooks: [{ event: 'stop', command: 'later' }] }))
+    busy.add('claude')
+    library.configureAgent(getAgentConfig('claude'))
+    expect(readFileSync(file, 'utf8')).toContain('check-shell')
+    busy.delete('claude')
+    library.configureAgent(getAgentConfig('claude'))
+    expect(readFileSync(file, 'utf8')).toContain('later')
   })
 })

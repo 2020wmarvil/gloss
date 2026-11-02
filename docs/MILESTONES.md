@@ -1,17 +1,22 @@
 # Milestones
 
-Build in order, from M22 through M26 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
+Build in order, from M22 through M27 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1 through M21, failed-turn actions and worktrees are done. Next are exploration of agents, hooks and LSP servers in plugins (M22), Perforce support (M23), performance improvements (M24), shipping (M25), then marketing (M26). Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1 through M21, failed-turn actions and worktrees are done. Next are subagents and hooks in plugins (M22), Perforce support (M23), phone polish (M24), performance improvements (M25), shipping (M26), then marketing (M27). Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
-## M22: Agents, hooks and LSP servers in plugins
-Explore plugin component support after custom keyboard shortcuts and before Perforce support. M19 limits plugins to skills and MCP servers because those are the only components every agent supports; Claude Code plugins can also carry subagent definitions (`agents/`), hooks (`hooks/hooks.json`) and LSP servers (`lspServers`), which today only Claude Code loads. Gloss is agent agnostic, so none of these ship for one agent alone.
+## M22: Subagents and hooks in plugins
+Add subagents and hooks to Gloss plugins, in a Gloss format that is translated for each agent at delivery. M19 limits plugins to skills and MCP servers. Claude Code, Codex and OpenCode each support subagents and hooks in their own formats: Claude Code in its plugins (`agents/`, `hooks/hooks.json`), Codex in `~/.codex/agents/*.toml` and `hooks.json` or `[hooks]` in `config.toml`, OpenCode as agent definitions in its config and hooks as JS plugins.
 
-- Survey what Codex, OpenCode and other ACP agents offer for each (their own formats, if any) and whether one plugin definition can be delivered to all of them, or translated per agent. Agents and hooks often name an agent's own tools (`Bash`, `Write`), which may not translate.
-- Hooks run commands automatically on agent events: decide how a plugin shows that before it is imported or enabled, and never run them on import.
-- Commands are not in scope: they are a legacy form of user-invoked skills.
+- **Spike first:** for each agent, find a delivery channel Gloss controls, as M19 did for skills (Claude's generated local plugin, Codex's `additionalRoots`, `OPENCODE_CONFIG_CONTENT`), without editing native agent settings. **Done:** every agent has one (Claude: the generated plugin; Codex: `CODEX_CONFIG`, with hook trust supplied by Gloss; OpenCode: `OPENCODE_CONFIG_CONTENT` agents and a generated plugin folder). Details in `SPEC.md` (Plugins).
+- **Subagents:** `agents/<name>.md`, markdown with frontmatter: `name`, `description`, and the body as instructions. Tools are a capability level (`read-only` or `inherit`), not tool names, mapped to Claude's tool list, Codex's `sandbox_mode` and OpenCode's `permissions`. `model` is omitted (inherit) or given per agent, since model ids don't translate.
+- **Hooks:** `hooks.json` in Gloss's format, with Gloss event names for the events the agents share (session start, user prompt, before and after a tool, stop) and matchers by tool category (shell, edit, read, an MCP server, any), mapped to each agent's events and tool names. A hook may name an agent-specific event or tool, or list the agents it's for; it's delivered only to those agents. Commands get the agent's own stdin payload and answer in its own format (raw passthrough): Gloss translates the configuration, not the hook protocol. OpenCode's hooks are JS plugins, so it gets a generated plugin that runs the commands; it has no native command protocol, so Gloss defines the one that plugin uses (Claude's input shape with OpenCode's tool names).
+- **Partial support is silent:** an agent uses whichever parts of a plugin it supports and ignores the rest, with no note in the UI. This replaces M19's rule that a plugin with native hooks or agents folders can't be enabled; a plugin that delivers nothing to an agent simply has no effect there. Import (`new-plugin`) brings agents and hooks over, translated to Gloss's format, instead of leaving them out.
+- **Doctor skill:** a second built-in skill beside `new-plugin` (`gloss:doctor` in Claude, `gloss-doctor` elsewhere) that diagnoses a plugin that doesn't behave as expected: which parts each agent receives and why (unsupported component, agent-specific hook, missing connection, deployment errors), with the library, runtime and `state.json` paths. This is how a user finds out what silent partial support left out.
+- **Safety:** hooks run commands automatically. They never run on import, and the plugin's screen shows each hook's event, matcher and command before the plugin is enabled.
+- Commands are not in scope: they are a legacy form of user-invoked skills. LSP servers aren't either: only Claude runs them today (OpenCode 2 accepts an `lsp` config but has no client, and Codex has none). Custom ACP profiles get skills only, as today.
+- Update `SPEC.md` (Plugins) in this milestone.
 
-**Done when:** the exploration records, per component and per agent, what can be delivered and how, and recommends whether to proceed with a scope that works on every supported agent.
+**Done when:** a plugin with subagents and hooks in Gloss's format is delivered to Claude, Codex and OpenCode wherever each supports them (agent-specific hooks only to their agents), imports of Claude Code plugins carry their agents and hooks over, the doctor skill explains what each agent received, and the spike's findings are recorded.
 
 ## M23: Perforce support
 Let Gloss work with projects in Perforce workspaces, including reviewing their changes with any supported agent. Update `SPEC.md` (Projects and sessions, Review sessions, Status line, Worktrees) in this milestone.
@@ -25,7 +30,17 @@ Let Gloss work with projects in Perforce workspaces, including reviewing their c
 
 **Done when:** a user can open a Perforce project, run a session with any supported agent, review workspace or pending-changelist changes with line threads, and refresh the review after agent edits, without Git-only controls or changes to existing Git behavior.
 
-## M24: Performance
+## M24: Phone polish
+Quality-of-life fixes to the phone client (SPEC → Remote and mobile) from daily use. Small fixes from the first round of feedback already landed: swipe right to go back, the session list returning to the open session's project, the desktop's session order, and no offline banner on a quick reconnect after the app wakes. Update `SPEC.md` (Remote and mobile) in this milestone.
+
+- **Diffs on the phone:** view a session's changes (the working tree against its base, as the desktop's review diff) read-only, file by file, sized for a phone: a file list with added and removed line counts, then one file's diff with wrapped or horizontally scrolling lines. Open it from the session's header. Decide whether line threads and Run review come to the phone, or stay desktop-only and say so. The bridge's allowlist gains only the read calls this needs.
+- **Swipe back that tracks the finger:** the screen follows the drag and settles back or slides away, instead of acting only when the finger lifts.
+- **Waking up:** a socket that still reads as open after the phone sleeps but is dead (no close event) is detected right away on return (a ping with a short timeout) rather than when TCP gives up, so the reconnect and reload start at once. Keep what's on screen while it reloads, with no flash of empty or stale state.
+- Collect further phone feedback here as it comes in; each fix still goes through the spec.
+
+**Done when:** on an iPhone Home Screen app, a session's diff can be read file by file, swiping back follows the finger, and putting the app away and coming back shows the current state without an offline banner while the desktop is reachable.
+
+## M25: Performance
 Measure first, then fix what the numbers show. Keep the app's behavior unchanged, and don't optimize anything the measurements don't point at.
 
 - **Latency needs attention:** application startup until the UI is responsive, starting and opening sessions, and opening, navigating and scrolling large diffs in the diff viewer. Measure these paths and reduce the delays.
@@ -41,7 +56,7 @@ Measure first, then fix what the numbers show. Keep the app's behavior unchanged
 
 **Done when:** the benchmark runs from one command, each fixed hotspot shows a measured improvement and has a deterministic test that would catch it coming back, typing and scrolling while streaming a long answer into a large, image-heavy session stay smooth (no long tasks over 50 ms in the renderer), and the numbers are recorded for the next comparison.
 
-## M25: Shipping
+## M26: Shipping
 - **Installers** with electron-builder: Windows (NSIS) first; macOS and Linux targets configured but best effort. The adapter's native CLI is unpacked from the app archive so it can run.
 - **Release workflow:** pushing a version tag builds the installers in CI and publishes a GitHub Release.
 - **Auto-update** from GitHub Releases (electron-updater), with an in-app "update ready, restart" prompt.
@@ -50,7 +65,7 @@ Measure first, then fix what the numbers show. Keep the app's behavior unchanged
 
 **Done when:** a fresh Windows machine can install Gloss from a GitHub Release, sign in and run a session, and a later release updates it in place. The signing policy is documented, and release artifacts follow it.
 
-## M26: Marketing
+## M27: Marketing
 Present Gloss to people who haven't used it. Comes after Shipping, so every link points at a release people can install.
 
 - **README:** lead with what Gloss is and why threads help, with visuals near the top: screenshots in light and dark, and short GIFs of the core features (replying to an item in a thread, steering a running turn, visual feedback pins). Install from the latest GitHub Release first; building from source moves lower. Trim the feature walkthrough to the highlights and link to the docs for the rest.
@@ -128,7 +143,7 @@ A home for Gloss's settings, editable by hand (and by agents) as well as in the 
 - **Settings screen** (from the sidebar, or `Ctrl+,`): global and current-project sections, the file's path, and "Open in editor". Saving from the screen writes the file, keeping unknown keys.
 - Validated and owned by the main process; the renderer reads and writes through the IPC API.
 - Move the dev model (Haiku) toggle into it.
-- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M25: updates). No section appears before its feature exists.
+- Later milestones add their own sections (M7: default model, status line items; M12: theme; M13: default agent, MCP servers; M26: updates). No section appears before its feature exists.
 
 **Done when:** a setting changed in the screen shows up in the file, a change made in an editor (or by an agent) shows up in the app without a restart, and a broken edit is reported without losing the previous settings.
 
@@ -233,7 +248,7 @@ Converge on a clean, sleek, long-term interface now that every surface exists. T
 - Rebuild the styles on the tokens (no one-off values) and bring every screen in line with the approved mocks.
 - **Dark mode**, following the system setting, built on the dark tokens. *A Theme setting (System, Light, Dark) and a provisional dark palette landed early; M12 replaces the palette with the designed dark tokens.* *Done: the dark tokens, applied in the screen pass.*
 - Accessibility: every action reachable by keyboard with visible focus, WCAG AA contrast in both themes, labels for icon-only controls, and reduced motion respected. *Done.*
-- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M25 installers. *Done.*
+- Apply the brand: logo and wordmark in the app (sidebar, empty state, sign-in), the app icon on the window and taskbar, and icon files ready for the M26 installers. *Done.*
 - Polish: empty, loading and error states; window title. *Done.*
 
 **Done when:** Gloss has its logo, icon and visual style, every screen matches the approved mocks in light and dark, styles use the tokens throughout, and the accessibility checks pass.
@@ -442,7 +457,7 @@ Import is done by an agent, not by a built-in importer. The user points an agent
 
 **Done.** See SPEC → Plugins → Import. The built-in `new-plugin` skill reaches Claude ACP 0.89, Codex ACP 2.2.2, OpenCode 2.0.32 and a custom OpenCode profile (`src/main/plugins.integration.test.ts`, `GLOSS_PLUGIN_NATIVE=1`). Live, Haiku 5.5 through Claude and Codex in the adapter's default mode each loaded the skill unprompted and imported a Claude plugin with two skills, a command, a hook and three servers: skills renamed with their cross-reference, `${CLAUDE_PLUGIN_ROOT}` rewritten, an identical server reused, a clashing name renamed, the command and hook left out and reported, the source unchanged, and Gloss validated the result without problems. Codex's automatic approval review refused to store a token from the environment until the user agreed. Not run live: a git URL source and a marketplace clone.
 
-**Outside M19:** browsing and searching plugin catalogs (marketplaces) was dropped: an agent can install a plugin it is pointed at through phase 2. Upstream updates of imported plugins are not planned; agents, hooks and LSP servers in plugins are scheduled for exploration in M22. Presets, separate workspace dashboards and multi-device library backup are also deferred.
+**Outside M19:** browsing and searching plugin catalogs (marketplaces) was dropped: an agent can install a plugin it is pointed at through phase 2. Upstream updates of imported plugins are not planned; agents and hooks in plugins are scheduled for M22. Presets, separate workspace dashboards and multi-device library backup are also deferred.
 
 ## ~~M20: Sub-agent threads~~
 An opt-in alternative to view-only threads: a thread runs in its own fork of the agent session instead of being tagged into the main one. Changes the core idea in `SPEC.md` (see Fork threads there, which has the design and the verified adapter behavior).

@@ -18,10 +18,16 @@ export type PluginAgentState = {
   message: string
   skillDirectory?: string
 }
+/** `agents/<id>.md` (SPEC → Plugins → Subagents and hooks). `models` is per agent id. */
+export type PluginSubagent = { id: string; description: string; tools: 'read-only' | 'inherit'; models: Partial<Record<string, string>>; path: string }
+/** One entry of `hooks/hooks.json`. `event` is Gloss's or, with `agents`, an agent's own; `timeout` in seconds. */
+export type PluginHook = { event: string; matcher?: string; command: string; timeout: number; agents?: string[] }
 export type PersonalPlugin = PluginManifest & {
   id: string
   directory: string
   skills: PluginSkill[]
+  subagents: PluginSubagent[]
+  hooks: PluginHook[]
   problems: string[]
   agents: PluginAgentState[]
   /** Gloss's own read-only, always-on plugin (SPEC → Plugins → Import). */

@@ -311,6 +311,11 @@ export class AgentConnection {
     throw new Error(`Unexpected steering outcome: ${String(res.outcome)}`)
   }
 
+  /** An adapter's own extension method, such as Codex's `_codex/hooks/list`. */
+  extRequest(method: string, params: Record<string, unknown>): Promise<unknown> {
+    return this.guard(this.conn.agent.request<unknown>(method, params))
+  }
+
   cancel(sessionId: string): Promise<void> {
     return this.conn.agent.notify(acp.methods.agent.session.cancel, { sessionId })
   }

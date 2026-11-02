@@ -353,7 +353,19 @@ export class SessionManager {
     const slot = this.slot(agentId)
     if (!slot.connection) {
       const config = this.deps.getAgentConfig(agentId)
-      const pending = this.deps.connect(config, this.deps.agentEnv(config), this.handlers(agentId))
+      const handlers = this.handlers(agentId)
+      const pending = this.deps.connect(config, this.deps.agentEnv(config), handlers).then(async (conn) => {
+        // The agent's setup may need it started again from a new config, once (see AgentConfig.afterStart).
+        let next: AgentConfig | undefined
+        try {
+          next = await config.afterStart?.(conn)
+        } catch (err) {
+          console.warn(`[${agentId}] Setup after start failed:`, errorMessage(err))
+        }
+        if (!next) return conn
+        conn.dispose()
+        return this.deps.connect({ ...next, afterStart: undefined }, this.deps.agentEnv(next), handlers)
+      })
       slot.connection = pending
       pending.then(
         (conn) => {

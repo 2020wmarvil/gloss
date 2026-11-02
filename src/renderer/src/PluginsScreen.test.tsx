@@ -26,7 +26,7 @@ beforeEach(async () => {
   guard = null
   onClose = vi.fn()
   state = { directory: '/data/plugins/library', errors: [], connections: [{ name: 'Docs', transport: 'stdio', usedBy: ['Code review'] }], plugins: [{
-    schemaVersion: 1, id: 'review', name: 'Code review', description: 'Review changes', connections: ['Docs'], enabledAgents: ['claude'], directory: '/data/plugins/library/review', problems: [],
+    schemaVersion: 1, id: 'review', name: 'Code review', description: 'Review changes', connections: ['Docs'], enabledAgents: ['claude'], directory: '/data/plugins/library/review', problems: [], subagents: [], hooks: [],
     skills: [{ id: 'review-instructions', name: 'instructions', description: 'Review changes', path: file.path, files: ['SKILL.md', 'references/checklist.txt'], invocation: 'automatic', invocationRevision: 'policy-before' }],
     agents: [{ id: 'claude', name: 'Claude Code', enabled: true, status: 'ready', support: 'tested', message: 'Available' }, { id: 'custom:local', name: 'Local agent', enabled: false, status: 'setup', support: 'unknown', message: 'Configure a directory.' }]
   }] }
@@ -599,7 +599,7 @@ it('keeps plugin health errors behind a failed removal dialog out of view', asyn
 
 it('shows the built-in plugin read-only and always on, without selecting it by default', async () => {
   state.plugins.unshift({
-    schemaVersion: 1, id: 'gloss:builtin', builtin: true, name: 'Gloss plugins', description: 'Built into Gloss.', connections: [], enabledAgents: ['claude', 'custom:local'], directory: '/data/plugins/runtime/builtin', problems: [],
+    schemaVersion: 1, id: 'gloss:builtin', builtin: true, name: 'Gloss plugins', description: 'Built into Gloss.', connections: [], enabledAgents: ['claude', 'custom:local'], directory: '/data/plugins/runtime/builtin', problems: [], subagents: [], hooks: [],
     skills: [{ id: 'new-plugin', name: 'new-plugin', description: 'Create or import a plugin.', path: 'skills/new-plugin/SKILL.md', files: ['SKILL.md'], invocation: 'automatic', invocationRevision: '' }],
     agents: [{ id: 'claude', name: 'Claude Code', enabled: true, status: 'ready', support: 'tested', message: '' }, { id: 'custom:local', name: 'Local agent', enabled: true, status: 'setup', support: 'unknown', message: 'Gets it once this custom agent’s skill directory is set.' }]
   })
@@ -622,4 +622,46 @@ it('shows the built-in plugin read-only and always on, without selecting it by d
   expect(api.readFile).toHaveBeenLastCalledWith('gloss:builtin', 'skills/new-plugin/SKILL.md')
   for (const label of ['Edit file', 'Open in external editor', 'New text file', 'Remove skill', 'Delete file']) expect(detail.querySelector(`[aria-label="${label}"]`)).toBeNull()
   expect(detail.textContent).not.toContain('Direct only')
+})
+
+it('shows subagents and hooks, and lists a plugin’s hook commands before turning it on for an agent', async () => {
+  const hooksFile = { path: 'hooks/hooks.json', content: '{ "hooks": [] }', revision: 'hooks' }
+  vi.mocked(api.readFile).mockImplementation(async (_id, path) => path === 'hooks/hooks.json' ? { ...hooksFile } : path === 'agents/reviewer.md' ? { path, content: '---\nname: reviewer\ndescription: Reviews\n---\n\nReview the diff.', revision: 'agent' } : { ...file })
+  Object.assign(state.plugins[0], {
+    subagents: [{ id: 'reviewer', description: 'Reviews changes.', tools: 'read-only', models: { claude: 'haiku' }, path: 'agents/reviewer.md' }],
+    hooks: [
+      { event: 'beforeTool', matcher: 'shell', command: 'node check.js', timeout: 60 },
+      { event: 'PreCompact', command: 'node save.js', timeout: 5, agents: ['claude'] },
+      { event: 'stop', command: 'node done.js', timeout: 60, agents: ['codex'] }
+    ]
+  })
+  state.plugins[0].agents[0] = { ...state.plugins[0].agents[0], enabled: false, status: 'off' }
+  await act(async () => emit({ type: 'pluginsChanged' } as GlossEvent))
+  expect(container.querySelector('.plugin-list')!.textContent).toContain('1 subagent · 3 hooks')
+  expect([...container.querySelectorAll('.plugin-tabs button')].map(b => b.textContent)).toEqual(['Overview', 'Skills', 'Subagents', 'Hooks', 'Tools', 'Agents'])
+
+  await click('Subagents')
+  await act(async () => container.querySelector<HTMLButtonElement>('.plugin-component')!.click())
+  expect(api.readFile).toHaveBeenLastCalledWith('review', 'agents/reviewer.md')
+  expect(container.querySelector('.plugin-detail-content')!.textContent).toMatch(/Read-only.*Model: haiku \(Claude Code\)/)
+  expect(container.querySelector('.plugin-detail-content')!.textContent).toContain('Review the diff.')
+
+  await click('Hooks')
+  expect(api.readFile).toHaveBeenLastCalledWith('review', 'hooks/hooks.json')
+  const hooks = [...container.querySelectorAll('.plugin-hook')].map(h => h.textContent)
+  expect(hooks[0]).toBe('Before a tool runsShell commandsnode check.jsEvery agent · stops after 60 s')
+  expect(hooks[1]).toBe('PreCompactnode save.jsOnly Claude Code · stops after 5 s')
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Edit file"]')!.click())
+  expect(container.querySelector<HTMLTextAreaElement>('#plugin-file-editor')!.value).toBe(hooksFile.content)
+  await click('Cancel')
+
+  await click('Agents')
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Claude Code: enable Code review"]')!.click())
+  const dialog = document.querySelector('[role="dialog"]')!
+  expect(dialog.textContent).toContain('Turn on hooks?')
+  // Only the hooks Claude Code would run.
+  expect([...dialog.querySelectorAll('code')].map(c => c.textContent)).toEqual(['node check.js', 'node save.js'])
+  expect(api.enable).not.toHaveBeenCalled()
+  await click('Turn on', dialog)
+  expect(api.enable).toHaveBeenCalledWith('review', 'claude', true)
 })
