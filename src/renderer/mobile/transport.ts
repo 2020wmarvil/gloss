@@ -1,7 +1,8 @@
 // The phone's link to the desktop (SPEC → Remote and mobile): one WebSocket carrying the same
 // calls a window's preload makes, and its events. Offline, nothing is sent or queued; it
 // reconnects right away (a phone waking the app finds its socket closed), then with backoff,
-// and right away again when the page comes back to the front.
+// and right away again when the page comes back to the front. A socket that still reads as open
+// then is pinged, since one that died while the phone slept gets no close event until TCP gives up.
 import type { GlossEvent } from '@shared/ipc'
 import type { ApiTransport } from '@shared/api'
 
@@ -9,6 +10,9 @@ import type { ApiTransport } from '@shared/api'
 export type Link = 'connecting' | 'online' | 'offline' | 'removed'
 
 type Pending = { resolve(value: unknown): void; reject(error: Error): void }
+
+/** How long a ping on return to the front may take before the socket counts as dead. */
+export const PING_TIMEOUT = 2000
 
 export class PhoneLink implements ApiTransport {
   private ws: WebSocket | null = null
@@ -23,7 +27,9 @@ export class PhoneLink implements ApiTransport {
 
   constructor() {
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && this.link === 'offline') this.connect()
+      if (document.visibilityState !== 'visible') return
+      if (this.link === 'offline') this.connect()
+      else if (this.link === 'online') this.check()
     })
   }
 
@@ -81,12 +87,27 @@ export class PhoneLink implements ApiTransport {
     else p.resolve(msg.result)
   }
 
-  private async closed(code: number): Promise<void> {
+  /** Pings the open socket and drops it unanswered, reconnecting at once rather than when TCP gives up. */
+  private check(): void {
+    const ws = this.ws
+    if (!ws) return
+    const timer = setTimeout(() => {
+      if (this.ws !== ws) return
+      ws.onclose = null
+      ws.onmessage = null
+      ws.close()
+      // Dead, not refused: a refused reconnect is caught by the next close.
+      void this.closed(1006, false)
+    }, PING_TIMEOUT)
+    this.invoke('bridge:ping').then(() => clearTimeout(timer), () => clearTimeout(timer))
+  }
+
+  private async closed(code: number, ask = true): Promise<void> {
     this.ws = null
     for (const p of this.pending.values()) p.reject(new Error('Gloss is offline.'))
     this.pending.clear()
     // 4001: removed while connected. A refused upgrade gives 1006 like a lost network, so ask.
-    if (code === 4001 || (await removed())) return this.setLink('removed')
+    if (code === 4001 || (ask && await removed())) return this.setLink('removed')
     this.setLink('offline')
     this.timer = setTimeout(() => this.connect(), this.delay)
     this.delay = this.delay ? Math.min(this.delay * 2, 10_000) : 1000

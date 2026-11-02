@@ -323,6 +323,7 @@ export class Bridge {
 
   private async call(ws: WebSocket, deviceId: string, channel: string, args: unknown[]): Promise<unknown> {
     switch (channel) {
+      case 'bridge:ping': return null
       case 'bridge:info': return this.opts.calls.info()
       case 'bridge:build': return await this.build()
       case 'bridge:viewing':

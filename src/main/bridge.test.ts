@@ -138,6 +138,7 @@ describe('Bridge', () => {
     expect(await call(ws, 2, IPC.settingsGet)).toMatchObject({ id: 2, error: expect.stringContaining('isn\'t available from a phone') })
     expect(await call(ws, 3, 'bridge:info')).toEqual({ id: 3, result: { host: 'test' } })
     expect(await call(ws, 4, 'bridge:build')).toEqual({ id: 4, result: './assets/mobile-abc.js' })
+    expect(await call(ws, 5, 'bridge:ping')).toEqual({ id: 5, result: null })
     ws.close()
   })
 
