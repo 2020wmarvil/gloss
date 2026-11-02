@@ -1,6 +1,7 @@
 // The phone's link to the desktop (SPEC → Remote and mobile): one WebSocket carrying the same
 // calls a window's preload makes, and its events. Offline, nothing is sent or queued; it
-// reconnects with backoff and right away when the page comes back to the front.
+// reconnects right away (a phone waking the app finds its socket closed), then with backoff,
+// and right away again when the page comes back to the front.
 import type { GlossEvent } from '@shared/ipc'
 import type { ApiTransport } from '@shared/api'
 
@@ -15,7 +16,8 @@ export class PhoneLink implements ApiTransport {
   private readonly pending = new Map<number, Pending>()
   private readonly listeners = new Set<(event: GlossEvent) => void>()
   private readonly linkListeners = new Set<(link: Link) => void>()
-  private delay = 1000
+  /** Until the next retry: none after a link that was up, then 1 s doubling to 10 s. */
+  private delay = 0
   private timer: ReturnType<typeof setTimeout> | undefined
   link: Link = 'connecting'
 
@@ -31,7 +33,7 @@ export class PhoneLink implements ApiTransport {
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api`)
     this.ws = ws
     ws.onopen = () => {
-      this.delay = 1000
+      this.delay = 0
       this.setLink('online')
     }
     ws.onmessage = (e) => this.message(String(e.data))
@@ -87,7 +89,7 @@ export class PhoneLink implements ApiTransport {
     if (code === 4001 || (await removed())) return this.setLink('removed')
     this.setLink('offline')
     this.timer = setTimeout(() => this.connect(), this.delay)
-    this.delay = Math.min(this.delay * 2, 10_000)
+    this.delay = this.delay ? Math.min(this.delay * 2, 10_000) : 1000
   }
 
   private setLink(link: Link): void {

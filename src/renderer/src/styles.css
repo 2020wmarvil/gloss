@@ -7394,31 +7394,10 @@ button.danger-text {
   height: 12px;
 }
 
-.plugin-file-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 20px 0 16px;
-}
 
-.plugin-file-toolbar select {
-  flex: 1;
-  min-width: 0;
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  color: var(--ink);
-  font: var(--t-12) var(--font-mono);
-  text-overflow: ellipsis;
-}
 
-.plugin-file-toolbar .icon-button {
-  flex: none;
-}
 
-.plugin-editor, .plugin-form-field input, .plugin-form-field textarea {
+.plugin-form-field input {
   width: 100%;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
@@ -7428,22 +7407,100 @@ button.danger-text {
   font: inherit;
 }
 
-.plugin-editor {
-  resize: vertical;
-  min-height: 300px;
-  max-height: 65vh;
-  margin: 12px 0;
-  font: var(--t-12)/1.75 var(--font-mono);
-}
-
-.plugin-editor-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.plugin-detail-content .markdown {
+.plugin-detail-content .md {
   font-size: var(--t-13);
+  line-height: 1.65;
+}
+
+.plugin-part-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plugin-part-title h3 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--t-16);
+  overflow-wrap: anywhere;
+}
+
+.plugin-part-description {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+  font-size: var(--t-13);
+  line-height: 1.6;
+}
+
+.plugin-part-settings {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 10px 18px;
+  margin: 18px 0 22px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.plugin-part-settings > div {
+  display: contents;
+}
+
+.plugin-part-settings dt {
+  padding-top: 1px;
+  color: var(--muted);
+  font-size: var(--t-11);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.plugin-part-settings dd {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--t-13);
+}
+
+.plugin-part-settings dd small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--t-12);
+}
+
+.plugin-part-settings select {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: var(--t-12) var(--font-mono);
+  text-overflow: ellipsis;
+}
+
+.plugin-part-section {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: var(--t-11);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.plugin-part-body {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.plugin-part-body .plugin-file-content {
+  margin: 0;
+  padding: 0;
+  background: none;
 }
 
 .plugin-file-content {
@@ -7512,11 +7569,6 @@ button.danger-text {
   margin: 14px 0;
 }
 
-.plugin-form-field textarea {
-  min-height: 90px;
-  resize: vertical;
-}
-
 .plugin-dialog p {
   color: var(--muted);
   font-size: var(--t-12);
@@ -7525,152 +7577,6 @@ button.danger-text {
 
 .plugin-dialog .dialog-error {
   color: var(--failed);
-}
-
-.plugin-create-dialog {
-  width: 450px;
-  padding: 22px;
-  user-select: none;
-}
-
-.plugin-create-dialog > .plugin-inline-heading {
-  margin-bottom: 20px;
-}
-
-.plugin-create-heading {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-}
-
-.plugin-create-heading h2 {
-  margin: 0;
-  font-size: var(--t-20);
-  letter-spacing: -.025em;
-}
-
-.plugin-create-mark {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--accent-tint);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent-mark);
-}
-
-.plugin-create-mark svg {
-  width: 19px;
-  height: 19px;
-}
-
-.plugin-create-dialog .plugin-form-field {
-  gap: 7px;
-  margin: 0 0 16px;
-  font-size: var(--t-13);
-  font-weight: 500;
-}
-
-.plugin-create-dialog .plugin-form-field input,
-.plugin-create-dialog .plugin-form-field textarea {
-  user-select: text;
-  box-sizing: border-box;
-  padding: 10px 12px;
-  font-size: var(--t-14);
-  font-weight: 400;
-  line-height: 1.6;
-}
-
-.plugin-invocation-choice {
-  user-select: none;
-  min-width: 0;
-  padding: 0;
-  margin: 0 0 16px;
-  border: 0;
-}
-
-.plugin-invocation-choice.plugin-invocation-footer {
-  max-width: 300px;
-  padding-top: 16px;
-  margin: 24px 0 0;
-  border-top: 1px solid var(--line);
-}
-
-.plugin-invocation-choice legend {
-  padding: 0;
-  margin-bottom: 7px;
-  font-size: var(--t-13);
-  font-weight: 500;
-}
-
-.plugin-invocation-choice > div {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-}
-
-.plugin-invocation-choice label {
-  flex: 1;
-  min-width: 0;
-  position: relative;
-  cursor: pointer;
-}
-
-.plugin-invocation-choice input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
-.plugin-invocation-choice span {
-  display: block;
-  padding: 8px 10px;
-  border-radius: var(--r-sm);
-  color: var(--muted);
-  text-align: center;
-  font-size: var(--t-13);
-  font-weight: 500;
-}
-
-.plugin-invocation-choice input:checked + span {
-  background: var(--selected);
-  color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--line), 0 1px 3px #00000014;
-}
-
-.plugin-invocation-choice label:hover span {
-  color: var(--ink);
-}
-
-.plugin-invocation-choice input:focus-visible + span {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.plugin-invocation-choice:disabled {
-  opacity: .5;
-}
-
-.plugin-create-dialog .plugin-form-field textarea {
-  min-height: 88px;
-}
-
-.plugin-create-dialog input::placeholder,
-.plugin-create-dialog textarea::placeholder {
-  color: var(--muted);
-  opacity: .75;
-}
-
-.plugin-create-dialog .dialog-actions {
-  padding-top: 16px;
-  margin-top: 18px;
-  border-top: 1px solid var(--line);
 }
 
 .plugin-connection-choice {
@@ -7762,3 +7668,53 @@ button.danger-text {
 .shortcut-edit-row .shortcut-note { width: 100%; }
 .shortcut-edit-row .error { color: var(--failed); }
 
+
+.plugin-tabs {
+  flex-wrap: wrap;
+  column-gap: 16px;
+  row-gap: 0;
+}
+
+
+.plugin-hook {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  margin: 12px 0;
+}
+
+.plugin-hook strong {
+  font-size: var(--t-13);
+}
+
+.plugin-hook small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--t-12);
+}
+
+.plugin-hook-command,
+.plugin-hook-confirm code {
+  display: block;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--sunken);
+  font: var(--t-12)/1.6 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.plugin-hook-confirm {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.plugin-hook-confirm li span {
+  font-size: var(--t-12);
+  color: var(--muted);
+}

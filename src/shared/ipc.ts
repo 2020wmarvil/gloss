@@ -445,16 +445,7 @@ export type AppBadge = { state: 'working' | 'completed' | 'failed' | null; unsee
 
 export const IPC = {
   pluginsList: 'gloss:plugins:list',
-  pluginsCreate: 'gloss:plugins:create',
-  pluginsUpdate: 'gloss:plugins:update',
-  pluginsRemove: 'gloss:plugins:remove',
-  pluginsAddSkill: 'gloss:plugins:addSkill',
-  pluginsSetSkillInvocation: 'gloss:plugins:setSkillInvocation',
-  pluginsRemoveSkill: 'gloss:plugins:removeSkill',
   pluginsReadFile: 'gloss:plugins:readFile',
-  pluginsWriteFile: 'gloss:plugins:writeFile',
-  pluginsRemoveFile: 'gloss:plugins:removeFile',
-  pluginsCreateFile: 'gloss:plugins:createFile',
   pluginsEnable: 'gloss:plugins:enable',
   pluginsSetSkillDirectory: 'gloss:plugins:setSkillDirectory',
   pluginsRefresh: 'gloss:plugins:refresh',

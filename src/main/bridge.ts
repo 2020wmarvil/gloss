@@ -311,9 +311,20 @@ export class Bridge {
     return new Set([...this.viewing.values()].filter((v) => v.sessionId === sessionId).map((v) => v.deviceId))
   }
 
+  /** The phone client's entry script as served now (hashed per build), so an open page can tell it's out of date. */
+  private async build(): Promise<string | null> {
+    try {
+      const html = await readFile(join(this.opts.staticDir, 'mobile.html'), 'utf8')
+      return /<script\b[^>]*\bsrc="([^"]+)"/.exec(html)?.[1] ?? null
+    } catch {
+      return null
+    }
+  }
+
   private async call(ws: WebSocket, deviceId: string, channel: string, args: unknown[]): Promise<unknown> {
     switch (channel) {
       case 'bridge:info': return this.opts.calls.info()
+      case 'bridge:build': return await this.build()
       case 'bridge:viewing':
         this.viewing.set(ws, { deviceId, sessionId: typeof args[0] === 'string' ? args[0] : null })
         return null

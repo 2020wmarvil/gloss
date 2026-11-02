@@ -19,7 +19,7 @@ let changes: number
 beforeEach(async () => {
   const dir = mkdtempSync(join(tmpdir(), 'gloss-bridge-'))
   mkdirSync(join(dir, 'assets'))
-  writeFileSync(join(dir, 'mobile.html'), '<!doctype html><title>phone</title>')
+  writeFileSync(join(dir, 'mobile.html'), '<!doctype html><title>phone</title><script type="module" crossorigin src="./assets/mobile-abc.js"></script>')
   writeFileSync(join(dir, 'index.html'), 'desktop page')
   writeFileSync(join(dir, 'assets', 'app.js'), 'console.log(1)')
   store = new Store(':memory:')
@@ -137,6 +137,7 @@ describe('Bridge', () => {
     expect(await call(ws, 1, IPC.sessionsList)).toEqual({ id: 1, result: [{ id: 's1' }] })
     expect(await call(ws, 2, IPC.settingsGet)).toMatchObject({ id: 2, error: expect.stringContaining('isn\'t available from a phone') })
     expect(await call(ws, 3, 'bridge:info')).toEqual({ id: 3, result: { host: 'test' } })
+    expect(await call(ws, 4, 'bridge:build')).toEqual({ id: 4, result: './assets/mobile-abc.js' })
     ws.close()
   })
 

@@ -16,16 +16,7 @@ export function makeApi(t: ApiTransport): GlossApi {
   return {
     plugins: {
       list: () => invoke(IPC.pluginsList),
-      create: (name, description) => invoke(IPC.pluginsCreate, name, description),
-      update: (id, change) => invoke(IPC.pluginsUpdate, id, change),
-      remove: (id) => invoke(IPC.pluginsRemove, id),
-      addSkill: (id, name, description, invocation) => invoke(IPC.pluginsAddSkill, id, name, description, invocation),
-      setSkillInvocation: (id, skillId, invocation, revision) => invoke(IPC.pluginsSetSkillInvocation, id, skillId, invocation, revision),
-      removeSkill: (id, skillId) => invoke(IPC.pluginsRemoveSkill, id, skillId),
       readFile: (id, path) => invoke(IPC.pluginsReadFile, id, path),
-      writeFile: (id, file) => invoke(IPC.pluginsWriteFile, id, file),
-      removeFile: (id, file) => invoke(IPC.pluginsRemoveFile, id, file),
-      createFile: (id, skillId, path, content) => invoke(IPC.pluginsCreateFile, id, skillId, path, content),
       enable: (id, agentId, enabled) => invoke(IPC.pluginsEnable, id, agentId, enabled),
       setSkillDirectory: (agentId, directory) => invoke(IPC.pluginsSetSkillDirectory, agentId, directory),
       refresh: (agentId) => invoke(IPC.pluginsRefresh, agentId),

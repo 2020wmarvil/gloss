@@ -37,7 +37,6 @@ import { OpenCodeSupport } from './opencode'
 import { AgentProfileSupport } from './agentProfiles'
 import { PluginLibrary } from './plugins'
 import { PluginRefresh } from './pluginRefresh'
-import type { PluginChange, PluginFile } from '../shared/plugins'
 import { AgentAvailability } from './agentAvailability'
 import { profileError, type AgentProfile } from '../shared/agentProfiles'
 import { boundsArg, placeSessionWindow, type Rect } from './windowPlacement'
@@ -715,20 +714,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   // checks each value's shape and limits itself.
   const library = pluginLibrary!
   ipcMain.handle(IPC.pluginsList, () => library.list())
-  ipcMain.handle(IPC.pluginsCreate, (_e, name: unknown, description: unknown) =>
-    library.create(str(name, 'name'), str(description, 'description')))
-  ipcMain.handle(IPC.pluginsUpdate, (_e, id: unknown, change: unknown) => library.update(str(id, 'plugin'), change as PluginChange))
-  ipcMain.handle(IPC.pluginsRemove, (_e, id: unknown) => library.remove(str(id, 'plugin')))
-  ipcMain.handle(IPC.pluginsAddSkill, (_e, id: unknown, name: unknown, description: unknown, invocation: unknown) =>
-    library.addSkill(str(id, 'plugin'), str(name, 'name'), str(description, 'description'), invocation))
-  ipcMain.handle(IPC.pluginsSetSkillInvocation, (_e, id: unknown, skillId: unknown, invocation: unknown, revision: unknown) =>
-    library.setSkillInvocation(str(id, 'plugin'), str(skillId, 'skill'), invocation, str(revision, 'revision')))
-  ipcMain.handle(IPC.pluginsRemoveSkill, (_e, id: unknown, skillId: unknown) => library.removeSkill(str(id, 'plugin'), str(skillId, 'skill')))
   ipcMain.handle(IPC.pluginsReadFile, (_e, id: unknown, path: unknown) => library.readFile(str(id, 'plugin'), str(path, 'path')))
-  ipcMain.handle(IPC.pluginsWriteFile, (_e, id: unknown, file: unknown) => library.writeFile(str(id, 'plugin'), file as PluginFile))
-  ipcMain.handle(IPC.pluginsRemoveFile, (_e, id: unknown, file: unknown) => library.removeFile(str(id, 'plugin'), file as PluginFile))
-  ipcMain.handle(IPC.pluginsCreateFile, (_e, id: unknown, skillId: unknown, path: unknown, content: unknown) =>
-    library.createFile(str(id, 'plugin'), str(skillId, 'skill'), str(path, 'path'), str(content, 'content')))
   ipcMain.handle(IPC.pluginsEnable, (_e, id: unknown, agentId: unknown, enabled: unknown) =>
     library.enable(str(id, 'plugin'), str(agentId, 'agent'), enabled as boolean))
   ipcMain.handle(IPC.pluginsSetSkillDirectory, (_e, agentId: unknown, directory: unknown) =>
@@ -741,7 +727,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   })
   ipcMain.handle(IPC.pluginsOpenInEditor, async (_e, id: unknown, path: unknown) => {
     const pluginId = str(id, 'plugin')
-    // Apply the same path and text-file checks as the built-in editor.
+    // Apply the same path and text-file checks as the screen's preview.
     const file = library.readFile(pluginId, str(path, 'path'))
     const absolute = join(library.folder(pluginId), file.path)
     const args = editorArgs(settingsFile.state().global.externalEditor, absolute, 1)
@@ -1218,10 +1204,7 @@ app.whenReady().then(() => {
     connections: () => settingsFile.state().global.mcpServers,
     busy: id => sessions?.isAgentBusy(id) ?? false,
     changed: (ids) => pluginRefresh.request(ids),
-    settings: settingsFile.path,
-    removeConnections: (names) => {
-      settingsFile.update({ global: { mcpServers: settingsFile.state().global.mcpServers.filter(s => !names.includes(s.name)) } })
-    }
+    settings: settingsFile.path
   })
   pluginLibrary.startWatching()
   sessions = new SessionManager({
@@ -1261,7 +1244,7 @@ app.whenReady().then(() => {
     calls: {
       info: () => {
         const g = settingsFile.state().global
-        return { machine: phone?.status().machine ?? null, defaultAgent: g.defaultAgent, theme: g.theme }
+        return { machine: phone?.status().machine ?? null, defaultAgent: g.defaultAgent, theme: g.theme, sessionOrder: g.sessionOrder }
       },
       activity: () => sessions?.activity() ?? {}
     },

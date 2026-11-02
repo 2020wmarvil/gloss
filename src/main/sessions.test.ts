@@ -554,6 +554,55 @@ describe('SessionManager', () => {
     expect(state.forkMeta).toEqual([{ additionalRoots: ['/plugins/codex'], jetbrains: { air: { fork: { version: 1, messageId: 'msg-one' } } } }])
   })
 
+  it('starts the agent again from the config its afterStart returns, once', async () => {
+    state.script = async ({ say, text }) => { await say(`re: ${text}`, `msg-${text}`); return 'end_turn' }
+    const started: string[] = []
+    const opened: AgentConnection[] = []
+    const trusted = { ...config, name: 'trusted', afterStart: vi.fn(async () => ({ ...config, name: 'again' })) }
+    manager = new SessionManager({
+      store,
+      emit: (e) => events.push(e),
+      getAgentConfig: () => ({ ...config, afterStart: async () => trusted }),
+      agentEnv: (c) => ({ NAME: c.name }),
+      connect: async (_c, env, handlers) => {
+        started.push(env.NAME ?? "")
+        const conn = await AgentConnection.open(agentApp(state), handlers)
+        opened.push(conn)
+        return conn
+      },
+      runInTerminal: runInTerminal as never,
+      now: () => 1000
+    })
+    const session = await manager.createSession('/project', 'codex')
+    await manager.send(session.id, 'one', null)
+    expect(started).toEqual([config.name, 'trusted'])
+    // The replacement's own afterStart doesn't run: one restart at most.
+    expect(trusted.afterStart).not.toHaveBeenCalled()
+    expect(opened[0].isClosed).toBe(true)
+    expect(store.listMessages(session.id).map((m) => m.text)).toEqual(['one', 're: one'])
+  })
+
+  it('keeps the agent it started when afterStart fails', async () => {
+    state.script = async ({ say, text }) => { await say(`re: ${text}`, `msg-${text}`); return 'end_turn' }
+    let starts = 0
+    manager = new SessionManager({
+      store,
+      emit: (e) => events.push(e),
+      // The fake agent has no such extension method, so the request is refused.
+      getAgentConfig: () => ({ ...config, afterStart: async (conn) => { await conn.extRequest('_codex/hooks/list', { cwd: '/' }); return config } }),
+      agentEnv: () => ({}),
+      connect: (_c, _e, handlers) => { starts++; return AgentConnection.open(agentApp(state), handlers) },
+      runInTerminal: runInTerminal as never,
+      now: () => 1000
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const session = await manager.createSession('/project', 'codex')
+    await manager.send(session.id, 'one', null)
+    expect(starts).toBe(1)
+    expect(warn).toHaveBeenCalledWith('[codex] Setup after start failed:', expect.any(String))
+    warn.mockRestore()
+  })
+
   it('names the prompt of the turn before when that turn has no agent message', async () => {
     state.canClose = true
     state.script = async () => 'cancelled'

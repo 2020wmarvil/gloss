@@ -18,6 +18,30 @@
   overflow: hidden;
 }
 
+/* While a swipe drags: the top screen, the one a swipe back uncovers beneath it, and the one a
+   swipe forward brings in over it. */
+.m-stack {
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+}
+.m-stack > .m-screen { z-index: 1; }
+.m-stack > .m-under, .m-stack > .m-over {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.m-stack > .m-under { z-index: 0; }
+.m-stack > .m-over { z-index: 2; transform: translateX(100%); }
+.m-layer-dim {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  z-index: 10;
+}
+
 .m-screen button {
   font: inherit;
   color: inherit;

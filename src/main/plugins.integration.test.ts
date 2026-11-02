@@ -1,7 +1,7 @@
 // Opt in with GLOSS_PLUGIN_NATIVE=1. Real adapters, local mock inference and a local MCP server.
 // OpenCode checks additionally need GLOSS_OPENCODE_EXECUTABLE. No hosted credentials are inherited.
 import { createServer } from 'node:http'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, it } from 'vitest'
 import type { SessionNotification } from '@agentclientprotocol/sdk'
 import { PluginLibrary } from './plugins'
+import { skillInvocation } from './skillInvocation'
 import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, type AgentConfig } from './agents'
 import type { McpServer } from '../shared/mcp'
@@ -63,12 +64,24 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).for(['claude', 'codex', 'opencode', 
   writeFileSync(join(env.CODEX_HOME, 'config.toml'), `model = "gpt-5.4"\nmodel_provider = "probe"\n[model_providers.probe]\nname = "Local probe"\nbase_url = "${base}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\n`)
   const connections: McpServer[] = [{ name: 'plugin-docs', command: process.execPath, args: ['-e', mcpScript], env: [] }]
   const library = new PluginLibrary({ directory: join(root, 'plugins'), agents: () => [{ id: agentId, name: agentId }], connections: () => connections, settings: join(root, 'settings.json') })
-  const id = library.create('Native probe', 'Only for plugin integration testing')
+  // Written into the library as an agent or the user would.
+  const id = 'native-probe'
+  const skillFolder = join(library.directory, id, 'skills', 'instructions')
+  mkdirSync(join(skillFolder, 'references'), { recursive: true })
+  writeFileSync(join(skillFolder, 'SKILL.md'), `---\nname: instructions\ndescription: "Only for plugin integration testing"\n---\n\n${marker}\nRead references/value.txt.\n`)
+  writeFileSync(join(skillFolder, 'references/value.txt'), resource)
+  writeFileSync(join(library.directory, id, 'plugin.json'), JSON.stringify({ schemaVersion: 1, name: 'Native probe', description: 'Only for plugin integration testing', connections: ['plugin-docs'], enabledAgents: [] }))
   const skill = library.list().plugins.find(p => !p.builtin)!.skills[0]
-  const file = library.readFile(id, skill.path)
-  library.writeFile(id, { ...file, content: file.content + `\n${marker}\nRead references/value.txt.\n` })
-  library.createFile(id, skill.id, 'references/value.txt', resource)
-  library.update(id, { connections: ['plugin-docs'] })
+  /** Sets the skill's invocation in its native files, as an agent editing the library would. */
+  const setInvocation = (invocation: 'automatic' | 'direct'): void => {
+    const metadataPath = join(skillFolder, 'agents/openai.yaml')
+    let metadata: string | undefined
+    try { metadata = readFileSync(metadataPath, 'utf8') } catch { metadata = undefined }
+    const next = skillInvocation(readFileSync(join(skillFolder, 'SKILL.md'), 'utf8'), metadata).update(invocation)
+    mkdirSync(join(skillFolder, 'agents'), { recursive: true })
+    writeFileSync(join(skillFolder, 'SKILL.md'), next.instructions); writeFileSync(metadataPath, next.metadata)
+    library.reconcile()
+  }
   const customRoot = join(root, 'custom-skills')
   if (agentId.startsWith('custom:')) library.setSkillDirectory(agentId, customRoot)
   library.enable(id, agentId, true)
@@ -127,7 +140,7 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).for(['claude', 'codex', 'opencode', 
     // Edit the skill it just used, restart and resume the same session: the revised text reaches the provider.
     const revised = `GLOSS_PLUGIN_REVISED_${randomUUID()}`
     const current = library.readFile(id, skill.path)
-    library.writeFile(id, { ...current, content: current.content.replace(marker, revised) })
+    writeFileSync(join(skillFolder, 'SKILL.md'), current.content.replace(marker, revised)); library.reconcile()
     connection!.dispose(); connection = undefined
     payloads.length = 0; updates.length = 0
     await resume(session)
@@ -135,8 +148,7 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).for(['claude', 'codex', 'opencode', 
     expect(JSON.stringify(payloads).includes(revised), 'Revised skill instructions reached the provider after a resume').toBe(true)
     connection!.dispose(); connection = undefined
     // Direct-only removes discovery while preserving native explicit loading.
-    const policy = library.list().plugins.find(p => !p.builtin)!.skills[0]
-    library.setSkillInvocation(id, skill.id, 'direct', policy.invocationRevision)
+    setInvocation('direct')
     payloads.length = 0; updates.length = 0
     const direct = await start()
     await connection!.prompt(direct, [{ type: 'text', text: 'Reply with ACK.' }])
@@ -144,8 +156,7 @@ it.skipIf(!process.env.GLOSS_PLUGIN_NATIVE).for(['claude', 'codex', 'opencode', 
     await useSkill(direct)
     expect(JSON.stringify(payloads).includes(revised), 'Direct-only skill can still be explicitly loaded').toBe(true)
     connection!.dispose(); connection = undefined
-    const directPolicy = library.list().plugins.find(p => !p.builtin)!.skills[0]
-    library.setSkillInvocation(id, skill.id, 'automatic', directPolicy.invocationRevision)
+    setInvocation('automatic')
     payloads.length = 0; updates.length = 0
     const automatic = await start()
     await connection!.prompt(automatic, [{ type: 'text', text: 'Reply with ACK.' }])

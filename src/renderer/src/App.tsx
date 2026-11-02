@@ -82,15 +82,10 @@ export function App(): React.JSX.Element {
   const [showWorktrees, setShowWorktrees] = useState(false)
   /** The Plugins screen (SPEC → Plugins), in the center like Worktrees. */
   const [showPlugins, setShowPlugins] = useState(false)
-  /** Set while the Plugins screen is open: asks before its unsaved edits are dropped. */
-  const pluginGuard = useRef<((leave: () => void) => void) | null>(null)
-  const setPluginGuard = useCallback((guard: ((leave: () => void) => void) | null) => { pluginGuard.current = guard }, [])
-  /** Runs `then`, first closing the Plugins screen once its unsaved edits are dealt with. */
+  /** Runs `then`, first closing the Plugins screen. */
   const leavePlugins = (then: () => void): void => {
-    if (!showPlugins) return then()
-    const leave = (): void => { setShowPlugins(false); then() }
-    if (pluginGuard.current) pluginGuard.current(leave)
-    else leave()
+    if (showPlugins) setShowPlugins(false)
+    then()
   }
   /** The shown project's folder and worktrees; null while they are read. */
   const [worktrees, setWorktrees] = useState<Worktree[] | null>(null)
@@ -855,7 +850,6 @@ export function App(): React.JSX.Element {
               setShowSettings(true)
             })}
             onClose={() => setShowPlugins(false)}
-            onNavigationGuard={setPluginGuard}
           />
         ) : showWorktrees && project ? (
           <WorktreesScreen

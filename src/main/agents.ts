@@ -20,6 +20,11 @@ export type AgentConfig = {
    * instructions (SPEC → Agent instructions), in whatever form it takes them.
    */
   sessionMeta?(instructions: string): { new?: Record<string, unknown>; load?: Record<string, unknown> }
+  /**
+   * Runs once the agent has started. A returned config replaces the running agent with one
+   * started from it, once (Codex's plugin hooks: SPEC → Plugins → Subagents and hooks).
+   */
+  afterStart?(conn: { extRequest(method: string, params: Record<string, unknown>): Promise<unknown> }): Promise<AgentConfig | undefined>
 }
 
 /**
