@@ -8,7 +8,7 @@ export type PluginManifest = {
 }
 
 export type SkillInvocation = 'automatic' | 'direct'
-export type PluginSkill = { id: string; name: string; description: string; path: string; files: string[]; invocation: SkillInvocation | 'mixed'; invocationRevision: string }
+export type PluginSkill = { id: string; name: string; description: string; path: string; files: string[]; invocation: SkillInvocation | 'mixed' }
 export type PluginAgentState = {
   id: string
   name: string
@@ -42,19 +42,9 @@ export type PluginLibraryState = {
   errors: string[]
 }
 export type PluginFile = { path: string; content: string; revision: string }
-export type PluginChange = { name?: string; description?: string; connections?: string[] }
 export type PluginApi = {
   list(): Promise<PluginLibraryState>
-  create(name: string, description: string): Promise<string>
-  update(id: string, change: PluginChange): Promise<void>
-  remove(id: string): Promise<void>
-  addSkill(id: string, name: string, description: string, invocation?: SkillInvocation): Promise<string>
-  setSkillInvocation(id: string, skillId: string, invocation: SkillInvocation, revision: string): Promise<void>
-  removeSkill(id: string, skillId: string): Promise<void>
   readFile(id: string, path: string): Promise<PluginFile>
-  writeFile(id: string, file: PluginFile): Promise<void>
-  removeFile(id: string, file: PluginFile): Promise<void>
-  createFile(id: string, skillId: string, path: string, content: string): Promise<void>
   enable(id: string, agentId: string, enabled: boolean): Promise<void>
   setSkillDirectory(agentId: string, directory: string): Promise<void>
   refresh(agentId: string): Promise<void>
@@ -63,7 +53,3 @@ export type PluginApi = {
 }
 
 export const PLUGIN_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
-export function pluginSlug(name: string): string {
-  return name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48).replace(/-$/, '') || 'plugin'
-}

@@ -34,7 +34,7 @@ description: "Create a plugin in Gloss, or import an existing plugin or skill in
 
 # Gloss plugins
 
-Gloss keeps a library of plugins that it delivers to the agents the user picks. A plugin holds skills (with their supporting files), subagents, hooks and references to MCP servers in Gloss's settings. Each agent gets the parts it supports and silently skips the rest; the \`gloss:doctor\` skill (\`gloss-doctor\` outside Claude Code) explains what each agent got. You create or import one by writing files; Gloss notices the change, validates it and shows any problem on its Plugins screen.
+Gloss keeps a library of plugins that it delivers to the agents the user picks. A plugin holds skills (with their supporting files), subagents, hooks and references to MCP servers in Gloss's settings. Each agent gets the parts it supports and silently skips the rest; the \`gloss:doctor\` skill (\`gloss-doctor\` outside Claude Code) explains what each agent got. You create, import or change one by writing files; Gloss notices the change, validates it and shows any problem on its Plugins screen. That screen only shows plugins and turns them on or off per agent: the user changes a plugin by editing its files or asking an agent to.
 
 - Library: \`${library}\`
 - Settings: \`${settings}\`
@@ -59,9 +59,10 @@ Gloss keeps a library of plugins that it delivers to the agents the user picks. 
   \`\`\`
   \`connections\` lists the names of MCP servers in settings this plugin needs. \`enabledAgents\` lists the agent ids that get the plugin. A new plugin is on by default: unless the user named other agents, set it to \`${JSON.stringify(defaultAgents)}\`.
 - \`SKILL.md\` starts with frontmatter whose \`name\` equals its folder name and whose \`description\` is a single line. Other frontmatter fields may stay.
+- A skill is automatic by default: an agent may use it when it's relevant. To make it direct only (used only when the user invokes it), set all three agents' fields, or they disagree: in the frontmatter \`disable-model-invocation: true\`, \`user-invocable: true\` and \`metadata:\` with \`opencode/autoinvoke: false\`, and in \`skills/<skill-name>/agents/openai.yaml\` (Codex) \`policy:\` with \`allow_implicit_invocation: false\`.
 - Only ordinary files and folders: no links. At most 1,000 files and 64 MB per plugin, 12 folder levels.
 - Other files a skill, hook or server uses (scripts, server code) may sit anywhere in the plugin folder. Gloss refuses a plugin with \`commands\`, \`.mcp.json\`, \`mcp.json\`, \`index.js\`, \`index.ts\` or \`.claude-plugin\` there.
-- The plugin id \`gloss\` is reserved for this skill's plugin. A plugin name already in the library can't be reused (names are compared ignoring case).
+- The plugin id \`gloss\` is reserved for this skill's plugin. Don't reuse a plugin name already in the library (compare names ignoring case).
 
 ## Subagents
 

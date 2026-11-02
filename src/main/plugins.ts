@@ -9,7 +9,7 @@ import { skillInvocation } from './skillInvocation'
 import { BUILTIN_SKILLS, LEGACY_BUILTIN_SKILLS, type BuiltinSkill } from './pluginSkill'
 import { mcpName } from '../shared/mcp'
 import { OPENCODE_HOOK_PLUGIN, claudeSubagent, codexRole, flatName, isPartAgent, nativeHooks, openCodeHooks, openCodeSubagent, parseHooks, parseSubagent, planHook, type PartAgent } from './pluginParts'
-import { BUILTIN_PLUGIN_ID, PLUGIN_ID, pluginSlug, type PersonalPlugin, type PluginAgentState, type PluginChange, type PluginFile, type PluginLibraryState, type PluginHook, type PluginManifest, type PluginSkill, type PluginSubagent } from '../shared/plugins'
+import { BUILTIN_PLUGIN_ID, PLUGIN_ID, type PersonalPlugin, type PluginAgentState, type PluginFile, type PluginLibraryState, type PluginHook, type PluginManifest, type PluginSkill, type PluginSubagent } from '../shared/plugins'
 
 type Agent = { id: string; name: string }
 type Deployment = { agentId: string; pluginId: string; target: string; source: string; mode: 'link' | 'copy'; hash: string }
@@ -26,8 +26,6 @@ type Options = {
   changed?(agentIds: string[]): void
   /** Gloss's settings.json, named in the built-in skill. Without it there is no built-in skill. */
   settings?: string
-  /** Removes these servers from the settings (the ones a removed plugin's folder held). */
-  removeConnections?(names: string[]): void
   /** Test the copy fallback without depending on OS symlink privilege. */
   link?: typeof symlinkSync
 }
@@ -41,10 +39,6 @@ const hash = (value: string | Buffer): string => createHash('sha256').update(val
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error)
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT'
-function text(value: unknown, label: string, max = 200): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > max || value.includes('\0')) throw new Error(`Enter a valid ${label} (up to ${max} characters).`)
-  return value.trim()
-}
 function strings(value: unknown): value is string[] { return Array.isArray(value) && value.every(v => typeof v === 'string' && v.length <= 256 && !v.includes('\0')) }
 function atomic(file: string, content: string): void {
   mkdirSync(dirname(file), { recursive: true })
@@ -52,28 +46,7 @@ function atomic(file: string, content: string): void {
   try { writeFileSync(temporary, content, { encoding: 'utf8', flag: 'wx' }); renameSync(temporary, file) }
   finally { if (existsSync(temporary)) unlinkSync(temporary) }
 }
-/** Windows directory watchers and open handles can briefly delay recursive removal. */
-function removeDirectory(folder: string, noun: string): void {
-  try { rmSync(folder, { recursive: true, maxRetries: 3, retryDelay: 100 }) }
-  catch (error) {
-    if (['ENOTEMPTY', 'EBUSY', 'EPERM', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) {
-      throw new Error(`Could not finish removing ${noun}. Some files may still be in use or changing. Close apps using its files and try again.`, { cause: error })
-    }
-    throw error
-  }
-}
 function inside(root: string, file: string): boolean { const rel = relative(root, file); return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel)) }
-/** A stdio server whose command or one of its arguments is a path into `folder`. */
-export function pointsInto(server: McpServer, folder: string): boolean {
-  if ('type' in server) return false
-  const norm = (value: string): string => { const v = value.replace(/\\/g, '/'); return process.platform === 'win32' ? v.toLowerCase() : v }
-  const root = norm(resolve(folder)).replace(/\/$/, '')
-  return [server.command, ...server.args].some(value => {
-    const v = norm(value)
-    for (let i = v.indexOf(root); i >= 0; i = v.indexOf(root, i + 1)) if (i + root.length === v.length || v[i + root.length] === '/') return true
-    return false
-  })
-}
 /**
  * A skill's name outside Claude, which has no plugin namespace for it: `<plugin-id>-<skill>`. Claude shows
  * `<plugin-id>:<skill>`. A skill whose folder already starts with the plugin id (the earlier naming) keeps it.
@@ -155,7 +128,7 @@ export class PluginLibrary {
     let source: string
     try { source = readFileSync(path, 'utf8') }
     catch (error) {
-      if (isMissing(error)) throw new Error('This plugin is incomplete because plugin.json is missing. Remove the plugin to clean up its remaining files.', { cause: error })
+      if (isMissing(error)) throw new Error('This plugin is incomplete because plugin.json is missing. Delete its folder from the library to clean up its remaining files.', { cause: error })
       throw error
     }
     const value: unknown = JSON.parse(source)
@@ -205,31 +178,12 @@ export class PluginLibrary {
       if (field('name') !== entry.name || !field('description') || ['>', '|'].includes(field('description'))) throw new Error(`${entry.name}: SKILL.md needs a matching name and a single-line description.`)
       const metadata = this.invocationMetadata(id, entry.name)
       const invocation = skillInvocation(raw, metadata).invocation
-      return { invocation, invocationRevision: hash(JSON.stringify([raw, metadata])), id: entry.name, name: entry.name.startsWith(`${id}-`) ? entry.name.slice(id.length + 1) : entry.name, description: field('description'), path: `skills/${entry.name}/SKILL.md`, files: this.files(dir) }
+      return { invocation, id: entry.name, name: entry.name.startsWith(`${id}-`) ? entry.name.slice(id.length + 1) : entry.name, description: field('description'), path: `skills/${entry.name}/SKILL.md`, files: this.files(dir) }
     })
   }
   private invocationMetadata(id: string, skillId: string): string | undefined {
     const path = this.file(id, `skills/${skillId}/agents/openai.yaml`)
     return exists(path) ? this.readText(path) : undefined
-  }
-  setSkillInvocation(id: string, skillId: string, invocation: unknown, revision: string): void {
-    this.assertState()
-    this.id(skillId)
-    if (invocation !== 'automatic' && invocation !== 'direct') throw new Error('Choose Automatic or Direct only.')
-    const skill = this.scanSkills(id).find(s => s.id === skillId)
-    if (!skill) throw new Error('Unknown skill.')
-    const file = this.readFile(id, skill.path)
-    const metadata = this.invocationMetadata(id, skillId)
-    if (hash(JSON.stringify([file.content, metadata])) !== revision) throw new Error('This skill changed. Reload it before changing invocation.')
-    const next = skillInvocation(file.content, metadata).update(invocation)
-    if (Buffer.byteLength(next.instructions) > MAX_FILE || Buffer.byteLength(next.metadata) > MAX_FILE) throw new Error('Skill files must be at most 1 MB.')
-    const instructionsPath = this.file(id, skill.path)
-    const metadataPath = this.file(id, `skills/${skillId}/agents/openai.yaml`)
-    // Prepare both documents before writing. Restore the first if the second write fails.
-    atomic(instructionsPath, next.instructions)
-    try { atomic(metadataPath, next.metadata) }
-    catch (error) { atomic(instructionsPath, file.content); throw error }
-    this.changed()
   }
   private readText(file: string): string {
     this.safe(file)
@@ -328,59 +282,9 @@ export class PluginLibrary {
     return { directory: this.directory, plugins: builtin ? [builtin, ...plugins] : plugins, connections, errors }
   }
 
-  create(name: string, description: string): string {
-    name = text(name, 'plugin name', 80)
-    if (typeof description !== 'string' || description.length > 1000) throw new Error('Description must be at most 1000 characters.')
-    if (this.sources().some(p => p.manifest.name.toLowerCase() === name.toLowerCase())) throw new Error('A plugin with this name already exists.')
-    let id = pluginSlug(name)
-    if (id === RESERVED_PLUGIN_ID || exists(join(this.directory, id))) id = `${id}-${randomUUID().slice(0, 6)}`
-    mkdirSync(this.folder(id))
-    try {
-      // On by default, so a new plugin works without another step (SPEC → Plugins → Plugins screen).
-      this.save(id, { schemaVersion: 1, name, description, connections: [], enabledAgents: this.defaultAgents() })
-      this.addSkill(id, 'instructions', description || `Instructions for ${name}.`)
-    } catch (error) { rmSync(this.folder(id), { recursive: true }); throw error }
-    return id
-  }
   /** The agents a new plugin is on for: every agent that can take one (a custom profile needs its skill directory). */
   private defaultAgents(): string[] {
     return this.options.agents().filter(a => !a.id.startsWith('custom:') || !!this.state.customDirectories[a.id]).map(a => a.id)
-  }
-  update(id: string, change: PluginChange): void {
-    if (!object(change) || Object.keys(change).some(k => !['name', 'description', 'connections'].includes(k))) throw new Error('Invalid plugin changes.')
-    const manifest = this.manifest(id)
-    if (change.name !== undefined) {
-      const name = text(change.name, 'plugin name', 80)
-      if (this.sources().some(p => p.id !== id && p.manifest.name.toLowerCase() === name.toLowerCase())) throw new Error('A plugin with this name already exists.')
-      manifest.name = name
-    }
-    if (change.description !== undefined) {
-      if (typeof change.description !== 'string' || change.description.length > 1000) throw new Error('Description must be at most 1000 characters.')
-      manifest.description = change.description
-    }
-    if (change.connections !== undefined) {
-      if (!strings(change.connections)) throw new Error('Invalid connection references.')
-      manifest.connections = [...new Set(change.connections)]
-    }
-    this.save(id, manifest); this.changed()
-  }
-  addSkill(id: string, name: string, description: string, invocation: unknown = 'automatic'): string {
-    this.manifest(id)
-    if (invocation !== 'automatic' && invocation !== 'direct') throw new Error('Choose Automatic or Direct only.')
-    name = text(name, 'skill name', 48)
-    description = text(description, 'skill description', 1000)
-    const skillId = pluginSlug(name)
-    if (!PLUGIN_ID.test(flatSkillName(id, skillId))) throw new Error('The plugin and skill names together must fit within 64 characters.')
-    const folder = this.safe(join(this.folder(id), 'skills', skillId))
-    if (exists(folder)) throw new Error('A skill with this name already exists in this plugin.')
-    const initial = `---\nname: ${skillId}\ndescription: ${JSON.stringify(description)}\n---\n\n# ${name}\n\nDescribe the workflow here.\n`
-    const policy = invocation === 'direct' ? skillInvocation(initial).update('direct') : undefined
-    mkdirSync(folder, { recursive: true })
-    try {
-      atomic(join(folder, 'SKILL.md'), policy?.instructions ?? initial)
-      if (policy) atomic(join(folder, 'agents', 'openai.yaml'), policy.metadata)
-    } catch (error) { rmSync(folder, { recursive: true }); throw error }
-    this.changed(); return skillId
   }
   private file(id: string, path: string): string {
     const part = typeof path === 'string' && (/^agents\/[a-z0-9][a-z0-9-]{0,63}\.md$/.test(path) || path === 'hooks/hooks.json')
@@ -395,57 +299,6 @@ export class PluginLibrary {
       return { path, content, revision: hash(content) }
     }
     const content = this.readText(this.file(id, path)); return { path, content, revision: hash(content) } }
-  writeFile(id: string, file: PluginFile): void {
-    if (!object(file) || typeof file.content !== 'string' || Buffer.byteLength(file.content) > MAX_FILE || file.content.includes('\0')) throw new Error('Use text content up to 1 MB.')
-    const existing = this.readFile(id, file.path)
-    if (existing.revision !== file.revision) throw new Error('This file changed outside the editor. Reload it before saving to preserve those edits.')
-    atomic(this.file(id, file.path), file.content); this.changed()
-  }
-  removeFile(id: string, file: PluginFile): void {
-    this.assertState()
-    this.manifest(id)
-    if (!object(file) || typeof file.path !== 'string') throw new Error('Choose a skill file.')
-    const path = this.file(id, file.path)
-    if (/^skills\/[^/]+\/SKILL\.md$/i.test(file.path)) throw new Error('Remove the skill to delete its instructions.')
-    const existing = this.readFile(id, file.path)
-    if (existing.revision !== file.revision) throw new Error('This file changed outside the editor. Reload it before deleting.')
-    if (this.state.deployments.some(d => d.pluginId === id && this.options.busy?.(d.agentId))) throw new Error('Wait for active turns using this plugin to finish before deleting a file.')
-    unlinkSync(path)
-    this.changed()
-  }
-  createFile(id: string, skillId: string, path: string, content: string): void {
-    this.id(skillId)
-    if (!this.scanSkills(id).some(s => s.id === skillId)) throw new Error('Unknown skill.')
-    const file = this.file(id, `skills/${skillId}/${path}`)
-    if (exists(file)) throw new Error('This file already exists.')
-    if (typeof content !== 'string' || Buffer.byteLength(content) > MAX_FILE || content.includes('\0')) throw new Error('Use text content up to 1 MB.')
-    mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, content, { flag: 'wx' }); this.changed()
-  }
-  removeSkill(id: string, skillId: string): void {
-    this.assertState()
-    this.id(skillId); this.manifest(id)
-    if (this.state.deployments.some(d => d.pluginId === id && this.options.busy?.(d.agentId))) throw new Error('Wait for this plugin’s active turns to finish before removing a skill.')
-    const skill = this.scanSkills(id).find(s => s.id === skillId)
-    if (!skill) throw new Error('Unknown skill.')
-    const folder = this.safe(join(this.folder(id), 'skills', skillId))
-    const targets = this.state.deployments.filter(d => d.pluginId === id && d.source === folder)
-    for (const target of targets) this.assertOwned(target)
-    for (const target of targets) this.removeTarget(target)
-    removeDirectory(folder, 'this skill'); this.changed()
-  }
-  remove(id: string): void {
-    this.assertState()
-    const folder = this.folder(id)
-    const targets = this.state.deployments.filter(d => inside(folder, d.source))
-    if (targets.some(d => this.options.busy?.(d.agentId))) throw new Error('Wait for the agents using this plugin to finish their turns before removing it.')
-    for (const target of targets) this.assertOwned(target)
-    for (const target of targets) this.removeTarget(target)
-    const servers = this.options.connections().filter(s => pointsInto(s, folder)).map(s => s.name)
-    removeDirectory(folder, 'this plugin')
-    // A server launched from inside the plugin can't run without it (SPEC → Plugins → Import).
-    try { if (servers.length) this.options.removeConnections?.(servers) }
-    finally { this.changed() }
-  }
   enable(id: string, agentId: string, enabled: boolean): void {
     this.assertState()
     if (typeof enabled !== 'boolean' || !this.options.agents().some(a => a.id === agentId)) throw new Error('Unknown agent or invalid availability.')
@@ -612,7 +465,7 @@ export class PluginLibrary {
       connections: [], enabledAgents: agents.map(a => a.id), directory: join(this.runtime, 'builtin'), problems: [], subagents: [], hooks: [],
       skills: BUILTIN_SKILLS.map(skill => ({
         id: skill.claude, name: skill.claude, description: /^description: "(.*)"$/m.exec(this.builtinContent(skill))?.[1] ?? '',
-        path: `skills/${skill.claude}/SKILL.md`, files: ['SKILL.md'], invocation: 'automatic' as const, invocationRevision: ''
+        path: `skills/${skill.claude}/SKILL.md`, files: ['SKILL.md'], invocation: 'automatic' as const
       })),
       agents: agents.map(agent => {
         const custom = agent.id.startsWith('custom:')

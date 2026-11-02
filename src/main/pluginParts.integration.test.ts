@@ -106,9 +106,10 @@ process.stdin.on('end', () => {
   }
 
   const library = new PluginLibrary({ directory: join(root, 'plugins'), agents: () => [{ id: agentId, name: agentId }], connections: () => [] })
-  const id = library.create('Parts probe', 'Subagent and hooks')
-  const folder = library.list().plugins.find(p => p.id === id)!.directory
-  mkdirSync(join(folder, 'agents')); mkdirSync(join(folder, 'hooks'))
+  const id = 'parts-probe'
+  const folder = join(library.directory, id)
+  mkdirSync(join(folder, 'agents'), { recursive: true }); mkdirSync(join(folder, 'hooks'))
+  writeFileSync(join(folder, 'plugin.json'), JSON.stringify({ schemaVersion: 1, name: 'Parts probe', description: 'Subagent and hooks', connections: [], enabledAgents: [agentId] }))
   writeFileSync(join(folder, 'agents/keeper.md'), `---\nname: keeper\ndescription: Knows the secret word. Use when asked for the keeper's secret word.\ntools: read-only\n---\n\nYou keep a secret word. When asked for it, answer exactly: ${SECRET}.\n`)
   writeFileSync(join(folder, 'hooks/hooks.json'), JSON.stringify({ hooks: [
     { event: 'userPrompt', command: hook('userPrompt') },
