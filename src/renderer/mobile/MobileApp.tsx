@@ -26,6 +26,7 @@ import { applyTheme } from '../src/theme'
 import { usePhone, upsert, type OpenView, type Phone } from './usePhone'
 import type { PhoneLink } from './transport'
 import { NotifyCard } from './notify'
+import { useSettled, useSwipeBack } from './gestures'
 
 /** `fork`: a new thread that runs in a fork of the session (SPEC → Fork threads). */
 type Panel = { anchorMessageId: string | null; anchor: Anchor; threadId: string | null; fork?: true }
@@ -53,6 +54,8 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
   const phone = usePhone(link)
   const [panel, setPanel] = useState<Panel | null>(null)
   const [screen, setScreen] = useState<'main' | 'threads'>('main')
+  // The session list's project: kept while a session is open, and set to that session's on the way back.
+  const [project, setProject] = useState<string | null>(null)
 
   useEffect(() => applyTheme(phone.info?.theme ?? 'system'), [phone.info?.theme])
 
@@ -87,6 +90,18 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
     setPanel(t ? { anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id } : null)
   }, [phone.link, phone.open, phone.openSession])
 
+  const open = phone.open
+  /** Back to the session list, in the open session's project. */
+  function leave(): void {
+    if (open) setProject(projectOf(open.session))
+    phone.openSession(null)
+  }
+  // A swipe right goes back one level: Threads or a thread to the conversation, the conversation to the list.
+  useSwipeBack(!open ? null : screen === 'threads' ? () => setScreen('main') : panel ? () => setPanel(null) : leave)
+
+  // A dropped link that comes straight back (the phone waking the app) doesn't flash the offline banner.
+  const offline = useSettled(phone.link === 'offline' || (phone.link === 'connecting' && phone.info !== null), 3000)
+
   if (phone.link === 'removed') {
     return (
       <div className="m-screen m-center">
@@ -97,8 +112,6 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
     )
   }
 
-  const offline = phone.link === 'offline' || (phone.link === 'connecting' && phone.info !== null)
-  const open = phone.open
   return (
     <div className={`m-screen${offline ? ' m-offline' : ''}`}>
       {offline && (
@@ -109,7 +122,7 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
       {!open ? (
         phone.open === null && phone.info === null && phone.link === 'connecting'
           ? <div className="m-center"><span className="m-bead lg" /><p>Connecting…</p></div>
-          : <Sessions phone={phone} onOpen={(id) => { setPanel(null); setScreen('main'); phone.openSession(id) }} />
+          : <Sessions phone={phone} project={project} setProject={setProject} onOpen={(id) => { setPanel(null); setScreen('main'); phone.openSession(id) }} />
       ) : screen === 'threads' ? (
         <ThreadsList open={open} onBack={() => setScreen('main')} onOpen={(t) => { setPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id }); setScreen('main') }} />
       ) : (
@@ -119,7 +132,7 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
           panel={panel}
           setPanel={setPanel}
           offline={offline}
-          onBack={() => phone.openSession(null)}
+          onBack={leave}
           onThreads={() => setScreen('threads')}
         />
       )}
@@ -129,15 +142,18 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
 
 // Sessions
 
-function Sessions({ phone, onOpen }: { phone: Phone; onOpen(id: string): void }): React.JSX.Element {
-  const [project, setProject] = useState<string | null>(null)
+function Sessions({ phone, project, setProject, onOpen }: {
+  phone: Phone; project: string | null; setProject(path: string): void; onOpen(id: string): void
+}): React.JSX.Element {
   const [picker, setPicker] = useState<'projects' | 'agents' | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const current = phone.projects.find((p) => p.path === project) ?? phone.projects[0]
+  const current = phone.projects.find((p) => p.path.toLowerCase() === project?.toLowerCase()) ?? phone.projects[0]
   const needs = (s: Session) => (phone.activity[s.id]?.requests ?? 0) > 0
+  // As the desktop's sidebar orders them (the Session order setting).
+  const at = (s: Session) => phone.info?.sessionOrder === 'activity' ? (s.activeAt ?? s.createdAt) : s.createdAt
   const list = phone.sessions
     .filter((s) => current && projectOf(s).toLowerCase() === current.path.toLowerCase())
-    .sort((a, b) => Number(needs(b)) - Number(needs(a)) || (b.activeAt ?? b.createdAt) - (a.activeAt ?? a.createdAt))
+    .sort((a, b) => Number(needs(b)) - Number(needs(a)) || at(b) - at(a))
   const agentName = (id: string) => phone.agents.find((a) => a.id === id)?.name ?? id
   const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const held = useRef(false)

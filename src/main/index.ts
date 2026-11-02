@@ -1261,7 +1261,7 @@ app.whenReady().then(() => {
     calls: {
       info: () => {
         const g = settingsFile.state().global
-        return { machine: phone?.status().machine ?? null, defaultAgent: g.defaultAgent, theme: g.theme }
+        return { machine: phone?.status().machine ?? null, defaultAgent: g.defaultAgent, theme: g.theme, sessionOrder: g.sessionOrder }
       },
       activity: () => sessions?.activity() ?? {}
     },

@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ForkOf, ForkView, GlossEvent, SessionView } from '@shared/ipc'
 import type { AgentInfo, Project, RateLimit, Session } from '@shared/types'
+import type { SessionOrder } from '@shared/settings'
 import type { Notice } from '../src/Log'
 import { errorText } from '../src/errors'
 import type { Link, PhoneLink } from './transport'
 
-export type Info = { machine: string | null; defaultAgent: string; theme: 'system' | 'light' | 'dark' }
+/** `sessionOrder`: the desktop sidebar's (Settings → General). */
+export type Info = { machine: string | null; defaultAgent: string; theme: 'system' | 'light' | 'dark'; sessionOrder?: SessionOrder }
 /** `forkOf`: a fork thread's session, whose work shows in its parent (SPEC → Fork threads). */
 export type Activity = { turn: string | null | undefined; requests: number; queued: number; paused: boolean; forkOf?: ForkOf }
 export type OpenView = SessionView & { notices: Notice[] }
