@@ -26,13 +26,15 @@ describe('command bindings', () => {
     expect(bindingProblem('stash', 'Mod+Shift+H', {})).toMatchObject({ conflict: 'toggleComments' })
     expect(bindingProblem('stash', 'Mod+N', {})).toMatchObject({ conflict: 'newSession' })
     expect(bindingProblem('pin', 'R', {})).not.toBeNull()
-    expect(bindingProblem('pin', 'R', { box: '' })).not.toBeNull()
+    expect(bindingProblem('pin', 'R', { box: '' })).toBeNull()
     expect(bindingProblem('rejectRequest', 'Escape', {})).toBeNull()
     expect(bindingProblem('stash', 'Mod+I', { italic: '' })).not.toBeNull()
   })
   it('refuses typing and reserved keys but permits local letters on the canvas', () => {
     for (const keys of ['Q', 'Shift+Q', 'Alt+F4', 'Mod+C', 'Tab', 'Shift+Enter']) expect(bindingProblem('stash', keys, {})).not.toBeNull()
     expect(bindingProblem('reply', 'Q', {})).toBeNull()
+    expect(bindingProblem('pin', 'Q', {})).toBeNull()
+    expect(resolveBindings({ pin: 'Q', addCapture: 'Mod+Shift+Enter' }).bindings).toEqual({ pin: 'Q', addCapture: 'Mod+Shift+Enter' })
     expect(bindingProblem('capture', 'Escape', {})).not.toBeNull()
   })
   it('falls back per command, including cascading default collisions', () => {

@@ -6,7 +6,7 @@ M1 through M20, failed-turn actions and worktrees are done. Next are custom keyb
 
 ## M21: Custom keyboard shortcuts
 
-**Built, in review:** Settings now edits 24 Gloss-specific commands from a shared registry, with one custom binding per command, Clear, Reset, Reset all, search and linked conflict messages. Standard editing, Escape, Space, numbered choices, canvas controls, basic navigation and mouse gestures stay fixed. The old list's obsolete Alt+Enter queue entry was removed without changing automatic steering. Validated with the full test suite, build/lint and a Windows Electron smoke check covering recording, conflicts, persistence and live file reload; light/dark layouts inspected.
+**Built, in review:** Settings now edits 30 Gloss-specific commands from a shared registry, with one custom binding per command, Clear, Reset, Reset all, search and linked conflict messages. Standard editing, Escape, Space, numbered choices, canvas undo/redo and zoom, basic navigation and mouse gestures stay fixed. The old list's obsolete Alt+Enter queue entry was removed without changing automatic steering. Validated with the full test suite, build/lint and a Windows Electron smoke check covering recording, conflicts, persistence and live file reload; light/dark layouts inspected.
 
 Agreed scope: typing triggers and basic editor behaviors stay fixed. One custom binding per command; paired actions get separate commands. Conflicts account for focus and event precedence. Start with an inline conflict message and Go to command; evaluate swapping during review.
 Let the user change Gloss-specific keyboard shortcuts in Settings → Keyboard shortcuts, which today only lists them. Update `SPEC.md` (Keyboard shortcuts, Settings) in this milestone.
