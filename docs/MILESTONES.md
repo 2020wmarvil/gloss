@@ -1,24 +1,8 @@
 # Milestones
 
-Build in order, from M21 through M26 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
+Build in order, from M22 through M26 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1 through M20, failed-turn actions and worktrees are done. Next are custom keyboard shortcuts (M21), exploration of agents, hooks and LSP servers in plugins (M22), Perforce support (M23), performance improvements (M24), shipping (M25), then marketing (M26). Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
-
-## M21: Custom keyboard shortcuts
-
-**Built, in review:** Settings now edits 30 Gloss-specific commands from a shared registry, with one custom binding per command, Clear, Reset, Reset all, search and linked conflict messages. Standard editing, Escape, Space, numbered choices, canvas undo/redo and zoom, basic navigation and mouse gestures stay fixed. The old list's obsolete Alt+Enter queue entry was removed without changing automatic steering. Validated with the full test suite, build/lint and a Windows Electron smoke check covering recording, conflicts, persistence and live file reload; light/dark layouts inspected.
-
-Agreed scope: typing triggers and basic editor behaviors stay fixed. One custom binding per command; paired actions get separate commands. Conflicts account for focus and event precedence. Start with an inline conflict message and Go to command; evaluate swapping during review.
-Let the user change Gloss-specific keyboard shortcuts in Settings → Keyboard shortcuts, which today only lists them. Update `SPEC.md` (Keyboard shortcuts, Settings) in this milestone.
-
-- **One registry:** every shortcut becomes a named command with its scope (anywhere, composer, conversation, session list, annotation canvas and the other groups the list has now) and its default keys, in one table that both the handlers and the settings screen read. Today each of the 69 is handled where it applies (about 18 `keydown` handlers) and `src/renderer/src/shortcuts.ts` only describes them, so the two can drift. Move the handlers onto the registry without changing any default.
-- **Stored in `settings.json`:** only the changed bindings, as command id to keys (empty for none), validated by the settings schema like any field, with live reload. Defaults stay in code, so a new Gloss version's new shortcuts still apply. The existing `captureShortcut` becomes one of these commands (its global, any-app registration stays as it is), and an old file's value still works.
-- **Editing:** each editable command gets the recorder the capture shortcut uses now (`ShortcutSetting`), plus Reset to default, and the section gets Reset all. Show each binding's keys as keycaps, keep the search-friendly grouping, and omit standard shortcuts from this screen.
-- **Conflicts:** refuse a binding already used by another command that can be active at the same time (same scope, or Anywhere against any scope), naming that command; the user frees it first or swaps. Refuse keys the platform or Electron reserves or that would stop typing (as the capture shortcut does now), and show actual capture registration failures without generic interception warnings. Bindings written straight into `settings.json` are checked the same way, and a bad one falls back to its default with a visible problem.
-- **Platforms:** `Mod` stays Ctrl on Windows and Linux and Cmd on macOS; a stored binding that says `Mod` follows the platform.
-- **Out of scope:** key sequences (chords), per-project bindings, and remapping on the phone.
-
-**Done when:** a user can rebind, unbind and reset supported Gloss-specific shortcuts in Settings, the change applies at once everywhere that command works, conflicts are refused with a clear reason, bindings survive restart and hand edits of `settings.json`, and every default is unchanged for users who never touch them.
+M1 through M21, failed-turn actions and worktrees are done. Next are exploration of agents, hooks and LSP servers in plugins (M22), Perforce support (M23), performance improvements (M24), shipping (M25), then marketing (M26). Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
 ## M22: Agents, hooks and LSP servers in plugins
 Explore plugin component support after custom keyboard shortcuts and before Perforce support. M19 limits plugins to skills and MCP servers because those are the only components every agent supports; Claude Code plugins can also carry subagent definitions (`agents/`), hooks (`hooks/hooks.json`) and LSP servers (`lspServers`), which today only Claude Code loads. Gloss is agent agnostic, so none of these ship for one agent alone.
@@ -85,7 +69,7 @@ Present Gloss to people who haven't used it. Comes after Shipping, so every link
 - ~~**Worktrees:** the New session menu, the Worktrees screen, removal, and setup in progress or failed.~~ Done: `docs/mocks/worktrees.html`.
 - **M19:** ~~phase 1, custom plugin library, nested skill editing, connections, Agents-tab availability and refresh~~ (done); ~~phase 2, agent-driven import through a built-in skill (the Plugins screen hint is the only UI)~~ (done).
 - ~~**M20:** choosing a thread's mode, showing a sub-agent thread's state and cost, and the resolve flow.~~ Settled in the M20 interview: no mode setting or resolve flow, and the design went straight into the app.
-- **M21:** the shortcut editor: rows with recorders and conflict states, Reset and Reset all; standard shortcuts stay fixed.
+- ~~**M21:** the shortcut editor: rows with recorders and conflict states, Reset and Reset all; standard shortcuts stay fixed.~~ Done.
 
 ---
 
@@ -474,3 +458,19 @@ An opt-in alternative to view-only threads: a thread runs in its own fork of the
 - **Lifetime:** the fork goes with its thread, and its agent copy with it.
 
 **Done when:** a thread started with Reply - Fork runs as its own agent, can run while the main thread works, and sending to main from it brings its summary into the main session.
+
+## ~~M21: Custom keyboard shortcuts~~
+
+**Completed:** Settings now edits 30 Gloss-specific commands from a shared registry, with one custom binding per command, Clear, Reset, Reset all, search and linked conflict messages. Standard editing, Escape, Space, numbered choices, canvas undo/redo and zoom, basic navigation and mouse gestures stay fixed. The old list's obsolete Alt+Enter queue entry was removed without changing automatic steering. Validated with the full test suite, build/lint and a Windows Electron smoke check covering recording, conflicts, persistence and live file reload; light/dark layouts inspected.
+
+Agreed scope: typing triggers and basic editor behaviors stay fixed. One custom binding per command; paired actions get separate commands. Conflicts account for focus and event precedence. Conflicts use an inline message and Go to command; no automatic swap.
+Let the user change Gloss-specific keyboard shortcuts in Settings → Keyboard shortcuts, which today only lists them. Update `SPEC.md` (Keyboard shortcuts, Settings) in this milestone.
+
+- **One registry:** every shortcut becomes a named command with its scope (anywhere, composer, conversation, session list, annotation canvas and the other groups the list has now) and its default keys, in one table that both the handlers and the settings screen read. Today each of the 69 is handled where it applies (about 18 `keydown` handlers) and `src/renderer/src/shortcuts.ts` only describes them, so the two can drift. Move the handlers onto the registry without changing any default.
+- **Stored in `settings.json`:** only the changed bindings, as command id to keys (empty for none), validated by the settings schema like any field, with live reload. Defaults stay in code, so a new Gloss version's new shortcuts still apply. The existing `captureShortcut` becomes one of these commands (its global, any-app registration stays as it is), and an old file's value still works.
+- **Editing:** each editable command gets the recorder the capture shortcut uses now (`ShortcutSetting`), plus Reset to default, and the section gets Reset all. Show each binding's keys as keycaps, keep the search-friendly grouping, and omit standard shortcuts from this screen.
+- **Conflicts:** refuse a binding already used by another command that can be active at the same time (same scope, or Anywhere against any scope), naming that command; the user frees it first or swaps. Refuse keys the platform or Electron reserves or that would stop typing (as the capture shortcut does now), and show actual capture registration failures without generic interception warnings. Bindings written straight into `settings.json` are checked the same way, and a bad one falls back to its default with a visible problem.
+- **Platforms:** `Mod` stays Ctrl on Windows and Linux and Cmd on macOS; a stored binding that says `Mod` follows the platform.
+- **Out of scope:** key sequences (chords), per-project bindings, and remapping on the phone.
+
+**Completion criteria (met):** a user can rebind, unbind and reset supported Gloss-specific shortcuts in Settings, the change applies at once everywhere that command works, conflicts are refused with a clear reason, bindings survive restart and hand edits of `settings.json`, and every default is unchanged for users who never touch them.
