@@ -43,6 +43,7 @@ export function usePhone(link: PhoneLink) {
   }, [])
 
   const load = useCallback(async () => {
+    void reloadIfStale(link)
     const [i, p, s, a, r, act] = await Promise.all([
       link.invoke('bridge:info') as Promise<Info>,
       window.gloss.projects.list(),
@@ -200,9 +201,10 @@ export function usePhone(link: PhoneLink) {
     return () => document.removeEventListener('visibilitychange', report)
   }, [link, state, openSessionId])
 
-  const openSession = useCallback((id: string | null) => {
+  /** `cached`: the session as last seen, shown until it has reloaded (a swipe forward back into it). */
+  const openSession = useCallback((id: string | null, cached?: OpenView) => {
     openId.current = id
-    setOpen(null)
+    setOpen(cached && cached.session.id === id ? cached : null)
     if (id) void loadOpen(id)
   }, [loadOpen])
 
@@ -230,6 +232,18 @@ export function usePhone(link: PhoneLink) {
 }
 
 export type Phone = ReturnType<typeof usePhone>
+
+/**
+ * Reloads the page when the desktop now serves a different build of it (Gloss was rebuilt and
+ * restarted while this page stayed open). Waits for the next reconnect while a field holds text.
+ */
+async function reloadIfStale(link: PhoneLink): Promise<void> {
+  const mine = document.querySelector('script[type="module"][src]')?.getAttribute('src')
+  const served = await (link.invoke('bridge:build') as Promise<string | null>).catch(() => null)
+  if (!mine || !served || served === mine) return
+  const typing = [...document.querySelectorAll<HTMLTextAreaElement | HTMLInputElement>('textarea, input')].some((f) => f.value.trim() !== '')
+  if (!typing) location.reload()
+}
 
 function addNotice(o: OpenView, threadId: string | null, text: string, tone?: 'failed'): OpenView {
   const afterSeq = Math.max(-1, ...o.messages.map((m) => m.seq), ...o.toolCalls.map((t) => t.messageSeq))

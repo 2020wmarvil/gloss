@@ -33,14 +33,13 @@ Let Gloss work with projects in Perforce workspaces, including reviewing their c
 **Done when:** a user can open a Perforce project, run a session with any supported agent, review workspace or pending-changelist changes with line threads, and refresh the review after agent edits, without Git-only controls or changes to existing Git behavior.
 
 ## M24: Phone polish
-Quality-of-life fixes to the phone client (SPEC → Remote and mobile) from daily use. Small fixes from the first round of feedback already landed: swipe right to go back, the session list returning to the open session's project, the desktop's session order, and no offline banner on a quick reconnect after the app wakes. Update `SPEC.md` (Remote and mobile) in this milestone.
+Quality-of-life fixes to the phone client (SPEC → Remote and mobile) from daily use. Small fixes from the first round of feedback already landed: swipe right to go back (the screen follows the finger), the session list returning to the open session's project, the desktop's session order, and no offline banner on a quick reconnect after the app wakes. Update `SPEC.md` (Remote and mobile) in this milestone.
 
 - **Diffs on the phone:** view a session's changes (the working tree against its base, as the desktop's review diff) read-only, file by file, sized for a phone: a file list with added and removed line counts, then one file's diff with wrapped or horizontally scrolling lines. Open it from the session's header. Decide whether line threads and Run review come to the phone, or stay desktop-only and say so. The bridge's allowlist gains only the read calls this needs.
-- **Swipe back that tracks the finger:** the screen follows the drag and settles back or slides away, instead of acting only when the finger lifts.
 - **Waking up:** a socket that still reads as open after the phone sleeps but is dead (no close event) is detected right away on return (a ping with a short timeout) rather than when TCP gives up, so the reconnect and reload start at once. Keep what's on screen while it reloads, with no flash of empty or stale state.
 - Collect further phone feedback here as it comes in; each fix still goes through the spec.
 
-**Done when:** on an iPhone Home Screen app, a session's diff can be read file by file, swiping back follows the finger, and putting the app away and coming back shows the current state without an offline banner while the desktop is reachable.
+**Done when:** on an iPhone Home Screen app, a session's diff can be read file by file, and putting the app away and coming back shows the current state without an offline banner while the desktop is reachable.
 
 ## M25: Performance
 Measure first, then fix what the numbers show. Keep the app's behavior unchanged, and don't optimize anything the measurements don't point at.

@@ -1,6 +1,6 @@
 // The phone client (SPEC → Remote and mobile; docs/mocks/mobile.html): sessions, the conversation,
 // threads full screen, the composer with queue and steer, questions and approvals, and the status sheet.
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft, ArrowUp, Check, ChevronDown, ChevronRight, Clock, CornerDownRight, Folder, GitBranch, GitFork, Hand, Lock,
   MessageSquare, MessageSquareReply, Pencil, Plus, Shield, Square, Trash2, WifiOff, X
@@ -26,7 +26,7 @@ import { applyTheme } from '../src/theme'
 import { usePhone, upsert, type OpenView, type Phone } from './usePhone'
 import type { PhoneLink } from './transport'
 import { NotifyCard } from './notify'
-import { useSettled, useSwipeBack } from './gestures'
+import { useSettled, useSwipeNav, type Swipe } from './gestures'
 
 /** `fork`: a new thread that runs in a fork of the session (SPEC → Fork threads). */
 type Panel = { anchorMessageId: string | null; anchor: Anchor; threadId: string | null; fork?: true }
@@ -44,6 +44,23 @@ function busyThreads(open: OpenView): string[] {
 type Target = { message: Message; anchor: Anchor; selection: boolean }
 
 const MAX_IMAGE = 10 * 1024 * 1024
+
+/**
+ * Scroll positions by screen, for the page's life, so going back or forward (a swipe's copy
+ * included) shows a screen where it was left. A log at its bottom is kept as `BOTTOM`, so it
+ * still follows new output.
+ */
+const scrolls = new Map<string, number>()
+const BOTTOM = -1
+
+/** Restores a list's scroll position for `key` before paint, and keeps it as it scrolls. */
+function useScrollMemory(key: string): { ref: React.RefObject<HTMLDivElement | null>; onScroll(e: React.UIEvent<HTMLElement>): void } {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (ref.current) ref.current.scrollTop = scrolls.get(key) ?? 0
+  }, [key])
+  return { ref, onScroll: (e) => void scrolls.set(key, e.currentTarget.scrollTop) }
+}
 
 export function threadName(thread: Thread): string {
   if (thread.finding) return truncate(thread.finding.title, 40)
@@ -91,13 +108,57 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
   }, [phone.link, phone.open, phone.openSession])
 
   const open = phone.open
-  /** Back to the session list, in the open session's project. */
-  function leave(): void {
-    if (open) setProject(projectOf(open.session))
-    phone.openSession(null)
+  const here: Loc = open ? { sessionId: open.session.id, screen, panel } : null
+
+  // Going back remembers where it came from, so a swipe left goes forward there again; going
+  // anywhere else forgets it.
+  const [ahead, setAhead] = useState<Ahead[]>([])
+  const expected = useRef(locKey(here))
+  useEffect(() => {
+    const key = locKey(here)
+    if (key !== expected.current) setAhead([])
+    expected.current = key
+  })
+
+  function go(to: Loc, cached?: OpenView): void {
+    expected.current = locKey(to)
+    if (!to) {
+      // The session list shows the project of the session left.
+      if (open) setProject(projectOf(open.session))
+      phone.openSession(null)
+      return
+    }
+    if (to.sessionId !== open?.session.id) phone.openSession(to.sessionId, cached)
+    setScreen(to.screen)
+    setPanel(to.panel)
   }
-  // A swipe right goes back one level: Threads or a thread to the conversation, the conversation to the list.
-  useSwipeBack(!open ? null : screen === 'threads' ? () => setScreen('main') : panel ? () => setPanel(null) : leave)
+  /** One level up: Threads or a thread to the conversation, the conversation to the list. */
+  const backTo: Loc | undefined = !here ? undefined : here.screen === 'threads' ? { ...here, screen: 'main' } : here.panel ? { ...here, panel: null } : null
+  function goBack(): void {
+    if (backTo === undefined || !here) return
+    setAhead((a) => [...a, { loc: here, cached: backTo === null && open ? open : undefined }])
+    go(backTo)
+  }
+  // Forward is where the user went back from; with nothing there, a session's Threads.
+  const next = ahead.at(-1)
+  const remembered = next && (!next.loc || phone.sessions.some((s) => s.id === next.loc!.sessionId)) ? next : undefined
+  const forwardTo: Ahead | undefined = remembered ?? (here && here.screen === 'main' ? { loc: { ...here, screen: 'threads' } } : undefined)
+  function goForward(): void {
+    if (!forwardTo) return
+    if (remembered) setAhead((a) => a.slice(0, -1))
+    go(forwardTo.loc, forwardTo.cached)
+  }
+
+  // Swipes: right goes back, left forward again. While one drags, the other screen shows beneath or over.
+  const [peek, setPeek] = useState<Swipe | null>(null)
+  const topRef = useRef<HTMLDivElement>(null)
+  const underRef = useRef<HTMLDivElement>(null)
+  const overRef = useRef<HTMLDivElement>(null)
+  useSwipeNav({
+    back: backTo !== undefined ? goBack : null,
+    forward: forwardTo ? goForward : null,
+    top: topRef, under: underRef, over: overRef, onPeek: setPeek
+  })
 
   // A dropped link that comes straight back (the phone waking the app) doesn't flash the offline banner.
   const offline = useSettled(phone.link === 'offline' || (phone.link === 'connecting' && phone.info !== null), 3000)
@@ -112,32 +173,68 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
     )
   }
 
+  /** One screen: the top one, or an inert copy of the one a swipe goes back or forward to. */
+  function layer(loc: Loc, role: 'top' | 'under' | 'over', view: OpenView | null = open): React.JSX.Element {
+    const copy = role !== 'top'
+    return (
+      <div
+        key={role}
+        ref={role === 'top' ? topRef : role === 'under' ? underRef : overRef}
+        className={`m-screen${copy ? ` m-${role}` : ''}${offline ? ' m-offline' : ''}`}
+        inert={copy}
+        aria-hidden={copy || undefined}
+      >
+        {offline && (
+          <div className="m-banner m-banner-off" role="status">
+            <WifiOff size={18} /><span><b>Gloss is offline.</b> Reconnecting…</span>
+          </div>
+        )}
+        {!loc || !view ? (
+          !open && phone.info === null && phone.link === 'connecting'
+            ? <div className="m-center"><span className="m-bead lg" /><p>Connecting…</p></div>
+            : <Sessions
+                phone={phone}
+                // Going back from a session shows its project.
+                project={copy && open ? projectOf(open.session) : project}
+                setProject={setProject}
+                onOpen={(id) => { setPanel(null); setScreen('main'); phone.openSession(id) }}
+              />
+        ) : loc.screen === 'threads' ? (
+          <ThreadsList open={view} onBack={goBack} onOpen={(t) => { setPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id }); setScreen('main') }} />
+        ) : (
+          <SessionScreen
+            phone={phone}
+            open={view}
+            panel={loc.panel}
+            setPanel={setPanel}
+            offline={offline}
+            onBack={goBack}
+            onThreads={() => setScreen('threads')}
+          />
+        )}
+        <div className="m-layer-dim" />
+      </div>
+    )
+  }
+
   return (
-    <div className={`m-screen${offline ? ' m-offline' : ''}`}>
-      {offline && (
-        <div className="m-banner m-banner-off" role="status">
-          <WifiOff size={18} /><span><b>Gloss is offline.</b> Reconnecting…</span>
-        </div>
-      )}
-      {!open ? (
-        phone.open === null && phone.info === null && phone.link === 'connecting'
-          ? <div className="m-center"><span className="m-bead lg" /><p>Connecting…</p></div>
-          : <Sessions phone={phone} project={project} setProject={setProject} onOpen={(id) => { setPanel(null); setScreen('main'); phone.openSession(id) }} />
-      ) : screen === 'threads' ? (
-        <ThreadsList open={open} onBack={() => setScreen('main')} onOpen={(t) => { setPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id }); setScreen('main') }} />
-      ) : (
-        <SessionScreen
-          phone={phone}
-          open={open}
-          panel={panel}
-          setPanel={setPanel}
-          offline={offline}
-          onBack={leave}
-          onThreads={() => setScreen('threads')}
-        />
-      )}
+    <div className="m-stack">
+      {peek === 'back' && backTo !== undefined && layer(backTo, 'under')}
+      {layer(here, 'top')}
+      {peek === 'forward' && forwardTo && layer(forwardTo.loc, 'over', forwardTo.cached ?? open)}
     </div>
   )
+}
+
+/** Where the phone is: the session list (`null`), or a session's conversation, thread or Threads. */
+type Loc = { sessionId: string; screen: 'main' | 'threads'; panel: Panel | null } | null
+/** Where a swipe left goes: a screen gone back from, with its session as last seen when it was left the list. */
+type Ahead = { loc: Loc; cached?: OpenView }
+
+function locKey(loc: Loc): string {
+  if (!loc) return 'sessions'
+  const p = loc.panel
+  return `${loc.sessionId}|${loc.screen}|${p ? p.threadId ?? `${p.anchorMessageId}|${JSON.stringify(p.anchor)}|${p.fork ? 'fork' : ''}` : ''}`
 }
 
 // Sessions
@@ -175,6 +272,7 @@ function Sessions({ phone, project, setProject, onOpen }: {
 
   const waiting = list.filter(needs)
   const rest = list.filter((s) => !needs(s))
+  const scroll = useScrollMemory(`sessions:${current?.path ?? ''}`)
   return (
     <>
       <div className="m-proj">
@@ -183,7 +281,7 @@ function Sessions({ phone, project, setProject, onOpen }: {
           {current?.name ?? 'Gloss'} <ChevronDown size={16} />
         </button>
       </div>
-      <div className="m-body m-scroll">
+      <div className="m-body m-scroll" ref={scroll.ref} onScroll={scroll.onScroll}>
         <NotifyCard />
         {error && <p className="m-error" role="alert">{error}</p>}
         {!current && phone.info && <p className="m-empty">Open a project in Gloss on the computer to start.</p>}
@@ -308,7 +406,7 @@ function SessionScreen(props: {
     <>
       <div className="m-hdr">
         {inThread ? (
-          <button className="m-back" onClick={() => setPanel(null)}><ArrowLeft size={18} />Main</button>
+          <button className="m-back" onClick={props.onBack}><ArrowLeft size={18} />Main</button>
         ) : (
           <button className="m-back" onClick={props.onBack} aria-label="Sessions"><ArrowLeft size={18} /></button>
         )}
@@ -335,6 +433,7 @@ function SessionScreen(props: {
           const t = open.threads.find((x) => x.id === id)
           if (t) setPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id })
         }}
+        memory={`log:${open.session.id}:${threadId ?? panel?.anchorMessageId ?? 'main'}`}
         key={`${open.session.id}:${threadId ?? panel?.anchorMessageId ?? 'main'}`}
       />
       {target ? (
@@ -386,10 +485,13 @@ function LogView(props: {
   /** The threads with a running turn: the session's, and its forks'. */
   busy: string[]
   target: Target | null; onTarget(t: Target | null): void; onOpenThread(id: string): void
+  /** Where its scroll position is kept (`scrolls`). */
+  memory: string
 }): React.JSX.Element {
   const { open, threadId, target } = props
   const scroller = useRef<HTMLDivElement>(null)
-  const pinned = useRef(true)
+  const saved = scrolls.get(props.memory) ?? BOTTOM
+  const pinned = useRef(saved === BOTTOM)
   const items = useMemo(
     // A fork thread's questions and approvals come from its own session.
     () => props.inThread && threadId === null ? [] : logItems({ ...open, requests: [...open.requests, ...open.forks.flatMap((f) => f.requests)] }, open.notices, threadId),
@@ -401,8 +503,12 @@ function LogView(props: {
     return counts
   }, [open.messages])
 
-  // Follows new output while at the bottom.
-  useEffect(() => {
+  // Opens where it was left; once at the bottom, follows new output (before paint, since a swipe's
+  // copy shows this log as it opens).
+  useLayoutEffect(() => {
+    if (scroller.current && saved !== BOTTOM) scroller.current.scrollTop = saved
+  }, [])
+  useLayoutEffect(() => {
     const el = scroller.current
     if (el && pinned.current) el.scrollTop = el.scrollHeight
   })
@@ -507,7 +613,11 @@ function LogView(props: {
     <div
       className="m-body m-scroll m-log"
       ref={scroller}
-      onScroll={(e) => { const el = e.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40 }}
+      onScroll={(e) => {
+        const el = e.currentTarget
+        pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+        scrolls.set(props.memory, pinned.current ? BOTTOM : el.scrollTop)
+      }}
       onClick={tap}
     >
       {groups.length === 0 && <p className="m-empty">{props.inThread ? 'Reply to start the thread.' : 'Send a message to start.'}</p>}
@@ -898,6 +1008,7 @@ function ThreadsList({ open, onBack, onOpen }: { open: OpenView; onBack(): void;
   const threads = open.threads.filter((t) => t.anchor.kind !== 'line' && !t.finding)
   const replies = (t: Thread) => open.messages.filter((m) => m.threadId === t.id).length
   const last = (t: Thread) => Math.max(t.createdAt, ...open.messages.filter((m) => m.threadId === t.id).map((m) => m.createdAt ?? 0))
+  const scroll = useScrollMemory(`threads:${open.session.id}:${tab}`)
   const nameOf = (id: string | null) => id === null ? 'Main conversation' : threadName(threads.find((t) => t.id === id) ?? ({ anchor: { kind: 'selection', start: 0, end: 0, text: 'Thread' } } as Thread))
   return (
     <>
@@ -909,7 +1020,7 @@ function ThreadsList({ open, onBack, onOpen }: { open: OpenView; onBack(): void;
         <button aria-pressed={tab === 'threads'} onClick={() => setTab('threads')}>Threads {threads.length}</button>
         <button aria-pressed={tab === 'queue'} onClick={() => setTab('queue')}>Queue {open.queue.items.length}</button>
       </div>
-      <div className="m-body m-scroll">
+      <div className="m-body m-scroll" ref={scroll.ref} onScroll={scroll.onScroll}>
         {tab === 'threads' ? (
           threads.length === 0 ? <p className="m-empty">No threads yet. Tap a list item or paragraph, or select text, to reply in a thread.</p>
             : threads.map((t) => {
