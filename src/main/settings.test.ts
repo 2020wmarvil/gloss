@@ -285,7 +285,7 @@ describe('custom keyboard shortcuts', () => {
       file.update({ global: { shortcuts: { search: 'Ctrl+Shift+K', stash: '' } } })
       const text = readFileSync(file.path, 'utf8')
       expect(JSON.parse(text).shortcuts).toEqual({ search: 'Ctrl+Shift+K', stash: '' })
-      expect(() => file.update({ global: { shortcuts: { bold: 'Mod+I' } } })).toThrow(/Italic/)
+      expect(() => file.update({ global: { shortcuts: { bold: 'Mod+I' } } })).toThrow(/fixed shortcut/)
       expect(readFileSync(file.path, 'utf8')).toBe(text)
       expect(new SettingsFile({ dir, defaults }).load().global.shortcuts).toMatchObject({ search: 'Ctrl+Shift+K', stash: '' })
       writeFileSync(file.path, JSON.stringify({ shortcuts: { search: 'bad key', stash: '' }, theme: 'dark' }))

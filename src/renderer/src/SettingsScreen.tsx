@@ -1,5 +1,5 @@
 import { commandMatches, MAC } from './commandBindings'
-import { COMMANDS, bindingFor, bindingProblem, bindingWarning, defaultBinding, type Bindings } from '@shared/commands'
+import { COMMANDS, bindingFor, bindingProblem, defaultBinding, type Bindings } from '@shared/commands'
 // The settings screen (docs/mocks/target.html#settings): a list of sections on the left,
 // one section at a time on the right, each a card of rows with one control each.
 import { useEffect, useState } from 'react'
@@ -94,6 +94,7 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
         <h1>Settings</h1>
         {nav('general', <SlidersVertical />, 'General')}
         {nav('appearance', <Palette />, 'Appearance')}
+        {nav('shortcuts', <Keyboard />, 'Keyboard shortcuts')}
         {nav('mcp', <Server />, 'MCP servers')}
         {nav('agents', <Terminal />, 'Agents')}
         {nav('phone', <Smartphone />, 'Phone')}
@@ -104,8 +105,6 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
               : nav('project', <Folder />, 'Projects')}
           </>
         )}
-        <div className="settings-nav-group">Reference</div>
-        {nav('shortcuts', <Keyboard />, 'Keyboard shortcuts')}
       </nav>
       <div className="settings-body">
         <div className="settings-file">
@@ -216,23 +215,20 @@ function Shortcuts({ settings, onUpdate }: { settings: GlobalSettings; onUpdate(
     await onUpdate({ global: { shortcuts: next, captureShortcut: defaultBinding(COMMANDS.find(c => c.id === 'capture')!, MAC) } })
   }
   return <>
-    <p className="muted">Click a binding and press new keys. Clear disables it. Changes apply immediately.</p>
     <div className="shortcut-toolbar">
       <input className="setting-text" aria-label="Search keyboard shortcuts" placeholder="Search commands or keys" value={query} onChange={e => setQuery(e.target.value)} />
       <button className="secondary" onClick={() => { setProblem(null); void onUpdate({ global: { shortcuts: {}, captureShortcut: bindingFor('capture', {}, MAC) } }) }}>Reset all</button>
     </div>
-    {[...new Set(COMMANDS.map(c => c.scope))].map(scope => {
-      const commands = COMMANDS.filter(c => c.scope === scope && `${c.label} ${c.scope} ${bindingFor(c.id, bindings, MAC)}`.toLowerCase().includes(query.toLowerCase()))
+    {[...new Set(COMMANDS.filter(c => c.editable).map(c => c.scope))].map(scope => {
+      const commands = COMMANDS.filter(c => c.editable && c.scope === scope && `${c.label} ${c.scope} ${bindingFor(c.id, bindings, MAC)}`.toLowerCase().includes(query.toLowerCase()))
       if (!commands.length) return null
       return <section key={scope} className="shortcut-group"><h3>{scope}</h3><div className="settings-card">
         {commands.map(c => {
           const value = bindingFor(c.id, bindings, MAC)
           const changed = value !== defaultBinding(c, MAC)
-          const warning = changed && bindingWarning(value)
           return <div key={c.id} id={`command-${c.id}`} className="shortcut-edit-row">
-            <div><label htmlFor={`binding-${c.id}`}>{c.label}</label>{changed && <small className="shortcut-modified">Modified</small>}
+            <div><label htmlFor={`binding-${c.id}`}>{c.label}</label>
               {problem?.id === c.id && <p role="alert" className="error">{problem.message} {problem.conflict && <button className="ghost sm" onClick={() => { setQuery(''); requestAnimationFrame(() => document.getElementById(`binding-${problem.conflict}`)?.focus()) }}>Go to command</button>}</p>}
-              {warning && <p className="muted">{warning}</p>}
             </div>
             <ShortcutSetting id={`binding-${c.id}`} label={c.label} command value={value} onChange={v => void save(c.id, v)} />
             <button className="ghost sm" disabled={!changed} aria-label={`Reset ${c.label}`} onClick={() => void save(c.id, undefined)}>Reset</button>
@@ -240,9 +236,10 @@ function Shortcuts({ settings, onUpdate }: { settings: GlobalSettings; onUpdate(
         })}
       </div></section>
     })}
-    <section className="shortcut-group"><h3>Fixed typing and gestures</h3>
+    <details className="shortcut-group shortcut-reference"><summary>Standard shortcuts</summary>
+      <dl>{COMMANDS.filter(c => !c.editable && `${c.label} ${c.scope} ${c.keys}`.toLowerCase().includes(query.toLowerCase())).map(c => <div className="shortcut" key={c.id}><dt>{c.label}</dt><dd><kbd>{defaultBinding(c, MAC).replace(/Mod/g, MAC ? 'Cmd' : 'Ctrl')}</kbd></dd></div>)}</dl>
       <p className="muted">Typing /, @ and ! opens commands, context and shell mode. Shift+Enter inserts a new line; Tab and Shift+Tab indent and outdent; Backspace removes markup. Arrow keys navigate completions and history. Mouse back/forward navigates; double-click renames sessions or resets panel widths. Capture dragging, cursor nudging, wheel zoom and panning keep their usual behavior.</p>
-    </section>
+    </details>
   </>
 }
 

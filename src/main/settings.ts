@@ -146,7 +146,7 @@ export function settingsSchema(defaults: GlobalSettings): object {
       fields(scope).map((f) => [
         f.key,
         {
-          ...(f.type === 'bindings' ? { type: 'object', additionalProperties: false, properties: Object.fromEntries(COMMANDS.map(c => [c.id, { type: 'string', description: c.label }])) } : f.type === 'mcp' ? mcpSchema : f.type === 'profiles' ? profileSchema : f.type === 'agent' ? { type: 'string', pattern: '^(claude|codex|opencode|custom:[a-z0-9][a-z0-9-]{0,63})$' } : f.type === 'port' ? { type: 'integer', minimum: 1024, maximum: 65535 } : { type: f.type === 'enum' || f.type === 'shortcut' ? 'string' : f.type }),
+          ...(f.type === 'bindings' ? { type: 'object', additionalProperties: false, properties: Object.fromEntries(COMMANDS.filter(c => c.editable).map(c => [c.id, { type: 'string', description: c.label }])) } : f.type === 'mcp' ? mcpSchema : f.type === 'profiles' ? profileSchema : f.type === 'agent' ? { type: 'string', pattern: '^(claude|codex|opencode|custom:[a-z0-9][a-z0-9-]{0,63})$' } : f.type === 'port' ? { type: 'integer', minimum: 1024, maximum: 65535 } : { type: f.type === 'enum' || f.type === 'shortcut' ? 'string' : f.type }),
           ...(f.options && f.type !== 'agent' ? { enum: f.options.map((o) => o.value) } : {}),
           description: f.description,
           default: defaultsFor?.[f.key]

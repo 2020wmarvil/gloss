@@ -782,21 +782,14 @@ it('restores a rewind draft to the main composer even if its thread panel closes
 })
 
 
-it('rebinds formatting and send in an existing editor and disables the old shortcuts', () => {
+it('keeps standard formatting and sending fixed despite obsolete overrides', () => {
   const onSend = vi.fn()
-  const view = mount('custom-keys-editor', { onSend })
-  type(view, 'hello')
-  configureBindings({ shortcuts: { bold: 'Ctrl+Shift+K', send: 'Ctrl+Shift+U', steer: '' } })
-  press(view, 'b', { ctrlKey: true })
-  expect(view.state.doc.toString()).toBe('hello')
-  press(view, 'Enter')
-  expect(onSend).not.toHaveBeenCalled()
-  press(view, 'Enter', { ctrlKey: true })
-  expect(onSend).not.toHaveBeenCalled()
+  const view = mount('fixed-keys-editor', { onSend })
+  configureBindings({ shortcuts: { bold: '', send: 'Ctrl+Shift+U', steer: '' } })
   type(view, 'hello')
   act(() => view.dispatch({ selection: EditorSelection.single(0, 5) }))
-  press(view, 'K', { ctrlKey: true, shiftKey: true })
+  press(view, 'b', { ctrlKey: true })
   expect(view.state.doc.toString()).toBe('**hello**')
-  press(view, 'U', { ctrlKey: true, shiftKey: true })
+  press(view, 'Enter')
   expect(onSend).toHaveBeenCalledExactlyOnceWith('**hello**', [])
 })

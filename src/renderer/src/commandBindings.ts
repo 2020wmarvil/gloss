@@ -13,7 +13,7 @@ export function commandMatches(e: KeyEvent, id: string): boolean {
   // Existing defaults accepted either primary modifier and a few editor aliases.
   // A user override replaces the whole default, including its compatibility aliases.
   const c = COMMANDS.find(c => c.id === id)
-  if (bindings[id] !== undefined || !c) return false
+  if (!c || (c.editable && bindings[id] !== undefined)) return false
   return [c.keys, ...(c.legacyKeys ?? [])].some(keys => matchesBinding(e, keys, MAC) || (keys.includes('Mod') && matchesBinding(e, keys, !MAC)))
 }
 

@@ -7760,5 +7760,6 @@ button.danger-text {
 .shortcut-edit-row .shortcut-setting { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
 .shortcut-edit-row .shortcut-field { flex: 1; min-width: 120px; }
 .shortcut-edit-row .shortcut-note { width: 100%; }
-.shortcut-modified { display: inline-block; margin-left: 6px; padding: 2px 6px; border-radius: var(--r-sm); background: var(--hover); color: var(--muted); font-size: var(--t-11); }
 .shortcut-edit-row .error { color: var(--failed); }
+
+.shortcut-reference summary { cursor: pointer; color: var(--muted); font-size: var(--t-13); }

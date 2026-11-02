@@ -1,41 +1,41 @@
 // Shared command registry. Scope describes the focus context in which a command runs.
-export type Command = { id: string; scope: string; keys: string; label: string; legacyKeys?: string[] }
+export type Command = { id: string; scope: string; keys: string; label: string; legacyKeys?: string[]; editable?: boolean }
 export const COMMANDS: readonly Command[] = [
-  {"id": "search", "scope": "Anywhere", "keys": "Mod+Shift+F", "label": "Search conversations"},
-  {"id": "newSession", "scope": "Anywhere", "keys": "Mod+N", "label": "New session"},
+  {"id": "search", "editable": true, "scope": "Anywhere", "keys": "Mod+Shift+F", "label": "Search conversations"},
+  {"id": "newSession", "editable": true, "scope": "Anywhere", "keys": "Mod+N", "label": "New session"},
   {"id": "closeSession", "scope": "Anywhere", "keys": "Mod+W", "label": "Close the current session view"},
-  {"id": "review", "scope": "Anywhere", "keys": "Mod+Shift+D", "label": "Open or leave branch review"},
-  {"id": "nextSession", "scope": "Anywhere", "keys": "Mod+Tab", "label": "Next session"},
-  {"id": "previousSession", "scope": "Anywhere", "keys": "Mod+Shift+Tab", "label": "Previous session"},
-  {"id": "folder", "scope": "Anywhere", "keys": "Mod+Alt+E", "label": "Open session folder"},
-  {"id": "branch", "scope": "Anywhere", "keys": "Mod+Alt+B", "label": "Open branch on GitHub"},
-  {"id": "pullRequest", "scope": "Anywhere", "keys": "Mod+Alt+P", "label": "Open pull request on GitHub"},
-  {"id": "obsidian", "scope": "Anywhere", "keys": "Mod+Alt+O", "label": "Open Obsidian vault"},
-  {"id": "focusComposer", "scope": "Anywhere", "keys": "Mod+L", "label": "Focus composer"},
-  {"id": "sidePanel", "scope": "Anywhere", "keys": "Mod+Shift+T", "label": "Show or hide side panel"},
-  {"id": "jumpToWork", "scope": "Anywhere", "keys": "Mod+J", "label": "Go to where the agent is working"},
-  {"id": "queue", "scope": "Anywhere", "keys": "Mod+Shift+Q", "label": "Show queue"},
-  {"id": "popOut", "scope": "Anywhere", "keys": "Mod+Shift+O", "label": "Pop session out or back in"},
-  {"id": "capture", "scope": "Anywhere", "keys": "Ctrl+Shift+PrintScreen", "label": "Capture part of the screen"},
-  {"id": "settings", "scope": "Anywhere", "keys": "Mod+,", "label": "Open or close settings"},
+  {"id": "review", "editable": true, "scope": "Anywhere", "keys": "Mod+Shift+D", "label": "Open or leave branch review"},
+  {"id": "nextSession", "editable": true, "scope": "Anywhere", "keys": "Mod+Tab", "label": "Next session"},
+  {"id": "previousSession", "editable": true, "scope": "Anywhere", "keys": "Mod+Shift+Tab", "label": "Previous session"},
+  {"id": "folder", "editable": true, "scope": "Anywhere", "keys": "Mod+Alt+E", "label": "Open session folder"},
+  {"id": "branch", "editable": true, "scope": "Anywhere", "keys": "Mod+Alt+B", "label": "Open branch on GitHub"},
+  {"id": "pullRequest", "editable": true, "scope": "Anywhere", "keys": "Mod+Alt+P", "label": "Open pull request on GitHub"},
+  {"id": "obsidian", "editable": true, "scope": "Anywhere", "keys": "Mod+Alt+O", "label": "Open Obsidian vault"},
+  {"id": "focusComposer", "editable": true, "scope": "Anywhere", "keys": "Mod+L", "label": "Focus composer"},
+  {"id": "sidePanel", "editable": true, "scope": "Anywhere", "keys": "Mod+Shift+T", "label": "Show or hide side panel"},
+  {"id": "jumpToWork", "editable": true, "scope": "Anywhere", "keys": "Mod+J", "label": "Go to where the agent is working"},
+  {"id": "queue", "editable": true, "scope": "Anywhere", "keys": "Mod+Shift+Q", "label": "Show queue"},
+  {"id": "popOut", "editable": true, "scope": "Anywhere", "keys": "Mod+Shift+O", "label": "Pop session out or back in"},
+  {"id": "capture", "editable": true, "scope": "Anywhere", "keys": "Ctrl+Shift+PrintScreen", "label": "Capture part of the screen"},
+  {"id": "settings", "editable": true, "scope": "Anywhere", "keys": "Mod+,", "label": "Open or close settings"},
   {"id": "back", "scope": "Anywhere", "keys": "Alt+Left", "label": "Back"},
   {"id": "forward", "scope": "Anywhere", "keys": "Alt+Right", "label": "Forward"},
   {"id": "fullscreen", "scope": "Anywhere", "keys": "F11", "label": "Toggle full screen"},
   {"id": "closeSettings", "scope": "Settings", "keys": "Escape", "label": "Close settings"},
   {"id": "send", "scope": "Composer", "keys": "Enter", "label": "Send (new line inside a code block)"},
   {"id": "steer", "scope": "Composer", "keys": "Mod+Enter", "label": "Send, including inside a code block"},
-  {"id": "sendToMain", "scope": "Composer", "keys": "Mod+Shift+Enter", "label": "Send to main"},
+  {"id": "sendToMain", "editable": true, "scope": "Composer", "keys": "Mod+Shift+Enter", "label": "Send to main"},
   {"id": "bold", "scope": "Composer", "keys": "Mod+B", "label": "Bold"},
   {"id": "italic", "scope": "Composer", "keys": "Mod+I", "label": "Italic"},
   {"id": "inlineCode", "scope": "Composer", "keys": "Mod+E", "label": "Inline code"},
   {"id": "link", "scope": "Composer", "keys": "Mod+K", "label": "Insert link"},
   {"id": "undo", "scope": "Composer", "keys": "Mod+Z", "label": "Undo"},
   {"id": "redo", "legacyKeys": ["Mod+Y"], "scope": "Composer", "keys": "Mod+Shift+Z", "label": "Redo"},
-  {"id": "stash", "scope": "Composer", "keys": "Mod+S", "label": "Stash, restore or swap draft"},
-  {"id": "externalEditor", "scope": "Composer", "keys": "Mod+G", "label": "Edit prompt externally"},
+  {"id": "stash", "editable": true, "scope": "Composer", "keys": "Mod+S", "label": "Stash, restore or swap draft"},
+  {"id": "externalEditor", "editable": true, "scope": "Composer", "keys": "Mod+G", "label": "Edit prompt externally"},
   {"id": "escapeComposer", "scope": "Composer", "keys": "Escape", "label": "Dismiss completions, cancel turn, or double-tap for draft and rewind"},
-  {"id": "reply", "scope": "Conversation", "keys": "R", "label": "Reply to selected text"},
-  {"id": "fork", "scope": "Conversation", "keys": "F", "label": "Reply to selected text in a fork"},
+  {"id": "reply", "editable": true, "scope": "Conversation", "keys": "R", "label": "Reply to selected text"},
+  {"id": "fork", "editable": true, "scope": "Conversation", "keys": "F", "label": "Reply to selected text in a fork"},
   {"id": "pin", "scope": "Annotating a capture", "keys": "N", "label": "Pin"},
   {"id": "pen", "scope": "Annotating a capture", "keys": "F", "label": "Pen"},
   {"id": "highlighter", "scope": "Annotating a capture", "keys": "H", "label": "Highlighter"},
@@ -64,9 +64,9 @@ export const COMMANDS: readonly Command[] = [
   {"id": "option7", "scope": "Questions and approvals", "keys": "7", "label": "Select option 7"},
   {"id": "option8", "scope": "Questions and approvals", "keys": "8", "label": "Select option 8"},
   {"id": "option9", "scope": "Questions and approvals", "keys": "9", "label": "Select option 9"},
-  {"id": "nextChange", "scope": "Review", "keys": "N", "label": "Next change"},
-  {"id": "previousChange", "scope": "Review", "keys": "P", "label": "Previous change"},
-  {"id": "toggleComments", "scope": "Review", "keys": "Mod+Shift+H", "label": "Show or hide comments"},
+  {"id": "nextChange", "editable": true, "scope": "Review", "keys": "N", "label": "Next change"},
+  {"id": "previousChange", "editable": true, "scope": "Review", "keys": "P", "label": "Previous change"},
+  {"id": "toggleComments", "editable": true, "scope": "Review", "keys": "Mod+Shift+H", "label": "Show or hide comments"},
   {"id": "resizeLeft", "scope": "Panel edges", "keys": "Left", "label": "Resize left"},
   {"id": "resizeRight", "scope": "Panel edges", "keys": "Right", "label": "Resize right"},
   {"id": "captureDisplay", "scope": "Screen capture", "keys": "Space", "label": "Capture whole display"},
@@ -95,7 +95,7 @@ export function concrete(keys: string, mac = false): string {
 }
 export function bindingFor(id: string, bindings: Bindings = {}, mac = false): string {
   const command = COMMANDS.find(c => c.id === id)
-  return bindings[id] ?? (command ? defaultBinding(command, mac) : '')
+  return (command?.editable ? bindings[id] : undefined) ?? (command ? defaultBinding(command, mac) : '')
 }
 // Modal canvases and focused controls consume their events before the app handlers.
 const isolated = new Set(['Annotating a capture', 'Screen capture', 'Questions and approvals', 'Renaming a session', 'Queued messages'])
@@ -116,6 +116,7 @@ export function bindingProblem(id: string, value: string, bindings: Bindings, ma
   const c = COMMANDS.find(c => c.id === id)
   if (!c) return { message: 'Unknown command.' }
   const normalized = normalizeBinding(value)
+  if (!c.editable && normalized !== defaultBinding(c, mac)) return { message: `${c.label} is a fixed shortcut.` }
   if (normalized === null) return { message: 'Use one key with optional modifiers.' }
   if (!normalized) return null
   const keys = concrete(normalized, mac)
@@ -125,12 +126,10 @@ export function bindingProblem(id: string, value: string, bindings: Bindings, ma
   if (!hasMod && normalized.length === 1 && ['Settings', 'Renaming a session', 'Queued messages'].includes(c.scope)) return { message: 'Add a modifier so typing keeps working.' }
   const reserved = ['Alt+F4', 'Ctrl+Alt+Delete', 'Super+L', 'Super+Tab', 'Alt+Tab', 'Mod+C', 'Mod+V', 'Mod+X', 'Mod+A', 'Mod+R', 'Mod+Shift+I', 'F12', 'Mod+Plus', 'Mod+=', 'Mod+-', 'Mod+0']
   if (reserved.some(k => concrete(k, mac) === keys) && keys !== concrete(defaultBinding(c, mac), mac)) return { message: 'These keys are reserved for the system, editing, or Electron.' }
-  const other = COMMANDS.find(o => o.id !== id && overlaps(c, o) && [bindingFor(o.id, bindings, mac), ...(bindings[o.id] === undefined ? o.legacyKeys ?? [] : [])].some(k => k && concrete(k, mac) === keys))
-  return other ? { message: `Already used by ${other.label}. Clear that binding first.`, conflict: other.id } : null
+  const other = COMMANDS.find(o => o.id !== id && overlaps(c, o) && [bindingFor(o.id, bindings, mac), ...((!o.editable || bindings[o.id] === undefined) ? o.legacyKeys ?? [] : [])].some(k => k && concrete(k, mac) === keys))
+  return other ? other.editable ? { message: `Already used by ${other.label}. Clear that binding first.`, conflict: other.id } : { message: `Already used by ${other.label}, a fixed shortcut.` } : null
 }
-export function bindingWarning(value: string): string | null {
-  return /Super|Alt\+F|F[1-9]|Ctrl\+Alt/.test(value) ? 'The operating system or another app may intercept these keys.' : null
-}
+
 export function resolveBindings(raw: unknown, legacy?: string, mac = false): { bindings: Bindings; errors: string[] } {
   const bindings: Bindings = {}
   const errors: string[] = []
