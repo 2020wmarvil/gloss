@@ -236,10 +236,6 @@ function Shortcuts({ settings, onUpdate }: { settings: GlobalSettings; onUpdate(
         })}
       </div></section>
     })}
-    <details className="shortcut-group shortcut-reference"><summary>Standard shortcuts</summary>
-      <dl>{COMMANDS.filter(c => !c.editable && `${c.label} ${c.scope} ${c.keys}`.toLowerCase().includes(query.toLowerCase())).map(c => <div className="shortcut" key={c.id}><dt>{c.label}</dt><dd><kbd>{defaultBinding(c, MAC).replace(/Mod/g, MAC ? 'Cmd' : 'Ctrl')}</kbd></dd></div>)}</dl>
-      <p className="muted">Typing /, @ and ! opens commands, context and shell mode. Shift+Enter inserts a new line; Tab and Shift+Tab indent and outdent; Backspace removes markup. Arrow keys navigate completions and history. Mouse back/forward navigates; double-click renames sessions or resets panel widths. Capture dragging, cursor nudging, wheel zoom and panning keep their usual behavior.</p>
-    </details>
   </>
 }
 

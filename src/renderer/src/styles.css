@@ -7762,4 +7762,3 @@ button.danger-text {
 .shortcut-edit-row .shortcut-note { width: 100%; }
 .shortcut-edit-row .error { color: var(--failed); }
 
-.shortcut-reference summary { cursor: pointer; color: var(--muted); font-size: var(--t-13); }
