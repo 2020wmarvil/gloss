@@ -13,6 +13,9 @@
   flex-direction: column;
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
+  /* In landscape, content stays clear of the Dynamic Island's side; the background still runs to the edge. */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
   background: var(--bg);
   position: relative;
   overflow: hidden;
@@ -118,7 +121,7 @@
 .m-lead { width: 10px; padding-top: 8px; display: grid; place-items: center; flex: none; }
 .m-fab-space { height: 90px; }
 .m-screen .m-fab {
-  position: absolute; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom));
+  position: absolute; right: calc(18px + env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom));
   height: 48px; padding: 0 18px 0 14px; border-radius: var(--r-pill);
   background: var(--brand-gradient); color: var(--on-brand); font-weight: 600;
   display: inline-flex; align-items: center; gap: 6px; box-shadow: var(--shadow-2);
@@ -214,7 +217,7 @@
 
 /* Sheets */
 .m-dim { position: absolute; inset: 0; background: var(--scrim); z-index: 3; }
-.m-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; max-height: 80dvh; overflow-y: auto; background: var(--raised); border-radius: 18px 18px 0 0; box-shadow: var(--shadow-3); padding: 8px 16px calc(24px + env(safe-area-inset-bottom)); }
+.m-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; max-height: 80dvh; overflow-y: auto; background: var(--raised); border-radius: 18px 18px 0 0; box-shadow: var(--shadow-3); padding: 8px calc(16px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); }
 .m-grab { width: 36px; height: 5px; border-radius: 3px; background: var(--line-strong); margin: 0 auto 10px; }
 .m-sheet h4 { margin: 4px 0 10px; font-size: var(--t-17); font-weight: 600; }
 .m-sheet .m-kv:first-of-type { border-top: 0; }
@@ -340,7 +343,7 @@
 /* The phone's button reset would clear the marker's fill. */
 .m-screen .m-diff .diff-marker { left: 1px; top: 6px; width: 8px; height: 8px; background: var(--kind); }
 .m-screen .m-diff .diff-marker.hollow { background: var(--surface); }
-.m-diff .diff-hunk, .m-diff .diff-card-row { position: sticky; left: 0; width: 100vw; box-sizing: border-box; }
+.m-diff .diff-hunk, .m-diff .diff-card-row { position: sticky; left: 0; width: calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right)); box-sizing: border-box; }
 .m-diff .diff-hunk { z-index: 2; }
 .m-diff .diff-expanders { height: 34px; }
 .m-diff .diff-expand-pair .diff-expand { width: 36px; }

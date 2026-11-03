@@ -439,7 +439,6 @@ export function ReviewFile(props: {
               <Toggle label="Entire file" on={expansion.full} onChange={() => review.onExpand(path, 'full')} />
             )}
             <Toggle label="Show comments" on={comments} onChange={setComments} />
-            <p className="m-small m-sheet-note">Wrap and comments apply to every file and are remembered on this phone.</p>
           </div>
         </>
       )}
