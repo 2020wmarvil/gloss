@@ -9,7 +9,7 @@ import { ArrowRight, ChevronDown } from 'lucide-react'
  * One choice in a dropdown; `value` null is the working tree. `sha` shows (and links to)
  * a commit. `isDefault` marks what a new review starts with.
  */
-type Option = { value: string | null; label: string; sha?: string; detail?: string; group: string; isDefault?: boolean }
+export type Option = { value: string | null; label: string; sha?: string; detail?: string; group: string; isDefault?: boolean }
 
 type PickerProps = {
   label: string
@@ -142,9 +142,16 @@ type Props = {
   onChange(range: ReviewRange): void
 }
 
-/** Base → Review: what the diff compares. */
-export function RangePicker(props: Props): React.JSX.Element {
-  const { range, diff, refs } = props
+/** What the two dropdowns offer and show, shared with the phone's range sheet. */
+export function rangeChoices(range: ReviewRange, diff: ReviewDiff | null, refs: ReviewRefs | null): {
+  baseOptions: Option[]
+  baseCurrent: string
+  headOptions: Option[]
+  headCurrent: string
+  /** The default base, when the range differs from the defaults (Reset). */
+  reset: string | null
+  commitUrl(sha: string): string | null
+} {
   const commits = refs?.commits ?? []
   const subject = (sha: string): string | undefined => commits.find((c) => c.sha === sha)?.subject
   const commitOptions = (group: string): Option[] =>
@@ -178,7 +185,15 @@ export function RangePicker(props: Props): React.JSX.Element {
       : head === 'HEAD'
         ? `HEAD${diff ? ` · ${short(diff.head)}` : ''}`
         : `${short(head)}${subject(head) ? ` ${subject(head)}` : ''}`
+  const reset = defaultBase !== null && (range.baseRef !== defaultBase || head !== null) ? defaultBase : null
+  return { baseOptions, baseCurrent, headOptions, headCurrent, reset, commitUrl }
+}
 
+/** Base → Review: what the diff compares. */
+export function RangePicker(props: Props): React.JSX.Element {
+  const { range } = props
+  const { baseOptions, baseCurrent, headOptions, headCurrent, reset, commitUrl } = rangeChoices(range, props.diff, props.refs)
+  const head = range.headRef ?? null
   return (
     <span className="range">
       <Picker
@@ -200,11 +215,11 @@ export function RangePicker(props: Props): React.JSX.Element {
         onOpen={props.onRefresh}
         onPick={(value) => props.onChange({ baseRef: range.baseRef, ...(value !== null ? { headRef: value } : {}) })}
       />
-      {defaultBase !== null && (range.baseRef !== defaultBase || head !== null) && (
+      {reset !== null && (
         <button
           className="range-reset"
-          title={`Back to the default: merge base with ${defaultBase} → working tree`}
-          onClick={() => props.onChange({ baseRef: defaultBase })}
+          title={`Back to the default: merge base with ${reset} → working tree`}
+          onClick={() => props.onChange({ baseRef: reset })}
         >
           Reset
         </button>

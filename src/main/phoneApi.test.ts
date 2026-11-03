@@ -22,8 +22,15 @@ describe('PhoneApi', () => {
       IPC.openFileLink, IPC.sessionsOpenFolder, IPC.sessionsOpenObsidian, IPC.sessionsOpenReviewFile,
       IPC.sessionsSaveMarkdown, IPC.sessionsCopyMarkdown, IPC.composerShell, IPC.composerEditDraft,
       IPC.composerContexts, IPC.composerAttach, IPC.captureStart, IPC.annotateOpen, IPC.authSignIn,
-      IPC.projectsOpen, IPC.projectsDelete, IPC.projectsGithubRepos, IPC.projectsClone, IPC.sessionsDelete, IPC.sessionsCreateReview,
+      IPC.projectsOpen, IPC.projectsDelete, IPC.projectsGithubRepos, IPC.projectsClone, IPC.sessionsDelete,
       IPC.agentsTestOpenCode, IPC.agentsTestProfile, IPC.windowsPopOut, IPC.setBadge, IPC.confirmClose
     ]) expect(PHONE_CHANNELS.has(channel), channel).toBe(false)
+  })
+
+  it('opens review sessions to phones, except opening their files on the desktop', () => {
+    for (const channel of [
+      IPC.sessionsCreateReview, IPC.sessionsRunReview, IPC.sessionsReviewDiff, IPC.sessionsReviewFile,
+      IPC.sessionsReviewRefs, IPC.sessionsSetReviewRange, IPC.threadsResolve
+    ]) expect(PHONE_CHANNELS.has(channel), channel).toBe(true)
   })
 })

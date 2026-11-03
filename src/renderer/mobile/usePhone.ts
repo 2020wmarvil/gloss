@@ -32,6 +32,8 @@ export function usePhone(link: PhoneLink) {
   const [activity, setActivity] = useState<Record<string, Activity>>({})
   const [open, setOpen] = useState<OpenView | null>(null)
   const openId = useRef<string | null>(null)
+  /** The session being shown, set on the tap, before its view has loaded. */
+  const [openingId, setOpeningId] = useState<string | null>(null)
 
   const loadOpen = useCallback(async (id: string) => {
     try {
@@ -54,7 +56,8 @@ export function usePhone(link: PhoneLink) {
     ])
     setInfo(i)
     setProjects(p)
-    setSessions(s.filter((x) => !x.draft && !x.review))
+    // Listed reviews show too (SPEC → Remote and mobile → Reviews); drafts aren't listed, as on the desktop.
+    setSessions(s.filter((x) => !x.draft))
     setAgents(a)
     setRateLimits(r)
     setActivity(act)
@@ -121,13 +124,14 @@ export function usePhone(link: PhoneLink) {
     })
     switch (event.type) {
       case 'session':
-        if (event.session.draft || event.session.review) return
-        setSessions((s) => upsert(s, event.session))
+        // A draft review is open, not listed, until something is sent in it.
+        if (event.session.draft) setSessions((s) => s.filter((x) => x.id !== event.session.id))
+        else setSessions((s) => upsert(s, event.session))
         setOpen((o) => o && o.session.id === event.session.id ? { ...o, session: event.session } : o)
         return
       case 'sessionDeleted':
         setSessions((s) => s.filter((x) => x.id !== event.sessionId))
-        if (openId.current === event.sessionId) { openId.current = null; setOpen(null) }
+        if (openId.current === event.sessionId) { openId.current = null; setOpeningId(null); setOpen(null) }
         return
       case 'sessionCleared': case 'sessionRewound': case 'sessionSynced':
         if (openId.current === event.sessionId) void loadOpen(event.sessionId)
@@ -204,6 +208,7 @@ export function usePhone(link: PhoneLink) {
   /** `cached`: the session as last seen, shown until it has reloaded (a swipe forward back into it). */
   const openSession = useCallback((id: string | null, cached?: OpenView) => {
     openId.current = id
+    setOpeningId(id)
     setOpen(cached && cached.session.id === id ? cached : null)
     if (id) void loadOpen(id)
   }, [loadOpen])
@@ -228,7 +233,7 @@ export function usePhone(link: PhoneLink) {
     return out
   }, [activity])
 
-  return { link: state, info, projects, sessions, agents, rateLimits, activity: shownActivity, open, setOpen, openSession, notice }
+  return { link: state, info, projects, sessions, agents, rateLimits, activity: shownActivity, open, openingId, setOpen, openSession, notice }
 }
 
 export type Phone = ReturnType<typeof usePhone>

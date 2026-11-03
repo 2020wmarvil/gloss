@@ -4,8 +4,8 @@ import type { IncomingMessage, RequestListener, Server, ServerResponse } from 'n
 import type { SecureContextOptions } from 'node:tls'
 import { extname, join, normalize, sep } from 'node:path'
 import { WebSocketServer, type WebSocket } from 'ws'
-import type { GlossEvent } from '../shared/ipc'
-import type { Device } from '../shared/types'
+import { IPC, type GlossEvent, type SessionView } from '../shared/ipc'
+import type { Device, Message, ToolCall } from '../shared/types'
 import type { Store } from './db'
 import type { PhoneApi } from './phoneApi'
 
@@ -75,6 +75,8 @@ export class Bridge {
   private readonly touched = new Map<string, number>()
   /** The session each connection shows while the page is in front (null: none), so pushes skip it. */
   private readonly viewing = new Map<WebSocket, { deviceId: string; sessionId: string | null }>()
+  /** The last session each connection opened, in full: what its slim copy left out is read from here. */
+  private readonly opened = new Map<WebSocket, SessionView>()
   private readonly now: () => number
 
   constructor(private readonly opts: BridgeOptions) {
@@ -91,7 +93,8 @@ export class Bridge {
     const server = listen.createServer((req, res) => void this.request(req, res).catch(() => {
       if (!res.headersSent) res.writeHead(500).end()
     }))
-    const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE })
+    // Compressed: a large session's view is megabytes of JSON, which shrinks several times.
+    const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE, perMessageDeflate: { threshold: 1024 } })
     server.on('upgrade', (req, socket, head) => {
       const device = new URL(req.url ?? '/', 'http://x').pathname === '/api' && this.sameOrigin(req) ? this.device(req) : undefined
       if (!device) {
@@ -272,6 +275,7 @@ export class Bridge {
     ws.on('message', (data) => void this.message(ws, device.id, String(data)))
     ws.on('close', () => {
       this.viewing.delete(ws)
+      this.opened.delete(ws)
       set.delete(ws)
       if (set.size === 0 && this.sockets.get(device.id) === set) this.sockets.delete(device.id)
       this.opts.onChange()
@@ -323,11 +327,28 @@ export class Bridge {
 
   private async call(ws: WebSocket, deviceId: string, channel: string, args: unknown[]): Promise<unknown> {
     switch (channel) {
+      case 'bridge:ping': return null
       case 'bridge:info': return this.opts.calls.info()
       case 'bridge:build': return await this.build()
       case 'bridge:viewing':
         this.viewing.set(ws, { deviceId, sessionId: typeof args[0] === 'string' ? args[0] : null })
         return null
+      // A session's view arrives slim; what it left out comes when the phone shows it.
+      case IPC.sessionsOpen: {
+        const view = (await this.opts.phoneApi.call(channel, args)) as SessionView
+        this.opened.set(ws, view)
+        return slimView(view)
+      }
+      case 'bridge:toolCall': {
+        const toolCall = this.opened.get(ws)?.toolCalls.find((t) => t.sessionId === args[0] && t.id === args[1])
+        if (!toolCall) throw new Error('That tool call is no longer open.')
+        return toolCall.content ?? null
+      }
+      case 'bridge:image': {
+        const image = this.opened.get(ws)?.messages.find((m) => m.id === args[0])?.attachments?.[Number(args[1])]
+        if (image?.kind !== 'image') throw new Error('That image is no longer open.')
+        return image.data
+      }
       case 'bridge:pushKey': return this.opts.calls.pushKey()
       case 'bridge:activity': return this.opts.calls.activity()
       case 'bridge:subscribe': {
@@ -373,4 +394,24 @@ function readBody(req: IncomingMessage, limit: number): Promise<string> {
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
     req.on('error', reject)
   })
+}
+
+/** Tool output up to this size (as JSON) stays in a phone's session view; larger output waits until it is expanded. */
+const INLINE_TOOL_OUTPUT = 2048
+
+/**
+ * A session's view as a phone first gets it: without images and long tool output, which make a
+ * long session megabytes (mostly unread); the phone asks for each as it shows it.
+ */
+export function slimView(view: SessionView): SessionView {
+  const slimTool = (t: ToolCall): ToolCall => {
+    if (t.content === undefined || JSON.stringify(t.content).length <= INLINE_TOOL_OUTPUT) return t
+    const { content: _content, ...rest } = t
+    return { ...rest, deferred: true }
+  }
+  const slimMessage = (m: Message): Message => !m.attachments?.some((a) => a.kind === 'image') ? m : {
+    ...m,
+    attachments: m.attachments.map((a) => (a.kind === 'image' ? { ...a, data: '', deferred: true as const } : a))
+  }
+  return { ...view, messages: view.messages.map(slimMessage), toolCalls: view.toolCalls.map(slimTool) }
 }

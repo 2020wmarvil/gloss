@@ -2,11 +2,11 @@
 // threads full screen, the composer with queue and steer, questions and approvals, and the status sheet.
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft, ArrowUp, Check, ChevronDown, ChevronRight, Clock, CornerDownRight, Folder, GitBranch, GitFork, Hand, Lock,
-  MessageSquare, MessageSquareReply, Pencil, Plus, Shield, Square, Trash2, WifiOff, X
+  ArrowLeft, ArrowUp, Check, ChevronDown, ChevronRight, CircleCheckBig, Clock, CornerDownRight, Folder, GitBranch, GitCompare, GitFork, Hand, Lock,
+  MessageSquare, MessageSquareReply, Pencil, Plus, ScanSearch, Shield, Square, Trash2, WifiOff, X
 } from 'lucide-react'
 import type { Anchor, Attachment, Message, Plan, PlanUsage, Session, Thread, ToolCall } from '@shared/types'
-import { lineLabel } from '@shared/review'
+import { findingsBlocks, findingThread, isFirstPass, lineLabel, withoutFindings, type LineAnchor } from '@shared/review'
 import { canFork } from '@shared/composer'
 import type { ForkView } from '@shared/ipc'
 import { truncate } from '@shared/wire'
@@ -25,8 +25,11 @@ import type { ListItemSpan } from '../src/anchors'
 import { applyTheme } from '../src/theme'
 import { usePhone, upsert, type OpenView, type Phone } from './usePhone'
 import type { PhoneLink } from './transport'
+import { link as bridge } from './link'
 import { NotifyCard } from './notify'
 import { useSettled, useSwipeNav, type Swipe } from './gestures'
+import { LineQuote, ReviewFile, ReviewFiles, ReviewThreads, reviewSubtitle, useReview, type ReviewState } from './Review'
+import { isLineThread } from '../src/reviewThreads'
 
 /** `fork`: a new thread that runs in a fork of the session (SPEC → Fork threads). */
 type Panel = { anchorMessageId: string | null; anchor: Anchor; threadId: string | null; fork?: true }
@@ -51,6 +54,9 @@ const MAX_IMAGE = 10 * 1024 * 1024
  * still follows new output.
  */
 const scrolls = new Map<string, number>()
+
+/** The session list's project, as last shown on this phone. */
+const PROJECT_KEY = 'gloss.phone.project'
 const BOTTOM = -1
 
 /** Restores a list's scroll position for `key` before paint, and keeps it as it scrolls. */
@@ -70,9 +76,21 @@ export function threadName(thread: Thread): string {
 export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
   const phone = usePhone(link)
   const [panel, setPanel] = useState<Panel | null>(null)
-  const [screen, setScreen] = useState<'main' | 'threads'>('main')
+  const [screen, setScreen] = useState<Screen>('main')
+  /** A review's open file (SPEC → Remote and mobile → Reviews). */
+  const [file, setFile] = useState<string | null>(null)
+  /** The session a review was opened from, which going back returns to. */
+  const [from, setFrom] = useState<string | null>(null)
+  const review = useReview(phone.open, phone.link === 'online')
+  // Sessions as last seen, so going back to the session a review came from shows it at once.
+  const seen = useRef(new Map<string, OpenView>())
+  useEffect(() => { if (phone.open) seen.current.set(phone.open.session.id, phone.open) }, [phone.open])
   // The session list's project: kept while a session is open, and set to that session's on the way back.
-  const [project, setProject] = useState<string | null>(null)
+  // Kept on the phone, so the app opens on the project it was last in.
+  const [project, setProject] = useState<string | null>(() => localStorage.getItem(PROJECT_KEY))
+  useEffect(() => {
+    if (project) localStorage.setItem(PROJECT_KEY, project)
+  }, [project])
 
   useEffect(() => applyTheme(phone.info?.theme ?? 'system'), [phone.info?.theme])
 
@@ -107,8 +125,9 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
     setPanel(t ? { anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id } : null)
   }, [phone.link, phone.open, phone.openSession])
 
-  const open = phone.open
-  const here: Loc = open ? { sessionId: open.session.id, screen, panel } : null
+  const open = phone.open && phone.open.session.id === phone.openingId ? phone.open : null
+  // The screen changes on the tap; the session shows once its view has loaded (or as last seen).
+  const here: Loc = phone.openingId ? { sessionId: phone.openingId, screen, panel, file, from } : null
 
   // Going back remembers where it came from, so a swipe left goes forward there again; going
   // anywhere else forgets it.
@@ -128,12 +147,22 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
       phone.openSession(null)
       return
     }
-    if (to.sessionId !== open?.session.id) phone.openSession(to.sessionId, cached)
+    if (to.sessionId !== phone.openingId) phone.openSession(to.sessionId, cached ?? seen.current.get(to.sessionId))
     setScreen(to.screen)
     setPanel(to.panel)
+    setFile(to.file)
+    setFrom(to.from)
   }
-  /** One level up: Threads or a thread to the conversation, the conversation to the list. */
-  const backTo: Loc | undefined = !here ? undefined : here.screen === 'threads' ? { ...here, screen: 'main' } : here.panel ? { ...here, panel: null } : null
+  /**
+   * One level up: a thread to where it was opened from, Threads (or a review's file or general
+   * conversation) to the conversation (a review's file list), the conversation to the list, or a
+   * review to the session it was opened from.
+   */
+  const backTo: Loc | undefined = !here ? undefined
+    : here.panel ? { ...here, panel: null }
+    : here.screen !== 'main' ? { ...here, screen: 'main', file: null }
+    : here.from && phone.sessions.some((s) => s.id === here.from) ? { sessionId: here.from, screen: 'main', panel: null, file: null, from: null }
+    : null
   function goBack(): void {
     if (backTo === undefined || !here) return
     setAhead((a) => [...a, { loc: here, cached: backTo === null && open ? open : undefined }])
@@ -142,7 +171,7 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
   // Forward is where the user went back from; with nothing there, a session's Threads.
   const next = ahead.at(-1)
   const remembered = next && (!next.loc || phone.sessions.some((s) => s.id === next.loc!.sessionId)) ? next : undefined
-  const forwardTo: Ahead | undefined = remembered ?? (here && here.screen === 'main' ? { loc: { ...here, screen: 'threads' } } : undefined)
+  const forwardTo: Ahead | undefined = remembered ?? (here && here.screen === 'main' && !here.panel ? { loc: { ...here, screen: 'threads' } } : undefined)
   function goForward(): void {
     if (!forwardTo) return
     if (remembered) setAhead((a) => a.slice(0, -1))
@@ -173,9 +202,22 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
     )
   }
 
+  /** Opens the review of a session's folder (SPEC → Remote and mobile → Reviews), with the default agent or `agentId`. */
+  async function openReview(of: OpenView, agentId?: string): Promise<void> {
+    const r = await window.gloss.sessions.createReview(of.session.cwd, agentId ?? phone.info?.defaultAgent ?? of.session.agentId, undefined, null, projectOf(of.session))
+    go({ sessionId: r.id, screen: 'main', panel: null, file: null, from: of.session.id })
+  }
+
   /** One screen: the top one, or an inert copy of the one a swipe goes back or forward to. */
   function layer(loc: Loc, role: 'top' | 'under' | 'over', view: OpenView | null = open): React.JSX.Element {
     const copy = role !== 'top'
+    // A screen of another session (the one a review came from) shows that session as last seen.
+    if (loc && view && view.session.id !== loc.sessionId) view = seen.current.get(loc.sessionId) ?? null
+    const busy = view ? busyThreads(view) : []
+    const agentName = view ? phone.agents.find((a) => a.id === view!.session.agentId)?.name ?? view.session.agentId : ''
+    const forkDisabled = view && !canFork(view.session.agentId) ? `${agentName} can't fork sessions.` : undefined
+    const r: ReviewState | null = view?.session.review && review && open?.session.id === view.session.id ? review : null
+    const openThread = (t: Thread): void => setPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id })
     return (
       <div
         key={role}
@@ -189,7 +231,9 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
             <WifiOff size={18} /><span><b>Gloss is offline.</b> Reconnecting…</span>
           </div>
         )}
-        {!loc || !view ? (
+        {loc && !view ? (
+          <Opening session={phone.sessions.find((s) => s.id === loc.sessionId)} onBack={goBack} />
+        ) : !loc || !view ? (
           !open && phone.info === null && phone.link === 'connecting'
             ? <div className="m-center"><span className="m-bead lg" /><p>Connecting…</p></div>
             : <Sessions
@@ -197,10 +241,51 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
                 // Going back from a session shows its project.
                 project={copy && open ? projectOf(open.session) : project}
                 setProject={setProject}
-                onOpen={(id) => { setPanel(null); setScreen('main'); phone.openSession(id) }}
+                onOpen={(id) => { setPanel(null); setScreen('main'); setFile(null); setFrom(null); phone.openSession(id, seen.current.get(id)) }}
               />
-        ) : loc.screen === 'threads' ? (
-          <ThreadsList open={view} onBack={goBack} onOpen={(t) => { setPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id }); setScreen('main') }} />
+        ) : r && !loc.panel && loc.screen === 'main' ? (
+          <ReviewFiles
+            open={view}
+            review={r}
+            agentName={agentName}
+            offline={offline}
+            onBack={goBack}
+            onThreads={() => setScreen('threads')}
+            onGeneral={() => setScreen('general')}
+            onFile={(path) => { setFile(path); setScreen('file') }}
+            onRunReview={() => {
+              setScreen('general')
+              void window.gloss.sessions.runReview(view!.session.id).catch((e: unknown) => phone.notice(null, errorText(e)))
+            }}
+          />
+        ) : r && !loc.panel && loc.screen === 'file' && loc.file ? (
+          <ReviewFile
+            open={view}
+            review={r}
+            path={loc.file}
+            busy={busy}
+            forkDisabled={forkDisabled}
+            offline={offline}
+            onBack={goBack}
+            onFile={setFile}
+            onOpenThread={(id) => { const t = view!.threads.find((x) => x.id === id); if (t) openThread(t) }}
+            onReply={(anchor, fork) => {
+              const existing = view!.threads.find((t) => t.anchor.kind === 'line' && sameLines(t.anchor, anchor))
+              setPanel(existing ? { anchorMessageId: null, anchor: existing.anchor, threadId: existing.id } : { anchorMessageId: null, anchor, threadId: null, ...(fork ? { fork: true as const } : {}) })
+            }}
+          />
+        ) : r && !loc.panel && loc.screen === 'threads' ? (
+          <ReviewThreads
+            open={view}
+            review={r}
+            busy={busy}
+            onBack={goBack}
+            onGeneral={() => setScreen('general')}
+            onOpen={openThread}
+            queue={<QueueList open={view} />}
+          />
+        ) : loc.screen === 'threads' && !loc.panel ? (
+          <ThreadsList open={view} onBack={goBack} onOpen={(t) => { openThread(t); setScreen('main') }} />
         ) : (
           <SessionScreen
             phone={phone}
@@ -209,7 +294,10 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
             setPanel={setPanel}
             offline={offline}
             onBack={goBack}
+            backLabel={!loc.panel ? null : !r ? 'Main' : loc.screen === 'file' && loc.file ? fileNameOf(loc.file) : loc.screen === 'threads' ? 'Threads' : loc.screen === 'general' ? 'General' : 'Files'}
             onThreads={() => setScreen('threads')}
+            review={r}
+            onReview={(agentId) => openReview(view!, agentId).catch((e: unknown) => phone.notice(null, errorText(e)))}
           />
         )}
         <div className="m-layer-dim" />
@@ -226,15 +314,45 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
   )
 }
 
-/** Where the phone is: the session list (`null`), or a session's conversation, thread or Threads. */
-type Loc = { sessionId: string; screen: 'main' | 'threads'; panel: Panel | null } | null
+/**
+ * A session's screens: the conversation (a review's file list) and Threads; in a review also its
+ * general conversation and one file. A thread (`panel`) shows over any of them.
+ */
+type Screen = 'main' | 'threads' | 'general' | 'file'
+/**
+ * Where the phone is: the session list (`null`), or a session's screen or thread. `file`: a review's
+ * open file; `from`: the session a review was opened from.
+ */
+type Loc = { sessionId: string; screen: Screen; panel: Panel | null; file: string | null; from: string | null } | null
 /** Where a swipe left goes: a screen gone back from, with its session as last seen when it was left the list. */
 type Ahead = { loc: Loc; cached?: OpenView }
+
+/** A session tapped whose view is still on its way: its header, at once, over a spinner. */
+function Opening({ session, onBack }: { session?: Session; onBack(): void }): React.JSX.Element {
+  return (
+    <>
+      <div className="m-hdr">
+        <button className="m-back" onClick={onBack} aria-label="Back"><ArrowLeft size={18} /></button>
+        <div className="m-hdr-t"><b>{session?.title ?? 'Opening…'}</b><small>Opening…</small></div>
+      </div>
+      <div className="m-body m-center"><span className="m-spinner lg" /></div>
+    </>
+  )
+}
 
 function locKey(loc: Loc): string {
   if (!loc) return 'sessions'
   const p = loc.panel
-  return `${loc.sessionId}|${loc.screen}|${p ? p.threadId ?? `${p.anchorMessageId}|${JSON.stringify(p.anchor)}|${p.fork ? 'fork' : ''}` : ''}`
+  return `${loc.sessionId}|${loc.screen}|${loc.file ?? ''}|${p ? p.threadId ?? `${p.anchorMessageId}|${JSON.stringify(p.anchor)}|${p.fork ? 'fork' : ''}` : ''}`
+}
+
+function fileNameOf(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1)
+}
+
+/** Whether two line anchors are on the same lines. */
+function sameLines(a: LineAnchor, b: LineAnchor): boolean {
+  return a.file === b.file && a.side === b.side && a.start === b.start && a.end === b.end
 }
 
 // Sessions
@@ -244,6 +362,8 @@ function Sessions({ phone, project, setProject, onOpen }: {
 }): React.JSX.Element {
   const [picker, setPicker] = useState<'projects' | 'agents' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** A new session is being started on the desktop. */
+  const [creating, setCreating] = useState(false)
   const current = phone.projects.find((p) => p.path.toLowerCase() === project?.toLowerCase()) ?? phone.projects[0]
   const needs = (s: Session) => (phone.activity[s.id]?.requests ?? 0) > 0
   // As the desktop's sidebar orders them (the Session order setting).
@@ -260,6 +380,7 @@ function Sessions({ phone, project, setProject, onOpen }: {
     if (!current) return
     setPicker(null)
     setError(null)
+    setCreating(true)
     try {
       const s = worktree
         ? await window.gloss.sessions.createInWorktree(current.path, agentId)
@@ -267,6 +388,8 @@ function Sessions({ phone, project, setProject, onOpen }: {
       onOpen(s.id)
     } catch (err) {
       setError(errorText(err))
+    } finally {
+      setCreating(false)
     }
   }
 
@@ -298,9 +421,11 @@ function Sessions({ phone, project, setProject, onOpen }: {
           onPointerUp={() => clearTimeout(hold.current)}
           onPointerLeave={() => clearTimeout(hold.current)}
           onContextMenu={(e) => e.preventDefault()}
+          disabled={creating}
+          aria-busy={creating}
           onClick={() => { if (!held.current) void create(phone.info?.defaultAgent ?? 'claude') }}
         >
-          <Plus size={18} />New session
+          {creating ? <><span className="m-spinner" />Starting…</> : <><Plus size={18} />New session</>}
         </button>
       )}
       {picker === 'projects' && (
@@ -347,7 +472,7 @@ function SessionRow({ s, phone, agentName, onOpen }: { s: Session; phone: Phone;
   return (
     <button className="m-row" onClick={() => onOpen(s.id)}>
       <span className="m-lead">
-        {a?.requests ? <span className="m-dot s-wait" /> : a?.turn !== undefined ? <span className="m-dot m-pulse s-working" /> : null}
+        {a?.requests ? <span className="m-dot s-wait" /> : a?.turn !== undefined ? <span className="m-dot m-pulse s-working" /> : s.review ? <GitCompare size={14} className="m-faint" /> : null}
       </span>
       <span className="m-row-main">
         <b>{s.title}</b>
@@ -355,6 +480,7 @@ function SessionRow({ s, phone, agentName, onOpen }: { s: Session; phone: Phone;
           {a?.requests ? <span className="m-pill m-wait"><Hand size={12} />Waiting for you</span>
             : a?.turn !== undefined ? <span className="s-working">Working</span> : null}
           <span>{agentName}</span>
+          {s.review && (s.openThreads ?? 0) > 0 && <span>{s.openThreads} open {s.openThreads === 1 ? 'thread' : 'threads'}</span>}
           {a?.queued ? <span className={a.paused ? 's-paused' : 's-queued'}>{a.queued} queued{a.paused ? ', paused' : ''}</span> : null}
         </small>
       </span>
@@ -375,7 +501,13 @@ function when(at: number): string {
 
 function SessionScreen(props: {
   phone: Phone; open: OpenView; panel: Panel | null; setPanel(p: Panel | null): void; offline: boolean
+  /** A thread's back button; null in the main conversation. */
+  backLabel: string | null
   onBack(): void; onThreads(): void
+  /** A review session's state: this is its general conversation or one of its threads. */
+  review: ReviewState | null
+  /** **Changes**: opens the review of this session's folder, with the default agent or another. */
+  onReview(agentId?: string): Promise<void>
 }): React.JSX.Element {
   const { phone, open, panel, setPanel } = props
   const [target, setTarget] = useState<Target | null>(null)
@@ -387,6 +519,19 @@ function SessionScreen(props: {
   const isFork = !!thread?.fork || !!panel?.fork
   const forkDisabled = canFork(open.session.agentId) ? undefined : `${agentName} can't fork sessions.`
   const visibleThreads = open.threads.filter((t) => t.anchor.kind !== 'line' && !t.finding)
+  const review = props.review
+  const [agentsSheet, setAgentsSheet] = useState(false)
+  const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const held = useRef(false)
+  const lineAnchor = thread?.anchor.kind === 'line' ? thread.anchor : panel?.anchor.kind === 'line' ? panel.anchor : null
+  const reviewThreads = review ? open.threads.filter((t) => isLineThread(t) && t.resolvedAt === undefined).length : 0
+  const [resolving, setResolving] = useState(false)
+  /** Changes was tapped: the review is being set up on the desktop (git, the agent). */
+  const [reviewing, setReviewing] = useState(false)
+  const review$ = (agentId?: string): void => {
+    setReviewing(true)
+    void props.onReview(agentId).finally(() => setReviewing(false))
+  }
 
   useEffect(() => setTarget(null), [panel, open.session.id])
 
@@ -406,20 +551,62 @@ function SessionScreen(props: {
     <>
       <div className="m-hdr">
         {inThread ? (
-          <button className="m-back" onClick={props.onBack}><ArrowLeft size={18} />Main</button>
+          <button className="m-back" onClick={props.onBack}><ArrowLeft size={18} />{props.backLabel ?? 'Main'}</button>
+        ) : review ? (
+          <button className="m-back" onClick={props.onBack}><ArrowLeft size={18} />Files</button>
         ) : (
           <button className="m-back" onClick={props.onBack} aria-label="Sessions"><ArrowLeft size={18} /></button>
         )}
         <div className="m-hdr-t">
-          {!inThread && <><b>{open.session.title}</b><small>{agentName}</small></>}
+          {!inThread && (review
+            ? <><b>General conversation</b><small>{reviewSubtitle(open, agentName)}</small></>
+            : <><b>{open.session.title}</b><small>{agentName}</small></>)}
         </div>
+        {inThread && review && thread && lineAnchor && (
+          <button
+            className="m-tbtn"
+            disabled={resolving || props.offline}
+            onClick={() => {
+              setResolving(true)
+              window.gloss.threads.resolve(open.session.id, thread.id, thread.resolvedAt === undefined).then(
+                (t) => props.phone.setOpen((o) => o && o.session.id === t.sessionId ? { ...o, threads: upsert(o.threads, t) } : o),
+                (e: unknown) => props.phone.notice(thread.id, errorText(e))
+              ).finally(() => setResolving(false))
+            }}
+          >
+            <CircleCheckBig size={14} />{thread.resolvedAt === undefined ? 'Resolve' : 'Reopen'}
+          </button>
+        )}
+        {!inThread && !review && (
+          <button
+            className="m-ib"
+            aria-label="Changes"
+            title="Changes: review this session's folder"
+            disabled={props.offline || reviewing}
+            aria-busy={reviewing}
+            onPointerDown={() => { held.current = false; hold.current = setTimeout(() => { held.current = true; setAgentsSheet(true) }, 500) }}
+            onPointerUp={() => clearTimeout(hold.current)}
+            onPointerLeave={() => clearTimeout(hold.current)}
+            onContextMenu={(e) => e.preventDefault()}
+            onClick={() => { if (!held.current) review$() }}
+          >
+            {reviewing ? <span className="m-spinner" /> : <GitCompare size={18} />}
+          </button>
+        )}
         {!inThread && (
           <button className="m-ib" onClick={props.onThreads} aria-label="Threads">
-            <MessageSquare size={18} />{visibleThreads.length > 0 && <span className="m-badge">{visibleThreads.length}</span>}
+            <MessageSquare size={18} />{(review ? reviewThreads : visibleThreads.length) > 0 && <span className="m-badge">{review ? reviewThreads : visibleThreads.length}</span>}
           </button>
         )}
       </div>
-      {inThread && (
+      {inThread && lineAnchor && (
+        <LineQuote
+          thread={thread && isLineThread(thread) ? thread : undefined}
+          anchor={lineAnchor}
+          location={thread && review ? review.locations.get(thread.id) : undefined}
+        />
+      )}
+      {inThread && !lineAnchor && (
         <div className="m-quote"><small>{isFork ? <span className="m-fork"><GitFork size={12} />Fork thread{forkUsage(forkOf(open, threadId)?.live ?? null) ? ` · ${forkUsage(forkOf(open, threadId)?.live ?? null)}` : ''}</span> : 'Thread'}</small>{thread ? (thread.anchor.kind === 'line' ? lineLabel(thread.anchor) : thread.anchor.text) : panel.anchor.kind === 'line' ? lineLabel(panel.anchor) : panel.anchor.text}</div>
       )}
       <LogView
@@ -435,6 +622,10 @@ function SessionScreen(props: {
         }}
         memory={`log:${open.session.id}:${threadId ?? panel?.anchorMessageId ?? 'main'}`}
         key={`${open.session.id}:${threadId ?? panel?.anchorMessageId ?? 'main'}`}
+        review={review !== null}
+        onShowThreads={props.onThreads}
+        onRunReview={() => void window.gloss.sessions.runReview(open.session.id).catch((e: unknown) => props.phone.notice(null, errorText(e)))}
+        offline={props.offline}
       />
       {target ? (
         <div className="m-selbar">
@@ -451,7 +642,7 @@ function SessionScreen(props: {
               if (t) setPanel({ anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id })
             }}>
               <span className="m-dot m-pulse s-working" />
-              <span className="m-grow">Working in {open.turn.threadId ? `“${threadName(open.threads.find((x) => x.id === open.turn?.threadId) ?? ({ anchor: { kind: 'selection', start: 0, end: 0, text: 'a thread' } } as Thread))}”` : 'main conversation'}</span>
+              <span className="m-grow">Working in {open.turn.threadId ? `“${threadName(open.threads.find((x) => x.id === open.turn?.threadId) ?? ({ anchor: { kind: 'selection', start: 0, end: 0, text: 'a thread' } } as Thread))}”` : open.session.review ? 'the general conversation' : 'main conversation'}</span>
               {open.queue.items.length > 0 && <span className="s-queued m-small-b">{open.queue.items.length} queued</span>}
               <ChevronRight size={14} />
             </button>
@@ -468,6 +659,16 @@ function SessionScreen(props: {
         </div>
       )}
       {sheet && <StatusSheet open={open} part={sheet} onClose={() => setSheet(null)} />}
+      {agentsSheet && (
+        <Sheet title="Review changes with" onClose={() => setAgentsSheet(false)}>
+          {props.phone.agents.filter((a) => a.available !== false).map((a) => (
+            <button key={a.id} className="m-kv m-kv-btn" onClick={() => { setAgentsSheet(false); review$(a.id) }}>
+              <span className="m-k m-ink">{a.name}</span>
+              {a.id === props.phone.info?.defaultAgent && <span className="m-v m-small">Default</span>}
+            </button>
+          ))}
+        </Sheet>
+      )}
     </>
   )
 }
@@ -487,6 +688,11 @@ function LogView(props: {
   target: Target | null; onTarget(t: Target | null): void; onOpenThread(id: string): void
   /** Where its scroll position is kept (`scrolls`). */
   memory: string
+  /** A review's general conversation: Run review shows as a line, and findings as a row (SPEC → Review sessions). */
+  review?: boolean
+  onShowThreads?(): void
+  onRunReview?(): void
+  offline?: boolean
 }): React.JSX.Element {
   const { open, threadId, target } = props
   const scroller = useRef<HTMLDivElement>(null)
@@ -575,6 +781,7 @@ function LogView(props: {
 
   function agent(message: Message): React.JSX.Element {
     if (props.inThread) return <Markdown text={message.text} />
+    if (props.review && findingsBlocks(message.text).length > 0) return <Findings message={message} open={open} onShowThreads={props.onShowThreads} />
     const itemThread = (index: number) => open.threads.find((t) => t.anchorMessageId === message.id && t.anchor.kind === 'listItem' && t.anchor.path[0] === index)
     const activeIndex = target?.message.id === message.id && target.anchor.kind === 'listItem' ? target.anchor.path[0] : null
     return (
@@ -620,15 +827,24 @@ function LogView(props: {
       }}
       onClick={tap}
     >
-      {groups.length === 0 && <p className="m-empty">{props.inThread ? 'Reply to start the thread.' : 'Send a message to start.'}</p>}
+      {groups.length === 0 && (props.review && !props.inThread ? (
+        <div className="m-center m-review-empty">
+          <ScanSearch size={36} className="m-faint" />
+          <p>Ask about the change, or have the agent review it.</p>
+          <button className="m-btn m-pri" disabled={props.offline || open.turn !== null} onClick={props.onRunReview}><ScanSearch size={16} />Run review</button>
+        </div>
+      ) : <p className="m-empty">{props.inThread ? 'Reply to start the thread.' : 'Send a message to start.'}</p>)}
       {groups.map((g) => {
         switch (g.kind) {
           case 'message':
+            if (props.review && g.message.role === 'user' && isFirstPass(g.message.text)) {
+              return <div key={g.message.id} className="m-ran"><ScanSearch size={14} />You ran a review{g.message.createdAt ? ` · ${new Date(g.message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}</div>
+            }
             return g.message.role === 'user' ? (
               <Fragment key={g.message.id}>
                 <div className="m-you">
                   <Markdown text={g.message.text} breaks />
-                  <SentImages attachments={g.message.attachments} />
+                  <SentImages message={g.message} />
                   <span className="m-meta">{g.message.steered ? 'steered · ' : ''}{g.message.createdAt ? new Date(g.message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}</span>
                 </div>
                 <ForkSummary message={g.message} />
@@ -654,22 +870,84 @@ function LogView(props: {
   )
 }
 
+/** An agent message with findings: its text, then a row for the findings (the desktop's GeneralMessage). */
+function Findings({ message, open, onShowThreads }: { message: Message; open: OpenView; onShowThreads?(): void }): React.JSX.Element {
+  const findings = findingsBlocks(message.text).flatMap((b) => b.findings)
+  const placed = findings.filter((f) => findingThread(f, open.threads))
+  const unplaced = findings.filter((f) => !findingThread(f, open.threads))
+  return (
+    <>
+      <Markdown text={withoutFindings(message.text)} />
+      <div className="findings-row">
+        <button onClick={onShowThreads} disabled={placed.length === 0}>
+          {findings.length === 0
+            ? 'No findings'
+            : `${findings.length} ${findings.length === 1 ? 'finding' : 'findings'}${placed.length > 0 ? `, ${placed.length} opened as threads` : ''}`}
+        </button>
+        {unplaced.length > 0 && (
+          <div className="findings-unplaced">
+            <p className="muted">Not on lines the diff shows:</p>
+            <ul>
+              {unplaced.map((f, i) => (
+                <li key={i}><span className="line-label">{lineLabel(f)}</span> <b>{f.title}</b>{f.body && f.body !== f.title && <Markdown text={f.body} />}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+/**
+ * What a session's view left out, fetched as it is shown (SPEC → Remote and mobile): images by
+ * `messageId:index`, long tool output by `sessionId:toolCallId`. Kept for the page's life.
+ */
+const fetched = new Map<string, unknown>()
+
+/** Content a slim session view left out: `have` when it came with the view, else fetched once and kept. */
+function useDeferred<T>(key: string, have: T | undefined, load: (() => Promise<T>) | null): T | undefined {
+  const [, rerender] = useState(0)
+  const value = have ?? (fetched.get(key) as T | undefined)
+  useEffect(() => {
+    if (value !== undefined || !load) return
+    let live = true
+    load().then((v) => { fetched.set(key, v); if (live) rerender((n) => n + 1) }, () => {})
+    return () => { live = false }
+  }, [key, value === undefined, load !== null])
+  return value
+}
+
 /** A sent message's images, as on the desktop; a tap shows one full screen. */
-function SentImages({ attachments }: { attachments?: Attachment[] }): React.JSX.Element | null {
+function SentImages({ message }: { message: Message }): React.JSX.Element | null {
   const [shown, setShown] = useState<string | null>(null)
-  const images = (attachments ?? []).flatMap((a) => a.kind === 'image' ? [{ name: a.name, src: `data:${a.mimeType};base64,${a.data}` }] : [])
+  const images = (message.attachments ?? []).flatMap((a, i): { name: string; index: number; image: Extract<Attachment, { kind: 'image' }> }[] => a.kind === 'image' ? [{ name: a.name, index: i, image: a }] : [])
   if (images.length === 0) return null
   return (
     <>
       <div className="m-sent-images">
-        {images.map((img, i) => (
-          <button key={i} onClick={() => setShown(img.src)} aria-label={`View ${img.name}`}><img src={img.src} alt={img.name} /></button>
+        {images.map((img) => (
+          <SentImage key={img.index} messageId={message.id} index={img.index} image={img.image} onShow={setShown} />
         ))}
       </div>
       {shown && (
         <button className="m-lightbox" onClick={() => setShown(null)} aria-label="Close image"><img src={shown} alt="" /></button>
       )}
     </>
+  )
+}
+
+/** One sent image; one a session's view left out loads as it is shown. */
+function SentImage({ messageId, index, image, onShow }: {
+  messageId: string; index: number; image: Extract<Attachment, { kind: 'image' }>; onShow(src: string): void
+}): React.JSX.Element {
+  const data = useDeferred<string>(`${messageId}:${index}`, image.deferred ? undefined : image.data,
+    image.deferred ? () => bridge.invoke('bridge:image', messageId, index) as Promise<string> : null)
+  const src = data ? `data:${image.mimeType};base64,${data}` : null
+  return (
+    <button onClick={() => src && onShow(src)} aria-label={`View ${image.name}`} disabled={!src}>
+      {src ? <img src={src} alt={image.name} /> : <span className="m-image-wait"><span className="m-spinner" /></span>}
+    </button>
   )
 }
 
@@ -683,11 +961,19 @@ function Tools({ calls }: { calls: ToolCall[] }): React.JSX.Element {
             <code>{t.title}</code>
             {t.status === 'completed' ? <Check size={14} className="s-done" /> : t.status === 'failed' ? <span className="s-failed m-small-b">failed</span> : <span className="m-dot m-pulse s-working" />}
           </button>
-          {expanded === t.id && <div className="m-tool-details"><ToolDetails toolCall={t} /></div>}
+          {expanded === t.id && <ToolOutput toolCall={t} />}
         </div>
       ))}
     </div>
   )
+}
+
+/** An expanded tool call's details; long output a session's view left out loads first. */
+function ToolOutput({ toolCall }: { toolCall: ToolCall }): React.JSX.Element {
+  const content = useDeferred<unknown>(`${toolCall.sessionId}:${toolCall.id}`, toolCall.deferred ? undefined : toolCall.content ?? null,
+    toolCall.deferred ? () => bridge.invoke('bridge:toolCall', toolCall.sessionId, toolCall.id) : null)
+  if (content === undefined) return <div className="m-tool-details m-tool-wait"><span className="m-spinner" /></div>
+  return <div className="m-tool-details"><ToolDetails toolCall={{ ...toolCall, content: content ?? undefined, deferred: undefined }} /></div>
 }
 
 function PlanView({ plan }: { plan: Plan }): React.JSX.Element {
@@ -1009,7 +1295,6 @@ function ThreadsList({ open, onBack, onOpen }: { open: OpenView; onBack(): void;
   const replies = (t: Thread) => open.messages.filter((m) => m.threadId === t.id).length
   const last = (t: Thread) => Math.max(t.createdAt, ...open.messages.filter((m) => m.threadId === t.id).map((m) => m.createdAt ?? 0))
   const scroll = useScrollMemory(`threads:${open.session.id}:${tab}`)
-  const nameOf = (id: string | null) => id === null ? 'Main conversation' : threadName(threads.find((t) => t.id === id) ?? ({ anchor: { kind: 'selection', start: 0, end: 0, text: 'Thread' } } as Thread))
   return (
     <>
       <div className="m-hdr">
@@ -1043,23 +1328,33 @@ function ThreadsList({ open, onBack, onOpen }: { open: OpenView; onBack(): void;
                 </button>
               )
             })
-        ) : (
-          <>
-            {open.queue.paused && open.queue.items.length > 0 && (
-              <div className="m-qhead paused m-pad"><span className="m-grow">Queue paused</span>
-                <button className="m-resume" onClick={() => void window.gloss.queue.resume(open.session.id)}>Resume</button>
-              </div>
-            )}
-            {open.queue.items.length === 0 && <p className="m-empty">Nothing is queued.</p>}
-            {open.queue.items.slice().reverse().map((q) => (
-              <div key={q.id} className="m-row">
-                <span className="m-row-main"><small>{nameOf(q.threadId)}</small><b className="m-wrap">{q.text}</b></span>
-                <button className="m-ib sm" aria-label="Remove" onClick={() => void window.gloss.queue.remove(open.session.id, q.id)}><Trash2 size={14} /></button>
-              </div>
-            ))}
-          </>
-        )}
+        ) : <QueueList open={open} />}
       </div>
+    </>
+  )
+}
+
+/** A session's queue, as the Queue tab lists it. */
+function QueueList({ open }: { open: OpenView }): React.JSX.Element {
+  const nameOf = (id: string | null) => {
+    if (id === null) return open.session.review ? 'General conversation' : 'Main conversation'
+    const t = open.threads.find((x) => x.id === id)
+    return t ? threadName(t) : 'Thread'
+  }
+  return (
+    <>
+      {open.queue.paused && open.queue.items.length > 0 && (
+        <div className="m-qhead paused m-pad"><span className="m-grow">Queue paused</span>
+          <button className="m-resume" onClick={() => void window.gloss.queue.resume(open.session.id)}>Resume</button>
+        </div>
+      )}
+      {open.queue.items.length === 0 && <p className="m-empty">Nothing is queued.</p>}
+      {open.queue.items.slice().reverse().map((q) => (
+        <div key={q.id} className="m-row">
+          <span className="m-row-main"><small>{nameOf(q.threadId)}</small><b className="m-wrap">{q.text}</b></span>
+          <button className="m-ib sm" aria-label="Remove" onClick={() => void window.gloss.queue.remove(open.session.id, q.id)}><Trash2 size={14} /></button>
+        </div>
+      ))}
     </>
   )
 }

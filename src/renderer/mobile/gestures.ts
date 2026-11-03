@@ -33,8 +33,9 @@ export type Swipe = 'back' | 'forward'
  * right, uncovering the one it goes `back` to (`under`); a swipe left drags the screen it goes
  * `forward` to (`over`) in from the right, over the top one. `onPeek` shows that other screen while
  * the swipe lasts. Let go far enough (or flick) and the move completes; otherwise it springs back.
- * A swipe doesn't start in a field, a sheet or the image viewer, on something that scrolls sideways
- * (code, tool output, thumbnails), or while text is selected; a move that starts vertical is a scroll.
+ * A swipe doesn't start in a field, a sheet or the image viewer, or while text is selected. On something
+ * that scrolls sideways (code, tool output, thumbnails, a review's diff) it starts only in a direction
+ * that can't scroll it: a swipe right at its left edge goes back. A move that starts vertical is a scroll.
  */
 export function useSwipeNav(opts: {
   back: (() => void) | null
@@ -49,6 +50,8 @@ export function useSwipeNav(opts: {
   useEffect(() => {
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches
     let start: { x: number; y: number } | null = null
+    /** The directions the touch can't swipe in, because what it started on scrolls that way. */
+    let blocked = new Set<Swipe>()
     let swipe: Swipe | null = null
     let last = { x: 0, t: 0, v: 0 }
     let busy = false
@@ -95,7 +98,8 @@ export function useSwipeNav(opts: {
     const onStart = (e: TouchEvent): void => {
       const target = e.target instanceof Element ? e.target : null
       const { back, forward } = current.current
-      start = !busy && swipe === null && e.touches.length === 1 && (back || forward) && target && !excluded(target)
+      blocked = target ? blockedSwipes(target) : new Set()
+      start = !busy && swipe === null && e.touches.length === 1 && (back || forward) && target && blocked.size < 2
         ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
         : null
     }
@@ -108,7 +112,7 @@ export function useSwipeNav(opts: {
         if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return
         const selection = window.getSelection()
         const dir: Swipe = dx > 0 ? 'back' : 'forward'
-        if (Math.abs(dy) > Math.abs(dx) || !current.current[dir] || (selection && !selection.isCollapsed)) {
+        if (Math.abs(dy) > Math.abs(dx) || !current.current[dir] || blocked.has(dir) || (selection && !selection.isCollapsed)) {
           start = null
           return
         }
@@ -159,10 +163,15 @@ export function useSwipeNav(opts: {
   }, [])
 }
 
-function excluded(target: Element): boolean {
-  if (target.closest('input, textarea, select, [contenteditable="true"], .m-sheet, .m-dim, .m-lightbox')) return true
+/** The swipes a touch on `target` can't start: both in a field or a sheet, else those a sideways scroller under it would take. */
+function blockedSwipes(target: Element): Set<Swipe> {
+  const out = new Set<Swipe>()
+  if (target.closest('input, textarea, select, [contenteditable="true"], .m-sheet, .m-dim, .m-lightbox')) return new Set(['back', 'forward'])
   for (let el: Element | null = target; el; el = el.parentElement) {
-    if (el.scrollWidth > el.clientWidth && /auto|scroll/.test(getComputedStyle(el).overflowX)) return true
+    if (el.scrollWidth <= el.clientWidth || !/auto|scroll/.test(getComputedStyle(el).overflowX)) continue
+    // A swipe right scrolls it back toward its start, a swipe left further along.
+    if (el.scrollLeft > 0) out.add('back')
+    if (el.scrollLeft + el.clientWidth < el.scrollWidth - 1) out.add('forward')
   }
-  return false
+  return out
 }

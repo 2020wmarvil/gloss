@@ -75,7 +75,7 @@ function ContentBlock({ block }: { block: Block }): React.JSX.Element | null {
 
 /** Whether a tool call has anything to show when expanded. */
 export function hasDetails(toolCall: ToolCall): boolean {
-  return toolCall.kind === 'execute' || (Array.isArray(toolCall.content) && toolCall.content.length > 0)
+  return toolCall.kind === 'execute' || toolCall.deferred === true || (Array.isArray(toolCall.content) && toolCall.content.length > 0)
 }
 
 export function ToolDetails({ toolCall }: { toolCall: ToolCall }): React.JSX.Element {
