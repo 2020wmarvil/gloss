@@ -32,6 +32,8 @@ export function usePhone(link: PhoneLink) {
   const [activity, setActivity] = useState<Record<string, Activity>>({})
   const [open, setOpen] = useState<OpenView | null>(null)
   const openId = useRef<string | null>(null)
+  /** The session being shown, set on the tap, before its view has loaded. */
+  const [openingId, setOpeningId] = useState<string | null>(null)
 
   const loadOpen = useCallback(async (id: string) => {
     try {
@@ -129,7 +131,7 @@ export function usePhone(link: PhoneLink) {
         return
       case 'sessionDeleted':
         setSessions((s) => s.filter((x) => x.id !== event.sessionId))
-        if (openId.current === event.sessionId) { openId.current = null; setOpen(null) }
+        if (openId.current === event.sessionId) { openId.current = null; setOpeningId(null); setOpen(null) }
         return
       case 'sessionCleared': case 'sessionRewound': case 'sessionSynced':
         if (openId.current === event.sessionId) void loadOpen(event.sessionId)
@@ -206,6 +208,7 @@ export function usePhone(link: PhoneLink) {
   /** `cached`: the session as last seen, shown until it has reloaded (a swipe forward back into it). */
   const openSession = useCallback((id: string | null, cached?: OpenView) => {
     openId.current = id
+    setOpeningId(id)
     setOpen(cached && cached.session.id === id ? cached : null)
     if (id) void loadOpen(id)
   }, [loadOpen])
@@ -230,7 +233,7 @@ export function usePhone(link: PhoneLink) {
     return out
   }, [activity])
 
-  return { link: state, info, projects, sessions, agents, rateLimits, activity: shownActivity, open, setOpen, openSession, notice }
+  return { link: state, info, projects, sessions, agents, rateLimits, activity: shownActivity, open, openingId, setOpen, openSession, notice }
 }
 
 export type Phone = ReturnType<typeof usePhone>

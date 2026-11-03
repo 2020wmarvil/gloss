@@ -124,8 +124,9 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
     setPanel(t ? { anchorMessageId: t.anchorMessageId, anchor: t.anchor, threadId: t.id } : null)
   }, [phone.link, phone.open, phone.openSession])
 
-  const open = phone.open
-  const here: Loc = open ? { sessionId: open.session.id, screen, panel, file, from } : null
+  const open = phone.open && phone.open.session.id === phone.openingId ? phone.open : null
+  // The screen changes on the tap; the session shows once its view has loaded (or as last seen).
+  const here: Loc = phone.openingId ? { sessionId: phone.openingId, screen, panel, file, from } : null
 
   // Going back remembers where it came from, so a swipe left goes forward there again; going
   // anywhere else forgets it.
@@ -145,7 +146,7 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
       phone.openSession(null)
       return
     }
-    if (to.sessionId !== open?.session.id) phone.openSession(to.sessionId, cached ?? seen.current.get(to.sessionId))
+    if (to.sessionId !== phone.openingId) phone.openSession(to.sessionId, cached ?? seen.current.get(to.sessionId))
     setScreen(to.screen)
     setPanel(to.panel)
     setFile(to.file)
@@ -229,7 +230,9 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
             <WifiOff size={18} /><span><b>Gloss is offline.</b> Reconnecting…</span>
           </div>
         )}
-        {!loc || !view ? (
+        {loc && !view ? (
+          <Opening session={phone.sessions.find((s) => s.id === loc.sessionId)} onBack={goBack} />
+        ) : !loc || !view ? (
           !open && phone.info === null && phone.link === 'connecting'
             ? <div className="m-center"><span className="m-bead lg" /><p>Connecting…</p></div>
             : <Sessions
@@ -237,7 +240,7 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
                 // Going back from a session shows its project.
                 project={copy && open ? projectOf(open.session) : project}
                 setProject={setProject}
-                onOpen={(id) => { setPanel(null); setScreen('main'); setFile(null); setFrom(null); phone.openSession(id) }}
+                onOpen={(id) => { setPanel(null); setScreen('main'); setFile(null); setFrom(null); phone.openSession(id, seen.current.get(id)) }}
               />
         ) : r && !loc.panel && loc.screen === 'main' ? (
           <ReviewFiles
@@ -293,7 +296,7 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
             backLabel={!loc.panel ? null : !r ? 'Main' : loc.screen === 'file' && loc.file ? fileNameOf(loc.file) : loc.screen === 'threads' ? 'Threads' : loc.screen === 'general' ? 'General' : 'Files'}
             onThreads={() => setScreen('threads')}
             review={r}
-            onReview={(agentId) => void openReview(view!, agentId).catch((e: unknown) => phone.notice(null, errorText(e)))}
+            onReview={(agentId) => openReview(view!, agentId).catch((e: unknown) => phone.notice(null, errorText(e)))}
           />
         )}
         <div className="m-layer-dim" />
@@ -323,6 +326,19 @@ type Loc = { sessionId: string; screen: Screen; panel: Panel | null; file: strin
 /** Where a swipe left goes: a screen gone back from, with its session as last seen when it was left the list. */
 type Ahead = { loc: Loc; cached?: OpenView }
 
+/** A session tapped whose view is still on its way: its header, at once, over a spinner. */
+function Opening({ session, onBack }: { session?: Session; onBack(): void }): React.JSX.Element {
+  return (
+    <>
+      <div className="m-hdr">
+        <button className="m-back" onClick={onBack} aria-label="Back"><ArrowLeft size={18} /></button>
+        <div className="m-hdr-t"><b>{session?.title ?? 'Opening…'}</b><small>Opening…</small></div>
+      </div>
+      <div className="m-body m-center"><span className="m-spinner lg" /></div>
+    </>
+  )
+}
+
 function locKey(loc: Loc): string {
   if (!loc) return 'sessions'
   const p = loc.panel
@@ -345,6 +361,8 @@ function Sessions({ phone, project, setProject, onOpen }: {
 }): React.JSX.Element {
   const [picker, setPicker] = useState<'projects' | 'agents' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** A new session is being started on the desktop. */
+  const [creating, setCreating] = useState(false)
   const current = phone.projects.find((p) => p.path.toLowerCase() === project?.toLowerCase()) ?? phone.projects[0]
   const needs = (s: Session) => (phone.activity[s.id]?.requests ?? 0) > 0
   // As the desktop's sidebar orders them (the Session order setting).
@@ -361,6 +379,7 @@ function Sessions({ phone, project, setProject, onOpen }: {
     if (!current) return
     setPicker(null)
     setError(null)
+    setCreating(true)
     try {
       const s = worktree
         ? await window.gloss.sessions.createInWorktree(current.path, agentId)
@@ -368,6 +387,8 @@ function Sessions({ phone, project, setProject, onOpen }: {
       onOpen(s.id)
     } catch (err) {
       setError(errorText(err))
+    } finally {
+      setCreating(false)
     }
   }
 
@@ -399,9 +420,11 @@ function Sessions({ phone, project, setProject, onOpen }: {
           onPointerUp={() => clearTimeout(hold.current)}
           onPointerLeave={() => clearTimeout(hold.current)}
           onContextMenu={(e) => e.preventDefault()}
+          disabled={creating}
+          aria-busy={creating}
           onClick={() => { if (!held.current) void create(phone.info?.defaultAgent ?? 'claude') }}
         >
-          <Plus size={18} />New session
+          {creating ? <><span className="m-spinner" />Starting…</> : <><Plus size={18} />New session</>}
         </button>
       )}
       {picker === 'projects' && (
@@ -483,7 +506,7 @@ function SessionScreen(props: {
   /** A review session's state: this is its general conversation or one of its threads. */
   review: ReviewState | null
   /** **Changes**: opens the review of this session's folder, with the default agent or another. */
-  onReview(agentId?: string): void
+  onReview(agentId?: string): Promise<void>
 }): React.JSX.Element {
   const { phone, open, panel, setPanel } = props
   const [target, setTarget] = useState<Target | null>(null)
@@ -502,6 +525,12 @@ function SessionScreen(props: {
   const lineAnchor = thread?.anchor.kind === 'line' ? thread.anchor : panel?.anchor.kind === 'line' ? panel.anchor : null
   const reviewThreads = review ? open.threads.filter((t) => isLineThread(t) && t.resolvedAt === undefined).length : 0
   const [resolving, setResolving] = useState(false)
+  /** Changes was tapped: the review is being set up on the desktop (git, the agent). */
+  const [reviewing, setReviewing] = useState(false)
+  const review$ = (agentId?: string): void => {
+    setReviewing(true)
+    void props.onReview(agentId).finally(() => setReviewing(false))
+  }
 
   useEffect(() => setTarget(null), [panel, open.session.id])
 
@@ -552,14 +581,15 @@ function SessionScreen(props: {
             className="m-ib"
             aria-label="Changes"
             title="Changes: review this session's folder"
-            disabled={props.offline}
+            disabled={props.offline || reviewing}
+            aria-busy={reviewing}
             onPointerDown={() => { held.current = false; hold.current = setTimeout(() => { held.current = true; setAgentsSheet(true) }, 500) }}
             onPointerUp={() => clearTimeout(hold.current)}
             onPointerLeave={() => clearTimeout(hold.current)}
             onContextMenu={(e) => e.preventDefault()}
-            onClick={() => { if (!held.current) props.onReview() }}
+            onClick={() => { if (!held.current) review$() }}
           >
-            <GitCompare size={18} />
+            {reviewing ? <span className="m-spinner" /> : <GitCompare size={18} />}
           </button>
         )}
         {!inThread && (
@@ -631,7 +661,7 @@ function SessionScreen(props: {
       {agentsSheet && (
         <Sheet title="Review changes with" onClose={() => setAgentsSheet(false)}>
           {props.phone.agents.filter((a) => a.available !== false).map((a) => (
-            <button key={a.id} className="m-kv m-kv-btn" onClick={() => { setAgentsSheet(false); props.onReview(a.id) }}>
+            <button key={a.id} className="m-kv m-kv-btn" onClick={() => { setAgentsSheet(false); review$(a.id) }}>
               <span className="m-k m-ink">{a.name}</span>
               {a.id === props.phone.info?.defaultAgent && <span className="m-v m-small">Default</span>}
             </button>

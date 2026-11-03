@@ -91,7 +91,8 @@ export class Bridge {
     const server = listen.createServer((req, res) => void this.request(req, res).catch(() => {
       if (!res.headersSent) res.writeHead(500).end()
     }))
-    const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE })
+    // Compressed: a large session's view is megabytes of JSON, which shrinks several times.
+    const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE, perMessageDeflate: { threshold: 1024 } })
     server.on('upgrade', (req, socket, head) => {
       const device = new URL(req.url ?? '/', 'http://x').pathname === '/api' && this.sameOrigin(req) ? this.device(req) : undefined
       if (!device) {

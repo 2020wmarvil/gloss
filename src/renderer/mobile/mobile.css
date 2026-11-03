@@ -356,3 +356,17 @@
 .m-diff.wrap .diff-row .code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .m-screen .findings-row button { color: var(--accent); font-weight: 600; font-size: var(--t-14); }
 .m-screen .findings-row button:disabled { color: var(--muted); font-weight: 500; }
+
+/* Feedback on a tap: what was pressed darkens (or shrinks a little, for the big buttons) at once,
+   and buttons that wait on the desktop show a spinner. */
+.m-screen .m-row:active, .m-screen .m-frow:active, .m-screen .m-gen:active, .m-screen .m-kv-btn:active,
+.m-screen .m-ib:active, .m-screen .m-back:active, .m-screen .m-range:active, .m-screen .m-tr:active,
+.m-screen .m-act:active, .m-screen .m-tabs button:active, .m-screen .m-strip:active { background-color: var(--pressed); }
+.m-screen .m-btn:active, .m-screen .m-fab:active, .m-screen .m-send:active, .m-screen .m-act.m-pri:active { transform: scale(0.96); filter: brightness(0.94); }
+.m-screen .m-btn, .m-screen .m-fab, .m-screen .m-send, .m-screen .m-act { transition: transform 0.08s ease-out, filter 0.08s ease-out; }
+.m-screen .m-back, .m-screen .m-range { border-radius: var(--r-md); }
+.m-screen .m-fab:disabled { opacity: 0.85; }
+.m-spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: m-spin 0.7s linear infinite; flex: none; display: inline-block; }
+.m-spinner.lg { width: 28px; height: 28px; border-width: 3px; color: var(--faint); }
+@keyframes m-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .m-spinner { animation-duration: 2s; } }
