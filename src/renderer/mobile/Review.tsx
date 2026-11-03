@@ -1,8 +1,9 @@
 // A review session on the phone (SPEC → Remote and mobile → Reviews; docs/mocks/mobile-diff.html):
 // the desktop's review session, as a file list, one file's diff, the review's threads and a range sheet.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, ChevronUp, Ellipsis, FileCode, FileMinus, FilePlus, GitFork, MessageSquare, MessageSquareReply, ScanSearch, X } from 'lucide-react'
 import type { GlossEvent } from '@shared/ipc'
+import { perforceRange } from '@shared/perforce'
 import { expandable, gapsOf, isFirstPass, linesOf, withoutFindings, type DiffFile, type LineAnchor, type Location, type ReviewDiff, type ReviewRange, type ReviewRefs, type Side } from '@shared/review'
 import type { Thread } from '@shared/types'
 import { DiffView, cardOpen, type Card } from '../src/DiffView'
@@ -200,9 +201,9 @@ export function ReviewFiles(props: {
       </div>
       {choices && (
         <button className="m-range" onClick={() => { review.loadRefs(); setRange(true) }}>
-          <span className="m-chip"><span className="m-lbl">Base</span>{choices.baseCurrent}</span>
-          <ArrowRight size={14} className="m-faint" />
-          <span className="m-chip"><span className="m-lbl">Review</span>{choices.headCurrent}</span>
+          <span className="m-chip"><span className="m-lbl">{open.session.review && perforceRange(open.session.review.baseRef) ? 'Changes' : 'Base'}</span>{choices.baseCurrent}</span>
+          {choices.headOptions.length > 0 && <ArrowRight size={14} className="m-faint" />}
+          {choices.headOptions.length > 0 && <span className="m-chip"><span className="m-lbl">Review</span>{choices.headCurrent}</span>}
         </button>
       )}
       <div className="m-body m-scroll">
@@ -216,24 +217,27 @@ export function ReviewFiles(props: {
         </button>
         {review.error && <p className="m-error" role="alert">Couldn&apos;t read the diff: {review.error}</p>}
         {!review.diff && !review.error && <p className="m-empty">Reading the diff…</p>}
-        {review.diff && files.length === 0 && <p className="m-empty">Nothing to review: the branch has no changes.</p>}
+        {review.diff && files.length === 0 && <p className="m-empty">Nothing to review: no changes in this selection.</p>}
         {files.length > 0 && (
           <div className="m-sec">{files.length} {files.length === 1 ? 'file' : 'files'} · <span className="add">+{additions}</span> <span className="del">−{deletions}</span></div>
         )}
-        {files.map((f) => {
+        {files.map((f, index) => {
           const here = lineThreads.filter((t) => t.anchor.file === f.path && t.resolvedAt === undefined)
           const worst = KIND_ORDER.find((k) => here.some((t) => kindOf(t) === k))
           return (
+            <Fragment key={f.path}>
+            {f.outside && !files[index - 1]?.outside && <div className="m-sec">Outside this folder</div>}
             <button key={f.path} className="m-frow" onClick={() => props.onFile(f.path)}>
               {f.status === 'added' ? <FilePlus size={16} /> : f.status === 'deleted' ? <FileMinus size={16} /> : <FileCode size={16} />}
               <span className="m-row-main">
                 <b>{fileName(f.path)}</b>
-                <small>{[folderOf(f.path), f.status === 'added' ? 'new' : f.status === 'deleted' ? 'deleted' : null, STATE_NAMES[f.state]].filter(Boolean).join(' · ')}</small>
+                <small>{[folderOf(f.displayPath ?? f.path), f.status === 'added' ? 'new' : f.status === 'deleted' ? 'deleted' : null, f.perforce ? f.perforce.opened ? `Opened (${f.perforce.change})` : 'Not opened' : STATE_NAMES[f.state]].filter(Boolean).join(' · ')}</small>
               </span>
               {worst && <span className="m-tc"><span className={`m-mkr kind-${worst}`} />{here.length}</span>}
               <span className="m-cnt"><span className="add">+{f.additions}</span> <span className="del">−{f.deletions}</span></span>
               <ChevronRight size={16} />
             </button>
+            </Fragment>
           )
         })}
         <div className="m-fab-space" />
@@ -294,12 +298,12 @@ function RangeSheet(props: {
           <h4>Range</h4>
           {choices.reset !== null && <button className="m-dbtn" onClick={() => pick({ baseRef: choices.reset! })}>Reset</button>}
         </div>
-        <input className="m-filter" placeholder="Filter commits" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <input className="m-filter" placeholder="Filter changes" value={filter} onChange={(e) => setFilter(e.target.value)} />
         {error && <p className="m-error" role="alert">{error}</p>}
         <div className="m-sheet-scroll">
-          <h4 className="m-sheet-sub">Base</h4>
+          <h4 className="m-sheet-sub">{perforceRange(range.baseRef) ? 'Changes' : 'Base'}</h4>
           {list(choices.baseOptions, range.baseRef, (value) => value !== null && pick({ baseRef: value, ...(head !== null ? { headRef: head } : {}) }))}
-          <h4 className="m-sheet-sub">Review</h4>
+          {choices.headOptions.length > 0 && <h4 className="m-sheet-sub">Review</h4>}
           {list(choices.headOptions, head, (value) => pick({ baseRef: range.baseRef, ...(value !== null ? { headRef: value } : {}) }))}
         </div>
       </div>

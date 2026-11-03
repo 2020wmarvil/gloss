@@ -193,10 +193,10 @@ export function useSession() {
   /** Refreshes the branch, then its pull request (`gh` is slower, so a cached one shows first). */
   const refreshGit = useCallback(
     (cwd: string, sessionId: string) => {
-      void window.gloss.git.status(cwd).then((status) => {
+      void window.gloss.git.status(cwd, sessionId).then((status) => {
         if (openId.current !== sessionId) return
         setGit(status)
-        if (!status || status.branch === 'detached HEAD') {
+        if (!status || status.perforce || status.branch === 'detached HEAD') {
           setPr(null)
           return
         }

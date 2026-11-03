@@ -12,6 +12,7 @@ import { folderWhere, SessionManager, type WorktreeGit } from './sessions'
 import type { UnfinishedWork, WorktreeEntry } from './worktrees'
 import { FORK_NOTE, FORK_SUMMARY_LABEL, FORK_SUMMARY_PROMPT, splitForkSummary, threadTag, toMainTag, wireTag, withForkSummary } from '../shared/wire'
 import { isFirstPass, REVIEW_INSTRUCTIONS, type ReviewDiff } from '../shared/review'
+import { perforceRef } from '../shared/perforce'
 import type { Session } from '../shared/types'
 
 type Script = (ctx: {
@@ -2802,7 +2803,7 @@ describe('SessionManager', () => {
     /** The branch's pull request, as gh reports it. */
     let pr: PullRequest | null
 
-    function reviewManager(): SessionManager {
+    function reviewManager(p4 = false): SessionManager {
       return new SessionManager({
         store,
         emit: (e) => events.push(e),
@@ -2811,6 +2812,14 @@ describe('SessionManager', () => {
         connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
         runInTerminal: runInTerminal as never,
         now: () => 1000,
+        versionControl: () => p4 ? 'perforce' : 'git',
+        perforce: {
+          workspace: async () => ({ client: 'test-client', root: '/repo', user: 'test', server: 'local', unicode: true }),
+          diff: async (_cwd, ref) => ({ ...DIFF, baseRef: ref, base: ref, headRef: null, head: 'have', perforce: { workspace: { client: 'test-client', root: '/repo', user: 'test', server: 'local', unicode: true }, change: ref.split(':').at(-1)!, project: '/repo' } }),
+          file: async () => ['from Perforce'], filePath: async () => '/repo/src/a.ts',
+          refs: async () => ({ bases: [], commits: [], repoUrl: null, defaultBase: perforceRef('test-client') }),
+          notOpened: async (_cwd, paths) => paths.length
+        },
         git: {
           pullRequest: async () => pr,
           pullRequestBase: async (_cwd, branch) => `origin/${branch}`,
@@ -2842,6 +2851,47 @@ describe('SessionManager', () => {
         await say(isFirstPass(text) ? FINDINGS : `Re: ${text.split('\n').pop()}`)
         return 'end_turn'
       }
+    })
+
+    it('persists Perforce review selection, routes findings and refreshes without Git ranges', async () => {
+      await manager.dispose()
+      manager = reviewManager(true)
+      const session = await startReview()
+      expect(session.review?.baseRef).toBe(perforceRef('test-client'))
+      expect(state.prompts[0]).toContain('p4 opened')
+      expect(state.prompts[0]).not.toContain('git diff')
+      expect(store.listThreads(session.id).length).toBeGreaterThan(0)
+      expect(await manager.reviewFile(session.id, 'src/a.ts')).toEqual(['from Perforce'])
+      await manager.setReviewRange(session.id, { baseRef: perforceRef('test-client', '12') })
+      expect(store.getSession(session.id)?.review?.baseRef).toBe(perforceRef('test-client', '12'))
+      expect((await manager.reviewDiff(session.id)).perforce?.change).toBe('12')
+      await expect(manager.setReviewRange(session.id, { baseRef: 'main' })).rejects.toThrow('version control')
+      await manager.dispose()
+      manager = reviewManager(false)
+      expect((await manager.reviewDiff(session.id)).perforce?.change).toBe('12')
+    })
+
+    it('rejects worktree operations in Perforce projects', async () => {
+      await manager.dispose()
+      manager = reviewManager(true)
+      await expect(manager.startWorktreeSession('/repo', 'fake')).rejects.toThrow('Worktrees require Git')
+      await expect(manager.startSessionIn('/repo', '/other', 'fake')).rejects.toThrow('Worktrees require Git')
+    })
+
+    it('limits the unopened check to reported edits from the latest turn', async () => {
+      await manager.dispose()
+      manager = reviewManager(true)
+      const session = await manager.createReview('/repo', 'fake')
+      state.script = async ({ update }) => {
+        await update({ sessionUpdate: 'tool_call', toolCallId: 'edit', title: 'Edit file', kind: 'edit', status: 'completed', locations: [{ path: '/repo/src/a.ts' }], content: [{ type: 'diff', path: '/repo/src/a.ts', oldText: 'before', newText: 'after' }] })
+        await update({ sessionUpdate: 'tool_call', toolCallId: 'read', title: 'Read file', kind: 'read', status: 'completed', locations: [{ path: '/repo/src/elsewhere.ts' }] })
+        return 'end_turn'
+      }
+      await manager.send(session.id, 'Fix it', null)
+      expect(await manager.notOpened(session.id)).toBe(1)
+      state.script = async () => 'end_turn'
+      await manager.send(session.id, 'Explain it', null)
+      expect(await manager.notOpened(session.id)).toBe(0)
     })
 
     it('starts a new review of a given range', async () => {

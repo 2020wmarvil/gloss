@@ -11,8 +11,9 @@ import type { Store } from './db'
 import { attachPathContext, contextPaths, externalContextItems, gitOutput, pathContextItems, readContextText } from './composerContext'
 import { draftEditorArgs, launchEditor } from './openFile'
 import { toMarkdown } from './export'
+import { perforceContextPaths } from './perforce'
 
-export function registerComposerIpc(store: Store, isGloss: (sender: WebContents) => boolean, editor: () => string, returnToGloss: (sender: WebContents) => void): void {
+export function registerComposerIpc(store: Store, isGloss: (sender: WebContents) => boolean, editor: () => string, returnToGloss: (sender: WebContents) => void, isPerforce: (cwd: string) => boolean = () => false): void {
   const shells = new Map<string, AbortController>()
   const terminals = new Map<string, ShellResult>()
   const drafts = new Set<string>()
@@ -39,7 +40,7 @@ export function registerComposerIpc(store: Store, isGloss: (sender: WebContents)
     let cached = cache.get(s.cwd)
     if (!cached || Date.now() - cached.at > 5000) {
       if (cache.size > 20) cache.clear()
-      cached = { at: Date.now(), paths: contextPaths(s.cwd) }
+      cached = { at: Date.now(), paths: isPerforce(s.project ?? s.cwd) ? perforceContextPaths(s.cwd) : contextPaths(s.cwd) }
       cache.set(s.cwd, cached)
     }
     return cached.paths.then((paths) => {
@@ -49,7 +50,7 @@ export function registerComposerIpc(store: Store, isGloss: (sender: WebContents)
         { kind: 'diff' as const, id: 'working', label: 'diff', description: 'Unstaged changes' },
         { kind: 'diff' as const, id: 'staged', label: 'staged', description: 'Staged changes' },
         ...store.listSessions().filter((other) => other.id !== s.id && !other.draft).slice(0, 100).map((other): ContextItem => ({ kind: 'chat', id: other.id, label: `chat:${other.title}`, description: 'Attach conversation transcript' }))
-      ].filter((item) => item.label.toLowerCase().includes(q))
+      ].filter((item) => (!isPerforce(s.project ?? s.cwd) || item.kind !== 'diff') && item.label.toLowerCase().includes(q))
       return [...special.filter((item) => item.kind !== 'chat'), ...pathContextItems(paths, q), ...special.filter((item) => item.kind === 'chat')].slice(0, 12)
     })
   })
@@ -60,8 +61,9 @@ export function registerComposerIpc(store: Store, isGloss: (sender: WebContents)
     const item = value as ContextItem
     str(item.id)
     str(item.label)
-    if (item.kind === 'file' || item.kind === 'folder') return attachPathContext(s.cwd, item)
+    if (item.kind === 'file' || item.kind === 'folder') return attachPathContext(s.cwd, item, isPerforce(s.project ?? s.cwd))
     if (item.kind === 'diff') {
+      if (isPerforce(s.project ?? s.cwd)) throw new Error('Use Review changes for Perforce diffs.')
       if (item.id !== 'working' && item.id !== 'staged') throw new Error('Unknown diff.')
       const text = await gitOutput(s.cwd, ['diff', '--no-ext-diff', '--no-textconv', ...(item.id === 'staged' ? ['--cached'] : []), '--', '.'])
       if (Buffer.byteLength(text) > 1024 * 1024) throw new Error('Diff exceeds 1 MB. Attach individual files instead.')

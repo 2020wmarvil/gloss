@@ -55,6 +55,8 @@ import { samePath } from './settings'
 import { isLogUpdate, matchReplay, parseReplay, placeUserMessage, type CachedEntry, type ReplayEntry } from './sync'
 import type { TerminalRunner } from './terminal'
 import { originRepoUrl, pullRequest } from './git'
+import { perforceDiff, perforceFile, perforceFilePath, perforceRefs, perforceWorkspace, perforceNotOpened } from './perforce'
+import { perforceLabel, perforceRange, perforceRef } from '../shared/perforce'
 import { branchPrefix, branchSlug, createWorktree, hasUnfinishedWork, listWorktrees, removeWorktree, renameWorktreeBranch, unfinishedWork, type UnfinishedWork, type WorktreeEntry } from './worktrees'
 import { runComposerShell } from './composerShell'
 import { withoutWorktreeNote, worktreeNote } from '../shared/worktree'
@@ -75,6 +77,8 @@ export type SessionManagerDeps = {
   permissionMode?(cwd: string): PermissionModeSetting
   /** Git for review sessions; the real one by default. */
   git?: ReviewGit
+  versionControl?(cwd: string): 'git' | 'perforce'
+  perforce?: ReviewPerforce
   /** Forks a Claude Code session before a user message (see forkClaude); the Agent SDK by default. */
   forkClaude?(acpSessionId: string, cwd: string, targetUuid: string): Promise<string | null>
   /** Git for worktrees; the real one by default. */
@@ -134,6 +138,9 @@ const GIT: ReviewGit = {
   readFile: readReviewFile
 }
 
+const PERFORCE = { workspace: perforceWorkspace, diff: perforceDiff, file: perforceFile, filePath: perforceFilePath, refs: perforceRefs, notOpened: perforceNotOpened }
+export type ReviewPerforce = typeof PERFORCE
+
 type Turn = {
   threadId: string | null
   /** The agent message that text chunks currently append to. */
@@ -152,6 +159,7 @@ type Turn = {
 }
 
 type SessionRuntime = {
+  editedPaths?: Set<string>
   rewinding?: boolean
   resetting?: boolean
   mcpFingerprint?: string
@@ -390,6 +398,8 @@ export class SessionManager {
     const own = session.forkOf ? this.deps.store.getSession(session.forkOf.sessionId) : session
     return !!own?.review
   }
+
+  private get p4(): ReviewPerforce { return this.deps.perforce ?? PERFORCE }
 
   private get git(): ReviewGit {
     return this.deps.git ?? GIT
@@ -686,14 +696,28 @@ export class SessionManager {
     const home = project ?? cwd
     const drafts = (): Session[] => this.deps.store.listSessions().filter((s) => s.draft && samePath(s.project ?? s.cwd, home))
     const kept = range === undefined ? drafts().find((s) => s.agentId === agentId && samePath(s.cwd, cwd)) : undefined
-    if (kept) return kept
+    if (kept && Boolean(perforceRange(kept.review!.baseRef)) === (this.deps.versionControl?.(home) === 'perforce')) {
+      const old = perforceRange(kept.review!.baseRef)
+      if (!old || old.client === (await this.p4.workspace(cwd)).client) return kept
+    }
+    if (range ? perforceRange(range.baseRef) : this.deps.versionControl?.(home) === 'perforce') {
+      if (range?.headRef !== undefined) throw new Error('Perforce reviews compare workspace files with have revisions.')
+      const w = await this.p4.workspace(cwd)
+      const baseRef = range?.baseRef ?? perforceRef(w.client)
+      const diff = await this.p4.diff(cwd, baseRef)
+      const change = perforceRange(baseRef)!.change
+      const session = await this.createSession(cwd, agentId, { baseRef, title: `Review: ${change === 'workspace' ? w.client : perforceLabel(change)}` }, project)
+      for (const old of drafts()) if (old.id !== session.id) await this.discardDraft(old.id)
+      this.runtime(session.id).rangeNote = rangeNote(diff)
+      return session
+    }
     const found = await this.git.pullRequest(cwd)
     const pr = found && (found.state === 'open' || found.state === 'draft') && found.baseRef ? found : null
     const prBase = pr && (await this.git.pullRequestBase(cwd, pr.baseRef, range === undefined))
     const baseRef = range?.baseRef ?? (prBase || (await this.git.defaultBranch(cwd, range === undefined)))
     if (!baseRef) throw new Error('A review needs a git repository with a default branch (origin/HEAD, main or master).')
     const headRef = range?.headRef
-    const diff = await this.git.readDiff(cwd, baseRef, headRef ?? null)
+    const diff = await this.readDiff(cwd, baseRef, headRef ?? null)
     const branch = await this.git.currentBranch(cwd)
     const ofPr = pr && reviewsPr({ baseRef, headRef }, prBase) ? pr : null
     const title = ofPr ? `Review: #${ofPr.number} ${ofPr.title}` : `Review: ${branch ?? folderName(cwd)}`
@@ -704,14 +728,37 @@ export class SessionManager {
     return session
   }
 
-  /**
-   * **Run review** (SPEC → Review sessions → Run review): asks the agent for a summary
-   * and its findings, in the general conversation. Resolves once it is sent or queued;
-   * the turn runs on.
-   */
+  /** Tracks only file locations associated with edits, for the bounded status check. */
+  private recordEditedPaths(sessionId: string, update: acp.ToolCall | acp.ToolCallUpdate): void {
+    const rt = this.runtime(sessionId)
+    const kind = update.kind ?? this.deps.store.getToolCall(sessionId, update.toolCallId)?.kind
+    if (kind === 'edit' || kind === 'delete' || kind === 'move') {
+      for (const location of update.locations ?? []) rt.editedPaths?.add(location.path)
+    }
+    for (const content of update.content ?? []) if (content.type === 'diff') rt.editedPaths?.add(content.path)
+  }
+
+  async notOpened(sessionId: string): Promise<number | null> {
+    const session = this.session(sessionId)
+    try { return await this.p4.notOpened(session.cwd, [...(this.runtime(sessionId).editedPaths ?? [])]) } catch { return null }
+  }
+
+  private readDiff(cwd: string, baseRef: string, head: string | null): Promise<ReviewDiff> {
+    if (perforceRange(baseRef)) {
+      if (head !== null) throw new Error('Perforce reviews compare workspace files with have revisions.')
+      return this.p4.diff(cwd, baseRef)
+    }
+    return this.git.readDiff(cwd, baseRef, head)
+  }
+
   async runReview(sessionId: string): Promise<void> {
     const { session, review } = this.reviewOf(sessionId)
-    const diff = await this.git.readDiff(session.cwd, review.baseRef, review.headRef ?? null)
+    const diff = await this.readDiff(session.cwd, review.baseRef, review.headRef ?? null)
+    if (perforceRange(review.baseRef)) {
+      this.runtime(sessionId).rangeNote = undefined
+      this.send(sessionId, firstPassPrompt(diff), null).catch((err: unknown) => this.notice(sessionId, null, `Couldn't start the review: ${errorMessage(err)}`))
+      return
+    }
     const found = await this.git.pullRequest(session.cwd).catch(() => null)
     const pr = found && (found.state === 'open' || found.state === 'draft') && found.baseRef ? found : null
     const prBase = pr && (await this.git.pullRequestBase(session.cwd, pr.baseRef, false))
@@ -752,18 +799,19 @@ export class SessionManager {
   /** The diff a review session shows, read now. */
   reviewDiff(sessionId: string): Promise<ReviewDiff> {
     const { session, review } = this.reviewOf(sessionId)
-    return this.git.readDiff(session.cwd, review.baseRef, review.headRef ?? null)
+    return this.readDiff(session.cwd, review.baseRef, review.headRef ?? null)
   }
 
   /** Where a file of a review session's diff is in the working tree, to open it outside Gloss. */
   reviewFilePath(sessionId: string, path: string): Promise<string> {
-    return workingFilePath(this.reviewOf(sessionId).session.cwd, path)
+    const { session, review } = this.reviewOf(sessionId)
+    return perforceRange(review.baseRef) ? this.p4.filePath(session.cwd, path, review.baseRef) : workingFilePath(session.cwd, path)
   }
 
   /** A file of a review session's diff on its new side, for showing the lines around its hunks. */
   reviewFile(sessionId: string, path: string): Promise<string[] | null> {
     const { session, review } = this.reviewOf(sessionId)
-    return this.git.readFile(session.cwd, path, review.headRef ?? null)
+    return perforceRange(review.baseRef) ? this.p4.file(session.cwd, path, review.baseRef) : this.git.readFile(session.cwd, path, review.headRef ?? null)
   }
 
   /**
@@ -774,6 +822,7 @@ export class SessionManager {
   async reviewRefs(sessionId: string): Promise<ReviewRefs> {
     const { session, review } = this.reviewOf(sessionId)
     const { cwd } = session
+    if (perforceRange(review.baseRef)) return this.p4.refs(cwd, review.baseRef)
     const pr = await this.git.pullRequest(cwd).catch(() => null)
     const branch = await this.git.defaultBranch(cwd)
     const prBase = pr && (pr.state === 'open' || pr.state === 'draft') && pr.baseRef ? await this.git.pullRequestBase(cwd, pr.baseRef, false) : null
@@ -795,10 +844,13 @@ export class SessionManager {
    */
   async setReviewRange(sessionId: string, range: ReviewRange): Promise<ReviewDiff> {
     const { session } = this.reviewOf(sessionId)
+    const original = perforceRange(session.review!.baseRef)
+    const next = perforceRange(range.baseRef)
+    if (Boolean(original) !== Boolean(next) || (original && next && original.client !== next.client)) throw new Error('A review cannot change version control or client.')
     for (const ref of [range.baseRef, range.headRef]) {
       if (ref !== undefined && (ref === '' || ref.startsWith('-'))) throw new Error(`Not a commit: ${ref}`)
     }
-    const diff = await this.git.readDiff(session.cwd, range.baseRef, range.headRef ?? null)
+    const diff = await this.readDiff(session.cwd, range.baseRef, range.headRef ?? null)
     if (!this.deps.store.getSession(sessionId)) throw new Error(`Unknown session ${sessionId}`)
     const updated = this.deps.store.updateSession(sessionId, { review: range })
     this.runtime(sessionId).rangeNote = rangeNote(diff)
@@ -822,7 +874,7 @@ export class SessionManager {
     if (found.length === 0) return
     let diff: ReviewDiff
     try {
-      diff = await this.git.readDiff(session.cwd, session.review.baseRef, session.review.headRef ?? null)
+      diff = await this.readDiff(session.cwd, session.review.baseRef, session.review.headRef ?? null)
     } catch (err) {
       this.notice(sessionId, null, `Couldn't read the diff to open the agent's findings: ${errorMessage(err)}`)
       return
@@ -1334,6 +1386,7 @@ export class SessionManager {
    * Rejects if git can't create it (nothing is created then).
    */
   async startWorktreeSession(project: string, agentId: string): Promise<Session> {
+    if (this.deps.versionControl?.(project) === 'perforce') throw new Error('Worktrees require Git.')
     this.deps.getAgentConfig(agentId)
     const settings = this.deps.worktreeSettings?.(project) ?? {}
     const prefix = branchPrefix(settings.branchPrefix)
@@ -1374,6 +1427,7 @@ export class SessionManager {
 
   /** Starts a session in one of the project's existing worktrees (or the project folder itself). */
   async startSessionIn(project: string, path: string, agentId: string): Promise<Session> {
+    if (this.deps.versionControl?.(project) === 'perforce' && !samePath(project, path)) throw new Error('Worktrees require Git.')
     if (samePath(project, path)) return this.startSession(project, agentId)
     const entry = (await this.worktreeGit.list(project)).find((e) => !e.main && samePath(e.path, path))
     if (!entry) throw new Error(`${path} isn't a worktree of this project.`)
@@ -1427,6 +1481,7 @@ export class SessionManager {
 
   /** The project folder and its worktrees, with what each holds (SPEC → Worktrees screen). */
   async listProjectWorktrees(project: string): Promise<Worktree[]> {
+    if (this.deps.versionControl?.(project) === 'perforce') return [{ path: project, branch: null, main: true }]
     const entries = await this.worktreeGit.list(project)
     return Promise.all(entries.map(async (e): Promise<Worktree> => {
       const work = await this.worktreeGit.unfinished(e.path, e.branch).catch(() => null)
@@ -1447,6 +1502,7 @@ export class SessionManager {
    * does, then its folder and branch. The caller has asked the user if anything was at stake.
    */
   async removeProjectWorktree(project: string, path: string): Promise<string | null> {
+    if (this.deps.versionControl?.(project) === 'perforce') throw new Error('Worktrees require Git.')
     const entry = (await this.worktreeGit.list(project)).find((e) => samePath(e.path, path))
     if (!entry || entry.main) throw new Error(`${path} isn't a worktree of this project.`)
     const warnings: string[] = []
@@ -1475,6 +1531,7 @@ export class SessionManager {
   private async collectWorktree(session: Session): Promise<void> {
     const project = session.project
     if (!project) return
+    if (this.deps.versionControl?.(project) === 'perforce') return
     const managed = this.deps.store.listWorktrees().find((w) => samePath(w.path, session.cwd))
     if (!managed) return this.deps.emit({ type: 'worktrees', project })
     if (this.deps.store.listSessions().some((s) => samePath(s.cwd, session.cwd))) return this.deps.emit({ type: 'worktrees', project })
@@ -1551,7 +1608,7 @@ export class SessionManager {
       // Claude lists a worktree's sessions under the project folder too (with their own
       // cwd); Codex only under the worktree's folder. Ask for each, once per session.
       const sessions = await conn.listSessions(cwd)
-      const worktrees = (await this.worktreeGit.list(cwd).catch(() => [])).filter((e) => !e.main)
+      const worktrees = (this.deps.versionControl?.(cwd) === 'perforce' ? [] : await this.worktreeGit.list(cwd).catch(() => [])).filter((e) => !e.main)
       for (const w of worktrees) {
         const more = await conn.listSessions(w.path).catch(() => [])
         for (const s of more) if (!sessions.some((x) => x.sessionId === s.sessionId)) sessions.push({ ...s, cwd: s.cwd || w.path })
@@ -2385,6 +2442,7 @@ export class SessionManager {
 
     const turn: Turn = { threadId, cancelled: false, afterToolCall: false, unsent: message.id, messageIds: [message.id], toolCallIds: new Set() }
     rt.turn = turn
+    rt.editedPaths = new Set()
     this.deps.emit({ type: 'turnStart', sessionId, threadId })
 
     let result: TurnResult
@@ -2638,6 +2696,7 @@ export class SessionManager {
         return
       }
       case 'tool_call': {
+        this.recordEditedPaths(sessionId, u)
         const existing = store.getToolCall(sessionId, u.toolCallId)
         const toolCall = {
           id: u.toolCallId,
@@ -2656,6 +2715,7 @@ export class SessionManager {
         return
       }
       case 'tool_call_update': {
+        this.recordEditedPaths(sessionId, u)
         const existing = store.getToolCall(sessionId, u.toolCallId)
         const toolCall = existing
           ? { ...existing }

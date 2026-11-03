@@ -59,6 +59,7 @@ type Props = {
   onSetPlace(place: string): void
   /** Opens the Worktrees screen. */
   onWorktrees(): void
+  perforce?: boolean
   worktreesOpen: boolean
   /** The Plugins screen (SPEC → Plugins), global, so shown without a project too. */
   onPlugins(): void
@@ -450,7 +451,8 @@ export function Sidebar(props: Props): React.JSX.Element {
                       aria-checked={pickPlace === p.value}
                       className={pickPlace === p.value ? 'picked' : undefined}
                       tabIndex={pickPlace === p.value ? 0 : -1}
-                      title={p.title}
+                      title={props.perforce && p.value !== 'folder' ? 'Worktrees require Git' : p.title}
+                      disabled={props.perforce && p.value !== 'folder'}
                       onClick={() => setPickPlace(p.value)}
                     >
                       {p.icon}
@@ -463,6 +465,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                       aria-checked={p.value === props.place}
                       aria-label={`Start new sessions in ${p.label}`}
                       tabIndex={-1}
+                      disabled={props.perforce && p.value !== 'folder'}
                       title={p.value === props.place ? 'New session starts here' : 'Make default'}
                       onClick={() => props.onSetPlace(p.value === props.place && p.value !== 'folder' ? 'folder' : p.value)}
                     >
@@ -471,7 +474,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                   </div>
                 ))}
               </div>
-              <button className="menu-link" onClick={() => (setAgentMenuOpen(false), props.onWorktrees())}>
+              <button className="menu-link" disabled={props.perforce} title={props.perforce ? 'Worktrees require Git' : undefined} onClick={() => (setAgentMenuOpen(false), props.onWorktrees())}>
                 <FolderGit2 />
                 Existing worktree…
                 <ChevronRight className="menu-link-end" />
@@ -577,7 +580,7 @@ export function Sidebar(props: Props): React.JSX.Element {
           Search
         </button>
         {project && (
-          <button className={props.worktreesOpen ? 'ghost settings-button on' : 'ghost settings-button'} onClick={props.onWorktrees} title="Worktrees">
+          <button className={props.worktreesOpen ? 'ghost settings-button on' : 'ghost settings-button'} onClick={props.onWorktrees} disabled={props.perforce} title={props.perforce ? 'Worktrees require Git' : 'Worktrees'}>
             <FolderGit2 />
             Worktrees
           </button>

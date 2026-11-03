@@ -357,7 +357,7 @@ export function App(): React.JSX.Element {
   }, [projectPath, loadAgentSessions, loadWorktrees])
 
   /** Where New session starts in the shown project (SPEC → Worktrees): `folder`, `worktree` or a worktree's path. */
-  const place = (projectPath && settings && projectSettings(settings.projects, projectPath).newSessionPlace) || 'folder'
+  const place = projectPath && settings && projectSettings(settings.projects, projectPath).versionControl === 'perforce' ? 'folder' : (projectPath && settings && projectSettings(settings.projects, projectPath).newSessionPlace) || 'folder'
   function setPlace(value: string): void {
     if (!projectPath) return
     void updateSettings({ project: { path: projectPath, values: { newSessionPlace: value } } })
@@ -791,6 +791,7 @@ export function App(): React.JSX.Element {
             place={place}
             placeBranch={worktrees?.find((w) => !w.main && sameFolder(w.path, place))?.branch ?? null}
             onSetPlace={setPlace}
+            perforce={!!projectPath && projectSettings(settings?.projects ?? {}, projectPath).versionControl === 'perforce'}
             worktreesOpen={showWorktrees}
             onWorktrees={() => leavePlugins(() => {
               setShowSettings(false)

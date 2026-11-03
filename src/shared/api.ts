@@ -83,7 +83,7 @@ export function makeApi(t: ApiTransport): GlossApi {
       remove: (project, path) => invoke(IPC.worktreesRemove, project, path)
     },
     git: {
-      status: (cwd) => invoke(IPC.gitStatus, cwd),
+      status: (cwd, sessionId) => invoke(IPC.gitStatus, cwd, sessionId),
       pullRequest: (cwd) => invoke(IPC.gitPullRequest, cwd)
     },
     threads: {

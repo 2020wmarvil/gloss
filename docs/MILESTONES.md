@@ -1,10 +1,10 @@
 # Milestones
 
-Build in order, from M23 and M25 through M27 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
+Build in order, from M25 through M27 (Marketing). Stop at the end of each milestone, show what works and how to try it, and wait for review before starting the next.
 
-M1 through M22, M24 (phone polish), failed-turn actions and worktrees are done. Next are Perforce support (M23), performance improvements (M25), shipping (M26), then marketing (M27). Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
+M1 through M24, failed-turn actions and worktrees are implemented. M23 (Perforce support) is ready for review; its setup and verification are in [PERFORCE.md](PERFORCE.md). Next are performance improvements (M25), shipping (M26), then marketing (M27). Same rules: follow the listed order, one PR each, stop for review. Where a milestone changes the design, update `SPEC.md` in the same PR.
 
-## M23: Perforce support
+## M23: Perforce support (implemented, awaiting review)
 Let Gloss work with projects in Perforce workspaces, including reviewing their changes with any supported agent. Update `SPEC.md` (Projects and sessions, Review sessions, Status line, Worktrees) in this milestone.
 
 - **Spike first:** inventory the app's Git assumptions and verify the installed `p4` CLI's workspace detection, connection and authentication behavior, file status and diff output. Record the supported review ranges and any limitations before building the UI.

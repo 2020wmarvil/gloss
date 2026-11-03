@@ -70,6 +70,14 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
     ?? projects.find((p) => projectPath !== null && sameFolder(p.path, projectPath)) ?? projects[0]
   const settingsProjectPath = settingsProject?.path ?? null
   const projectFields = SETTING_FIELDS.filter((f) => f.scope === 'project' && !f.hidden)
+  const [workspaceDetails, setWorkspaceDetails] = useState<string | null>(null)
+  const versionControl = settingsProjectPath ? projectSettings(state.projects, settingsProjectPath).versionControl : undefined
+  useEffect(() => {
+    let active = true
+    setWorkspaceDetails(null)
+    if (settingsProjectPath && versionControl === 'perforce') void window.gloss.git.status(settingsProjectPath).then((status) => { if (active) setWorkspaceDetails(status ? `${status.branch}\n${status.tooltip ?? ''}` : null) }).catch((error: unknown) => { if (active) setWorkspaceDetails(errorText(error)) })
+    return () => { active = false }
+  }, [settingsProjectPath, versionControl])
   const globalFields = (appearance: boolean): React.JSX.Element[] =>
     SETTING_FIELDS.filter((f) => f.scope === 'global' && !f.hidden && APPEARANCE.has(f.key) === appearance).map((f) => (
       <Field
@@ -175,10 +183,13 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
               <>
                 <p className="lede mono" title={settingsProjectPath}>{settingsProjectPath}</p>
                 <div className="settings-card">
+                  {workspaceDetails && <p className="lede" style={{ whiteSpace: 'pre-line' }}>{workspaceDetails}</p>}
                   {projectFields.map((f) => (
+                    <fieldset key={f.key} style={{ border: 0, padding: 0, margin: 0 }} disabled={f.key.startsWith('worktree') && projectSettings(state.projects, settingsProjectPath).versionControl === 'perforce'} title={f.key.startsWith('worktree') && projectSettings(state.projects, settingsProjectPath).versionControl === 'perforce' ? 'Worktrees require Git' : undefined}>
                     <Field key={`${settingsProjectPath}:${f.key}`} field={f}
                       value={projectSettings(state.projects, settingsProjectPath)[f.key as keyof ProjectSettings]}
                       onChange={(value) => void update({ project: { path: settingsProjectPath, values: { [f.key]: value } } })} />
+                    </fieldset>
                   ))}
                 </div>
               </>

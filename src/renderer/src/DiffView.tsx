@@ -1,6 +1,6 @@
 // A review session's diff (SPEC → Review sessions → Diff view): every file stacked under
 // a sticky header, split or unified, with threads as cards under their lines.
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { scrollParent, startAutoscroll } from './autoscroll'
 import { expandable, gapsOf, languageOf, type DiffFile, type DiffLine, type Location, type Side } from '@shared/review'
 import { EXPAND_STEP, gapViews, NO_EXPANSION, type Expansion, type GapView } from './diffContext'
@@ -71,8 +71,10 @@ export function DiffView(props: Props): React.JSX.Element {
   const gone = [...new Set(cards.filter((c) => c.location.kind === 'gone').map((c) => c.thread.anchor.file))].sort()
   return (
     <div className="diff-view">
-      {files.length === 0 && gone.length === 0 && <p className="muted empty diff-empty">Nothing to review: the branch has no changes.</p>}
-      {files.map((f) => (
+      {files.length === 0 && gone.length === 0 && <p className="muted empty diff-empty">Nothing to review: no changes in this selection.</p>}
+      {files.map((f, index) => (
+        <Fragment key={f.path}>
+        {f.outside && !files[index - 1]?.outside && <h3 className="label">Outside this folder</h3>}
         <FileSection
           key={f.path}
           file={f}
@@ -91,7 +93,7 @@ export function DiffView(props: Props): React.JSX.Element {
           onOpenThread={props.onOpenThread}
           bare={props.bare}
           onTapLine={props.onTapLine}
-        />
+        /></Fragment>
       ))}
       {gone.map((path) => (
         <section key={path} className="diff-file gone" data-file={path}>
@@ -420,12 +422,12 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
         <span className="diff-file-path" title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
           {file.oldPath && `${file.oldPath} → `}
           {/* The folder dimmed, so the file's name stands out. */}
-          <span className="diff-file-dir">{file.path.slice(0, file.path.lastIndexOf('/') + 1)}</span>
+          <span className="diff-file-dir">{(file.displayPath ?? file.path).slice(0, (file.displayPath ?? file.path).lastIndexOf('/') + 1)}</span>
           {file.path.slice(file.path.lastIndexOf('/') + 1)}
         </span>
         {file.status === 'added' && <span className="diff-chip">new</span>}
         {file.status === 'deleted' && <span className="diff-chip">deleted</span>}
-        <span className={`diff-chip state-${file.state}`}>{STATE_NAMES[file.state]}</span>
+        <span className={`diff-chip state-${file.state}`}>{file.perforce ? file.perforce.opened ? `Opened (${file.perforce.change === 'default' ? 'default' : `CL ${file.perforce.change}`})` : 'Not opened' : STATE_NAMES[file.state]}</span>
         {file.status !== 'deleted' && (
           <span className="diff-open">
             <button
