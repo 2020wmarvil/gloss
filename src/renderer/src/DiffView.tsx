@@ -48,6 +48,12 @@ type Props = {
   onOpenFile(path: string, how: 'reveal' | 'editor', line: number): void
   onToggleCard(threadId: string): void
   onOpenThread(threadId: string): void
+  /**
+   * The phone's file screen (SPEC → Remote and mobile): no file header or scroll bar (the screen
+   * has its own, and the code scrolls natively), and a tap on a line of code picks it.
+   */
+  bare?: boolean
+  onTapLine?(side: Side, line: number): void
 }
 
 /** Whether a thread's card shows: resolved threads start collapsed, the rest expanded. */
@@ -83,6 +89,8 @@ export function DiffView(props: Props): React.JSX.Element {
           onOpenFile={props.onOpenFile}
           onToggleCard={props.onToggleCard}
           onOpenThread={props.onOpenThread}
+          bare={props.bare}
+          onTapLine={props.onTapLine}
         />
       ))}
       {gone.map((path) => (
@@ -397,7 +405,7 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
 
   return (
     <section className="diff-file" data-file={file.path}>
-      <div className="diff-file-head" onClick={() => props.onToggleFile(file.path)}>
+      {!props.bare && <div className="diff-file-head" onClick={() => props.onToggleFile(file.path)}>
         <button
           className="diff-chevron"
           aria-expanded={!collapsed}
@@ -461,7 +469,7 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
         <span className="diff-counts">
           <span className="add">+{file.additions}</span> <span className="del">−{file.deletions}</span>
         </span>
-      </div>
+      </div>}
       {!collapsed &&
         (file.binary ? (
           <p className="muted diff-note">Binary file, not shown.</p>
@@ -473,6 +481,10 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
               className={`diff-body ${layout}`}
               data-sel={selecting ?? undefined}
               style={{ '--sx-old': `${sx.old}px`, '--sx-new': `${sx.new}px` } as CSSProperties}
+              onClick={props.onTapLine && ((e) => {
+                const cell = (e.target as HTMLElement).closest<HTMLElement>('.code[data-line]')
+                if (cell) props.onTapLine!(cell.dataset.side as Side, Number(cell.dataset.line))
+              })}
               onMouseDown={(e) => {
                 const cell = (e.target as HTMLElement).closest<HTMLElement>('.code[data-side]')
                 if (e.button === 1) {
@@ -501,7 +513,7 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
             >
               {body}
             </div>
-            <div className={`diff-hbar ${layout}${overflows ? '' : ' idle'}`}>
+            {!props.bare && <div className={`diff-hbar ${layout}${overflows ? '' : ' idle'}`}>
               {split ? (
                 <>
                   <span className="spacer" />
@@ -515,7 +527,7 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
                   {bar('both')}
                 </>
               )}
-            </div>
+            </div>}
           </>
         ))}
     </section>

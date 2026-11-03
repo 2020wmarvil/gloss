@@ -1,8 +1,8 @@
 import { IPC } from '../shared/ipc'
 
 /**
- * The calls a paired phone may make, by IPC channel (SPEC → Remote and mobile). Not settings, reviews,
- * capture, sign-in, MCP import, anything that opens a file, folder or editor on the desktop, disk exports,
+ * The calls a paired phone may make, by IPC channel (SPEC → Remote and mobile). Not settings, capture,
+ * sign-in, MCP import, anything that opens a file, folder or editor on the desktop, disk exports,
  * windows or the badge: a phone runs the same handlers a window does, but only these.
  */
 export const PHONE_CHANNELS: ReadonlySet<string> = new Set([
@@ -20,6 +20,12 @@ export const PHONE_CHANNELS: ReadonlySet<string> = new Set([
   IPC.sessionsSetMode,
   IPC.sessionsSetAutoApprove,
   IPC.sessionsPlanUsage,
+  IPC.sessionsCreateReview,
+  IPC.sessionsRunReview,
+  IPC.sessionsReviewDiff,
+  IPC.sessionsReviewFile,
+  IPC.sessionsReviewRefs,
+  IPC.sessionsSetReviewRange,
   IPC.requestsAnswer,
   IPC.threadsCreate,
   IPC.threadsFork,

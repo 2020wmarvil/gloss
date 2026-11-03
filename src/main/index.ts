@@ -880,7 +880,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.worktreesRemove, (_e, project: unknown, path: unknown) =>
     manager.removeProjectWorktree(folderArg(project, 'project'), folderArg(path, 'path'))
   )
-  ipcMain.handle(IPC.sessionsCreateReview, (_e, cwd: unknown, agentId: unknown, baseRef: unknown, headRef: unknown, project: unknown) =>
+  share(IPC.sessionsCreateReview, (cwd: unknown, agentId: unknown, baseRef: unknown, headRef: unknown, project: unknown) =>
     manager.createReview(
       folderArg(cwd, 'cwd'),
       str(agentId, 'agentId'),
@@ -888,8 +888,8 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
       project == null ? undefined : folderArg(project, 'project')
     )
   )
-  ipcMain.handle(IPC.sessionsRunReview, (_e, id: unknown) => manager.runReview(str(id, 'id')))
-  ipcMain.handle(IPC.sessionsReviewRefs, (_e, id: unknown) => manager.reviewRefs(str(id, 'id')))
+  share(IPC.sessionsRunReview, (id: unknown) => manager.runReview(str(id, 'id')))
+  share(IPC.sessionsReviewRefs, (id: unknown) => manager.reviewRefs(str(id, 'id')))
   ipcMain.handle(IPC.sessionsOpenReviewFile, async (_e, id: unknown, path: unknown, how: unknown, line: unknown) => {
     const file = await manager.reviewFilePath(str(id, 'id'), str(path, 'path'))
     if (how === 'reveal') return shell.showItemInFolder(file)
@@ -898,14 +898,14 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     const error = await shell.openPath(file)
     if (error) throw new Error(error)
   })
-  ipcMain.handle(IPC.sessionsSetReviewRange, (_e, id: unknown, baseRef: unknown, headRef: unknown) =>
+  share(IPC.sessionsSetReviewRange, (id: unknown, baseRef: unknown, headRef: unknown) =>
     manager.setReviewRange(str(id, 'id'), {
       baseRef: str(baseRef, 'baseRef'),
       ...(headRef == null ? {} : { headRef: str(headRef, 'headRef') })
     })
   )
-  ipcMain.handle(IPC.sessionsReviewDiff, (_e, id: unknown) => manager.reviewDiff(str(id, 'id')))
-  ipcMain.handle(IPC.sessionsReviewFile, (_e, id: unknown, path: unknown) =>
+  share(IPC.sessionsReviewDiff, (id: unknown) => manager.reviewDiff(str(id, 'id')))
+  share(IPC.sessionsReviewFile, (id: unknown, path: unknown) =>
     manager.reviewFile(str(id, 'id'), str(path, 'path'))
   )
   ipcMain.handle(
