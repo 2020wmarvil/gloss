@@ -1,0 +1,36 @@
+{
+  "machine": "win32-12th-gen-intel-core-i9-12900ks-24t",
+  "measuredAt": "2026-11-03T20:04:34.361Z",
+  "environment": {
+    "platform": "win32",
+    "os": "10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i9-12900KS",
+    "cores": 24,
+    "memoryGB": 64,
+    "electron": "44.7.0"
+  },
+  "summary": {
+    "startup.windowShownMs": 475.161865234375,
+    "startup.firstPaintMs": 873.661865234375,
+    "startup.sidebarInteractiveMs": 696.419677734375,
+    "startup.largeSessionShownMs": 521.7197265625,
+    "startup.busyUntilMs": 696.419677734375,
+    "openLarge.ms": 101.5,
+    "openLarge.busyUntilMs": 170.40000009536743,
+    "switch.p50Ms": 67.5,
+    "switch.p95Ms": 109.10000014305115,
+    "thread.ms": 34.60000014305115,
+    "search.p50Ms": 266.2000000476837,
+    "stream.mainCpuMs": 1297,
+    "stream.ipcKB": 220.6640625,
+    "stream.rendererScriptMs": 8865.108000000002,
+    "stream.rendererLongTaskMs": 0,
+    "stream.maxLongTaskMs": 0,
+    "stream.typingFrameP95Ms": 13.400000000001455,
+    "stream.scrollFrameP95Ms": 26.700000000000728,
+    "soak.rendererWorkingSetMB": 298.1328125,
+    "soak.totalWorkingSetMB": 737.5546875,
+    "bundle.rendererScriptKB": 10862.744140625,
+    "bundle.mainKB": 985.6494140625
+  }
+}

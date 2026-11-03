@@ -3,7 +3,7 @@
 // on first use. Highlighting is synchronous once a language is loaded; until then
 // code renders plain and subscribers re-render when it arrives. Colors are
 // light-dark() pairs, so they follow the theme's color-scheme without a re-render.
-import { useSyncExternalStore } from 'react'
+import { startTransition, useEffect, useState } from 'react'
 import { createHighlighterCore, type HighlighterCore } from 'shiki/core'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 import { bundledLanguages } from 'shiki/langs'
@@ -36,16 +36,23 @@ const ready = createHighlighterCore({
   (err: unknown) => console.error('[gloss] highlighter failed to load:', err)
 )
 
-/** Re-renders the caller when highlighting becomes available for more code. */
+/**
+ * Re-renders the caller when highlighting becomes available for more code. As a transition:
+ * coloring every code block in view at once took one long task, which held up the first
+ * paint; React renders a transition in slices and paints in between (SPEC → Performance).
+ */
 export function useHighlighting(): number {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l)
-      return () => listeners.delete(l)
-    },
-    () => version,
-    () => version
-  )
+  const [seen, setSeen] = useState(version)
+  useEffect(() => {
+    const update = (): void => startTransition(() => setSeen(version))
+    listeners.add(update)
+    // It may have changed between the render and this effect.
+    update()
+    return () => {
+      listeners.delete(update)
+    }
+  }, [])
+  return seen
 }
 
 /** One character color per character of `code` (undefined = default), or null if the language isn't available (yet). */

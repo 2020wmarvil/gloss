@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import { IPC } from '../shared/ipc'
-import { Bridge, COOKIE, slimView } from './bridge'
+import { Bridge, COOKIE, deferImages, slimView } from './bridge'
 import { Store } from './db'
 import { PhoneApi } from './phoneApi'
 
@@ -228,6 +228,14 @@ describe('slim session views', () => {
     expect(slim.messages[1]).toBe(view.messages[1])
     expect(slim.toolCalls[0]).toEqual({ id: 't1', sessionId: 's1', messageSeq: 1, threadId: null, title: 'big', status: 'completed', deferred: true })
     expect(slim.toolCalls[1]).toBe(view.toolCalls[1])
+  })
+
+  it("leaves out only images for a window's view, which stays small however many screenshots it has", () => {
+    const deferred = deferImages(view as never)
+    expect(deferred.messages[0].attachments?.[0]).toEqual({ kind: 'image', name: 'a.png', mimeType: 'image/png', data: '', deferred: true })
+    expect(deferred.toolCalls).toBe(view.toolCalls)
+    const many = { ...view, messages: Array.from({ length: 200 }, (_, i) => ({ ...view.messages[0], id: `m${i}`, attachments: [{ kind: 'image', name: 'a.png', mimeType: 'image/png', data: 'A'.repeat(100_000) }] })) }
+    expect(JSON.stringify(deferImages(many as never)).length).toBeLessThan(200 * 300)
   })
 
   it('sends a phone the slim view, then what it left out when asked', async () => {

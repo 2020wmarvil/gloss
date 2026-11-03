@@ -6341,6 +6341,15 @@ html.autoscrolling * {
   line-height: 0;
 }
 
+.capture-loading {
+  display: block;
+  width: 320px;
+  max-width: 100%;
+  height: 180px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
 .capture-figure .capture-frame img {
   display: block;
   max-width: 100%;

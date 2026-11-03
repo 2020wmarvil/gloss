@@ -2,7 +2,7 @@
 // web/mail links and absolute local file links (opened through the main
 // process), and local raster images loaded through the main process.
 // Code blocks are highlighted and have a copy button.
-import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, memo, useContext, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import { fileLink, isHtmlFile, isMediaFile } from '../../shared/fileLink'
 import { imageLink } from '../../shared/imageLink'
@@ -216,6 +216,9 @@ type AnchorState = Pick<MessageAnchors, 'activeIndex' | 'runningIndexes' | 'runn
 /** `breaks`: a newline is a line break (the user's messages, typed as chat), not a space. */
 export const Markdown = memo(function Markdown({ text, anchors, breaks }: MarkdownProps): React.JSX.Element {
   const version = useHighlighting()
+  // Code renders plain first and is colored in a background render, which React can pause:
+  // coloring a batch of code-heavy messages at once was a long task (SPEC → Performance).
+  const highlight = useDeferredValue(true, false)
   const actions = useRef(anchors)
   actions.current = anchors
   const hasAnchors = anchors !== undefined
@@ -242,11 +245,14 @@ export const Markdown = memo(function Markdown({ text, anchors, breaks }: Markdo
       onOpenThread: (id) => actions.current?.onOpenThread(id)
     }
   }, [stateKey])
-  return <ParsedMarkdown text={text} anchors={stableAnchors} breaks={breaks} spans={spans} version={version} />
+  return <ParsedMarkdown text={text} anchors={stableAnchors} breaks={breaks} spans={spans} version={highlight ? version : -1} />
 })
 
+const plainCode = (): null => null
+
 /** Retain the parsed React tree until content, annotations or highlighting changes. */
-const ParsedMarkdown = memo(function ParsedMarkdown({ text, anchors, breaks, spans }: MarkdownProps & { spans: ListItemSpan[]; version: number }): React.JSX.Element {
+/** `version` -1: plain code, not highlighted yet. */
+const ParsedMarkdown = memo(function ParsedMarkdown({ text, anchors, breaks, spans, version }: MarkdownProps & { spans: ListItemSpan[]; version: number }): React.JSX.Element {
   return (
     <div className="md">
       <ReactMarkdown
@@ -255,7 +261,7 @@ const ParsedMarkdown = memo(function ParsedMarkdown({ text, anchors, breaks, spa
           remarkGfm,
           ...(breaks ? [remarkBreaks] : []),
           remarkHtmlAsText,
-          [remarkSourceSpans, { marks: anchors?.marks ?? [], colors: codeColors }]
+          [remarkSourceSpans, { marks: anchors?.marks ?? [], colors: version === -1 ? plainCode : codeColors }]
         ]}
         components={anchors ? anchorComponents(spans, anchors) : baseComponents}
       >

@@ -2,7 +2,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { afterPaintIdle } from './idle'
 import { LogToBottom } from './logToBottom'
-import { useScrollMemory, type ScrollAnchors } from './scrollMemory'
+import { hasPendingScroll, useScrollMemory, type ScrollAnchors } from './scrollMemory'
 import type { Message, Plan, ToolCall } from '@shared/types'
 import { splitForkSummary, threadToMainTag } from '@shared/wire'
 import type { OpenSession } from './App'
@@ -106,33 +106,63 @@ type Props = {
   scrollKey?: string
   /** Opens the actual main-thread message referenced by a Send to main marker. */
   onRevealMain?(message: Message): void
+  /**
+   * What a message's row shows besides the message itself (its threads, the panel's anchor),
+   * as a string. A row whose message and version are unchanged isn't rendered again, so a
+   * streamed chunk renders only its own message (SPEC → Performance). Without it, every row is.
+   */
+  version?(message: Message): string
 }
+
+/** How long a batch of older entries may take to render before the next is smaller. */
+const BATCH_MS = 24
 
 /** A log's position: a message, and the paragraph, list item or code block at the top. */
 const LOG_ANCHORS: ScrollAnchors = { item: '[data-message-id]', attr: 'data-message-id', block: 'p, li, pre, h1, h2, h3, h4, h5, h6, blockquote, tr' }
 
 /** A scrolling log that sticks to the bottom while new output arrives. */
-export function Log({ footer, cwd, items, className, empty, renderAgent, reveal, systemLine, pins, scrollKey, onRevealMain }: Props): React.JSX.Element {
+export function Log({ footer, cwd, items, className, empty, renderAgent, reveal, systemLine, pins, scrollKey, onRevealMain, version }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
+  // Rows render with the latest of these; a row that isn't rendered again keeps what it had.
+  const render = useRef<RowRender>({ renderAgent, pins, onRevealMain })
+  render.current = { renderAgent, pins, onRevealMain }
   const stickToBottom = useRef(true)
   const lastTop = useRef(0)
   // Scrolled away from the bottom, and whether output arrived since: shows Jump to latest.
   const [away, setAway] = useState(false)
   const [fresh, setFresh] = useState(false)
   const groups = useMemo(() => groupTools(items), [items])
-  // Small logs mount as usual. Larger histories let the composer paint first,
-  // then mount recent entries followed by older ones in bounded batches.
-  const initial = groups.length > 12 ? groups.length : 0
+  // Small logs mount as usual. Larger histories let the composer paint first, then
+  // mount recent entries, and older ones in batches as the view nears them (SPEC → Performance).
+  // A position restored from another window may be anywhere, so it mounts them all.
+  const initial = groups.length > 12 && !hasPendingScroll(scrollKey) ? groups.length : 0
   const [history, setHistory] = useState({ key: scrollKey, remaining: initial })
   if (history.key !== scrollKey) setHistory({ key: scrollKey, remaining: initial })
   const remaining = reveal ? 0 : Math.min(history.key === scrollKey ? history.remaining : initial, groups.length)
   const prepend = useRef<{ node: HTMLElement; top: number } | null>(null)
+  const earlier = useRef<HTMLParagraphElement>(null)
+  /** Groups per batch, sized so a batch takes about BATCH_MS to render. */
+  const batch = useRef<{ size: number; startedAt: number | null }>({ size: 8, startedAt: null })
+  /** Bumped when the view comes near the entries not mounted yet. */
+  const [near, setNear] = useState(0)
   useEffect(() => {
     if (reveal) {
       setHistory((h) => h.remaining === 0 ? h : { ...h, remaining: 0 })
       return
     }
     if (remaining === 0) return
+    const el = ref.current
+    const marker = earlier.current
+    // Within two screens of the view: mount the next batch. Otherwise wait until it is.
+    const margin = (el?.clientHeight ?? 0) * 2
+    if (el && marker && typeof IntersectionObserver !== 'undefined' &&
+        marker.getBoundingClientRect().bottom < el.getBoundingClientRect().top - margin) {
+      const observer = new IntersectionObserver((entries) => {
+        if (entries.some((e) => e.isIntersecting)) setNear((n) => n + 1)
+      }, { root: el, rootMargin: `${margin}px 0px 0px 0px` })
+      observer.observe(marker)
+      return () => observer.disconnect()
+    }
     return afterPaintIdle(() => {
       const el = ref.current
       if (el && !stickToBottom.current) {
@@ -140,9 +170,11 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
         const node = [...el.querySelectorAll<HTMLElement>('[data-message-id]')].find((n) => n.getBoundingClientRect().bottom > top)
         if (node) prepend.current = { node, top: node.getBoundingClientRect().top }
       }
-      setHistory((h) => ({ ...h, remaining: Math.max(0, Math.min(h.remaining, groups.length) - 8) }))
+      batch.current.startedAt = performance.now()
+      const size = batch.current.size
+      setHistory((h) => ({ ...h, remaining: Math.max(0, Math.min(h.remaining, groups.length) - size) }))
     })
-  }, [remaining, groups.length, scrollKey, reveal])
+  }, [remaining, groups.length, scrollKey, reveal, near])
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useLayoutEffect(() => () => clearTimeout(scrollTimer.current), [])
   useLayoutEffect(() => {
@@ -161,6 +193,13 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
     if (!stickToBottom.current) setFresh(true)
   }, [output])
   useLayoutEffect(() => {
+    const b = batch.current
+    if (b.startedAt !== null) {
+      // Halve batches that blocked input for long, grow ones that were quick.
+      const ms = performance.now() - b.startedAt
+      b.size = ms > BATCH_MS ? Math.max(1, b.size >> 1) : ms < BATCH_MS / 3 ? Math.min(32, b.size * 2) : b.size
+      b.startedAt = null
+    }
     const el = ref.current
     if (!el) return
     if (stickToBottom.current) el.scrollTop = el.scrollHeight
@@ -248,78 +287,17 @@ export function Log({ footer, cwd, items, className, empty, renderAgent, reveal,
         <div className={footer ? 'log-layout' : undefined}>
           <div className={className}>
             {items.length === 0 && empty}
-            {remaining > 0 && <p className="muted" role="status">Loading earlier messages…</p>}
-            {groups.slice(remaining).map((item) => {
-              if (Array.isArray(item)) return <ToolGroup key={item[0].toolCall.id} tools={item} reveal={reveal} />
-              switch (item.kind) {
-                case 'sentToMain':
-                  return (
-                    <div key={`sent-to-main:${item.message.id}`} className="sent-to-main-trace">
-                      <button className="ghost sm" onClick={() => onRevealMain?.(item.message)} title="Show this message in the main conversation">
-                        Sent to main <ChevronRight aria-hidden />
-                      </button>
-                      <p>{item.message.text || item.message.attachments?.map((a) => a.name).join(', ')}</p>
-                    </div>
-                  )
-                case 'message': {
-                  const line = item.message.role === 'user' ? systemLine?.(item.message) : null
-                  if (line) {
-                    return (
-                      <p key={item.message.id} className="system-line" data-message-id={item.message.id}>
-                        {line}
-                      </p>
-                    )
-                  }
-                  return item.message.role === 'user' ? (
-                    <div
-                      key={item.message.id}
-                      className="sent-message"
-                      data-message-id={item.message.id}
-                    >
-                      {(item.message.text || item.message.steered || item.message.attachments?.some((a) => a.kind === 'file')) && <div className={item.message.steered ? 'you steered' : 'you'}>
-                      {item.message.steered && (
-                        <span className="steered-label" title="Sent into the running turn">
-                          steered
-                        </span>
-                      )}
-                      {item.message.attachments?.some((a) => a.kind === 'file') && (
-                        <ul className="attachments sent">
-                          {item.message.attachments.map((a, i) => a.kind === 'file' ? (
-                            <li key={i} className="attachment" title={a.path ?? a.name}>
-                              <span className="attachment-name">{a.name}</span>
-                            </li>
-                          ) : null)}
-                        </ul>
-                      )}
-                      <Markdown text={item.message.text} breaks />
-                      </div>}
-                      {item.message.attachments?.some((a) => a.kind === 'image') && <div className="sent-images">
-                        {item.message.attachments.map((a, i) =>
-                          a.kind === 'image' ? <CaptureFigure key={i} message={item.message} image={a} index={i} anchors={pins} /> : null
-                        )}
-                      </div>}
-                      <ForkSummary message={item.message} />
-                    </div>
-                  ) : (
-                    <div key={item.message.id} className="agent" data-message-id={item.message.id}>
-                      {renderAgent(item.message)}
-                    </div>
-                  )
-                }
-                case 'plan':
-                  return <PlanChecklist key={item.plan.id} plan={item.plan} />
-                case 'request':
-                  return <RequestCard key={item.request.id} request={item.request} />
-                case 'notice':
-                  return item.notice.tone === 'failed' ? (
-                    <FailedNotice key={item.notice.id} notice={item.notice} />
-                  ) : (
-                    <p key={item.notice.id} className="notice">
-                      {item.notice.text}
-                    </p>
-                  )
-              }
-            })}
+            {remaining > 0 && <p className="muted" role="status" ref={earlier}>Loading earlier messages…</p>}
+            {groups.slice(remaining).map((item) => (
+              <LogRow
+                key={rowKey(item)}
+                item={item}
+                reveal={reveal}
+                line={!Array.isArray(item) && item.kind === 'message' && item.message.role === 'user' ? (systemLine?.(item.message) ?? null) : null}
+                version={version && !Array.isArray(item) && item.kind === 'message' ? version(item.message) : undefined}
+                render={render}
+              />
+            ))}
           </div>
           {footer && (
             <div className="log-footer">
@@ -387,6 +365,131 @@ function FailedNotice({ notice }: { notice: Notice }): React.JSX.Element {
     </div>
   )
 }
+
+/** What rows render with, current as of the log's latest render. */
+type RowRender = Pick<Props, 'renderAgent' | 'pins' | 'onRevealMain'>
+
+type RowItem = LogItem | ToolItem[]
+
+function rowKey(item: RowItem): string {
+  if (Array.isArray(item)) return item[0].toolCall.id
+  switch (item.kind) {
+    case 'sentToMain':
+      return `sent-to-main:${item.message.id}`
+    case 'message':
+      return item.message.id
+    case 'plan':
+      return item.plan.id
+    case 'request':
+      return item.request.id
+    case 'notice':
+      return item.notice.id
+    case 'tool':
+      return item.toolCall.id
+  }
+}
+
+type RowProps = {
+  item: RowItem
+  reveal?: Reveal | null
+  /** A user message shown as a status line instead. */
+  line: string | null
+  version: string | undefined
+  render: React.RefObject<RowRender>
+}
+
+/** Rendered again only when what it shows changed (see Props.version). */
+function sameRow(a: RowProps, b: RowProps): boolean {
+  if (Array.isArray(a.item) || Array.isArray(b.item)) {
+    return Array.isArray(a.item) && Array.isArray(b.item) && a.reveal === b.reveal &&
+      a.item.length === b.item.length && a.item.every((t, i) => t.toolCall === (b.item as ToolItem[])[i].toolCall)
+  }
+  const x = a.item
+  const y = b.item
+  switch (x.kind) {
+    case 'message':
+    case 'sentToMain':
+      return y.kind === x.kind && y.message === x.message && a.version !== undefined && a.version === b.version && a.line === b.line
+    case 'plan':
+      return y.kind === 'plan' && y.plan === x.plan
+    case 'request':
+      return y.kind === 'request' && y.request === x.request
+    case 'notice':
+      return y.kind === 'notice' && y.notice === x.notice
+    default:
+      return false
+  }
+}
+
+const LogRow = memo(function LogRow({ item, reveal, line, render }: RowProps): React.JSX.Element | null {
+  const { renderAgent, pins, onRevealMain } = render.current
+  if (Array.isArray(item)) return <ToolGroup tools={item} reveal={reveal} />
+  switch (item.kind) {
+    case 'sentToMain':
+      return (
+        <div className="sent-to-main-trace">
+          <button className="ghost sm" onClick={() => onRevealMain?.(item.message)} title="Show this message in the main conversation">
+            Sent to main <ChevronRight aria-hidden />
+          </button>
+          <p>{item.message.text || item.message.attachments?.map((a) => a.name).join(', ')}</p>
+        </div>
+      )
+    case 'message': {
+      if (line) {
+        return (
+          <p className="system-line" data-message-id={item.message.id}>
+            {line}
+          </p>
+        )
+      }
+      return item.message.role === 'user' ? (
+        <div className="sent-message" data-message-id={item.message.id}>
+          {(item.message.text || item.message.steered || item.message.attachments?.some((a) => a.kind === 'file')) && <div className={item.message.steered ? 'you steered' : 'you'}>
+          {item.message.steered && (
+            <span className="steered-label" title="Sent into the running turn">
+              steered
+            </span>
+          )}
+          {item.message.attachments?.some((a) => a.kind === 'file') && (
+            <ul className="attachments sent">
+              {item.message.attachments.map((a, i) => a.kind === 'file' ? (
+                <li key={i} className="attachment" title={a.path ?? a.name}>
+                  <span className="attachment-name">{a.name}</span>
+                </li>
+              ) : null)}
+            </ul>
+          )}
+          <Markdown text={item.message.text} breaks />
+          </div>}
+          {item.message.attachments?.some((a) => a.kind === 'image') && <div className="sent-images">
+            {item.message.attachments.map((a, i) =>
+              a.kind === 'image' ? <CaptureFigure key={i} message={item.message} image={a} index={i} anchors={pins} /> : null
+            )}
+          </div>}
+          <ForkSummary message={item.message} />
+        </div>
+      ) : (
+        <div className="agent" data-message-id={item.message.id}>
+          {renderAgent(item.message)}
+        </div>
+      )
+    }
+    case 'plan':
+      return <PlanChecklist plan={item.plan} />
+    case 'request':
+      return <RequestCard request={item.request} />
+    case 'notice':
+      return item.notice.tone === 'failed' ? (
+        <FailedNotice notice={item.notice} />
+      ) : (
+        <p className="notice">
+          {item.notice.text}
+        </p>
+      )
+    default:
+      return null
+  }
+}, sameRow)
 
 type ToolItem = Extract<LogItem, { kind: 'tool' }>
 

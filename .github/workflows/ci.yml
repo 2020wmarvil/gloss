@@ -29,5 +29,6 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm test
+      # Built before testing: the size budgets test checks out/.
       - run: npx electron-vite build
+      - run: npm test

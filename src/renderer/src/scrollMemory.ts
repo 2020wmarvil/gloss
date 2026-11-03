@@ -38,6 +38,12 @@ export function restoreScrolls(sessionId: string, from: Record<string, ScrollSpo
   for (const [key, spot] of Object.entries(from)) pending.set(key, spot)
 }
 
+/** A position from another window waits for this scroller (it may be anywhere in the log). */
+export function hasPendingScroll(key: string | undefined): boolean {
+  const spot = key ? pending.get(key) : undefined
+  return spot !== undefined && 'id' in spot
+}
+
 /** Restoring stops once the user scrolls, or this long after the target shows. */
 const SETTLE_MS = 1500
 

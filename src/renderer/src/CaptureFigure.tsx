@@ -42,6 +42,51 @@ export function pinAnchorsFor(
 
 type Image = Extract<Attachment, { kind: 'image' }>
 
+/** Each image's data URL, built once: a fresh multi-megabyte string per render made React compare it in full. */
+const dataUrls = new WeakMap<Image, string>()
+
+export function imageSrc(image: Image): string {
+  let src = dataUrls.get(image)
+  if (src === undefined) {
+    src = `data:${image.mimeType};base64,${image.data}`
+    dataUrls.set(image, src)
+  }
+  return src
+}
+
+/** Images a session's view left out (`deferred`), loaded as they show: "messageId:index" → data URL, newest last. */
+const loaded = new Map<string, Promise<string>>()
+const KEEP_LOADED = 64
+
+function loadImage(messageId: string, index: number, image: Image): Promise<string> {
+  const key = `${messageId}:${index}`
+  let src = loaded.get(key)
+  if (src) loaded.delete(key)
+  else {
+    src = window.gloss.sessions.image(messageId, index).then((data) => `data:${image.mimeType};base64,${data}`)
+    src.catch(() => loaded.delete(key))
+  }
+  loaded.set(key, src)
+  if (loaded.size > KEEP_LOADED) loaded.delete(loaded.keys().next().value!)
+  return src
+}
+
+/** The image's source: at once when the message has its data, else once loaded (null until then). */
+export function useImageSrc(messageId: string, index: number, image: Image): string | null {
+  const key = `${messageId}:${index}`
+  const [fetched, setFetched] = useState<{ key: string; src: string } | null>(null)
+  useEffect(() => {
+    if (!image.deferred) return
+    let current = true
+    loadImage(messageId, index, image).then((src) => current && setFetched({ key, src }), () => {})
+    return () => {
+      current = false
+    }
+  }, [key, image])
+  if (!image.deferred) return imageSrc(image)
+  return fetched?.key === key ? fetched.src : null
+}
+
 type Props = {
   message: Message
   image: Image
@@ -93,7 +138,7 @@ export function CaptureFigure(props: Props): React.JSX.Element {
   const { message, image, index, anchors } = props
   const [size, setSize] = useState<{ width: number; height: number } | null>(null)
   const [enlarged, setEnlarged] = useState(false)
-  const src = `data:${image.mimeType};base64,${image.data}`
+  const src = useImageSrc(message.id, index, image)
   const pins = image.pins ?? []
 
   useEffect(() => {
@@ -119,12 +164,12 @@ export function CaptureFigure(props: Props): React.JSX.Element {
   return (
     <figure className="capture-figure">
       <div className="capture-frame">
-        <img
+        {src === null ? <span className="capture-loading" role="img" aria-label="Loading the image" /> : <img
           src={src}
           alt={pins.length ? `Screenshot with ${pins.length} ${pins.length === 1 ? 'pin' : 'pins'}` : image.name}
           onLoad={(e) => setSize({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })}
           onClick={() => setEnlarged(true)}
-        />
+        />}
         {targets}
       </div>
       {pins.length > 0 && (
@@ -150,7 +195,7 @@ export function CaptureFigure(props: Props): React.JSX.Element {
           })}
         </ol>
       )}
-      {enlarged &&
+      {enlarged && src !== null &&
         createPortal(
           <div className="capture-lightbox" onClick={(e) => e.target === e.currentTarget && setEnlarged(false)}>
             <button className="icon-button capture-lightbox-close" aria-label="Close" title="Close (Esc)" onClick={() => setEnlarged(false)}>
@@ -169,11 +214,12 @@ export function CaptureFigure(props: Props): React.JSX.Element {
 }
 
 /** The part of the screenshot around a pin, for a pin thread's quote (SPEC → Visual feedback). */
-export function PinCrop({ image, pin }: { image: Image; pin: number }): React.JSX.Element | null {
+export function PinCrop({ messageId, index, image, pin }: { messageId: string; index: number; image: Image; pin: number }): React.JSX.Element | null {
   const [size, setSize] = useState<{ width: number; height: number } | null>(null)
   const p = image.pins?.[pin - 1]
-  const src = `data:${image.mimeType};base64,${image.data}`
+  const src = useImageSrc(messageId, index, image)
   useEffect(() => {
+    if (src === null) return
     const img = new Image()
     img.onload = () => setSize({ width: img.naturalWidth, height: img.naturalHeight })
     img.src = src
@@ -192,7 +238,7 @@ export function PinCrop({ image, pin }: { image: Image; pin: number }): React.JS
       className="pin-crop"
       role="img"
       aria-label={`The screenshot around pin ${pin}`}
-      style={size ? { backgroundImage: `url("${src}")`, backgroundSize: `${iw}px ${ih}px`, backgroundPosition: `${-x}px ${-y}px` } : undefined}
+      style={size && src ? { backgroundImage: `url("${src}")`, backgroundSize: `${iw}px ${ih}px`, backgroundPosition: `${-x}px ${-y}px` } : undefined}
     />
   )
 }

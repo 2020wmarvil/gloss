@@ -1,0 +1,574 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-11-03T20:04:34.361Z",
+  "machine": "win32-12th-gen-intel-core-i9-12900ks-24t",
+  "environment": {
+    "platform": "win32",
+    "os": "10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i9-12900KS",
+    "cores": 24,
+    "memoryGB": 64,
+    "electron": "44.7.0"
+  },
+  "app": "M25",
+  "seed": {
+    "sessions": [
+      {
+        "id": "bench-session-0",
+        "acpSessionId": "bench-acp-0",
+        "title": "Bench: image-heavy redesign",
+        "messages": 1018,
+        "toolCalls": 933,
+        "threads": 29,
+        "images": 147
+      },
+      {
+        "id": "bench-session-1",
+        "acpSessionId": "bench-acp-1",
+        "title": "Bench: code-heavy migration",
+        "messages": 1000,
+        "toolCalls": 961,
+        "threads": 24,
+        "images": 0
+      },
+      {
+        "id": "bench-session-2",
+        "acpSessionId": "bench-acp-2",
+        "title": "Bench: medium session 1",
+        "messages": 258,
+        "toolCalls": 218,
+        "threads": 4,
+        "images": 16
+      },
+      {
+        "id": "bench-session-3",
+        "acpSessionId": "bench-acp-3",
+        "title": "Bench: medium session 2",
+        "messages": 252,
+        "toolCalls": 227,
+        "threads": 3,
+        "images": 17
+      },
+      {
+        "id": "bench-session-4",
+        "acpSessionId": "bench-acp-4",
+        "title": "Bench: medium session 3",
+        "messages": 246,
+        "toolCalls": 212,
+        "threads": 2,
+        "images": 18
+      },
+      {
+        "id": "bench-session-5",
+        "acpSessionId": "bench-acp-5",
+        "title": "Bench: small session 1",
+        "messages": 9,
+        "toolCalls": 11,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-6",
+        "acpSessionId": "bench-acp-6",
+        "title": "Bench: small session 2",
+        "messages": 16,
+        "toolCalls": 12,
+        "threads": 1,
+        "images": 0
+      },
+      {
+        "id": "bench-session-7",
+        "acpSessionId": "bench-acp-7",
+        "title": "Bench: small session 3",
+        "messages": 15,
+        "toolCalls": 17,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-8",
+        "acpSessionId": "bench-acp-8",
+        "title": "Bench: small session 4",
+        "messages": 18,
+        "toolCalls": 17,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-9",
+        "acpSessionId": "bench-acp-9",
+        "title": "Bench: small session 5",
+        "messages": 21,
+        "toolCalls": 23,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-10",
+        "acpSessionId": "bench-acp-10",
+        "title": "Bench: small session 6",
+        "messages": 32,
+        "toolCalls": 26,
+        "threads": 2,
+        "images": 0
+      },
+      {
+        "id": "bench-session-11",
+        "acpSessionId": "bench-acp-11",
+        "title": "Bench: small session 7",
+        "messages": 9,
+        "toolCalls": 11,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-12",
+        "acpSessionId": "bench-acp-12",
+        "title": "Bench: small session 8",
+        "messages": 16,
+        "toolCalls": 15,
+        "threads": 1,
+        "images": 0
+      },
+      {
+        "id": "bench-session-13",
+        "acpSessionId": "bench-acp-13",
+        "title": "Bench: small session 9",
+        "messages": 19,
+        "toolCalls": 12,
+        "threads": 1,
+        "images": 0
+      },
+      {
+        "id": "bench-session-14",
+        "acpSessionId": "bench-acp-14",
+        "title": "Bench: small session 10",
+        "messages": 18,
+        "toolCalls": 16,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-15",
+        "acpSessionId": "bench-acp-15",
+        "title": "Bench: small session 11",
+        "messages": 21,
+        "toolCalls": 23,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-16",
+        "acpSessionId": "bench-acp-16",
+        "title": "Bench: small session 12",
+        "messages": 30,
+        "toolCalls": 23,
+        "threads": 1,
+        "images": 0
+      },
+      {
+        "id": "bench-session-17",
+        "acpSessionId": "bench-acp-17",
+        "title": "Bench: small session 13",
+        "messages": 9,
+        "toolCalls": 8,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-18",
+        "acpSessionId": "bench-acp-18",
+        "title": "Bench: small session 14",
+        "messages": 12,
+        "toolCalls": 11,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-19",
+        "acpSessionId": "bench-acp-19",
+        "title": "Bench: small session 15",
+        "messages": 15,
+        "toolCalls": 12,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-20",
+        "acpSessionId": "bench-acp-20",
+        "title": "Bench: small session 16",
+        "messages": 18,
+        "toolCalls": 16,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-21",
+        "acpSessionId": "bench-acp-21",
+        "title": "Bench: small session 17",
+        "messages": 21,
+        "toolCalls": 25,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-22",
+        "acpSessionId": "bench-acp-22",
+        "title": "Bench: small session 18",
+        "messages": 26,
+        "toolCalls": 19,
+        "threads": 1,
+        "images": 0
+      },
+      {
+        "id": "bench-session-23",
+        "acpSessionId": "bench-acp-23",
+        "title": "Bench: small session 19",
+        "messages": 9,
+        "toolCalls": 10,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-24",
+        "acpSessionId": "bench-acp-24",
+        "title": "Bench: small session 20",
+        "messages": 18,
+        "toolCalls": 15,
+        "threads": 1,
+        "images": 0
+      },
+      {
+        "id": "bench-session-25",
+        "acpSessionId": "bench-acp-25",
+        "title": "Bench: small session 21",
+        "messages": 15,
+        "toolCalls": 12,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-26",
+        "acpSessionId": "bench-acp-26",
+        "title": "Bench: small session 22",
+        "messages": 18,
+        "toolCalls": 21,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-27",
+        "acpSessionId": "bench-acp-27",
+        "title": "Bench: small session 23",
+        "messages": 21,
+        "toolCalls": 16,
+        "threads": 0,
+        "images": 0
+      },
+      {
+        "id": "bench-session-28",
+        "acpSessionId": "bench-acp-28",
+        "title": "Bench: small session 24",
+        "messages": 26,
+        "toolCalls": 25,
+        "threads": 1,
+        "images": 0
+      },
+      {
+        "id": "bench-session-29",
+        "acpSessionId": "bench-acp-29",
+        "title": "Bench: small session 25",
+        "messages": 9,
+        "toolCalls": 7,
+        "threads": 0,
+        "images": 0
+      }
+    ],
+    "seedMs": 6101,
+    "app": "M25",
+    "dbMB": 230.40625
+  },
+  "bundle": {
+    "mainKB": 985.6494140625,
+    "preloadKB": 12.63671875,
+    "rendererKB": 11599.3984375,
+    "rendererScriptKB": 10862.744140625
+  },
+  "startup": [
+    {
+      "firstPaintMs": 805.45361328125,
+      "windowShownMs": 527.0537109375,
+      "sidebarShownMs": 655.45361328125,
+      "sidebarInteractiveMs": 989.45361328125,
+      "composerMs": 655.45361328125,
+      "largeSessionShownMs": 854.0537109375,
+      "longTasks": 3,
+      "longTaskMs": 185,
+      "maxLongTaskMs": 76,
+      "tasks": [
+        {
+          "atMs": 803,
+          "ms": 51
+        },
+        {
+          "atMs": 854,
+          "ms": 58
+        },
+        {
+          "atMs": 913,
+          "ms": 76
+        }
+      ],
+      "busyUntilMs": 989.45361328125
+    },
+    {
+      "firstPaintMs": 873.661865234375,
+      "windowShownMs": 475.161865234375,
+      "sidebarShownMs": 449.4619140625,
+      "sidebarInteractiveMs": 683.86181640625,
+      "composerMs": 449.4619140625,
+      "largeSessionShownMs": 519.061767578125,
+      "longTasks": 2,
+      "longTaskMs": 149,
+      "maxLongTaskMs": 93,
+      "tasks": [
+        {
+          "atMs": 528,
+          "ms": 56
+        },
+        {
+          "atMs": 591,
+          "ms": 93
+        }
+      ],
+      "busyUntilMs": 683.86181640625
+    },
+    {
+      "firstPaintMs": 892.419677734375,
+      "windowShownMs": 471.61962890625,
+      "sidebarShownMs": 446.7197265625,
+      "sidebarInteractiveMs": 696.419677734375,
+      "composerMs": 446.7197265625,
+      "largeSessionShownMs": 521.7197265625,
+      "longTasks": 2,
+      "longTaskMs": 158,
+      "maxLongTaskMs": 90,
+      "tasks": [
+        {
+          "atMs": 530,
+          "ms": 68
+        },
+        {
+          "atMs": 606,
+          "ms": 90
+        }
+      ],
+      "busyUntilMs": 696.419677734375
+    }
+  ],
+  "scenarios": {
+    "openLarge": {
+      "ms": 101.5,
+      "busyUntilMs": 170.40000009536743,
+      "longTasks": 1,
+      "maxLongTaskMs": 67
+    },
+    "switch": {
+      "n": 8,
+      "p50": 67.5,
+      "p95": 109.10000014305115,
+      "max": 109.10000014305115,
+      "mean": 81.55000004172325
+    },
+    "thread": {
+      "ms": 34.60000014305115,
+      "busyUntilMs": 0,
+      "longTasks": 0,
+      "maxLongTaskMs": 0
+    },
+    "search": {
+      "n": 4,
+      "p50": 266.2000000476837,
+      "p95": 276.2999999523163,
+      "max": 276.2999999523163,
+      "mean": 266.4500000476837
+    },
+    "stream": {
+      "wallMs": 44042,
+      "mainCpuMs": 1297,
+      "mainCpuPercent": 2.944916216338949,
+      "ipc": {
+        "count": 1389,
+        "bytes": 225960,
+        "byType": {
+          "agents": {
+            "count": 0,
+            "bytes": 0
+          },
+          "session": {
+            "count": 0,
+            "bytes": 0
+          },
+          "sessionSynced": {
+            "count": 0,
+            "bytes": 0
+          },
+          "live": {
+            "count": 0,
+            "bytes": 0
+          },
+          "message": {
+            "count": 6,
+            "bytes": 1510
+          },
+          "turnStart": {
+            "count": 1,
+            "bytes": 66
+          },
+          "messageText": {
+            "count": 1375,
+            "bytes": 213315
+          },
+          "toolCall": {
+            "count": 6,
+            "bytes": 10981
+          },
+          "turnEnd": {
+            "count": 1,
+            "bytes": 88
+          }
+        }
+      },
+      "renderer": {
+        "longTasks": 0,
+        "longTaskMs": 0,
+        "maxLongTaskMs": 0,
+        "scriptMs": 8865.108000000002,
+        "layoutMs": 659.0769999999999,
+        "layouts": 1446,
+        "styleMs": 557.597
+      },
+      "phases": {
+        "stream": {
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "frames": 2467,
+          "frameP50Ms": 13.30000000000291,
+          "frameP95Ms": 13.400000000001455,
+          "frameMaxMs": 26.69999999999709,
+          "framesOver50Ms": 0,
+          "slowEvents": 42,
+          "eventMaxMs": 24
+        },
+        "typing": {
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "frames": 487,
+          "frameP50Ms": 13.300000000001091,
+          "frameP95Ms": 13.400000000001455,
+          "frameMaxMs": 13.599999999998545,
+          "framesOver50Ms": 0,
+          "slowEvents": 247,
+          "eventMaxMs": 48
+        },
+        "scroll": {
+          "longTasks": 0,
+          "longTaskMs": 0,
+          "maxLongTaskMs": 0,
+          "frames": 279,
+          "frameP50Ms": 13.400000000001455,
+          "frameP95Ms": 26.700000000000728,
+          "frameMaxMs": 26.899999999997817,
+          "framesOver50Ms": 0,
+          "slowEvents": 0,
+          "eventMaxMs": 0
+        }
+      },
+      "slowKeyEvents": {
+        "n": 200,
+        "p50": 32,
+        "p95": 40,
+        "max": 48,
+        "mean": 33.92
+      }
+    },
+    "soak": {
+      "minutes": 4,
+      "cycles": 13,
+      "before": {
+        "rendererHeapMB": 44.05417251586914,
+        "mainHeapMB": 12.458610534667969,
+        "rendererWorkingSetMB": 305.5,
+        "mainWorkingSetMB": 157.80078125,
+        "gpuWorkingSetMB": 182.4296875,
+        "totalWorkingSetMB": 744.74609375,
+        "dom": {
+          "nodes": 8002,
+          "images": 5,
+          "decodedImages": 3,
+          "imageBytesInDom": 1045766
+        }
+      },
+      "after": {
+        "rendererHeapMB": 49.70907974243164,
+        "mainHeapMB": 11.887100219726562,
+        "rendererWorkingSetMB": 298.1328125,
+        "mainWorkingSetMB": 156.66015625,
+        "gpuWorkingSetMB": 183.7734375,
+        "totalWorkingSetMB": 737.5546875,
+        "dom": {
+          "nodes": 9285,
+          "images": 5,
+          "decodedImages": 3,
+          "imageBytesInDom": 1045766
+        }
+      },
+      "growth": {
+        "rendererHeapMB": 5.6549072265625,
+        "rendererWorkingSetMB": -7.3671875,
+        "mainHeapMB": -0.5715103149414062,
+        "totalWorkingSetMB": -7.19140625
+      }
+    }
+  },
+  "startupMemory": {
+    "rendererHeapMB": 28.179431915283203,
+    "mainHeapMB": 12.15997314453125,
+    "rendererWorkingSetMB": 170.7109375,
+    "mainWorkingSetMB": 158.6171875,
+    "gpuWorkingSetMB": 153.03515625,
+    "totalWorkingSetMB": 581.44140625,
+    "dom": {
+      "nodes": 2035,
+      "images": 3,
+      "decodedImages": 2,
+      "imageBytesInDom": 844076
+    }
+  },
+  "summary": {
+    "startup.windowShownMs": 475.161865234375,
+    "startup.firstPaintMs": 873.661865234375,
+    "startup.sidebarInteractiveMs": 696.419677734375,
+    "startup.largeSessionShownMs": 521.7197265625,
+    "startup.busyUntilMs": 696.419677734375,
+    "openLarge.ms": 101.5,
+    "openLarge.busyUntilMs": 170.40000009536743,
+    "switch.p50Ms": 67.5,
+    "switch.p95Ms": 109.10000014305115,
+    "thread.ms": 34.60000014305115,
+    "search.p50Ms": 266.2000000476837,
+    "stream.mainCpuMs": 1297,
+    "stream.ipcKB": 220.6640625,
+    "stream.rendererScriptMs": 8865.108000000002,
+    "stream.rendererLongTaskMs": 0,
+    "stream.maxLongTaskMs": 0,
+    "stream.typingFrameP95Ms": 13.400000000001455,
+    "stream.scrollFrameP95Ms": 26.700000000000728,
+    "soak.rendererWorkingSetMB": 298.1328125,
+    "soak.totalWorkingSetMB": 737.5546875,
+    "bundle.rendererScriptKB": 10862.744140625,
+    "bundle.mainKB": 985.6494140625
+  }
+}

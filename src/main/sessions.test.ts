@@ -816,6 +816,80 @@ describe('SessionManager', () => {
     })
   })
 
+  // SPEC → Performance: a chunk's cost doesn't grow with the message it goes into.
+  it('streams a long answer with a bounded number of writes and bounded events per chunk', async () => {
+    const chunk = 'some streamed words '
+    state.script = async ({ say }) => {
+      for (let i = 0; i < 400; i++) await say(chunk, 'answer')
+      return 'end_turn'
+    }
+    const session = await manager.createSession('/w', 'fake')
+    const prepare = vi.spyOn((store as unknown as { connection: { prepare(sql: string): unknown } }).connection, 'prepare')
+    events.length = 0
+    await manager.send(session.id, 'go', null)
+
+    const added = events.filter((e) => e.type === 'messageText')
+    expect(added).toHaveLength(399)
+    for (const e of added) expect(JSON.stringify(e).length).toBeLessThan(chunk.length + 200)
+    // The first chunk is sent with the message; the rest only add to it.
+    expect(events.filter((e) => e.type === 'message' && e.message.role === 'agent')).toHaveLength(1)
+    // Statements: a fixed number for the turn, not one or more per chunk.
+    const statements = prepare.mock.calls.map(([sql]) => sql)
+    expect(statements.length).toBeLessThan(60)
+    expect(statements.filter((sql) => sql.startsWith('UPDATE messages SET text')).length).toBeLessThanOrEqual(5)
+    expect(manager.openSession(session.id).messages.at(-1)?.text).toBe(chunk.repeat(400))
+  })
+
+  it('writes streamed text before anything reads the log, and on close', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    state.script = async ({ say }) => {
+      await say('first ', 'answer')
+      await say('second', 'answer')
+      await held
+      return 'end_turn'
+    }
+    const session = await manager.createSession('/w', 'fake')
+    const turn = manager.send(session.id, 'go', null)
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'messageText')).toBe(true))
+    // Opened mid-turn: the log has the text so far, and later additions apply at its end.
+    expect(manager.openSession(session.id).messages.at(-1)?.text).toBe('first second')
+    expect(store.search({ query: 'second', scope: 'all', kind: 'agent' }).results).toHaveLength(1)
+    release()
+    await turn
+  })
+
+  it("gives a sent image's data by message and index", () => {
+    store.insertSession({ id: 'img', agentId: 'fake', acpSessionId: 'img', cwd: '/w', title: 'img', createdAt: 1 })
+    store.insertMessage({ id: 'shot', sessionId: 'img', seq: 0, role: 'user', text: 'look', threadId: null, attachments: [{ kind: 'file', name: 'n.txt', text: 'x' }, { kind: 'image', name: 's.png', mimeType: 'image/png', data: 'QUJD' }] })
+    expect(manager.imageData('shot', 1)).toBe('QUJD')
+    expect(() => manager.imageData('shot', 0)).toThrow('no longer there')
+    expect(() => manager.imageData('gone', 0)).toThrow('no longer there')
+    // A window's view leaves images out, so it stays small however many there are.
+    for (let i = 1; i <= 50; i++) store.insertMessage({ id: `shot${i}`, sessionId: 'img', seq: i, role: 'user', text: 'look', threadId: null, attachments: [{ kind: 'image', name: 's.png', mimeType: 'image/png', data: 'A'.repeat(200_000) }] })
+    expect(JSON.stringify(manager.openSession('img', { images: false })).length).toBeLessThan(30_000)
+    expect(manager.openSession('img').messages.at(-1)?.attachments?.[0]).toMatchObject({ data: 'A'.repeat(200_000) })
+  })
+
+  it('opens a large session with a fixed number of statements', async () => {
+    const statementsToOpen = (messages: number): number => {
+      const id = `large-${messages}`
+      store.insertSession({ id, agentId: 'fake', acpSessionId: id, cwd: '/w', title: 'large', createdAt: 1 })
+      for (let seq = 0; seq < messages; seq++) {
+        store.insertMessage({ id: `${id}-${seq}`, sessionId: id, seq, role: seq % 2 ? 'agent' : 'user', text: `message ${seq}`, threadId: null, createdAt: seq })
+        store.upsertToolCall({ id: `${id}-t${seq}`, sessionId: id, messageSeq: messages + seq, threadId: null, title: 'Read', status: 'completed' })
+      }
+      const prepare = vi.spyOn((store as unknown as { connection: { prepare(sql: string): unknown } }).connection, 'prepare')
+      manager.openSession(id)
+      const count = prepare.mock.calls.length
+      prepare.mockRestore()
+      return count
+    }
+    const small = statementsToOpen(20)
+    expect(statementsToOpen(500)).toBe(small)
+    expect(small).toBeLessThan(15)
+  })
+
   it('orders text and tool calls in one sequence, splitting text at tool calls', async () => {
     state.script = async ({ say, update }) => {
       await say('Let me look.')

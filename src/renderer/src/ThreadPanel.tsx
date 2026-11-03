@@ -112,7 +112,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
       <blockquote className={pin ? 'anchor-quote pin-quote' : 'anchor-quote'} title={`Sent to the agent as ${threadTag(panel.anchor)} …`}>
         {pin ? (
           <>
-            {pinImage?.kind === 'image' && <PinCrop image={pinImage} pin={pin.pin} />}
+            {pinImage?.kind === 'image' && anchorMessage && <PinCrop messageId={anchorMessage.id} index={pin.image} image={pinImage} pin={pin.pin} />}
             <span className="pin-quote-text">
               <b>
                 <span className="pin-number">{pin.pin}</span>

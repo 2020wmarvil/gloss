@@ -233,8 +233,37 @@ const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
     if (!columns.some((c) => c.name === 'fork_session')) db.exec('ALTER TABLE sessions ADD COLUMN fork_session TEXT')
     if (!columns.some((c) => c.name === 'fork_thread')) db.exec('ALTER TABLE sessions ADD COLUMN fork_thread TEXT REFERENCES threads(id) ON DELETE CASCADE')
     db.exec('CREATE INDEX IF NOT EXISTS sessions_by_fork_thread ON sessions (fork_thread)')
+  },
+  // A session's latest activity (sessions' active_at) without reading its messages' rows,
+  // whose text and images can be large.
+  'CREATE INDEX IF NOT EXISTS messages_by_session_time ON messages (session_id, created_at);',
+  // The composers' history from an index, without reading user messages' rows (SPEC → Performance).
+  "CREATE INDEX IF NOT EXISTS messages_history ON messages (role, text, created_at) WHERE role = 'user';",
+  // Sent images' data out of the messages' rows, so a log reads without it (SPEC → Performance).
+  // `attachments` keeps each image with empty `data`.
+  (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS message_images (
+      message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      idx        INTEGER NOT NULL,
+      data       TEXT NOT NULL,
+      PRIMARY KEY (message_id, idx)
+    )`)
+    const insert = db.prepare('INSERT OR REPLACE INTO message_images (message_id, idx, data) VALUES (?, ?, ?)')
+    const update = db.prepare('UPDATE messages SET attachments = ? WHERE id = ?')
+    for (const r of db.prepare(`SELECT id, attachments FROM messages WHERE attachments LIKE '%"kind":"image"%'`).all()) {
+      const attachments = JSON.parse(r.attachments as string) as Attachment[]
+      attachments.forEach((a, i) => {
+        if (a.kind === 'image' && a.data) insert.run(r.id as string, i, a.data)
+      })
+      update.run(JSON.stringify(withoutImageData(attachments)), r.id as string)
+    }
   }
 ]
+
+/** Attachments as stored in `messages`: images without their data (it's in `message_images`). */
+function withoutImageData(attachments: Attachment[]): Attachment[] {
+  return attachments.map((a) => (a.kind === 'image' && a.data ? { ...a, data: '' } : a))
+}
 
 function addPermissionColumns(db: DatabaseSync): void {
   const columns = db.prepare('PRAGMA table_info(sessions)').all()
@@ -276,6 +305,24 @@ const SESSIONS = `SELECT s.*,
   (SELECT MAX(m.created_at) FROM messages m WHERE m.session_id = s.id) AS active_at,
   (SELECT COUNT(*) FROM threads t WHERE t.session_id = s.id AND t.resolved_at IS NULL AND t.anchor_message_id IS NULL) AS open_threads
   FROM sessions s`
+
+/** Messages with their images' data put back from `message_images` rows. */
+function withImages(messages: Message[], rows: { message_id: string; idx: number; data: string }[]): Message[] {
+  if (rows.length === 0) return messages
+  const data = new Map(rows.map((r) => [`${r.message_id} ${Number(r.idx)}`, r.data]))
+  return messages.map((m) => !m.attachments?.some((a) => a.kind === 'image') ? m : {
+    ...m,
+    attachments: m.attachments.map((a, i) => a.kind === 'image' ? { ...a, data: data.get(`${m.id} ${i}`) ?? a.data } : a)
+  })
+}
+
+/** A message with its images left out (`deferred`), for a view that loads them as it shows them. */
+function deferred(m: Message): Message {
+  return !m.attachments?.some((a) => a.kind === 'image') ? m : {
+    ...m,
+    attachments: m.attachments.map((a) => (a.kind === 'image' ? { ...a, data: '', deferred: true as const } : a))
+  }
+}
 
 function toMessage(r: Row): Message {
   const m: Message = {
@@ -335,14 +382,48 @@ function toThread(r: Row): Thread {
 /** Threads with their fork's session, if they run in one. */
 const THREADS = `SELECT t.*, (SELECT f.id FROM sessions f WHERE f.fork_thread = t.id) AS fork_session_id FROM threads t`
 
+/** How long streamed text may wait before it is written (SPEC → Performance). */
+export const TEXT_FLUSH_MS = 1000
+
 export class Store {
-  private readonly db: DatabaseSync
+  private readonly connection: DatabaseSync
+  /** Streamed messages' latest text, not written yet: message id → text. */
+  private readonly pendingText = new Map<string, string>()
+  private flushTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor(path: string) {
-    this.db = new DatabaseSync(path)
-    this.db.exec('PRAGMA foreign_keys = ON')
-    if (path !== ':memory:') this.db.exec('PRAGMA journal_mode = WAL')
+    this.connection = new DatabaseSync(path)
+    this.connection.exec('PRAGMA foreign_keys = ON')
+    if (path !== ':memory:') {
+      // NORMAL is safe in WAL mode: a crash of Gloss loses nothing; a power cut, at most the last commits.
+      this.connection.exec('PRAGMA journal_mode = WAL')
+      this.connection.exec('PRAGMA synchronous = NORMAL')
+    }
     this.migrate()
+  }
+
+  /** The connection, with streamed text written first, so every statement sees it. */
+  private get db(): DatabaseSync {
+    if (this.pendingText.size > 0) this.flushText()
+    return this.connection
+  }
+
+  /** Writes the streamed text waiting in memory, in one transaction. */
+  flushText(): void {
+    clearTimeout(this.flushTimer)
+    this.flushTimer = undefined
+    if (this.pendingText.size === 0) return
+    const update = this.connection.prepare('UPDATE messages SET text = ? WHERE id = ?')
+    const pending = [...this.pendingText]
+    this.pendingText.clear()
+    this.connection.exec('BEGIN')
+    try {
+      for (const [id, text] of pending) update.run(text, id)
+      this.connection.exec('COMMIT')
+    } catch (err) {
+      this.connection.exec('ROLLBACK')
+      throw err
+    }
   }
 
   private migrate(): void {
@@ -365,7 +446,8 @@ export class Store {
   }
 
   close(): void {
-    this.db.close()
+    this.flushText()
+    this.connection.close()
   }
 
   /** Runs `fn` in one transaction. */
@@ -593,18 +675,28 @@ export class Store {
         m.wireText ?? null,
         m.threadId,
         m.acpMessageId ?? null,
-        m.attachments ? JSON.stringify(m.attachments) : null,
+        m.attachments ? JSON.stringify(withoutImageData(m.attachments)) : null,
         m.steered ? 1 : null,
         m.createdAt ?? null
       )
+    const images = this.db.prepare('INSERT INTO message_images (message_id, idx, data) VALUES (?, ?, ?)')
+    m.attachments?.forEach((a, i) => {
+      if (a.kind === 'image' && a.data) images.run(m.id, i, a.data)
+    })
   }
 
   deleteMessage(id: string): void {
     this.db.prepare('DELETE FROM messages WHERE id = ?').run(id)
   }
 
+  /**
+   * A streamed message's text so far. Kept in memory and written at most every TEXT_FLUSH_MS,
+   * or before the next statement: rewriting (and reindexing) the whole text per chunk grew with its length.
+   */
   updateMessageText(id: string, text: string): void {
-    this.db.prepare('UPDATE messages SET text = ? WHERE id = ?').run(text, id)
+    this.pendingText.set(id, text)
+    this.flushTimer ??= setTimeout(() => this.flushText(), TEXT_FLUSH_MS)
+    this.flushTimer.unref?.()
   }
 
   setMessageOutcome(id: string, outcome: TurnOutcome): void {
@@ -671,16 +763,37 @@ export class Store {
     this.db.prepare('UPDATE session_rewinds SET context = NULL WHERE session_id = ?').run(sessionId)
   }
 
-  listMessages(sessionId: string): Message[] {
-    return this.db
+  /**
+   * The session's messages in order. `images: false` leaves sent images' data out (`deferred`,
+   * empty `data`): a window loads each as it shows it (`imageData`).
+   */
+  listMessages(sessionId: string, options: { images?: boolean } = {}): Message[] {
+    const messages = this.db
       .prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY seq')
       .all(sessionId)
       .map((r) => toMessage(r as Row))
+    if (options.images === false) return messages.map(deferred)
+    const rows = this.db
+      .prepare('SELECT i.message_id, i.idx, i.data FROM message_images i JOIN messages m ON m.id = i.message_id WHERE m.session_id = ?')
+      .all(sessionId) as { message_id: string; idx: number; data: string }[]
+    return withImages(messages, rows)
   }
 
   getMessage(id: string): Message | undefined {
     const r = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id)
-    return r ? toMessage(r as Row) : undefined
+    return r ? this.withImages(toMessage(r as Row)) : undefined
+  }
+
+  /** A sent image's data (base64), or undefined if the message has no image there. */
+  imageData(messageId: string, index: number): string | undefined {
+    const r = this.db.prepare('SELECT data FROM message_images WHERE message_id = ? AND idx = ?').get(messageId, index)
+    return r ? (r.data as string) : undefined
+  }
+
+  private withImages(m: Message): Message {
+    if (!m.attachments?.some((a) => a.kind === 'image')) return m
+    const rows = this.db.prepare('SELECT message_id, idx, data FROM message_images WHERE message_id = ?').all(m.id) as { message_id: string; idx: number; data: string }[]
+    return withImages([m], rows)[0]
   }
 
   /**
@@ -701,7 +814,7 @@ export class Store {
     const r = this.db
       .prepare("SELECT * FROM messages WHERE session_id = ? AND role = 'user' ORDER BY seq DESC LIMIT 1")
       .get(sessionId)
-    return r ? toMessage(r as Row) : undefined
+    return r ? this.withImages(toMessage(r as Row)) : undefined
   }
 
   countUserMessages(sessionId: string): number {
