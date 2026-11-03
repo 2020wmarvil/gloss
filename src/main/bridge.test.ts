@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import { IPC } from '../shared/ipc'
-import { Bridge, COOKIE } from './bridge'
+import { Bridge, COOKIE, slimView } from './bridge'
 import { Store } from './db'
 import { PhoneApi } from './phoneApi'
 
@@ -200,5 +200,44 @@ describe('Bridge', () => {
     await bridge.stop()
     expect(await closed).toBe(1001)
     expect(bridge.listening).toBe(false)
+  })
+})
+
+describe('slim session views', () => {
+  const long = [{ type: 'content', content: { type: 'text', text: 'x'.repeat(5000) } }]
+  const short = [{ type: 'content', content: { type: 'text', text: 'ok' } }]
+  const view = {
+    session: { id: 's1' },
+    messages: [
+      { id: 'm1', sessionId: 's1', seq: 1, role: 'user', text: 'look', threadId: null, attachments: [{ kind: 'image', name: 'a.png', mimeType: 'image/png', data: 'QUJD' }, { kind: 'file', name: 'n.txt', text: 'note' }] },
+      { id: 'm2', sessionId: 's1', seq: 2, role: 'agent', text: 'done', threadId: null }
+    ],
+    toolCalls: [
+      { id: 't1', sessionId: 's1', messageSeq: 1, threadId: null, title: 'big', status: 'completed', content: long },
+      { id: 't2', sessionId: 's1', messageSeq: 1, threadId: null, title: 'small', status: 'completed', content: short }
+    ],
+    plans: [], threads: [], turn: null, queue: { items: [], paused: false }, live: {}, requests: [], forks: []
+  }
+
+  it('leaves out images and long tool output, and keeps the rest', () => {
+    const slim = slimView(view as never)
+    expect(slim.messages[0].attachments).toEqual([
+      { kind: 'image', name: 'a.png', mimeType: 'image/png', data: '', deferred: true },
+      { kind: 'file', name: 'n.txt', text: 'note' }
+    ])
+    expect(slim.messages[1]).toBe(view.messages[1])
+    expect(slim.toolCalls[0]).toEqual({ id: 't1', sessionId: 's1', messageSeq: 1, threadId: null, title: 'big', status: 'completed', deferred: true })
+    expect(slim.toolCalls[1]).toBe(view.toolCalls[1])
+  })
+
+  it('sends a phone the slim view, then what it left out when asked', async () => {
+    api.add(IPC.sessionsOpen, () => view)
+    const ws = await connect(await pair())
+    const opened = await call(ws, 1, IPC.sessionsOpen, ['s1'])
+    expect((opened.result as { toolCalls: { deferred?: true }[] }).toolCalls[0].deferred).toBe(true)
+    expect(await call(ws, 2, 'bridge:toolCall', ['s1', 't1'])).toEqual({ id: 2, result: long })
+    expect(await call(ws, 3, 'bridge:image', ['m1', 0])).toEqual({ id: 3, result: 'QUJD' })
+    expect(await call(ws, 4, 'bridge:image', ['m1', 1])).toMatchObject({ id: 4, error: expect.stringContaining('no longer open') })
+    ws.close()
   })
 })

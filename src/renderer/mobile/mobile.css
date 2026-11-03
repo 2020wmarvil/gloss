@@ -370,3 +370,5 @@
 .m-spinner.lg { width: 28px; height: 28px; border-width: 3px; color: var(--faint); }
 @keyframes m-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .m-spinner { animation-duration: 2s; } }
+.m-image-wait { display: grid; place-items: center; width: 120px; height: 90px; border-radius: var(--r-md); background: var(--sunken); color: var(--faint); }
+.m-tool-wait { display: grid; place-items: center; padding: 12px; color: var(--faint); }

@@ -25,6 +25,7 @@ import type { ListItemSpan } from '../src/anchors'
 import { applyTheme } from '../src/theme'
 import { usePhone, upsert, type OpenView, type Phone } from './usePhone'
 import type { PhoneLink } from './transport'
+import { link as bridge } from './link'
 import { NotifyCard } from './notify'
 import { useSettled, useSwipeNav, type Swipe } from './gestures'
 import { LineQuote, ReviewFile, ReviewFiles, ReviewThreads, reviewSubtitle, useReview, type ReviewState } from './Review'
@@ -843,7 +844,7 @@ function LogView(props: {
               <Fragment key={g.message.id}>
                 <div className="m-you">
                   <Markdown text={g.message.text} breaks />
-                  <SentImages attachments={g.message.attachments} />
+                  <SentImages message={g.message} />
                   <span className="m-meta">{g.message.steered ? 'steered · ' : ''}{g.message.createdAt ? new Date(g.message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}</span>
                 </div>
                 <ForkSummary message={g.message} />
@@ -898,22 +899,55 @@ function Findings({ message, open, onShowThreads }: { message: Message; open: Op
   )
 }
 
+/**
+ * What a session's view left out, fetched as it is shown (SPEC → Remote and mobile): images by
+ * `messageId:index`, long tool output by `sessionId:toolCallId`. Kept for the page's life.
+ */
+const fetched = new Map<string, unknown>()
+
+/** Content a slim session view left out: `have` when it came with the view, else fetched once and kept. */
+function useDeferred<T>(key: string, have: T | undefined, load: (() => Promise<T>) | null): T | undefined {
+  const [, rerender] = useState(0)
+  const value = have ?? (fetched.get(key) as T | undefined)
+  useEffect(() => {
+    if (value !== undefined || !load) return
+    let live = true
+    load().then((v) => { fetched.set(key, v); if (live) rerender((n) => n + 1) }, () => {})
+    return () => { live = false }
+  }, [key, value === undefined, load !== null])
+  return value
+}
+
 /** A sent message's images, as on the desktop; a tap shows one full screen. */
-function SentImages({ attachments }: { attachments?: Attachment[] }): React.JSX.Element | null {
+function SentImages({ message }: { message: Message }): React.JSX.Element | null {
   const [shown, setShown] = useState<string | null>(null)
-  const images = (attachments ?? []).flatMap((a) => a.kind === 'image' ? [{ name: a.name, src: `data:${a.mimeType};base64,${a.data}` }] : [])
+  const images = (message.attachments ?? []).flatMap((a, i): { name: string; index: number; image: Extract<Attachment, { kind: 'image' }> }[] => a.kind === 'image' ? [{ name: a.name, index: i, image: a }] : [])
   if (images.length === 0) return null
   return (
     <>
       <div className="m-sent-images">
-        {images.map((img, i) => (
-          <button key={i} onClick={() => setShown(img.src)} aria-label={`View ${img.name}`}><img src={img.src} alt={img.name} /></button>
+        {images.map((img) => (
+          <SentImage key={img.index} messageId={message.id} index={img.index} image={img.image} onShow={setShown} />
         ))}
       </div>
       {shown && (
         <button className="m-lightbox" onClick={() => setShown(null)} aria-label="Close image"><img src={shown} alt="" /></button>
       )}
     </>
+  )
+}
+
+/** One sent image; one a session's view left out loads as it is shown. */
+function SentImage({ messageId, index, image, onShow }: {
+  messageId: string; index: number; image: Extract<Attachment, { kind: 'image' }>; onShow(src: string): void
+}): React.JSX.Element {
+  const data = useDeferred<string>(`${messageId}:${index}`, image.deferred ? undefined : image.data,
+    image.deferred ? () => bridge.invoke('bridge:image', messageId, index) as Promise<string> : null)
+  const src = data ? `data:${image.mimeType};base64,${data}` : null
+  return (
+    <button onClick={() => src && onShow(src)} aria-label={`View ${image.name}`} disabled={!src}>
+      {src ? <img src={src} alt={image.name} /> : <span className="m-image-wait"><span className="m-spinner" /></span>}
+    </button>
   )
 }
 
@@ -927,11 +961,19 @@ function Tools({ calls }: { calls: ToolCall[] }): React.JSX.Element {
             <code>{t.title}</code>
             {t.status === 'completed' ? <Check size={14} className="s-done" /> : t.status === 'failed' ? <span className="s-failed m-small-b">failed</span> : <span className="m-dot m-pulse s-working" />}
           </button>
-          {expanded === t.id && <div className="m-tool-details"><ToolDetails toolCall={t} /></div>}
+          {expanded === t.id && <ToolOutput toolCall={t} />}
         </div>
       ))}
     </div>
   )
+}
+
+/** An expanded tool call's details; long output a session's view left out loads first. */
+function ToolOutput({ toolCall }: { toolCall: ToolCall }): React.JSX.Element {
+  const content = useDeferred<unknown>(`${toolCall.sessionId}:${toolCall.id}`, toolCall.deferred ? undefined : toolCall.content ?? null,
+    toolCall.deferred ? () => bridge.invoke('bridge:toolCall', toolCall.sessionId, toolCall.id) : null)
+  if (content === undefined) return <div className="m-tool-details m-tool-wait"><span className="m-spinner" /></div>
+  return <div className="m-tool-details"><ToolDetails toolCall={{ ...toolCall, content: content ?? undefined, deferred: undefined }} /></div>
 }
 
 function PlanView({ plan }: { plan: Plan }): React.JSX.Element {

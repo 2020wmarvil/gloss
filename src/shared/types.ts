@@ -55,7 +55,11 @@ export type Pin = { x: number; y: number; note: string }
 /** An image or file sent with a user message (SPEC → Attachments). */
 export type Attachment =
   /** `data` is base64. `pins`: an annotated screenshot's pins, already drawn on the image. */
-  | { kind: 'image'; name: string; mimeType: string; data: string; pins?: Pin[] }
+  | {
+      kind: 'image'; name: string; mimeType: string; data: string; pins?: Pin[]
+      /** Left out of a phone's session view (`data` is empty): the phone asks for it as it shows it (`bridge:image`). */
+      deferred?: true
+    }
   /** A text file, sent as embedded context. */
   | { kind: 'file'; name: string; path?: string; mimeType?: string; text: string }
 
@@ -117,6 +121,8 @@ export type ToolCall = {
   /** pending | in_progress | completed | failed | cancelled */
   status: string
   content?: unknown
+  /** Left out of a phone's session view (no `content`): the phone asks for it when it is expanded (`bridge:toolCall`). */
+  deferred?: true
 }
 
 export type PlanEntry = {
