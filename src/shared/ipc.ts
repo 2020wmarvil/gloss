@@ -68,6 +68,9 @@ export type ForkView = {
 }
 
 export type GitStatus = {
+  perforce?: boolean
+  tooltip?: string
+  notOpened?: number | null
   branch: string
   dirty: boolean
   /** The branch's upstream on GitHub; null if it has none or the remote isn't on github.com. */
@@ -324,7 +327,7 @@ export type GlossApi = {
   }
   git: {
     /** The folder's branch and whether it has uncommitted changes; null outside a repo. */
-    status(cwd: string): Promise<GitStatus | null>
+    status(cwd: string, sessionId?: string): Promise<GitStatus | null>
     /** The branch's pull request; null without one, or without `gh` or its login. */
     pullRequest(cwd: string): Promise<PullRequest | null>
   }

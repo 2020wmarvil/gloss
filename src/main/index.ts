@@ -14,6 +14,8 @@ import { Store } from './db'
 import type { SearchRequest } from '../shared/search'
 import { toMarkdown } from './export'
 import { gitStatus, pullRequest } from './git'
+import { perforceWorkspace, perforceStatus, PerforceError, hasPerforceConfig } from './perforce'
+import { perforceRange } from '../shared/perforce'
 import { cloneRepo, listRepos } from './github'
 import { SessionManager } from './sessions'
 import { BADGE_LABEL, BADGE_SIZE, badgePixels } from './badge'
@@ -767,7 +769,23 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   share(IPC.projectsList, () => manager.listProjects())
   ipcMain.handle(IPC.projectsOpen, async () => {
     const path = await pickFolder()
-    return path ? manager.addProject(path) : null
+    if (!path) return null
+    const existingProvider = projectSettings(settingsFile.state().projects, path).versionControl
+    if (existingProvider) {
+      if (existingProvider === 'perforce') await perforceWorkspace(path)
+      return manager.addProject(path)
+    }
+    const [git, p4] = await Promise.all([gitStatus(path), perforceWorkspace(path).catch((error: unknown) => error)])
+    const available = !(p4 instanceof Error)
+    if (!git && p4 instanceof Error && await hasPerforceConfig(path)) throw p4
+    let provider: 'git' | 'perforce' = available ? 'perforce' : 'git'
+    if (git && available) {
+      const choice = await dialog.showMessageBox({ type: 'question', title: 'Version control', message: `Choose version control for ${path}`, buttons: ['Git', 'Perforce', 'Cancel'], defaultId: 2, cancelId: 2 })
+      if (choice.response === 2) return null
+      provider = choice.response === 1 ? 'perforce' : 'git'
+    } else if (!git && p4 instanceof PerforceError && (p4.kind === 'login' || p4.kind === 'expired')) throw p4
+    settingsFile.update({ project: { path, values: { versionControl: provider } } })
+    return manager.addProject(path)
   })
   ipcMain.handle(IPC.projectsAgentSessions, (_e, path: unknown, agentId: unknown) =>
     manager.agentSessions(folderArg(path, 'path'), str(agentId, 'agentId'))
@@ -784,7 +802,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     if (!win) return
     bringForward(win)
     void takeForeground(win.getNativeWindowHandle())
-  })
+  }, (cwd) => projectSettings(settingsFile.state().projects, cwd).versionControl === 'perforce')
   share(IPC.sessionsList, () => manager.listSessions())
   share(IPC.readMarkdownImage, (src: unknown, cwd: unknown) =>
     readMarkdownImage(str(src, 'src'), cwd === undefined ? undefined : folderArg(cwd, 'cwd')), 'Only a Gloss window can load images.')
@@ -982,8 +1000,16 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     if (!session) throw new Error(`Unknown session ${String(id)}`)
     return usage.get(session.agentId, session.cwd)
   })
-  ipcMain.handle(IPC.gitStatus, (_e, cwd: unknown) => gitStatus(str(cwd, 'cwd')))
-  ipcMain.handle(IPC.gitPullRequest, (_e, cwd: unknown) => pullRequest(str(cwd, 'cwd')))
+  ipcMain.handle(IPC.gitStatus, async (_e, cwd: unknown, sessionId: unknown) => {
+    const path = str(cwd, 'cwd')
+    const session = typeof sessionId === 'string' ? store!.getSession(sessionId) : undefined
+    const isPerforce = session?.review ? !!perforceRange(session.review.baseRef) : projectSettings(settingsFile.state().projects, session?.project ?? path).versionControl === 'perforce'
+    if (!isPerforce) return gitStatus(path)
+    const status = await perforceStatus(path)
+    if (typeof sessionId === 'string' && store!.getSession(sessionId)?.cwd === path) status.notOpened = await manager.notOpened(sessionId)
+    return status
+  })
+  ipcMain.handle(IPC.gitPullRequest, (_e, cwd: unknown) => projectSettings(settingsFile.state().projects, str(cwd, 'cwd')).versionControl === 'perforce' ? null : pullRequest(str(cwd, 'cwd')))
   share(IPC.threadsCreate, (sessionId: unknown, anchorMessageId: unknown, anchor: unknown) =>
     manager.createThread(
       str(sessionId, 'sessionId'),
@@ -1226,9 +1252,10 @@ app.whenReady().then(() => {
     agentEnv: (config) => agentEnv(config),
     connect: (config, env, handlers) => AgentConnection.start(config, env, handlers),
     runInTerminal,
+    versionControl: (cwd) => projectSettings(settingsFile.state().projects, cwd).versionControl ?? 'git',
     worktreeSettings: (project) => {
       const p = projectSettings(settingsFile.state().projects, project)
-      return { base: p.worktreeBase, setup: p.worktreeSetup, place: p.newSessionPlace, branchPrefix: p.worktreeBranchPrefix }
+      return { base: p.worktreeBase, setup: p.worktreeSetup, place: p.versionControl === 'perforce' ? 'folder' : p.newSessionPlace, branchPrefix: p.worktreeBranchPrefix }
     },
     placeRemoved: (project) => {
       settingsFile.update({ project: { path: project, values: { newSessionPlace: 'folder' } } })

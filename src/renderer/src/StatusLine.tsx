@@ -447,6 +447,7 @@ export function StatusLine(props: Props): React.JSX.Element {
           <Folder className="status-icon" aria-hidden />
           <span className="status-name">{folderName(session.cwd)}</span>
         </button>
+        {git?.perforce && git.notOpened !== undefined && git.notOpened !== 0 && <span className="status-item" style={{ color: 'var(--warning, #b8860b)' }} title="Checks only file paths reported by the agent this turn. Shell edits may be absent; a workspace review discovers unopened changes inside the project.">{git.notOpened === null ? 'Not opened: unavailable' : `${git.notOpened} not opened`}</span>}
         {git &&
           (git.url ? (
             <a
@@ -461,7 +462,7 @@ export function StatusLine(props: Props): React.JSX.Element {
               {git.dirty && <span className="dirty">*</span>}
             </a>
           ) : (
-            <span className="status-item branch" title={git.dirty ? 'Uncommitted changes' : 'Clean working tree'}>
+            <span className="status-item branch" title={git.tooltip ?? (git.dirty ? 'Uncommitted changes' : 'Clean working tree')}>
               <GitBranch className="status-icon" aria-hidden />
               <span className="status-name">{git.branch}</span>
               {git.dirty && <span className="dirty">*</span>}

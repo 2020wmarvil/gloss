@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { isCommitId, type ReviewDiff, type ReviewRange, type ReviewRefs } from '@shared/review'
 import { ago } from './Sidebar'
+import { perforceLabel, perforceRange } from '@shared/perforce'
 import { ArrowRight, ChevronDown } from 'lucide-react'
 
 /**
@@ -120,7 +121,7 @@ function Picker(props: PickerProps): React.JSX.Element {
           <input
             className="range-filter"
             autoFocus
-            placeholder="Filter commits"
+            placeholder="Filter changes"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
@@ -152,6 +153,8 @@ export function rangeChoices(range: ReviewRange, diff: ReviewDiff | null, refs: 
   reset: string | null
   commitUrl(sha: string): string | null
 } {
+  const p4 = perforceRange(range.baseRef)
+  if (p4) return { baseOptions: (refs?.perforce?.changes ?? []).map((c) => ({ value: c.ref, label: c.label, group: 'Changes' })), baseCurrent: perforceLabel(p4.change), headOptions: [], headCurrent: '', reset: null, commitUrl: () => null }
   const commits = refs?.commits ?? []
   const subject = (sha: string): string | undefined => commits.find((c) => c.sha === sha)?.subject
   const commitOptions = (group: string): Option[] =>
@@ -194,6 +197,7 @@ export function RangePicker(props: Props): React.JSX.Element {
   const { range } = props
   const { baseOptions, baseCurrent, headOptions, headCurrent, reset, commitUrl } = rangeChoices(range, props.diff, props.refs)
   const head = range.headRef ?? null
+  if (perforceRange(range.baseRef)) return <span className="range" title="All opened client files; unopened changes inside the project folder only."><span>{props.refs?.perforce?.workspace.stream ?? props.refs?.perforce?.workspace.client}</span><Picker label="Changes" current={baseCurrent} options={baseOptions} selected={range.baseRef} commitUrl={() => null} onOpen={props.onRefresh} onPick={(value) => value !== null && props.onChange({ baseRef: value })} /></span>
   return (
     <span className="range">
       <Picker

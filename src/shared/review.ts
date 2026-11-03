@@ -1,6 +1,7 @@
 // Review sessions (SPEC → Review sessions): the diff under review, the agent's
 // findings, and where a thread's lines are now. Pure, so main and renderer share it.
 import type { Anchor, Finding, Severity, Thread } from './types'
+import { perforceLabel, type PerforceWorkspace } from './perforce'
 
 export type LineAnchor = Extract<Anchor, { kind: 'line' }>
 export type Side = 'old' | 'new'
@@ -17,6 +18,9 @@ export type DiffLine = {
 export type DiffHunk = { header: string; lines: DiffLine[] }
 
 export type DiffFile = {
+  displayPath?: string
+  outside?: boolean
+  perforce?: { opened: boolean; change?: string }
   path: string
   /** The path in the base, for a renamed file. */
   oldPath?: string
@@ -43,6 +47,7 @@ export function isCommitId(ref: string): boolean {
 }
 
 export type ReviewDiff = {
+  perforce?: { workspace: PerforceWorkspace; change: string; project: string }
   baseRef: string
   /** The commit reviewed against: baseRef itself, or its merge base with the reviewed commit. */
   base: string
@@ -58,6 +63,7 @@ export type ReviewCommit = { sha: string; subject: string; /** Commit time, ms. 
 
 /** What the review's dropdowns offer: branches to take the merge base with, and the branch's recent commits. */
 export type ReviewRefs = {
+  perforce?: { workspace: PerforceWorkspace; changes: { ref: string; label: string }[] }
   bases: { ref: string; sha: string }[]
   commits: ReviewCommit[]
   /** The repository's GitHub page (from `origin`), for links to commits; null off GitHub. */
@@ -67,14 +73,18 @@ export type ReviewRefs = {
 }
 
 /** The diff a range shows, as a command (for the agent). */
-export function diffCommand(diff: Pick<ReviewDiff, 'base' | 'headRef' | 'head'>): string {
+export function diffCommand(diff: Pick<ReviewDiff, 'base' | 'headRef' | 'head' | 'perforce'>): string {
+  if (diff.perforce) {
+    const { workspace, change, project } = diff.perforce
+    return `read-only Perforce inspection for client ${JSON.stringify(workspace.client)}, ${perforceLabel(change)}, project ${JSON.stringify(project)}: p4 opened${change === 'workspace' ? '' : ` -c ${change}`}${change === 'workspace' ? ' plus p4 status inside the project folder only' : ''}; compare p4 print -q <depotFile>#have with mapped local contents (empty base for adds, empty new side for deletes, moved source for moves). Finding paths are relative to workspace root ${JSON.stringify(workspace.root)}. Opened files outside the project are included; unopened changes outside it are not scanned. Gloss does not open files in Perforce; opening them is up to the user or their configured plugin`
+  }
   return diff.headRef === null
     ? `\`git diff ${diff.base}\` (it includes uncommitted changes) plus new files from \`git ls-files --others --exclude-standard\``
     : `\`git diff ${diff.base} ${diff.head}\``
 }
 
 /** The first line of a message after the review's range changed, so the agent reviews the new diff. */
-export function rangeNote(diff: Pick<ReviewDiff, 'base' | 'headRef' | 'head'>): string {
+export function rangeNote(diff: Pick<ReviewDiff, 'base' | 'headRef' | 'head' | 'perforce'>): string {
   return `[The diff under review is now ${diffCommand(diff)}.]`
 }
 
@@ -92,7 +102,7 @@ const FINDINGS_FORMAT = `\`\`\`gloss-findings
 [{"file": "src/orders.ts", "side": "new", "start": 42, "end": 44, "severity": "bug", "title": "One line", "body": "Why it matters and what to do."}]
 \`\`\`
 
-- file: the path relative to the repository root, as in the diff.
+- file: the path relative to the review root (repository root for Git, workspace root for Perforce), as in the diff.
 - side: "new" for lines of the current version, "old" for removed lines (numbered as in the base).
 - start, end: the lines the finding is about, on that side. Keep the range to the lines that matter.
 - severity: "bug" (wrong behavior), "suggestion" (worth changing) or "nit" (minor).
@@ -100,7 +110,7 @@ const FINDINGS_FORMAT = `\`\`\`gloss-findings
 Only report lines the diff shows. Use an empty array if you find nothing.`
 
 /** Added to Gloss's agent instructions in a review session. */
-export const REVIEW_INSTRUCTIONS = `- This is a review session. Tags of the form \`[re: path:line "<quote>"]\` (or \`path:start-end\`) quote lines of the diff under review: the path is relative to the repository root, and \`(old)\` after the lines means the base's version of removed lines.
+export const REVIEW_INSTRUCTIONS = `- This is a review session. Tags of the form \`[re: path:line "<quote>"]\` (or \`path:start-end\`) quote lines of the diff under review: the path is relative to the review root (repository root for Git, workspace root for Perforce), and \`(old)\` after the lines means the base's version of removed lines.
 - When asked in the main conversation to review the diff or to find problems in it, list your findings in one fenced block tagged \`gloss-findings\` that holds a JSON array, after your answer:
 
 ${FINDINGS_FORMAT}`
@@ -116,7 +126,8 @@ export function isFirstPass(text: string): boolean {
  * The message that starts a review: asks the agent for a summary and its findings.
  * `pr` is the pull request's number, for a review of one.
  */
-export function firstPassPrompt(diff: Pick<ReviewDiff, 'baseRef' | 'base' | 'headRef' | 'head'>, pr?: number): string {
+export function firstPassPrompt(diff: Pick<ReviewDiff, 'baseRef' | 'base' | 'headRef' | 'head' | 'perforce'>, pr?: number): string {
+  if (diff.perforce) return `${FIRST_PASS_MARK}\nReview ${diffCommand(diff)}. Read surrounding code as needed. Do not change files yet.\n\nReply with a short summary and assessment, then findings:\n${FINDINGS_FORMAT.replace('repository root', 'workspace root')}`
   const what =
     pr !== undefined
       ? `Review pull request #${pr}: everything on this branch since it left \`${diff.baseRef}\`, committed or not.`

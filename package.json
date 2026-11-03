@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:perforce": "node scripts/test-perforce.mjs",
     "bench:new-session": "node scripts/bench-new-session.mjs",
     "bench:app-startup": "node scripts/bench-app-startup.mjs",
     "postinstall": "patch-package",

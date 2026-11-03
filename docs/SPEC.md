@@ -408,6 +408,18 @@ A personal library of plugins, written by the user or an agent in the library fo
 
 ## Projects and sessions
 
+### Version control
+
+When a project folder is added, Gloss detects Git and Perforce using the user's existing configuration. If only one is available, it is selected automatically. If both are available, a native **Version control** dialog names the folder and offers **Git**, **Perforce** and **Cancel**. Cancel is focused initially; choosing a provider opens the project with it. Cancel leaves the project unopened. Project settings show a **Version control** selector so the choice can be changed later. Existing projects retain Git behavior until Perforce is selected. Ordinary folders remain usable without version control.
+
+For Perforce, detection verifies the client, its root and the folder's mapping. Missing CLI, login required or expired, unavailable server and unmapped folder have distinct actionable messages. Gloss uses existing configuration and tickets, stores no credentials, and never logs in or changes server trust. An unavailable provider is not silently replaced with another one.
+
+Project settings show the selected Perforce client's name, stream when present, server and root. Sessions run in the mapped project folder with any supported agent. Gloss runs no Perforce write commands; opening files for edit or add is up to the user or a plugin they supply. The **@ file picker** respects effective Perforce ignore rules, including `P4IGNORE` configuration, while retaining files already tracked in Perforce even when an ignore rule matches them.
+
+The project preference applies to new reviews and project controls. Existing reviews keep their original provider and range so changing the preference cannot reinterpret a saved review. The session folder remains fixed.
+
+### Sidebar
+
 The sidebar (`docs/mocks/target.html`) shows one project at a time:
 
 - **Project switcher** at the top: the current project's name and where its folder is (the parent folder, the home folder shortened to ~; the full path in its tooltip). Its menu lists every project by name, alphabetically, so the order doesn't change with use (state dots with hover labels mark Working and Waiting, and unseen Completed or Failed turns, including on the selected project; concurrent work and unseen outcomes can both show) "Open project…", a folder picker that adds a project, and "Open from GitHub…" (below). Hovering a project in the menu shows a small **×** that deletes it.
@@ -436,6 +448,8 @@ When the agent advertises `loadSession` (Claude Code does), the agent's own copy
 - Agents without `loadSession` keep the DB as the display state.
 
 ## Worktrees
+
+Worktrees are available only for Git projects. In Perforce projects the Worktrees entry, new/existing worktree choices and worktree settings are disabled with the reason **Worktrees require Git**. New sessions always use the project folder, including when a previously saved Git setting chose a worktree. Main-process actions enforce this restriction as well as the UI. Branch and pull request actions and their shortcuts are unavailable with **Requires Git**. **Open from GitHub** remains a global way to add a separate Git project.
 
 Sessions can work in their own git worktrees (`docs/mocks/worktrees.html`), so large pieces of work run side by side without touching each other's files, while sessions that should share a checkout still can. Gloss creates and removes the worktrees it makes; nothing has to be managed by hand. Any agent works: it is started with the worktree's folder as its cwd.
 
@@ -474,6 +488,18 @@ Sessions can work in their own git worktrees (`docs/mocks/worktrees.html`), so l
 - **Code blocks** are highlighted with Shiki (JavaScript regex engine, no WebAssembly, themes `github-light` and `github-dark` as `light-dark()` colors, so they follow the theme). Common languages load at startup, others the first time they are seen; until then the block renders plain and re-renders when ready. Highlighting splits the same source-offset spans selection anchors use, so anchors in code keep working. Each block has a Copy button.
 
 ## Review sessions
+
+### Perforce reviews
+
+In a Perforce project, **Review changes** opens a workspace review in the selected project folder. The review header shows the client name (and stream when present), and one **Changes** picker replaces Git's Base and Review dropdowns. It offers **Workspace** (the default), **Default changelist**, and the current client's numbered pending changelists, labeled with their number and description. The list refreshes when opened. Shelved and submitted changes are not offered. If a selected changelist is submitted, deleted or no longer belongs to the client, refresh reports that state and lets the user choose another range; it does not silently switch to Workspace. Titles are **Review: <client>**, **Review: Default changelist**, or **Review: CL <number>**.
+
+**Workspace** includes all opened files in the client, plus unopened changes found inside the project folder. A changelist review includes only that changelist's opened files. Each file is compared with its have revision, using the moved source for a move and an empty side for an addition or deletion. Text line endings are normalized for comparison. Binary files show metadata only. File headers indicate **Opened** (with the changelist) or **Not opened** in place of Git's committed/uncommitted labels.
+
+Opened files outside the project folder appear after its files under **Outside this folder**, in both the file list and diff. Their paths are labeled relative to the workspace root; files inside the project use project-relative display paths. Review identity and line anchors use consistent workspace-relative paths, including in agent findings. Unopened changes outside the project folder are not scanned; the Workspace picker's explanatory text states this scope. Only verified mapped files can be read or opened through review actions.
+
+The existing diff viewer, line threads, Run review, agent fixes and refresh triggers apply. Refresh re-enumerates the selected scope and reads current contents. Workspace refreshes include new unopened agent edits inside the project; changelist refreshes include them only after they are opened in that changelist. Thread anchors follow their lines or become outdated as in Git reviews. The agent receives the client, mapped project folder, selected scope, path conventions and applicable read-only Perforce commands, including the limitation on unopened files outside the project. A changed selection is announced with the next message. No Git commands or pull request context are supplied for a Perforce review.
+
+### Shared behavior and Git ranges
 
 A session for checking an agent's work (`docs/mocks/target.html#review`). The center shows the diff of the branch, threads hang off its lines, and the agent reviews it when asked. To the agent it is still one linear session, separate from the session that wrote the code, so the review starts with clean context.
 
@@ -574,6 +600,10 @@ The project section of Settings includes **Obsidian vault**, saved as `projects[
 An **Obsidian** logo button (with a vault tooltip and accessible label) appears immediately after the project folder button in both conversation and review status lines. It opens or focuses the configured vault using Obsidian's built-in `obsidian://open?vault=...` protocol. The main process resolves the vault from the session's project settings and encodes its name as a single parameter. Launch failures appear in the status line. Obsidian must be installed and the vault already registered there.
 
 ## Status line
+
+In Perforce projects, the branch item becomes a workspace item showing the stream for a stream client, otherwise the client name. Its tooltip contains client, user, server and root. A `*` means the client has opened files, from `p4 opened`. Login-required or expired states replace the normal item and direct the user to `p4 login` in its tooltip; an unreachable server is reported there too. Gloss never logs in. There is no pull request item. The workspace state refreshes when a session opens and after each turn.
+
+An amber **N not opened** item counts distinct files the agent edited during the latest turn that `p4 status` finds changed but not opened. Only reported edited paths are checked, never the entire workspace; no item is shown for zero. Its tooltip explains that shell edits without reported file paths may be absent and that a workspace review discovers unopened changes inside the project folder. A failed check is shown as unavailable rather than a successful zero.
 
 Opening a status line menu closes any other open menu. Clicking outside or pressing Escape closes it.
 

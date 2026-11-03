@@ -449,9 +449,10 @@ export function ReviewView(props: Props): React.JSX.Element {
               <span>Files</span>
               <span>{files.length}</span>
             </div>
-            {files.map((f) => {
+            {files.map((f, index) => {
               const unresolved = lineThreads.filter((t) => t.anchor.file === f.path && t.resolvedAt === undefined).length
-              const slash = f.path.lastIndexOf('/')
+              const shownPath = f.displayPath ?? f.path
+              const slash = shownPath.lastIndexOf('/')
               return (
                 <button
                   key={f.path}
@@ -469,14 +470,15 @@ export function ReviewView(props: Props): React.JSX.Element {
                     )
                   }}
                 >
+                  <span>{f.outside && !files[index - 1]?.outside && <span className="label">Outside this folder</span>}</span>
                   <span className="file-tree-line">
-                    <span className="file-tree-name">{f.path.slice(slash + 1)}</span>
+                    <span className="file-tree-name">{shownPath.slice(slash + 1)}</span>
                     {unresolved > 0 && <span className="count-pill">{unresolved}</span>}
                     <span className="file-tree-counts">
                       <span className="add">+{f.additions}</span> <span className="del">−{f.deletions}</span>
                     </span>
                   </span>
-                  {slash > 0 && <span className="file-tree-dir">{f.path.slice(0, slash)}</span>}
+                  {slash > 0 && <span className="file-tree-dir">{shownPath.slice(0, slash)}</span>}
                 </button>
               )
             })}

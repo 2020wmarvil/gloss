@@ -71,6 +71,7 @@ export type GlobalSettings = {
 
 /** Settings for one project folder, under `projects` keyed by its path. */
 export type ProjectSettings = {
+  versionControl?: 'git' | 'perforce'
   mcpServers?: import('./mcp').McpServer[]
   /** An existing Obsidian vault's name or ID; empty hides its shortcut. */
   obsidianVault?: string
@@ -102,6 +103,7 @@ export type SettingField = {
 }
 
 export const SETTING_FIELDS: readonly SettingField[] = [
+  { key: 'versionControl', scope: 'project', type: 'enum', label: 'Version control', description: 'Used for new reviews and project controls. Existing reviews keep their provider.', options: [{ value: 'git', label: 'Git' }, { value: 'perforce', label: 'Perforce' }] },
   { key: 'shortcuts', scope: 'global', type: 'bindings', label: 'Keyboard shortcuts', description: 'Changed command bindings; empty disables a command.', hidden: true },
   {
     key: 'agentProfiles', scope: 'global', type: 'profiles', label: 'Custom ACP agents',

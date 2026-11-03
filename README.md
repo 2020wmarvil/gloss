@@ -5,3 +5,5 @@
 *Goodbye, Long Off-topic Scrolling Sessions.*
 
 A desktop GUI for coding agents (using [Agent Client Protocol](https://agentclientprotocol.com)) that lets you reply to a single point in an agent's answer as its own thread.
+
+[Using Perforce projects and reviews](docs/PERFORCE.md)

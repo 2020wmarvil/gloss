@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import type { Attachment } from '../shared/types'
 import type { ContextItem } from '../shared/composer'
 import { readMarkdownImage } from './markdownImage'
+import { perforceContextPaths } from './perforce'
 
 const MAX_BYTES = 1024 * 1024
 const SKIP = new Set(['.git', 'node_modules', '.next', 'dist', 'out', 'build', '.venv', 'venv'])
@@ -102,7 +103,7 @@ export async function readContextText(path: string): Promise<string> {
   } finally { await file.close() }
 }
 
-export async function attachPathContext(cwd: string, item: ContextItem): Promise<Attachment> {
+export async function attachPathContext(cwd: string, item: ContextItem, perforce = false): Promise<Attachment> {
   const path = await projectPath(cwd, item.id)
   if (isAbsolute(item.id) && item.kind !== 'file') throw new Error('Browse to a file to attach it.')
   if (item.kind === 'file') {
@@ -115,7 +116,7 @@ export async function attachPathContext(cwd: string, item: ContextItem): Promise
     return { kind: 'file', name: basename(path), path, text: await readContextText(path) }
   }
   const prefix = item.id.replace(/\/$/, '') + '/'
-  const paths = (await contextPaths(cwd)).filter((p) => p.startsWith(prefix))
+  const paths = (await (perforce ? perforceContextPaths(cwd) : contextPaths(cwd))).filter((p) => p.startsWith(prefix))
   if (paths.length > 50) throw new Error('Folder exceeds 50 files. Attach a smaller folder or individual files.')
   if (!paths.length) throw new Error('This folder has no attachable files.')
   const parts: string[] = []
