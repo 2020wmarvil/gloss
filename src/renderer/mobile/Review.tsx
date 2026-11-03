@@ -311,6 +311,7 @@ function RangeSheet(props: {
 
 const WRAP_KEY = 'gloss.phone.review.wrap'
 const COMMENTS_KEY = 'gloss.phone.review.comments'
+const NUMBERS_KEY = 'gloss.phone.review.numbers'
 
 function useStoredFlag(key: string, fallback: boolean): [boolean, (v: boolean) => void] {
   const [value, setValue] = useState(() => {
@@ -340,6 +341,7 @@ export function ReviewFile(props: {
   const file = files[index]
   const [wrap, setWrap] = useStoredFlag(WRAP_KEY, false)
   const [comments, setComments] = useStoredFlag(COMMENTS_KEY, true)
+  const [numbers, setNumbers] = useStoredFlag(NUMBERS_KEY, true)
   const [menu, setMenu] = useState(false)
   const [picked, setPicked] = useState<{ side: Side; line: number } | null>(null)
   const [stepped, setStepped] = useState<string | null>(null)
@@ -388,7 +390,7 @@ export function ReviewFile(props: {
         <button className="m-ib" aria-label="Next file" disabled={index < 0 || index >= files.length - 1} onClick={() => props.onFile(files[index + 1].path)}><ChevronDown size={18} /></button>
         <button className="m-ib" aria-label="View options" onClick={() => setMenu(true)}><Ellipsis size={18} /></button>
       </div>
-      <div className={`m-body m-scroll m-diff${wrap ? ' wrap' : ''}`} ref={scroller}>
+      <div className={`m-body m-scroll m-diff${wrap ? ' wrap' : ''}${numbers ? '' : ' no-nums'}`} ref={scroller}>
         {!file ? (
           <p className="m-empty">{review.diff ? 'This file is no longer changed.' : 'Reading the diff…'}</p>
         ) : (
@@ -435,6 +437,7 @@ export function ReviewFile(props: {
             <div className="m-grab" />
             <h4>{fileName(path)}</h4>
             <Toggle label="Wrap lines" on={wrap} onChange={setWrap} />
+            <Toggle label="Line numbers" on={numbers} onChange={setNumbers} />
             {file && expandable(file) && source !== null && (
               <Toggle label="Entire file" on={expansion.full} onChange={() => review.onExpand(path, 'full')} />
             )}

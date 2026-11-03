@@ -354,6 +354,9 @@
 .m-diff.wrap .diff-chunk { width: auto; }
 .m-diff.wrap .diff-hunk, .m-diff.wrap .diff-card-row { width: auto; }
 .m-diff.wrap .diff-row .code { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Without line numbers the gutter is just the marker column. */
+.m-diff.no-nums .diff-row.unified { grid-template-columns: 10px minmax(0, 1fr); }
+.m-diff.no-nums .diff-row .num { display: none; }
 .m-screen .findings-row button { color: var(--accent); font-weight: 600; font-size: var(--t-14); }
 .m-screen .findings-row button:disabled { color: var(--muted); font-weight: 500; }
 
