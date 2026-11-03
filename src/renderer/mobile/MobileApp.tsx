@@ -53,6 +53,9 @@ const MAX_IMAGE = 10 * 1024 * 1024
  * still follows new output.
  */
 const scrolls = new Map<string, number>()
+
+/** The session list's project, as last shown on this phone. */
+const PROJECT_KEY = 'gloss.phone.project'
 const BOTTOM = -1
 
 /** Restores a list's scroll position for `key` before paint, and keeps it as it scrolls. */
@@ -82,7 +85,11 @@ export function MobileApp({ link }: { link: PhoneLink }): React.JSX.Element {
   const seen = useRef(new Map<string, OpenView>())
   useEffect(() => { if (phone.open) seen.current.set(phone.open.session.id, phone.open) }, [phone.open])
   // The session list's project: kept while a session is open, and set to that session's on the way back.
-  const [project, setProject] = useState<string | null>(null)
+  // Kept on the phone, so the app opens on the project it was last in.
+  const [project, setProject] = useState<string | null>(() => localStorage.getItem(PROJECT_KEY))
+  useEffect(() => {
+    if (project) localStorage.setItem(PROJECT_KEY, project)
+  }, [project])
 
   useEffect(() => applyTheme(phone.info?.theme ?? 'system'), [phone.info?.theme])
 
