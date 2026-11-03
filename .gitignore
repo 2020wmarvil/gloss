@@ -20,3 +20,7 @@ docs/mocks/
 # Temporary milestone plans, sandboxes and probes
 docs/plans/
 scripts/probes/
+
+# Local benchmark and its results
+scripts/bench/
+docs/performance/
