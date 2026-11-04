@@ -1,7 +1,7 @@
 import { commandLabel, commandHint, commandMatches } from './commandBindings'
 // A review session's main view (docs/mocks/target.html#review): the branch's diff with
 // threads on its lines. The general conversation lives in the side panel.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { GitStatus, PullRequest } from '@shared/ipc'
 import { expandable, gapsOf, linesOf, newLineOf, type LineAnchor, type Location, type ReviewDiff, type ReviewRange, type ReviewRefs, type Side } from '@shared/review'
 import type { MessageQueue, SessionLive, Worktree } from '@shared/types'
@@ -127,6 +127,12 @@ const DIFF_ANCHORS: ScrollAnchors = {
 /** Below this width of the diff, split shows as unified. */
 const SPLIT_MIN_WIDTH = 640
 
+function toggle(set: Set<string>, id: string): Set<string> {
+  const next = new Set(set)
+  if (!next.delete(id)) next.add(id)
+  return next
+}
+
 export function ReviewView(props: Props): React.JSX.Element {
   const { open, diff, locations, panel, sources, onReadSource } = props
   const files = diff.diff?.files ?? []
@@ -216,31 +222,52 @@ export function ReviewView(props: Props): React.JSX.Element {
   /** Collapses every file, or expands every file when all are collapsed. */
   const toggleAll = (): void => setExpandedFiles(new Set(allCollapsed ? files.map((f) => f.path) : []))
 
-  const summaries = new Map(threadSummaries(open).map((s) => [s.thread.id, s]))
-  const ordered = inDiffOrder(open.threads, diff.diff, locations)
-  const cards: Card[] = ordered.map((t) => {
-    const s = summaries.get(t.id)
-    return {
-      thread: t,
-      kind: kindOf(t),
-      title: titleOf(t, open.messages),
-      body: t.finding?.body ?? null,
-      replies: s?.replies ?? 0,
-      lastActivity: s?.lastActivity ?? t.createdAt,
-      running: props.runningThread === t.id,
-      location: locations.get(t.id) ?? { kind: 'gone' },
-      resolved: t.resolvedAt !== undefined
-    }
-  })
+  // Kept while the session, diff and threads are the same, so scrolling (which moves the
+  // file list's current file) doesn't re-render every file (SPEC → Performance).
+  const runningThread = props.runningThread
+  const { cards, ordered } = useMemo(() => {
+    const summaries = new Map(threadSummaries(open).map((s) => [s.thread.id, s]))
+    const ordered = inDiffOrder(open.threads, diff.diff, locations)
+    const cards: Card[] = ordered.map((t) => {
+      const s = summaries.get(t.id)
+      return {
+        thread: t,
+        kind: kindOf(t),
+        title: titleOf(t, open.messages),
+        body: t.finding?.body ?? null,
+        replies: s?.replies ?? 0,
+        lastActivity: s?.lastActivity ?? t.createdAt,
+        running: runningThread === t.id,
+        location: locations.get(t.id) ?? { kind: 'gone' },
+        resolved: t.resolvedAt !== undefined
+      }
+    })
+    return { cards, ordered }
+  }, [open, diff.diff, locations, runningThread])
   const openThreads = ordered.filter((t) => t.resolvedAt === undefined)
   // The lines threads are at stay shown when they are outside the hunks.
-  const shownExpansions: Record<string, Expansion> = { ...expansions }
-  for (const f of files) {
-    const source = sources[f.path]
-    const gaps = source && expandable(f) ? gapsOf(f.hunks) : null
-    const at = cards.filter((c) => c.thread.anchor.file === f.path).map((c) => ({ side: c.thread.anchor.side, location: c.location }))
-    if (gaps && source && at.length > 0) shownExpansions[f.path] = revealing(expansions[f.path] ?? NO_EXPANSION, gaps, source.length, at)
-  }
+  const shownExpansions = useMemo(() => {
+    const out: Record<string, Expansion> = { ...expansions }
+    for (const f of files) {
+      const source = sources[f.path]
+      const gaps = source && expandable(f) ? gapsOf(f.hunks) : null
+      const at = cards.filter((c) => c.thread.anchor.file === f.path).map((c) => ({ side: c.thread.anchor.side, location: c.location }))
+      if (gaps && source && at.length > 0) out[f.path] = revealing(expansions[f.path] ?? NO_EXPANSION, gaps, source.length, at)
+    }
+    return out
+  }, [expansions, files, sources, cards])
+  // Stable, so the files' memoized sections don't re-render for new callbacks.
+  const latest = useRef({ onOpenFile: props.onOpenFile, onOpenThread: props.onOpenThread })
+  latest.current = { onOpenFile: props.onOpenFile, onOpenThread: props.onOpenThread }
+  const diffActions = useMemo(
+    () => ({
+      onToggleFile: (path: string) => setExpandedFiles((s) => toggle(s, path)),
+      onToggleCard: (id: string) => setToggled((s) => toggle(s, id)),
+      onOpenFile: (path: string, how: 'reveal' | 'editor', line: number) => latest.current.onOpenFile(path, how, line),
+      onOpenThread: (id: string) => latest.current.onOpenThread(id)
+    }),
+    []
+  )
   const activeThread = panel?.threadId ? open.threads.find((t) => t.id === panel.threadId) : undefined
   const activeAt = activeThread ? locations.get(activeThread.id) : undefined
   const active =
@@ -257,12 +284,6 @@ export function ReviewView(props: Props): React.JSX.Element {
         }
       : null
   const position = openThreads.findIndex((t) => t.id === panel?.threadId)
-
-  const toggle = (set: Set<string>, id: string): Set<string> => {
-    const next = new Set(set)
-    if (!next.delete(id)) next.add(id)
-    return next
-  }
 
   /** Goes to the next (1) or previous (-1) open thread, expanding its card. */
   const step = (by: 1 | -1): void => {
@@ -303,18 +324,29 @@ export function ReviewView(props: Props): React.JSX.Element {
   }, [panelThread, panelFile])
   const panelFileShown = panelFile !== null && expandedFiles.has(panelFile)
 
-  // Bring the open thread into view: its card, or its marker.
+  // Bring the open thread into view: its card, or its marker. A file far from the view has
+  // no lines rendered yet: scroll to it first, and look again as they render.
   useEffect(() => {
     const el = scroller.current
     if (!el || !panelThread) return
-    const target =
-      el.querySelector<HTMLElement>(`.thread-card[data-thread="${CSS.escape(panelThread)}"]`) ??
-      el.querySelector<HTMLElement>(`[data-thread="${CSS.escape(panelThread)}"]`)
-    if (!target) return
-    const box = target.getBoundingClientRect()
-    const view = el.getBoundingClientRect()
-    if (box.top < view.top + 40 || box.bottom > view.bottom) target.scrollIntoView?.({ block: 'center' })
-  }, [panelThread, comments, panelFileShown])
+    let frame = 0
+    let tries = 0
+    const go = (): void => {
+      const target =
+        el.querySelector<HTMLElement>(`.thread-card[data-thread="${CSS.escape(panelThread)}"]`) ??
+        el.querySelector<HTMLElement>(`[data-thread="${CSS.escape(panelThread)}"]`)
+      if (!target) {
+        if (tries === 0 && panelFile) el.querySelector(`.diff-file[data-file="${CSS.escape(panelFile)}"]`)?.scrollIntoView?.({ block: 'start' })
+        if (tries++ < 30) frame = requestAnimationFrame(go)
+        return
+      }
+      const box = target.getBoundingClientRect()
+      const view = el.getBoundingClientRect()
+      if (box.top < view.top + 40 || box.bottom > view.bottom) target.scrollIntoView?.({ block: 'center' })
+    }
+    go()
+    return () => cancelAnimationFrame(frame)
+  }, [panelThread, panelFile, comments, panelFileShown])
 
   /** The file whose section is at the top of the diff, for the tree. */
   const track = (): void => {
@@ -520,11 +552,11 @@ export function ReviewView(props: Props): React.JSX.Element {
               expandedFiles={expandedFiles}
               sources={sources}
               expansions={shownExpansions}
-              onToggleFile={(path) => setExpandedFiles((s) => toggle(s, path))}
+              onToggleFile={diffActions.onToggleFile}
               onExpand={onExpand}
-              onOpenFile={props.onOpenFile}
-              onToggleCard={(id) => setToggled((s) => toggle(s, id))}
-              onOpenThread={props.onOpenThread}
+              onOpenFile={diffActions.onOpenFile}
+              onToggleCard={diffActions.onToggleCard}
+              onOpenThread={diffActions.onOpenThread}
             />
           )}
         </div>

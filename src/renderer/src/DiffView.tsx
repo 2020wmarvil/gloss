@@ -1,10 +1,10 @@
 // A review session's diff (SPEC → Review sessions → Diff view): every file stacked under
 // a sticky header, split or unified, with threads as cards under their lines.
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Fragment, memo, startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { scrollParent, startAutoscroll } from './autoscroll'
 import { expandable, gapsOf, languageOf, type DiffFile, type DiffLine, type Location, type Side } from '@shared/review'
 import { EXPAND_STEP, gapViews, NO_EXPANSION, type Expansion, type GapView } from './diffContext'
-import { codeColors, useHighlighting } from './highlight'
+import { cachedColors, colorsInBackground, useHighlighting } from './highlight'
 import { Markdown } from './Markdown'
 import { KIND_NAMES, type LineThread, type ThreadKind } from './reviewThreads'
 import { ago } from './Sidebar'
@@ -153,55 +153,102 @@ function rowsOf(lines: DiffLine[], layout: Layout): Row[] {
 }
 
 type LineColors = Map<DiffLine, { old?: (string | undefined)[]; new?: (string | undefined)[] }>
+type Colors = (string | undefined)[] | null
+
+/** Each side of each hunk, highlighted as one piece of code. */
+type Piece = { lines: DiffLine[]; side: Side; code: string }
+
+/** Colors of a file's pieces and of the whole file now, as worked out. */
+type Colored = { pieces: Piece[]; hunks: Colors[]; source: string[] | null | undefined; sourceColors: Colors }
 
 /**
  * Syntax colors per line and side, highlighting each side of a hunk as one piece of
- * code, and lines shown around the hunks as part of the whole file.
+ * code, and lines shown around the hunks as part of the whole file. Only while the file
+ * is shown, and in the background: lines render plain until their colors are ready
+ * (SPEC → Performance).
  */
-function useColors(file: DiffFile, source: string[] | null | undefined, gaps: GapView[]): LineColors {
+function useColors(file: DiffFile, source: string[] | null | undefined, gaps: GapView[], shown: boolean): LineColors {
   const version = useHighlighting()
-  const hunkColors = useMemo(() => {
-    void version
-    const out: LineColors = new Map()
-    const lang = languageOf(file.path)
+  const lang = languageOf(file.path)
+  const pieces = useMemo(() => {
+    const out: Piece[] = []
     for (const h of file.hunks) {
       for (const side of ['old', 'new'] as const) {
         const lines = h.lines.filter((l) => l[side] !== null)
-        const colors = codeColors(lines.map((l) => l.text).join('\n'), lang)
-        if (!colors) continue
-        let at = 0
-        for (const l of lines) {
-          out.set(l, { ...out.get(l), [side]: colors.slice(at, at + l.text.length) })
-          at += l.text.length + 1
+        out.push({ lines, side, code: lines.map((l) => l.text).join('\n') })
+      }
+    }
+    return out
+  }, [file])
+  const sourceCode = useMemo(() => source?.join('\n'), [source])
+  // Colors already worked out (a file shown again) apply at once.
+  const cached = useMemo((): Colored | null => {
+    void version
+    if (!shown) return null
+    const hunks = pieces.map((p) => cachedColors(p.code, lang))
+    const sourceColors = sourceCode === undefined ? null : cachedColors(sourceCode, lang)
+    if (hunks.some((c) => c === undefined) || sourceColors === undefined) return null
+    return { pieces, hunks: hunks as Colors[], source, sourceColors }
+  }, [shown, pieces, source, sourceCode, lang, version])
+  const [worked, setWorked] = useState<Colored | null>(null)
+  useEffect(() => {
+    void version
+    if (!shown || cached) return
+    const hunks: Colors[] = new Array(pieces.length).fill(null)
+    let sourceColors: Colors = null
+    let left = pieces.length + (sourceCode === undefined ? 0 : 1)
+    let live = true
+    const finish = (): void => {
+      if (--left === 0 && live) startTransition(() => setWorked({ pieces, hunks, source, sourceColors }))
+    }
+    const cancels = pieces.map((p, i) =>
+      colorsInBackground(p.code, lang, (c) => {
+        hunks[i] = c
+        finish()
+      })
+    )
+    if (sourceCode !== undefined) {
+      cancels.push(
+        colorsInBackground(sourceCode, lang, (c) => {
+          sourceColors = c
+          finish()
+        })
+      )
+    }
+    return () => {
+      live = false
+      for (const cancel of cancels) cancel()
+    }
+  }, [shown, cached, pieces, source, sourceCode, lang, version])
+  const colored = cached ?? worked
+  return useMemo(() => {
+    const out: LineColors = new Map()
+    if (!colored) return out
+    colored.pieces.forEach((p, i) => {
+      const colors = colored.hunks[i]
+      if (!colors) return
+      let at = 0
+      for (const l of p.lines) {
+        out.set(l, { ...out.get(l), [p.side]: colors.slice(at, at + l.text.length) })
+        at += l.text.length + 1
+      }
+    })
+    if (colored.source && colored.sourceColors) {
+      const lines: (string | undefined)[][] = []
+      let at = 0
+      for (const text of colored.source) {
+        lines.push(colored.sourceColors.slice(at, at + text.length))
+        at += text.length + 1
+      }
+      for (const g of gaps) {
+        for (const l of [...g.top, ...g.bottom]) {
+          const c = lines[l.new! - 1]
+          out.set(l, { old: c, new: c })
         }
       }
     }
     return out
-  }, [file, version])
-  const sourceColors = useMemo(() => {
-    void version
-    if (!source) return null
-    const colors = codeColors(source.join('\n'), languageOf(file.path))
-    if (!colors) return null
-    const lines: (string | undefined)[][] = []
-    let at = 0
-    for (const text of source) {
-      lines.push(colors.slice(at, at + text.length))
-      at += text.length + 1
-    }
-    return lines
-  }, [file.path, source, version])
-  return useMemo(() => {
-    if (!sourceColors) return hunkColors
-    const out: LineColors = new Map(hunkColors)
-    for (const g of gaps) {
-      for (const l of [...g.top, ...g.bottom]) {
-        const c = sourceColors[l.new! - 1]
-        out.set(l, { old: c, new: c })
-      }
-    }
-    return out
-  }, [hunkColors, sourceColors, gaps])
+  }, [colored, gaps])
 }
 
 /** Display width of a line in characters (tabs as 4). */
@@ -217,7 +264,17 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
   const canExpand = expandable(file) && source !== null
   const gaps = useMemo(() => (canExpand ? gapsOf(file.hunks) : null), [canExpand, file.hunks])
   const views = useMemo(() => (gaps ? gapViews(gaps, source, expansion) : null), [gaps, source, expansion])
-  const colors = useColors(file, source, views ?? NO_GAPS)
+  const sectionRef = useRef<HTMLElement>(null)
+  /** How tall its lines were when they last left, for the placeholder while they're away. */
+  const away = useRef<{ height: number; file: DiffFile; views: GapView[] | null; layout: Layout } | null>(null)
+  // The phone shows one file on its own screen: all of it.
+  const near = useNear(sectionRef, !props.bare, !collapsed, (el) => {
+    const head = el.querySelector<HTMLElement>('.diff-file-head')
+    away.current = { height: el.offsetHeight - (head?.offsetHeight ?? 0), file, views, layout }
+  })
+  /** Its lines are rendered: expanded, and within a screen of the view. */
+  const rendered = !collapsed && near
+  const colors = useColors(file, source, views ?? NO_GAPS, rendered)
   const [sx, setSx] = useState({ old: 0, new: 0 })
   const bars = useRef<Record<string, HTMLDivElement | null>>({})
   const [selecting, setSelecting] = useState<Side | null>(null)
@@ -282,15 +339,12 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
   for (const c of cards) {
     if (c.location.kind === 'outdated' && c.location.at === null && shown(c)) body.push(cardRow(c, c.thread.anchor.side))
   }
-  let chunk: ReactNode[] = []
+  /** The rows of a block, each rendered only once the block is near the view. */
+  let chunk: (() => ReactNode)[] = []
   let lines = 0
   const flush = (): void => {
     if (chunk.length === 0) return
-    body.push(
-      <div key={`chunk:${body.length}`} className="diff-chunk" style={{ containIntrinsicSize: `auto ${lines * 20}px` }}>
-        {chunk}
-      </div>
-    )
+    body.push(<DiffChunk key={`chunk:${body.length}`} rows={chunk} lines={lines} lazy={!props.bare} />)
     chunk = []
     lines = 0
   }
@@ -326,13 +380,25 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
     )
   }
 
+  const unifiedRow = (key: string, line: DiffLine, oldN: number | null, newN: number | null): ReactNode => {
+    const side: Side = line.kind === 'del' ? 'old' : 'new'
+    return (
+      <div key={key} className="diff-row unified">
+        <div className={`mark ${line.kind}`}>{marker(side, side === 'old' ? oldN : newN) ?? (line.kind === 'context' ? marker('old', oldN) : null)}</div>
+        <div className={`num ${line.kind}`}>{line.old ?? ''}</div>
+        <div className={`num ${line.kind}`}>{line.new ?? ''}</div>
+        {code(line, side)}
+      </div>
+    )
+  }
+
   const pushRows = (prefix: string, lineRun: DiffLine[]): void => {
     rowsOf(lineRun, layout).forEach((r, ri) => {
       const key = `${prefix}:${ri}`
       const oldN = r.old?.old ?? null
       const newN = r.new?.new ?? null
-      if (split) {
-        chunk.push(
+      const row = (): ReactNode =>
+        split ? (
           <div key={key} className="diff-row split">
             <div className={`mark ${r.old ? r.old.kind : 'empty'}`}>{marker('old', oldN)}</div>
             <div className={`num ${r.old ? r.old.kind : 'empty'}`}>{oldN ?? ''}</div>
@@ -341,33 +407,22 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
             <div className={`num ${r.new ? r.new.kind : 'empty'}`}>{newN ?? ''}</div>
             {r.new ? code(r.new, 'new') : <div className="code empty" />}
           </div>
+        ) : (
+          unifiedRow(key, (r.old ?? r.new)!, oldN, newN)
         )
-      } else {
-        const line = (r.old ?? r.new)!
-        const side: Side = line.kind === 'del' ? 'old' : 'new'
-        chunk.push(
-          <div key={key} className="diff-row unified">
-            <div className={`mark ${line.kind}`}>{marker(side, side === 'old' ? oldN : newN) ?? (line.kind === 'context' ? marker('old', oldN) : null)}</div>
-            <div className={`num ${line.kind}`}>{line.old ?? ''}</div>
-            <div className={`num ${line.kind}`}>{line.new ?? ''}</div>
-            {code(line, side)}
-          </div>
-        )
-      }
+      chunk.push(() => [row(), ...cardsAt('old', oldN).map((c) => cardRow(c, 'old')), ...cardsAt('new', newN).map((c) => cardRow(c, 'new'))])
       lines++
-      for (const c of cardsAt('old', oldN)) chunk.push(cardRow(c, 'old'))
-      for (const c of cardsAt('new', newN)) chunk.push(cardRow(c, 'new'))
       if (lines >= CHUNK) flush()
     })
   }
 
   // Each hunk, after the lines shown before it; then the lines shown after the last one.
-  for (let hi = 0; hi <= file.hunks.length; hi++) {
+  for (let hi = 0; rendered && hi <= file.hunks.length; hi++) {
     const g = views?.[hi]
     if (g) pushRows(`t${hi}`, g.top)
     const row = expander(g, hi)
     if (row) {
-      chunk.push(row)
+      chunk.push(() => row)
       lines++
     }
     if (g) pushRows(`b${hi}`, g.bottom)
@@ -375,7 +430,7 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
   }
   flush()
 
-  const shownLines = [...file.hunks.flatMap((h) => h.lines), ...(views ?? []).flatMap((g) => [...g.top, ...g.bottom])]
+  const shownLines = rendered ? [...file.hunks.flatMap((h) => h.lines), ...(views ?? []).flatMap((g) => [...g.top, ...g.bottom])] : []
   const longest = (side: Side): number => Math.max(0, ...shownLines.filter((l) => l[side] !== null).map((l) => width(l.text)))
   const scrollTo = (side: Side | 'both', left: number): void => {
     if (side === 'both') setSx({ old: left, new: left })
@@ -406,7 +461,7 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
   }, [collapsed, layout, widest])
 
   return (
-    <section className="diff-file" data-file={file.path}>
+    <section className="diff-file" data-file={file.path} ref={sectionRef}>
       {!props.bare && <div className="diff-file-head" onClick={() => props.onToggleFile(file.path)}>
         <button
           className="diff-chevron"
@@ -477,6 +532,17 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
           <p className="muted diff-note">Binary file, not shown.</p>
         ) : file.hunks.length === 0 ? (
           <p className="muted diff-note">No changes to the content.</p>
+        ) : !near ? (
+          // Until it comes near the view: as tall as its lines will be.
+          <div
+            className="diff-placeholder"
+            style={{
+              height:
+                away.current && away.current.file === file && away.current.views === views && away.current.layout === layout
+                  ? away.current.height
+                  : placeholderHeight(file, views, layout)
+            }}
+          />
         ) : (
           <>
             <div
@@ -537,6 +603,82 @@ const FileSection = memo(function FileSection(props: FileProps): React.JSX.Eleme
 })
 
 const NO_GAPS: GapView[] = []
+
+/** A block of rows: rendered while within a screen of the view, else as tall as they were or will be (SPEC → Performance). */
+function DiffChunk(props: { rows: (() => ReactNode)[]; lines: number; lazy: boolean }): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  const height = useRef<number | null>(null)
+  const near = useNear(ref, props.lazy, true, (el) => {
+    height.current = el.offsetHeight
+  })
+  return (
+    <div
+      ref={ref}
+      className="diff-chunk"
+      style={near ? { containIntrinsicSize: `auto ${props.lines * ROW_PX}px` } : { height: height.current ?? props.lines * ROW_PX }}
+    >
+      {near && props.rows.map((row) => row())}
+    </div>
+  )
+}
+
+/** Line rows and hunk headers are this tall (styles.css). */
+const ROW_PX = 20
+const HUNK_PX = 32
+
+function placeholderHeight(file: DiffFile, views: GapView[] | null, layout: Layout): number {
+  let rows = 0
+  for (const h of file.hunks) rows += rowsOf(h.lines, layout).length
+  for (const g of views ?? []) rows += g.top.length + g.bottom.length
+  return rows * ROW_PX + (file.hunks.length + 1) * HUNK_PX
+}
+
+/**
+ * Whether an element is within a screen of its scroller's view while `watching` (SPEC →
+ * Performance); `onLeave` runs as it moves away, before its content goes. Always when
+ * not `lazy`, or without IntersectionObserver (tests).
+ */
+function useNear(ref: React.RefObject<HTMLElement | null>, lazy: boolean, watching: boolean, onLeave: (el: HTMLElement) => void): boolean {
+  const enabled = lazy && typeof IntersectionObserver !== 'undefined'
+  const [near, setNear] = useState(!enabled)
+  const nearNow = useRef(near)
+  const leave = useRef(onLeave)
+  leave.current = onLeave
+  // Already near when it mounts: rendered before the first paint, not a frame later.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!enabled || !watching || !el || nearNow.current) return
+    const view = el.closest<HTMLElement>('.review-scroll')?.getBoundingClientRect()
+    if (!view) return
+    const box = el.getBoundingClientRect()
+    const margin = view.height
+    if (box.bottom > view.top - margin && box.top < view.bottom + margin) {
+      nearNow.current = true
+      setNear(true)
+    }
+  }, [ref, enabled, watching])
+  useEffect(() => {
+    const el = ref.current
+    if (!enabled || !el) return
+    if (!watching) {
+      nearNow.current = false
+      setNear(false)
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const now = entries[entries.length - 1].isIntersecting
+        if (nearNow.current && !now) leave.current(el)
+        nearNow.current = now
+        setNear(now)
+      },
+      { root: el.closest<HTMLElement>('.review-scroll'), rootMargin: '100% 0px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [ref, enabled, watching])
+  return near
+}
 
 /** Where the editor opens a file: its first added line, else the first line its hunks show. */
 export function firstLine(file: DiffFile): number {

@@ -6,7 +6,7 @@ import type { SearchResult } from '@shared/search'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ForkOf, GitStatus, GlossEvent, PaneState, PullRequest, SessionView } from '@shared/ipc'
 import type { Anchor, Attachment, Message, MessageQueue, Plan, QueuedMessage, Session, SessionLive, Thread, ToolCall } from '@shared/types'
-import { lineLabel, type LineAnchor, type ReviewDiff } from '@shared/review'
+import { keepUnchanged, lineLabel, type LineAnchor, type ReviewDiff } from '@shared/review'
 import type { UserRequest } from '@shared/requests'
 import { pinAnchor, truncate } from '@shared/wire'
 import { appendText } from '@shared/streaming'
@@ -215,7 +215,12 @@ export function useSession() {
       () => {
         window.gloss.sessions.reviewDiff(sessionId).then(
           (diff) => {
-            if (openId.current === sessionId) setReviewDiff({ sessionId, diff, error: null })
+            if (openId.current !== sessionId) return
+            // Unchanged files keep their objects, so only changed ones re-render.
+            setReviewDiff((d) => {
+              const kept = keepUnchanged(d?.sessionId === sessionId ? d.diff : null, diff)
+              return d?.sessionId === sessionId && d.diff === kept && d.error === null ? d : { sessionId, diff: kept, error: null }
+            })
           },
           (err: unknown) => {
             if (openId.current === sessionId) {

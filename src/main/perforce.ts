@@ -168,45 +168,91 @@ export async function perforceFile(cwd: string, path: string, ref: string): Prom
   const lines = text.split('\n'); if (lines.at(-1) === '') lines.pop()
   return lines
 }
+/** Paths per p4 command: a long list goes in several, so a native command line stays short. */
+const BATCH = 100
+/** p4 prints run at once while reading a diff. */
+const PARALLEL = 8
+
+async function batchedRecords(cwd: string, name: string, args: string[], paths: string[], unicode: boolean): Promise<RecordData[]> {
+  const out: RecordData[] = []
+  for (let i = 0; i < paths.length; i += BATCH) out.push(...(await records(cwd, name, args, paths.slice(i, i + BATCH), unicode)))
+  return out
+}
+
+/** Runs `f` on each item, `PARALLEL` at a time; results in order. */
+async function pooled<T, R>(items: T[], f: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++
+      results[i] = await f(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(PARALLEL, items.length) }, worker))
+  return results
+}
+
+/** A mapped file's text in the workspace, like perforceFile's checks but with the mapping known. */
+async function workspaceText(w: PerforceWorkspace, absolute: string): Promise<string | null> {
+  if (!inside(w.root, absolute) || absolute === w.root) throw new Error('File is outside the workspace.')
+  const actual = await realpath(absolute)
+  if (!inside(await realpath(w.root), actual)) throw new Error('File points outside the workspace.')
+  return localText(actual)
+}
+
+/**
+ * The selected files' diff. Mappings and file types are read for all files at once and
+ * base revisions a few at a time, so the number of p4 processes doesn't grow by several
+ * per file (SPEC → Performance).
+ */
 export async function perforceDiff(cwd: string, ref: string): Promise<ReviewDiff> {
   const { workspace: w, change } = await selected(cwd, ref)
   const opened = await records(cwd, 'opened', change === 'workspace' ? [] : ['-c', change], undefined, w.unicode)
   const unopened = change === 'workspace' ? (await records(cwd, 'status', [], [p4Path(resolve(cwd)) + '/...'], w.unicode)).filter((r) => r.change === undefined && r.depotFile) : []
-  const files: DiffFile[] = []
-  for (const item of [...opened, ...unopened]) {
-    if (!item.depotFile || item.action === 'move/delete') continue
+  const items = [...opened, ...unopened].filter((item) => item.depotFile && item.action !== 'move/delete')
+  // Where each depot file (and a moved file's source) is in the workspace: its last mapping line wins.
+  const depots = [...new Set(items.flatMap((item) => [String(item.depotFile), ...(item.action === 'move/add' && item.movedFile ? [String(item.movedFile)] : [])]))]
+  const where = new Map<string, string>()
+  for (const r of await batchedRecords(cwd, 'where', [], depots, w.unicode)) {
+    if (r.depotFile && r.unmap === undefined && r.path) where.set(String(r.depotFile), String(r.path))
+  }
+  const typed = items.filter((item) => item.action !== 'add' && item.action !== 'branch').map((item) => String(item.depotFile))
+  const meta = new Map<string, RecordData>()
+  for (const r of await batchedRecords(cwd, 'fstat', ['-Ol'], typed, w.unicode)) if (r.depotFile && !meta.has(String(r.depotFile))) meta.set(String(r.depotFile), r)
+  const files = await pooled(items, async (item): Promise<DiffFile | null> => {
     const depot = String(item.depotFile)
-    const mapped = (await records(cwd, 'where', [], [depot], w.unicode)).filter((r) => r.unmap === undefined && r.path).at(-1)
-    if (!mapped || !inside(w.root, String(mapped.path))) continue
-    const absolute = String(mapped.path)
+    const absolute = where.get(depot)
+    if (!absolute || !inside(w.root, absolute)) return null
     const path = relative(w.root, absolute).split(sep).join('/')
     const action = String(item.action)
     const added = action === 'add' || action === 'branch'
     const deleted = action === 'delete'
     const moved = action === 'move/add'
-    const meta = added ? item : (await records(cwd, 'fstat', ['-Ol'], [depot], w.unicode))[0] ?? item
+    const info = added ? item : meta.get(depot) ?? item
     let oldPath: string | undefined
     const baseDepot = String(item.movedFile ?? depot)
     if (moved) {
-      const source = (await records(cwd, 'where', [], [baseDepot], w.unicode)).find((r) => r.path && r.unmap === undefined)
-      if (source && inside(w.root, String(source.path))) oldPath = relative(w.root, String(source.path)).split(sep).join('/')
+      const source = where.get(baseDepot)
+      if (source && inside(w.root, source)) oldPath = relative(w.root, source).split(sep).join('/')
     }
-    const binary = /binary|resource|apple/.test(String(meta.type ?? meta.headType ?? item.type)) || Number(meta.fileSize) > LIMIT
+    const binary = /binary|resource|apple/.test(String(info.type ?? info.headType ?? item.type)) || Number(info.fileSize) > LIMIT
     let before: string | null = ''
     let after: string | null = ''
     if (!binary) {
       if (!added) before = (await command(cwd, 'print', ['-q'], { paths: [`${baseDepot}#have`], unicode: w.unicode, raw: true })).replace(/\r\n/g, '\n')
-      if (!deleted) after = await localText(await perforceFilePath(cwd, path, ref))
+      if (!deleted) after = await workspaceText(w, absolute)
     }
     const unavailable = binary || before === null || after === null || before.length > LIMIT || before.slice(0, 8000).includes('\0')
     const parsed = unavailable ? undefined : parseDiff(`diff --git a/file b/file\n${createTwoFilesPatch('a/file', 'b/file', before, after ?? '', '', '', { context: 3 })}`)[0]
-    files.push({ path, oldPath, displayPath: inside(cwd, absolute) ? relative(cwd, absolute).split(sep).join('/') : path,
+    return { path, oldPath, displayPath: inside(cwd, absolute) ? relative(cwd, absolute).split(sep).join('/') : path,
       outside: !inside(cwd, absolute), status: moved ? 'renamed' : added ? 'added' : deleted ? 'deleted' : 'modified',
       binary: unavailable, state: 'uncommitted', perforce: { opened: item.change !== undefined, change: item.change === undefined ? undefined : String(item.change) },
-      additions: parsed?.additions ?? 0, deletions: parsed?.deletions ?? 0, hunks: parsed?.hunks ?? [] })
-  }
-  files.sort((a, b) => Number(a.outside) - Number(b.outside) || a.path.localeCompare(b.path))
-  return { baseRef: ref, base: ref, head: 'have', headRef: null, files, perforce: { workspace: w, change, project: cwd } }
+      additions: parsed?.additions ?? 0, deletions: parsed?.deletions ?? 0, hunks: parsed?.hunks ?? [] }
+  })
+  const shown = files.filter((f): f is DiffFile => f !== null)
+  shown.sort((a, b) => Number(a.outside) - Number(b.outside) || a.path.localeCompare(b.path))
+  return { baseRef: ref, base: ref, head: 'have', headRef: null, files: shown, perforce: { workspace: w, change, project: cwd } }
 }
 export async function perforceStatus(cwd: string): Promise<import('../shared/ipc').GitStatus> {
   try {
