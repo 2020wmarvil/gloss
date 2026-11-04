@@ -1,8 +1,8 @@
 diff --git a/node_modules/@agentclientprotocol/codex-acp/dist/index.js b/node_modules/@agentclientprotocol/codex-acp/dist/index.js
-index 3e92727..9af1e6c 100644
+index 2ce28d2..dea53c1 100644
 --- a/node_modules/@agentclientprotocol/codex-acp/dist/index.js
 +++ b/node_modules/@agentclientprotocol/codex-acp/dist/index.js
-@@ -27853,7 +27853,7 @@ function startCodexConnection(codexPath, env, appServerStartupArgs = ["app-serve
+@@ -28098,7 +28098,7 @@ function startCodexConnection(codexPath, env, appServerStartupArgs = ["app-serve
    const spawnEnv = env ?? process.env;
    let codex;
    if (codexPath) {

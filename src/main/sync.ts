@@ -2,7 +2,7 @@
 // source of truth for a session's log. This reads a replay and matches it against
 // the cached log, so entries Gloss already has keep their ids, threads and fields.
 import { fileURLToPath } from 'node:url'
-import type * as acp from '@agentclientprotocol/sdk'
+import type * as acp from '@agentclientprotocol/sdk/unstable'
 import type { Attachment, Message, Plan, PlanEntry, Thread, ToolCall } from '../shared/types'
 import { MAIN_TAG, splitForkSummary, threadTag, threadToMainTag } from '../shared/wire'
 import { isRangeNote } from '../shared/review'

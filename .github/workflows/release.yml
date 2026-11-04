@@ -45,6 +45,7 @@ jobs:
       - run: npx electron-builder --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+      - run: npm run check:bundle
       - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.os }}
