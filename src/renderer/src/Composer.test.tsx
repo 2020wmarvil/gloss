@@ -421,7 +421,12 @@ describe('screen capture', () => {
     Object.defineProperty(drop, 'dataTransfer', { value: { files: [new File([new Uint8Array([1, 2, 3])], 'photo.jpg', { type: 'image/jpeg' })] } })
     await act(async () => {
       document.querySelector('.box')!.dispatchEvent(drop)
-      await new Promise((r) => setTimeout(r, 10))
+    })
+    // Reading the file and decoding it are both asynchronous: a fixed wait is flaky on slow CI.
+    // React renders only when act returns, so poll between acts.
+    await vi.waitFor(async () => {
+      await act(() => new Promise((r) => setTimeout(r, 10)))
+      expect(document.querySelector('.attachment .capture-edit')).not.toBeNull()
     })
     await act(async () => {
       document.querySelector<HTMLButtonElement>('.attachment .capture-edit')!.click()
