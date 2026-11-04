@@ -21,13 +21,13 @@ type CliInfo = {
 
 export const CLIS: Record<CliKind, CliInfo> = {
   claude: {
-    name: 'Claude Code', command: 'claude', minVersion: '2.1.316',
+    name: 'Claude Code', command: 'claude', minVersion: '2.1.233',
     install: 'Install Claude Code (https://code.claude.com)',
     update: 'Run `claude update`',
     setting: 'claudeExecutable'
   },
   codex: {
-    name: 'Codex', command: 'codex', minVersion: '0.165.0',
+    name: 'Codex', command: 'codex', minVersion: '0.160.1',
     install: 'Install the Codex CLI (`npm install -g @openai/codex`) or the Codex app',
     update: 'Run `npm install -g @openai/codex@latest`, or update the Codex app',
     setting: 'codexExecutable'

@@ -64,7 +64,7 @@ describe('AgentClis', () => {
     const clis = new AgentClis({ find: async () => 'C:\\claude.exe', version: async () => '2.1.150 (Claude Code)' })
     expect(await clis.check('claude')).toEqual({
       available: false, executable: 'C:\\claude.exe', version: '2.1.150',
-      error: 'Claude Code 2.1.150 is too old for Gloss (it needs 2.1.316 or newer). Run `claude update`.'
+      error: 'Claude Code 2.1.150 is too old for Gloss (it needs 2.1.233 or newer). Run `claude update`.'
     })
     await expect(clis.resolve('claude')).rejects.toThrow(/too old/)
   })
