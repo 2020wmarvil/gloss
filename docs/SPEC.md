@@ -490,8 +490,6 @@ Sessions can work in their own git worktrees (`docs/mocks/worktrees.html`), so l
 
 ## Performance
 
-Measured with `npm run bench`, a local benchmark kept out of the repo; budgets and counts are checked in `npm test`.
-
 - **Streaming:** the first chunk of an agent message is sent to the windows as the message; each later chunk only as a `messageText` event with the added text and the offset it goes at, so a chunk costs the same however long the message is. A window applies one only where its copy of the message ends and ignores it otherwise (the log it loaded already had it).
 - **Persistence of streamed text:** the store keeps a streaming message's latest text in memory and writes it (and its search index) at most once a second, and before any other statement, so every read, search and export sees it. A crash of Gloss loses at most that second of text; a session the agent keeps itself gets it back from its replay. SQLite runs in WAL mode with `synchronous = NORMAL`. `messages(session_id, created_at)` is indexed, so a session's latest activity doesn't read its messages' rows (their text can be long), and so are user messages' `(role, text, created_at)`, for the composers' history.
 - **Log rendering:** each log entry is its own memoized row. The conversation gives each message a version string of what its row shows besides the message (its threads' reply counts and running state, the side panel's anchor in it); a row whose message and version haven't changed isn't rendered again, so a chunk renders only its own message. Rows call the conversation's handlers through stable functions that always reach the latest ones. A screenshot's data URL is built once per attachment.

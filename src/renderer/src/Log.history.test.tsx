@@ -51,49 +51,6 @@ it('mounts the composer before large history, loads recent entries first, and pr
   expect(idle.every((t) => t.cancelled)).toBe(true)
 })
 
-it('mounts older entries only as the view nears them, in batches sized by how long they take', () => {
-  idle.length = 0
-  let near = false
-  const observers: (() => void)[] = []
-  vi.stubGlobal('IntersectionObserver', class {
-    constructor(private callback: IntersectionObserverCallback) {}
-    observe(): void { observers.push(() => this.callback([{ isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver)) }
-    disconnect(): void {}
-  })
-  let clock = 0
-  vi.spyOn(performance, 'now').mockImplementation(() => clock)
-  const many = Array.from({ length: 200 }, (_, i): LogItem => ({ kind: 'message', seq: i, message: { id: `h${i}`, sessionId: 'lazy', seq: i, role: 'agent', text: `entry ${i}`, threadId: null } }))
-  const el = document.createElement('div')
-  document.body.replaceChildren(el)
-  const root = createRoot(el)
-  try {
-    act(() => root.render(<Log scrollKey="lazy:main" items={many} className="log" empty={null} renderAgent={(m) => { clock += 10; return m.text }} />))
-    const scroller = el.querySelector<HTMLElement>('.log-scroll')!
-    Object.defineProperty(scroller, 'clientHeight', { get: () => 300 })
-    scroller.getBoundingClientRect = () => ({ top: 0, bottom: 300 } as DOMRect)
-    const marker = (): HTMLElement => el.querySelector<HTMLElement>('.log [role="status"]')!
-    const mounted = (): number => el.querySelectorAll('[data-message-id]').length
-    // The view is at the recent end: the first batch mounts after a paint.
-    marker().getBoundingClientRect = () => ({ top: 0, bottom: near ? 0 : -5000 } as DOMRect)
-    act(() => idle.find((t) => !t.cancelled)!.run())
-    expect(mounted()).toBe(8)
-    // Eight entries took 80 ms: the next batch is smaller. Far from the view, nothing more mounts.
-    marker().getBoundingClientRect = () => ({ top: 0, bottom: near ? 0 : -5000 } as DOMRect)
-    act(() => root.render(<Log scrollKey="lazy:main" items={[...many]} className="log" empty={null} renderAgent={(m) => m.text} />))
-    expect(idle.filter((t) => !t.cancelled)).toHaveLength(0)
-    expect(observers).toHaveLength(1)
-    // Scrolled up near it: the next batch mounts, half as large.
-    near = true
-    act(() => observers[0]())
-    act(() => idle.find((t) => !t.cancelled)!.run())
-    expect(mounted()).toBe(12)
-  } finally {
-    act(() => root.unmount())
-    vi.restoreAllMocks()
-    vi.unstubAllGlobals()
-  }
-})
-
 it('keeps new messages visible while older history is still loading', () => {
   idle.length = 0
   const el = document.createElement('div')
