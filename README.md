@@ -28,7 +28,10 @@ npm run dev
 
 ### Cutting a release
 
+Bump the version in a pull request, then tag `main` once it's merged:
+
 ```sh
-npm version 1.2.3   # bumps package.json, commits and tags v1.2.3
-git push origin main v1.2.3
+npm version 1.2.3 --no-git-tag-version   # on a branch; open a PR and merge it
+git checkout main && git pull
+git tag v1.2.3 && git push origin v1.2.3
 ```
