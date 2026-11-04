@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, ChevronUp, Ellipsis, FileCode, FileMinus, FilePlus, GitFork, MessageSquare, MessageSquareReply, ScanSearch, X } from 'lucide-react'
 import type { GlossEvent } from '@shared/ipc'
 import { perforceRange } from '@shared/perforce'
-import { expandable, gapsOf, isFirstPass, linesOf, withoutFindings, type DiffFile, type LineAnchor, type Location, type ReviewDiff, type ReviewRange, type ReviewRefs, type Side } from '@shared/review'
+import { expandable, gapsOf, isFirstPass, keepUnchanged, linesOf, withoutFindings, type DiffFile, type LineAnchor, type Location, type ReviewDiff, type ReviewRange, type ReviewRefs, type Side } from '@shared/review'
 import type { Thread } from '@shared/types'
 import { DiffView, cardOpen, type Card } from '../src/DiffView'
 import { expand, NO_EXPANSION, revealing, type Expansion } from '../src/diffContext'
@@ -50,7 +50,13 @@ export function useReview(open: OpenView | null, online: boolean): ReviewState |
     clearTimeout(timer.current)
     timer.current = setTimeout(() => {
       window.gloss.sessions.reviewDiff(sessionId).then(
-        (diff) => { if (shown.current === sessionId) setState({ id: sessionId, diff, error: null }) },
+        (diff) => {
+          if (shown.current !== sessionId) return
+          setState((s) => {
+            const kept = keepUnchanged(s?.id === sessionId ? s.diff : null, diff)
+            return s?.id === sessionId && s.diff === kept && s.error === null ? s : { id: sessionId, diff: kept, error: null }
+          })
+        },
         (err: unknown) => {
           if (shown.current === sessionId) setState((s) => ({ id: sessionId, diff: s?.id === sessionId ? s.diff : null, error: errorText(err) }))
         }

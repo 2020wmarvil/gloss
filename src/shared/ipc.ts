@@ -157,6 +157,11 @@ export type GlossEvent =
   /** The user clicked a notification: show this session (and thread). */
   | { type: 'reveal'; sessionId: string; threadId: string | null }
   | { type: 'message'; message: Message }
+  /**
+   * Streamed text added to the end of a message already sent in full: `text` goes at
+   * `offset`, the message's length before it. Sent instead of the whole message per chunk.
+   */
+  | { type: 'messageText'; sessionId: string; messageId: string; threadId: string | null; offset: number; text: string }
   /** A steered message that didn't get into the turn (SPEC → Steer). */
   | { type: 'messageDeleted'; sessionId: string; messageId: string }
   | { type: 'toolCall'; toolCall: ToolCall }
@@ -293,8 +298,13 @@ export type GlossApi = {
      */
     /** `project`: the project folder, when `cwd` is one of its worktrees. */
     import(cwd: string, agentId: string, acpSessionId: string, title: string, listedAt?: string, project?: string): Promise<Session>
-    /** Its log and threads. Also resumes the session on the agent in the background, for the status line. */
+    /**
+     * Its log and threads. Also resumes the session on the agent in the background, for the status line.
+     * Screenshots come without their data (`deferred`); `image` gets one as it is shown (SPEC → Performance).
+     */
     open(id: string): Promise<SessionView>
+    /** A sent image's data (base64): attachment `index` of the message. */
+    image(messageId: string, index: number): Promise<string>
     rewindPoints(id: string): Promise<RewindPoint[]>
     rewind(id: string, messageId: string): Promise<RewindDraft>
     /** Reloads the session if the agent's copy changed elsewhere (SPEC → Shared sessions). */
@@ -488,6 +498,7 @@ export const IPC = {
   sessionsSetReviewRange: 'gloss:sessions:setReviewRange',
   sessionsImport: 'gloss:sessions:import',
   sessionsOpen: 'gloss:sessions:open',
+  sessionsImage: 'gloss:sessions:image',
   sessionsRewindPoints: 'gloss:sessions:rewindPoints',
   sessionsRewind: 'gloss:sessions:rewind',
   sessionsRefresh: 'gloss:sessions:refresh',

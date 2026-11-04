@@ -410,12 +410,12 @@ const guardClose = createCloseGuard({
   })
 })
 
-/** Keeps the computer from sleeping while an agent works (the display may still turn off). */
+/** Keeps the computer and the display from sleeping while an agent works. */
 function keepAwake(event: GlossEvent): void {
   if (event.type === 'turnStart') working.add(event.sessionId)
   else if (event.type === 'turnEnd') working.delete(event.sessionId)
   else return
-  if (working.size > 0 && awake === null) awake = powerSaveBlocker.start('prevent-app-suspension')
+  if (working.size > 0 && awake === null) awake = powerSaveBlocker.start('prevent-display-sleep')
   else if (working.size === 0 && awake !== null) {
     powerSaveBlocker.stop(awake)
     awake = null
@@ -947,7 +947,10 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     await manager.rewindSession(sessionId, targetId)
     return { text: message.text, attachments: message.attachments ?? [] }
   }, 'Only a Gloss window can rewind.')
-  share(IPC.sessionsOpen, (id: unknown) => manager.openSession(str(id, 'id')))
+  // The phone gets the full view (its bridge defers images itself); windows get images as they show them.
+  phoneApi.add(IPC.sessionsOpen, (id: unknown) => manager.openSession(str(id, 'id')))
+  ipcMain.handle(IPC.sessionsOpen, (_e, id: unknown) => manager.openSession(str(id, 'id'), { images: false }))
+  ipcMain.handle(IPC.sessionsImage, (_e, messageId: unknown, index: unknown) => manager.imageData(str(messageId, 'message'), Number(index)))
   share(IPC.sessionsRefresh, (id: unknown) => manager.refreshSession(str(id, 'id')))
   ipcMain.handle(IPC.sessionsRename, (_e, id: unknown, title: unknown) =>
     manager.renameSession(str(id, 'id'), str(title, 'title'))

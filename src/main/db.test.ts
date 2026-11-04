@@ -76,7 +76,7 @@ describe('Store', () => {
     } finally { store.close() }
     const migrated = new DatabaseSync(path)
     try {
-      expect(migrated.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 22 })
+      expect(migrated.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 25 })
       expect(migrated.prepare('PRAGMA foreign_key_check').all()).toEqual([])
       if (branch === 'dev') expect(migrated.prepare('SELECT handoff FROM sessions').get()).toMatchObject({ handoff: 'existing handoff' })
     } finally { migrated.close() }
@@ -134,6 +134,40 @@ describe('Store', () => {
       expect(store.updateSession('s', { mode: 'plan', autoApprove: true })).toMatchObject({ mode: 'plan', autoApprove: true })
     } finally {
       store.close()
+    }
+  })
+
+  it("moves sent images' data out of the messages' rows, and puts it back when read", () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gloss-db-'))
+    dirs.push(dir)
+    const path = join(dir, 'gloss.db')
+    new Store(path).close()
+    // A database from before: images' data inside `attachments`.
+    const db = new DatabaseSync(path)
+    db.exec(`DROP TABLE message_images; PRAGMA user_version = 24`)
+    db.prepare("INSERT INTO sessions (id, agent_id, acp_session_id, cwd, title, created_at) VALUES ('s', 'claude', 'a', '/w', 'w', 1)").run()
+    const attachments = [{ kind: 'file', name: 'n.txt', text: 'note' }, { kind: 'image', name: 's.png', mimeType: 'image/png', data: 'QUJD', pins: [{ x: 1, y: 2, note: 'here' }] }]
+    db.prepare("INSERT INTO messages (id, session_id, seq, role, text, thread_id, attachments) VALUES ('m', 's', 0, 'user', 'look', NULL, ?)").run(JSON.stringify(attachments))
+    db.close()
+    const store = new Store(path)
+    try {
+      expect(store.listMessages('s')[0].attachments).toEqual(attachments)
+      expect(store.getMessage('m')?.attachments).toEqual(attachments)
+      expect(store.imageData('m', 1)).toBe('QUJD')
+      expect(store.listMessages('s', { images: false })[0].attachments?.[1]).toEqual({ ...attachments[1], data: '', deferred: true })
+      // New messages store theirs the same way; deleting the message deletes its images.
+      store.insertMessage({ id: 'n', sessionId: 's', seq: 1, role: 'user', text: '', threadId: null, attachments: [{ kind: 'image', name: 't.png', mimeType: 'image/png', data: 'REVG' }] })
+      expect(store.lastUserMessage('s')?.attachments).toEqual([{ kind: 'image', name: 't.png', mimeType: 'image/png', data: 'REVG' }])
+      store.deleteMessage('n')
+      expect(store.imageData('n', 0)).toBeUndefined()
+    } finally {
+      store.close()
+    }
+    const raw = new DatabaseSync(path)
+    try {
+      expect(raw.prepare("SELECT attachments FROM messages WHERE id = 'm'").get()?.attachments).not.toContain('QUJD')
+    } finally {
+      raw.close()
     }
   })
 

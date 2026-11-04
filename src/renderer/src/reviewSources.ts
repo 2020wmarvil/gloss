@@ -28,7 +28,9 @@ export function useReviewSources(
         .reviewFile(sessionId, path)
         .catch(() => null)
         .then((lines) => {
-          if (generation.current === at) setSources((s) => ({ ...s, [path]: lines }))
+          if (generation.current !== at) return
+          // The same lines keep their array, so nothing re-renders for them.
+          setSources((s) => (sameLines(s[path], lines) ? s : { ...s, [path]: lines }))
         })
     },
     [sessionId]
@@ -59,4 +61,10 @@ export function useReviewSources(
   }, [diff, threads, read])
 
   return { sources, read }
+}
+
+function sameLines(a: string[] | null | undefined, b: string[] | null): boolean {
+  if (a === undefined) return false
+  if (a === null || b === null) return a === b
+  return a.length === b.length && a.every((line, i) => line === b[i])
 }

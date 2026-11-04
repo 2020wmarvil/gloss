@@ -73,16 +73,38 @@ export function Conversation(props: Props): React.JSX.Element {
   for (const m of open.messages) {
     if (m.threadId !== null) replyCounts.set(m.threadId, (replyCounts.get(m.threadId) ?? 0) + 1)
   }
+  /** Each message's threads (anchored in it). */
+  const anchoredIn = useMemo(() => {
+    const map = new Map<string, Thread[]>()
+    for (const t of open.threads) if (t.anchorMessageId !== null) map.set(t.anchorMessageId, [...(map.get(t.anchorMessageId) ?? []), t])
+    return map
+  }, [open.threads])
   const itemThread = (messageId: string, index: number): Thread | undefined =>
-    open.threads.find(
-      (t) => t.anchorMessageId === messageId && t.anchor.kind === 'listItem' && t.anchor.path[0] === index
+    anchoredIn.get(messageId)?.find((t) => t.anchor.kind === 'listItem' && t.anchor.path[0] === index)
+
+  // Rows that aren't rendered again keep their handlers: these always call the latest props.
+  const latest = useRef(props)
+  latest.current = props
+  const actions = useMemo(() => ({
+    openItem: (message: Message, span: ListItemSpan) => latest.current.onOpenItem(message, span),
+    openThread: (threadId: string) => latest.current.onOpenThread(threadId),
+    openPin: (message: Message, image: number, pin: number) => latest.current.onOpenPin(message, image, pin)
+  }), [])
+
+  /** Everything a message's row shows besides the message: its threads' replies and state, and the panel's anchor in it. */
+  function version(message: Message): string {
+    const parts = (anchoredIn.get(message.id) ?? []).map((t) =>
+      `${t.id}:${replyCounts.get(t.id) ?? 0}:${props.busyThreads.includes(t.id) ? 1 : 0}:${panel?.threadId === t.id ? 1 : 0}`
     )
+    if (panel?.anchorMessageId === message.id) parts.push(JSON.stringify([panel.threadId, panel.anchor]))
+    return parts.join('|')
+  }
 
   /** Selection anchors in a message, re-found by text if their offsets no longer match. */
   function marksFor(message: Message): Mark[] {
     const marks: Mark[] = []
-    for (const t of open.threads) {
-      if (t.anchorMessageId !== message.id || t.anchor.kind !== 'selection') continue
+    for (const t of anchoredIn.get(message.id) ?? []) {
+      if (t.anchor.kind !== 'selection') continue
       const r = resolveSelection(message.text, t.anchor)
       if (r) {
         marks.push({
@@ -104,8 +126,8 @@ export function Conversation(props: Props): React.JSX.Element {
       panel?.anchorMessageId === message.id && panel.anchor.kind === 'listItem'
         ? panel.anchor.path[0]
         : null
-    const runningIndexes = open.threads.flatMap((t) =>
-      props.busyThreads.includes(t.id) && t.anchorMessageId === message.id && t.anchor.kind === 'listItem' ? [t.anchor.path[0]] : []
+    const runningIndexes = (anchoredIn.get(message.id) ?? []).flatMap((t) =>
+      props.busyThreads.includes(t.id) && t.anchor.kind === 'listItem' ? [t.anchor.path[0]] : []
     )
     return (
       <Markdown
@@ -117,11 +139,11 @@ export function Conversation(props: Props): React.JSX.Element {
           },
           activeIndex,
           runningIndexes,
-          onOpenItem: (span) => props.onOpenItem(message, span),
+          onOpenItem: (span) => actions.openItem(message, span),
           marks: marksFor(message),
           threadCount: (threadId) => replyCounts.get(threadId) ?? 0,
           running: props.busyThreads,
-          onOpenThread: props.onOpenThread
+          onOpenThread: actions.openThread
         }}
       />
     )
@@ -144,8 +166,9 @@ export function Conversation(props: Props): React.JSX.Element {
         items={items}
         empty={<h2 className="new-hint">What should {agentName} do in {folderName(projectOf(session))}?</h2>}
         renderAgent={renderAgent}
+        version={version}
         reveal={props.reveal}
-        pins={pinAnchorsFor(open, panel, props.busyThreads, props.onOpenPin)}
+        pins={pinAnchorsFor(open, panel, props.busyThreads, actions.openPin)}
         footer={<>
           <ActivityStrip
             thread={props.lastThread}

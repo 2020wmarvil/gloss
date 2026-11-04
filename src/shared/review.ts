@@ -248,6 +248,38 @@ export function gapsOf(hunks: DiffHunk[]): Gap[] | null {
   return gaps
 }
 
+/**
+ * A diff read again, with the files that didn't change since `prev` kept as they were,
+ * and `prev` itself when nothing did, so the view re-renders only what changed (SPEC →
+ * Performance).
+ */
+export function keepUnchanged(prev: ReviewDiff | null, next: ReviewDiff): ReviewDiff {
+  if (!prev) return next
+  const before = new Map(prev.files.map((f) => [f.path, f]))
+  let same = prev.files.length === next.files.length
+  const files = next.files.map((f, i) => {
+    const old = before.get(f.path)
+    if (!old || !sameFile(old, f)) {
+      same = false
+      return f
+    }
+    if (prev.files[i] !== old) same = false
+    return old
+  })
+  if (same && prev.baseRef === next.baseRef && prev.base === next.base && prev.headRef === next.headRef && prev.head === next.head && JSON.stringify(prev.perforce) === JSON.stringify(next.perforce)) return prev
+  return { ...next, files }
+}
+
+function sameFile(a: DiffFile, b: DiffFile): boolean {
+  if (a.path !== b.path || a.oldPath !== b.oldPath || a.displayPath !== b.displayPath || a.outside !== b.outside || a.status !== b.status || a.binary !== b.binary || a.state !== b.state) return false
+  if (a.additions !== b.additions || a.deletions !== b.deletions || a.hunks.length !== b.hunks.length) return false
+  if (JSON.stringify(a.perforce) !== JSON.stringify(b.perforce)) return false
+  return a.hunks.every((h, i) => {
+    const o = b.hunks[i]
+    return h.header === o.header && h.lines.length === o.lines.length && h.lines.every((l, k) => l.kind === o.lines[k].kind && l.old === o.lines[k].old && l.new === o.lines[k].new && l.text === o.lines[k].text)
+  })
+}
+
 /** Whether the lines around a file's hunks can be shown: a text file that exists on both sides. */
 export function expandable(file: DiffFile): boolean {
   return !file.binary && file.hunks.length > 0 && file.status !== 'added' && file.status !== 'deleted'

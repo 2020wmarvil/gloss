@@ -287,6 +287,11 @@ export class SessionManager {
         if (!home) return event
         return event.message.threadId === home.threadId ? { ...event, message: { ...event.message, sessionId: home.sessionId } } : null
       }
+      case 'messageText': {
+        const home = this.forkHome(event.sessionId)
+        if (!home) return event
+        return event.threadId === home.threadId ? { ...event, sessionId: home.sessionId } : null
+      }
       case 'toolCall': {
         const home = this.forkHome(event.toolCall.sessionId)
         if (!home) return event
@@ -966,8 +971,11 @@ export class SessionManager {
     return imported
   }
 
-  /** Its log and threads. Resumes it on the agent in the background, or checks it for changes made elsewhere. */
-  openSession(id: string): SessionView {
+  /**
+   * Its log and threads. Resumes it on the agent in the background, or checks it for changes made elsewhere.
+   * `images: false` leaves sent images' data out (`deferred`): windows load each as they show it (SPEC → Performance).
+   */
+  openSession(id: string, options: { images?: boolean } = {}): SessionView {
     const session = this.session(id)
     if (session.forkOf) throw new Error("A fork thread's session opens as its thread.")
     const rt = this.runtime(id)
@@ -981,7 +989,7 @@ export class SessionManager {
       items.filter((x) => x.threadId === threadId).map((x) => ({ ...x, sessionId: id }))
     return {
       session,
-      messages: [...store.listMessages(id), ...forks.flatMap((f) => own(store.listMessages(f.sessionId), f.threadId))],
+      messages: [...store.listMessages(id, options), ...forks.flatMap((f) => own(store.listMessages(f.sessionId, options), f.threadId))],
       toolCalls: [...store.listToolCalls(id), ...forks.flatMap((f) => own(store.listToolCalls(f.sessionId), f.threadId))],
       plans: [...store.listPlans(id), ...forks.flatMap((f) => own(store.listPlans(f.sessionId), f.threadId))],
       threads,
@@ -1000,6 +1008,13 @@ export class SessionManager {
         }
       })
     }
+  }
+
+  /** A sent image's data (base64), for a view that got it deferred. */
+  imageData(messageId: string, index: number): string {
+    const data = this.deps.store.imageData(messageId, index)
+    if (data === undefined) throw new Error('That image is no longer there.')
+    return data
   }
 
   /** Resumes a fork thread's session when its thread is shown, so the status line has its model and usage. */
@@ -2686,13 +2701,18 @@ export class SessionManager {
             ...(messageId !== undefined ? { acpMessageId: messageId } : {}),
             createdAt: this.now()
           }
+          m.text = u.content.text
           store.insertMessage(m)
           turn.agentMessage = m
           turn.afterToolCall = false
+          emit({ type: 'message', message: { ...m } })
+          return
         }
+        // Only what was added goes to the windows; the store coalesces the writes.
+        const offset = m.text.length
         m.text += u.content.text
         store.updateMessageText(m.id, m.text)
-        emit({ type: 'message', message: { ...m } })
+        emit({ type: 'messageText', sessionId: m.sessionId, messageId: m.id, threadId: m.threadId, offset, text: u.content.text })
         return
       }
       case 'tool_call': {

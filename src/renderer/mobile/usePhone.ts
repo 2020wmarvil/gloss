@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ForkOf, ForkView, GlossEvent, SessionView } from '@shared/ipc'
 import type { AgentInfo, Project, RateLimit, Session } from '@shared/types'
 import type { SessionOrder } from '@shared/settings'
+import { appendText } from '@shared/streaming'
 import type { Notice } from '../src/Log'
 import { errorText } from '../src/errors'
 import type { Link, PhoneLink } from './transport'
@@ -141,6 +142,13 @@ export function usePhone(link: PhoneLink) {
         setOpen((o) => o && o.session.id === m.sessionId ? { ...o, messages: upsert(o.messages, m) } : o)
         return
       }
+      case 'messageText':
+        setOpen((o) => {
+          if (!o || o.session.id !== event.sessionId) return o
+          const messages = appendText(o.messages, event.messageId, event.offset, event.text)
+          return messages === o.messages ? o : { ...o, messages }
+        })
+        return
       case 'messageDeleted':
         setOpen((o) => mine(o) ? { ...o, messages: o.messages.filter((m) => m.id !== event.messageId) } : o)
         return

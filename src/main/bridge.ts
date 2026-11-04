@@ -400,6 +400,18 @@ function readBody(req: IncomingMessage, limit: number): Promise<string> {
 const INLINE_TOOL_OUTPUT = 2048
 
 /**
+ * A session's view without its sent images' data (`deferred`): the phone asks for each as it
+ * shows it. Screenshots made an image-heavy session's view over a hundred megabytes.
+ */
+export function deferImages(view: SessionView): SessionView {
+  const defer = (m: Message): Message => !m.attachments?.some((a) => a.kind === 'image') ? m : {
+    ...m,
+    attachments: m.attachments.map((a) => (a.kind === 'image' ? { ...a, data: '', deferred: true as const } : a))
+  }
+  return { ...view, messages: view.messages.map(defer) }
+}
+
+/**
  * A session's view as a phone first gets it: without images and long tool output, which make a
  * long session megabytes (mostly unread); the phone asks for each as it shows it.
  */
@@ -409,9 +421,5 @@ export function slimView(view: SessionView): SessionView {
     const { content: _content, ...rest } = t
     return { ...rest, deferred: true }
   }
-  const slimMessage = (m: Message): Message => !m.attachments?.some((a) => a.kind === 'image') ? m : {
-    ...m,
-    attachments: m.attachments.map((a) => (a.kind === 'image' ? { ...a, data: '', deferred: true as const } : a))
-  }
-  return { ...view, messages: view.messages.map(slimMessage), toolCalls: view.toolCalls.map(slimTool) }
+  return { ...deferImages(view), toolCalls: view.toolCalls.map(slimTool) }
 }

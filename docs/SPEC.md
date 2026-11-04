@@ -206,6 +206,7 @@ send(text, threadId?):
 on session/update:
   agent_message_chunk  → append to the current agent Message (group by messageId if present,
                          else one agent Message per turn), threadId = currentThread
+                         (the first chunk sends the message, later ones only what they add)
   tool_call            → insert ToolCall, threadId = currentThread
   tool_call_update     → update ToolCall
   plan                 → the turn's first plan inserts a Plan, threadId = currentThread;
@@ -394,10 +395,10 @@ A personal library of plugins, written by the user or an agent in the library fo
   - `threads.create(sessionId, anchorMessageId, anchor)`
   - `capture.start()`: the region overlay (see Visual feedback); resolves to the picked PNG or null
   - `history()`: the user's sent messages for the composers' Up and Down
-  - `sessions.open` returns the session's messages, tool calls, plans and threads
+  - `sessions.open` returns the session's messages, tool calls, plans and threads (screenshots without their data; `sessions.image(messageId, index)` gets one, see Performance)
   - `settings.get() / settings.update(patch) / settings.openFile()`
   - `plugins.list() / create / update / remove / addSkill / removeSkill / readFile / writeFile / createFile / enable / setSkillDirectory / refresh / openFolder` (see Plugins)
-  - an event stream: message/tool-call/plan upserts, turn start/end, session upserts and deletes, live session state, queue changes, notification clicks, settings changes
+  - an event stream: message/tool-call/plan upserts, streamed text added to a message (`messageText`, see Performance), turn start/end, session upserts and deletes, live session state, queue changes, notification clicks, settings changes
 - **Renderer** only renders. Framework is the implementer's choice (React is fine).
 - **No menu bar** on Windows and Linux (`Menu.setApplicationMenu(null)`). The default menu's zoom shortcuts (`Ctrl+=`, `Ctrl+-`, `Ctrl+0`) are kept, plus DevTools (`F12`, `Ctrl+Shift+I`) and reload (`Ctrl+R`) in development. `F11` toggles full screen: a borderless window over the whole monitor (taskbar included, not exclusive, so Alt+Tab and notifications still work). Entering it shows "Press F11 to exit full screen" for a few seconds; `Esc` doesn't leave it (it closes menus and dialogs), and it isn't remembered across restarts. On macOS the system's own full screen (green button, `Ctrl+Cmd+F`) applies. macOS keeps the default menu: it lives in the system menu bar, and copy and paste need its Edit menu.
 - **Title bar:** drawn by the app (`titleBarStyle: 'hidden'`), a 40px strip across the top of the window in the frame's color (`--title-bar`, the same as the sidebar's), that drags the window. It shows the bead and the `gloss` wordmark (`docs/BRAND.md`) at its start, over the sidebar. The system's window controls sit over its end (`titleBarOverlay` on Windows and Linux, in the title bar's color and the theme's ink and updated when the theme changes; the traffic lights over its start on macOS), and the layout keeps clear of them with the `titlebar-area-*` CSS variables. The window title stays "Gloss" (taskbar, Alt+Tab).
@@ -486,6 +487,17 @@ Sessions can work in their own git worktrees (`docs/mocks/worktrees.html`), so l
 - **Export format:** `# Title`, then each message as `**You**` / `**Agent**` and its text, tool calls as `_Tool: title (status)_`, attachments named; for a whole session, each thread with replies follows under `## Thread: “anchor”` with the anchor quoted.
 - **Tool calls** of a turn that follow each other share one box, a row each: an icon for the ACP tool kind, the title (a command's in monospace), and a check when done, a pulsing dot while it runs (the agent reports a command it is executing as `pending` too) or "failed". Internal steps the user can't act on (Claude Code's `ToolSearch`) fold into a "Show 1 internal step" line. Rows are collapsed. Clicking expands what the agent did, from the tool call's ACP `content`: a command's full text and its output (the Claude adapter sends output as a console code block when the client has no terminal capability), a file edit (`diff` content) as a unified line diff with unchanged stretches collapsed to 3 lines of context, other content as markdown.
 - **Code blocks** are highlighted with Shiki (JavaScript regex engine, no WebAssembly, themes `github-light` and `github-dark` as `light-dark()` colors, so they follow the theme). Common languages load at startup, others the first time they are seen; until then the block renders plain and re-renders when ready. Highlighting splits the same source-offset spans selection anchors use, so anchors in code keep working. Each block has a Copy button.
+
+## Performance
+
+- **Streaming:** the first chunk of an agent message is sent to the windows as the message; each later chunk only as a `messageText` event with the added text and the offset it goes at, so a chunk costs the same however long the message is. A window applies one only where its copy of the message ends and ignores it otherwise (the log it loaded already had it).
+- **Persistence of streamed text:** the store keeps a streaming message's latest text in memory and writes it (and its search index) at most once a second, and before any other statement, so every read, search and export sees it. A crash of Gloss loses at most that second of text; a session the agent keeps itself gets it back from its replay. SQLite runs in WAL mode with `synchronous = NORMAL`. `messages(session_id, created_at)` is indexed, so a session's latest activity doesn't read its messages' rows (their text can be long), and so are user messages' `(role, text, created_at)`, for the composers' history.
+- **Log rendering:** each log entry is its own memoized row. The conversation gives each message a version string of what its row shows besides the message (its threads' reply counts and running state, the side panel's anchor in it); a row whose message and version haven't changed isn't rendered again, so a chunk renders only its own message. Rows call the conversation's handlers through stable functions that always reach the latest ones. A screenshot's data URL is built once per attachment.
+- **Screenshots:** sent images' data is stored apart from their messages (`message_images`; `messages.attachments` keeps each image with empty `data`), so a log reads without it. A window's `sessions.open` leaves it out (`deferred`, as for the phone); each loads with `sessions.image(messageId, index)` when its row mounts, showing a placeholder until then, and the last 64 loaded stay cached. Images in live messages keep their data.
+- **Highlighting:** a code block renders plain when it mounts and is colored in a background render React can interrupt (`useDeferredValue`); highlighting becoming available (a language loading) re-renders code as a transition. Coloring a batch of code-heavy messages in one render was a long task.
+- **Long histories:** a log with more than 12 entries paints the composer first, then mounts its newest entries, and older ones in batches only as the view comes within two screens of them. Batches start at 8 entries and halve when one takes over 24 ms to render (doubling when quick). A reveal (search, Find in main, a queued message) or a scroll position brought from another window mounts the whole log first. Entries stay mounted once shown.
+- **Review diffs:** a collapsed file is only its header: its rows aren't built or highlighted. An expanded file renders its lines only within a screen of the view, and within it each block of 150 rows does the same; away from the view, a file or block is a placeholder as tall as it was when it left (or as its rows will be). The phone's one-file screen renders the whole file. Diff code is colored in the background, about 20 lines at a time with the grammar's state carried between slices, in tasks of about 8 ms, and lines render plain until their file's colors are ready. A diff read again keeps the objects of files that didn't change (and the whole diff when none did), so a refresh (the agent's edits, the window getting focus) re-renders only changed files; the review's thread cards and callbacks stay the same while scrolling. Going to a thread in a file far from the view scrolls to the file first, then to the thread once its lines render.
+- **Perforce diffs:** the files' mappings and types are read with one `p4 where` and one `p4 fstat` for all of them (in batches of 100 paths), base revisions with a `p4 print` per file, eight at a time, and local files from the mapping already read, so a diff takes a fixed number of p4 commands plus one per file.
 
 ## Review sessions
 
@@ -649,7 +661,7 @@ When a turn ends or fails while no Gloss window is focused, Gloss shows an OS no
 
 The same finishes (not cancelled, no queued follow-up) play a short chime, synthesized with Web Audio, when the window isn't focused or the session isn't the open one. The notification itself is silent, so the system's sound doesn't double it. The **Sound when a turn finishes** setting (on by default) turns the chime off.
 
-While any turn runs, Gloss keeps the computer from going to sleep (Electron's `powerSaveBlocker`, `prevent-app-suspension`; the display may still turn off). It lets go once no turn is running.
+While any turn runs, Gloss keeps the computer and the display from going to sleep (Electron's `powerSaveBlocker`, `prevent-display-sleep`). It lets go once no turn is running.
 
 ## Remote and mobile
 

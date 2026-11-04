@@ -37,7 +37,8 @@ it('mounts the composer before large history, loads recent entries first, and pr
     const row = el.querySelector('[data-message-id="m23"]')!
     composer.value = 'typed during startup'
     act(() => idle.find((t) => !t.cancelled)!.run())
-    expect(el.querySelectorAll('[data-message-id]')).toHaveLength(16)
+    // A quick batch makes the next one larger.
+    expect(el.querySelectorAll('[data-message-id]').length).toBeGreaterThan(8)
     expect(el.querySelector('[data-message-id="m23"]')).toBe(row)
     expect(el.querySelector('textarea')).toBe(composer)
     expect(composer.value).toBe('typed during startup')

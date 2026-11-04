@@ -816,6 +816,33 @@ describe('SessionManager', () => {
     })
   })
 
+  it('writes streamed text before anything reads the log, and on close', async () => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    state.script = async ({ say }) => {
+      await say('first ', 'answer')
+      await say('second', 'answer')
+      await held
+      return 'end_turn'
+    }
+    const session = await manager.createSession('/w', 'fake')
+    const turn = manager.send(session.id, 'go', null)
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'messageText')).toBe(true))
+    // Opened mid-turn: the log has the text so far, and later additions apply at its end.
+    expect(manager.openSession(session.id).messages.at(-1)?.text).toBe('first second')
+    expect(store.search({ query: 'second', scope: 'all', kind: 'agent' }).results).toHaveLength(1)
+    release()
+    await turn
+  })
+
+  it("gives a sent image's data by message and index", () => {
+    store.insertSession({ id: 'img', agentId: 'fake', acpSessionId: 'img', cwd: '/w', title: 'img', createdAt: 1 })
+    store.insertMessage({ id: 'shot', sessionId: 'img', seq: 0, role: 'user', text: 'look', threadId: null, attachments: [{ kind: 'file', name: 'n.txt', text: 'x' }, { kind: 'image', name: 's.png', mimeType: 'image/png', data: 'QUJD' }] })
+    expect(manager.imageData('shot', 1)).toBe('QUJD')
+    expect(() => manager.imageData('shot', 0)).toThrow('no longer there')
+    expect(() => manager.imageData('gone', 0)).toThrow('no longer there')
+  })
+
   it('orders text and tool calls in one sequence, splitting text at tool calls', async () => {
     state.script = async ({ say, update }) => {
       await say('Let me look.')
