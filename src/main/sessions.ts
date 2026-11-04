@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { readdirSync, rmdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type * as acp from '@agentclientprotocol/sdk'
+import type * as acp from '@agentclientprotocol/sdk/unstable'
 import { pathToFileURL } from 'node:url'
 import type { ForkView, GlossEvent, PullRequest, SessionView, TurnResult } from '../shared/ipc'
 import type {

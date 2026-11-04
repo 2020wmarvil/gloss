@@ -2,7 +2,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import { createInterface } from 'node:readline'
-import * as acp from '@agentclientprotocol/sdk'
+import * as acp from '@agentclientprotocol/sdk/unstable'
 import type { AgentConfig } from './agents'
 
 export type AgentHandlers = {
