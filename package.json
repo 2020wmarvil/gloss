@@ -20,7 +20,7 @@
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.89.1",
     "@agentclientprotocol/codex-acp": "2.2.2",
-    "@agentclientprotocol/sdk": "1.8.0",
+    "@agentclientprotocol/sdk": "2.2.0",
     "@anthropic-ai/claude-agent-sdk": "0.3.293",
     "electron-updater": "6.8.11",
     "koffi": "3.3.3",
