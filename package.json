@@ -1,7 +1,7 @@
 {
   "name": "gloss",
   "productName": "Gloss",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Graphical Layer Over Shell Sessions: a desktop GUI for coding agents with threaded replies.",
   "license": "MIT",
   "author": "Wyatt Marvil",
