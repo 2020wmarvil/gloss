@@ -20,6 +20,8 @@ function ClosePrompt({ request, onDismiss }: { request: Request; onDismiss(): vo
   const close = useRef<HTMLButtonElement>(null)
   const answering = useRef(false)
   const [error, setError] = useState<string | null>(null)
+  // Restarting into an update (SPEC → Shipping) asks the same question in its own words.
+  const restart = request.action === 'restart'
 
   const answer = useCallback(async (approved: boolean): Promise<void> => {
     if (answering.current) return
@@ -29,9 +31,9 @@ function ClosePrompt({ request, onDismiss }: { request: Request; onDismiss(): vo
       onDismiss()
     } catch {
       answering.current = false
-      setError('Could not close Gloss. Please try again.')
+      setError(`Could not ${request.action === 'restart' ? 'restart' : 'close'} Gloss. Please try again.`)
     }
-  }, [request.requestId, onDismiss])
+  }, [request.requestId, request.action, onDismiss])
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -60,15 +62,15 @@ function ClosePrompt({ request, onDismiss }: { request: Request; onDismiss(): vo
       if (event.target === event.currentTarget) void answer(false)
     }}>
       <div className="dialog close-dialog" role="alertdialog" aria-modal="true" aria-labelledby="close-title" aria-describedby="close-description">
-        <div className="close-heading"><AlertTriangle aria-hidden="true" /><h2 id="close-title">Close Gloss?</h2></div>
+        <div className="close-heading"><AlertTriangle aria-hidden="true" /><h2 id="close-title">{restart ? 'Restart Gloss?' : 'Close Gloss?'}</h2></div>
         <p id="close-description">
           {request.working === 1 ? 'A session is still working.' : `${request.working} sessions are still working.`}
-          {' '}Closing Gloss will stop all running sessions.
+          {restart ? ' Restarting' : ' Closing'} Gloss will stop all running sessions.
         </p>
         {error && <p className="dialog-error" role="alert">{error}</p>}
         <div className="dialog-actions">
           <button ref={keep} className="ghost" onClick={() => void answer(false)}>Keep open</button>
-          <button ref={close} className="danger" onClick={() => void answer(true)}>Close Gloss</button>
+          <button ref={close} className="danger" onClick={() => void answer(true)}>{restart ? 'Restart' : 'Close Gloss'}</button>
         </div>
       </div>
     </div>, document.body

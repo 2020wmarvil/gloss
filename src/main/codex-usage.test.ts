@@ -51,7 +51,7 @@ describe('Codex plan usage', () => {
 
   it('initializes, reads account limits without a thread or prompt, and closes stdin', async () => {
     const s = server()
-    const pending = fetchCodexUsage('/project')
+    const pending = fetchCodexUsage('/project', '/bin/codex')
     expect(s.sent().map((m) => m.method)).toEqual(['initialize'])
     s.reply(1, {})
     expect(s.sent().map((m) => m.method)).toEqual(['initialize', 'initialized', 'account/read'])
@@ -65,12 +65,13 @@ describe('Codex plan usage', () => {
     expect(await pending).toEqual(codexPlanUsage(response))
     expect(s.child.stdin.writableEnded).toBe(true)
     s.child.emit('exit', 0)
+    expect(vi.mocked(spawn).mock.calls[0].slice(0, 2)).toEqual(['/bin/codex', ['app-server']])
     expect(vi.mocked(spawn).mock.calls[0][2]).toMatchObject({ windowsHide: true, cwd: '/project' })
   })
 
   it('does not request subscription limits for API key accounts', async () => {
     const s = server()
-    const pending = fetchCodexUsage('/project')
+    const pending = fetchCodexUsage('/project', '/bin/codex')
     s.reply(1, {})
     s.reply(2, { account: { type: 'apiKey' } })
     expect((await pending).available).toBe(false)
@@ -81,7 +82,7 @@ describe('Codex plan usage', () => {
   it.each(['timeout', 'exit', 'error', 'rpc', 'invalid'])('rejects and cleans up after %s', async (failure) => {
     vi.useFakeTimers()
     const s = server()
-    const pending = fetchCodexUsage('/project')
+    const pending = fetchCodexUsage('/project', '/bin/codex')
     const rejected = expect(pending).rejects.toThrow(/Codex/)
     if (failure === 'timeout') vi.advanceTimersByTime(15000)
     if (failure === 'exit') s.child.emit('exit', 1)

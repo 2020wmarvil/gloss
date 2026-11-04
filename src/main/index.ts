@@ -31,7 +31,11 @@ import { runInTerminal } from './terminal'
 import { registerCaptureIpc, startCapture, updateCaptureBindings } from './capture'
 import type { AnnotateRequest, AnnotateResult } from '../shared/capture'
 import { normalizeShortcut } from '../shared/shortcut'
-import { UsageSource } from './usage'
+import { fetchClaudeUsage, UsageSource } from './usage'
+import { fetchCodexUsage } from './codex-usage'
+import { AgentClis, type CliKind } from './agentCli'
+import { autoUpdater } from 'electron-updater'
+import { Updates } from './updates'
 import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
 import { previewMcpImport } from './mcp-import'
@@ -85,7 +89,16 @@ async function applyProfileChanges(): Promise<void> {
     applyingProfiles = false
   }
 }
-const usage = new UsageSource()
+const agentClis = new AgentClis()
+/** The configured path of an agent's CLI; empty finds an installed copy (SPEC → Shipping). */
+function cliSetting(kind: CliKind): string {
+  const global = settings?.state().global
+  return (kind === 'claude' ? global?.claudeExecutable : global?.codexExecutable) ?? ''
+}
+const usage = new UsageSource(
+  async (cwd) => fetchClaudeUsage(cwd, await agentClis.resolve('claude', cliSetting('claude'))),
+  async (cwd) => fetchCodexUsage(cwd, await agentClis.resolve('codex', cliSetting('codex')))
+)
 
 function isExternalUrl(url: string): boolean {
   try {
@@ -384,6 +397,9 @@ const working = new Set<string>()
 let awake: number | null = null
 
 let closeConfirmation: { requestId: string; sender: Electron.WebContents; finish(close: boolean): void } | undefined
+/** What the close warning is for: restarting into an update words it as a restart. */
+let closeAction: 'close' | 'restart' = 'close'
+let updates: Updates | undefined
 
 const guardClose = createCloseGuard({
   isWorking: () => working.size > 0,
@@ -406,7 +422,7 @@ const guardClose = createCloseGuard({
     sender.once('did-start-navigation', dismiss)
     parent.show()
     parent.focus()
-    sender.send(IPC.event, { type: 'confirmClose', requestId, working: working.size } satisfies GlossEvent)
+    sender.send(IPC.event, { type: 'confirmClose', requestId, working: working.size, ...(closeAction === 'restart' && { action: 'restart' }) } satisfies GlossEvent)
   })
 })
 
@@ -741,9 +757,13 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     if (error) throw new Error(error)
   })
   const agentEntries = (status?: OpenCodeStatus) => {
-    const builtins = listAgents().map((agent) => agent.id === 'opencode'
-      ? { ...agent, available: status?.available ?? false, setupMessage: status ? status.error ?? undefined : 'Checking OpenCode availability…' }
-      : agent)
+    const builtins = listAgents().map((agent) => {
+      if (agent.id === 'opencode') return { ...agent, available: status?.available ?? false, setupMessage: status ? status.error ?? undefined : 'Checking OpenCode availability…' }
+      if (agent.id !== 'claude' && agent.id !== 'codex') return agent
+      // Available until a check says otherwise, so the default agent doesn't flicker at startup.
+      const cli = agentClis.known(agent.id, cliSetting(agent.id))
+      return cli && !cli.available ? { ...agent, available: false, setupMessage: cli.error ?? undefined } : agent
+    })
     const profiles = settingsFile.state().global.agentProfiles ?? []
     const missing = new Set(manager.listSessions().map((s) => s.agentId).filter((id) => id.startsWith('custom:') && !profiles.some((p) => p.id === id)))
     const defaultId = settingsFile.state().global.defaultAgent
@@ -753,6 +773,9 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   const availability = new AgentAvailability((key) => openCode.check(key), (key, status) => {
     if (!quitting && (settingsFile.state().global.opencodeExecutable ?? '') === key) emit({ type: 'agents', agents: agentEntries(status) })
   })
+  agentClis.changed = () => {
+    if (!quitting) emit({ type: 'agents', agents: agentEntries(availability.get(settingsFile.state().global.opencodeExecutable ?? '')) })
+  }
   share(IPC.agentsRateLimits, () => manager.rateLimits())
   share(IPC.agentsList, () => agentEntries(availability.get(settingsFile.state().global.opencodeExecutable ?? '')))
   ipcMain.handle(IPC.agentsTestProfile, (_e, profile: unknown) => {
@@ -827,6 +850,19 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     const pending = closeConfirmation
     if (!pending || event.sender !== pending.sender || requestId !== pending.requestId) return
     pending.finish(close === true)
+  })
+  ipcMain.handle(IPC.updatesState, () => updates!.state)
+  ipcMain.handle(IPC.updatesCheck, () => updates!.check())
+  ipcMain.handle(IPC.updatesRestart, () => {
+    if (updates?.state.status !== 'ready') return
+    // The installer starts before Gloss quits, so a running turn's warning comes first.
+    closeAction = 'restart'
+    const install = (): void => updates!.install()
+    try {
+      if (guardClose({ preventDefault() {} }, install)) install()
+    } finally {
+      closeAction = 'close'
+    }
   })
   share(IPC.history, () => manager.messageHistory())
   registerCaptureIpc()
@@ -1207,6 +1243,12 @@ app.whenReady().then(() => {
       updateCaptureBindings(shortcutBindings)
       if (next.global.captureShortcut !== previous.global.captureShortcut) setCaptureShortcut(next.global.captureShortcut)
       void phone?.apply(next.global.phoneAccess ?? false, next.global.phonePort ?? 8443)
+      for (const kind of ['claude', 'codex'] as const) {
+        if (cliSetting(kind) === ((kind === 'claude' ? previous.global.claudeExecutable : previous.global.codexExecutable) ?? '')) continue
+        void sessions?.restartIdleAgent(kind)
+        void agentClis.check(kind, cliSetting(kind), true)
+      }
+      if (next.global.autoUpdate !== previous.global.autoUpdate) updates?.setAutomatic(next.global.autoUpdate !== false)
       if (next.global.opencodeExecutable !== previous.global.opencodeExecutable) {
         openCodeRestartPending = true
         void sessions?.restartIdleAgent('opencode').then((restarted) => { if (restarted) openCodeRestartPending = false })
@@ -1221,6 +1263,10 @@ app.whenReady().then(() => {
   })
   settings = settingsFile
   settingsFile.load()
+  // Only installed copies update, and unsigned macOS builds can't (SPEC → Shipping).
+  const updateLimit = !app.isPackaged ? 'dev' : process.platform === 'darwin' ? 'mac' : undefined
+  updates = new Updates(app.getVersion(), updateLimit ? null : autoUpdater, (state) => emit({ type: 'updates', state }), updateLimit)
+  updates.setAutomatic(settingsFile.state().global.autoUpdate !== false)
   for (const profile of settingsFile.state().global.agentProfiles ?? []) appliedProfiles.set(profile.id, profile)
   pendingProfiles.clear()
   nativeTheme.themeSource = settingsFile.state().global.theme
@@ -1253,7 +1299,9 @@ app.whenReady().then(() => {
       return project && project !== 'inherit' ? project : state.global.permissionMode
     },
     agentEnv: (config) => agentEnv(config),
-    connect: (config, env, handlers) => AgentConnection.start(config, env, handlers),
+    connect: async (config, env, handlers) => AgentConnection.start(config, config.cli
+      ? { ...env, [config.cli.env]: await agentClis.resolve(config.cli.kind, cliSetting(config.cli.kind)) }
+      : env, handlers),
     runInTerminal,
     versionControl: (cwd) => projectSettings(settingsFile.state().projects, cwd).versionControl ?? 'git',
     worktreeSettings: (project) => {
@@ -1299,6 +1347,7 @@ app.on('before-quit', (event) => {
   quitting = true
   void phone?.dispose()
   settings?.close()
+  updates?.dispose()
   pluginLibrary?.close()
   void sessions?.dispose()
   store?.close()

@@ -1,0 +1,72 @@
+name: Release
+
+# Pushing a version tag (v1.2.3, made by `npm version`) builds the installers and publishes
+# a GitHub Release, which installed copies update from (SPEC → Shipping).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            optional: false
+          # macOS and Linux are best effort: a failure there doesn't hold back the release.
+          - os: macos-latest
+            optional: true
+          - os: ubuntu-latest
+            optional: true
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Check the tag matches package.json
+        shell: bash
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match package.json ($version)." >&2
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run build
+      # Releases are unsigned (see the README's signing policy).
+      - run: npx electron-builder --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.blockmap
+            dist/latest*.yml
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" artifacts/* --repo "$GITHUB_REPOSITORY" --title "Gloss ${GITHUB_REF_NAME#v}" --generate-notes

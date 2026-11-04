@@ -37,7 +37,7 @@ describe('plan usage', () => {
     vi.useFakeTimers()
     const usage = planUsage(response)
     const fetch = vi.fn(async () => usage)
-    const source = new UsageSource(fetch)
+    const source = new UsageSource(fetch, vi.fn())
     await Promise.all([source.get('claude', '/project'), source.get('claude', '/project')])
     await source.get('claude', '/project')
     expect(fetch).toHaveBeenCalledTimes(1)
@@ -48,7 +48,7 @@ describe('plan usage', () => {
 
   it('allows retry after failure and skips unsupported agents', async () => {
     const fetch = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(planUsage(response))
-    const source = new UsageSource(fetch)
+    const source = new UsageSource(fetch, vi.fn())
     expect(await source.get('other', '/project')).toBeNull()
     expect(fetch).not.toHaveBeenCalled()
     await expect(source.get('claude', '/project')).rejects.toThrow('offline')

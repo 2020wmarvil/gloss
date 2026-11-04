@@ -7,7 +7,7 @@ import { projectOf } from '@shared/worktree'
 import type { SessionOrder } from '@shared/settings'
 import type { AgentInfo, AgentSession, Project, RateLimit, Session } from '@shared/types'
 import { formatReset } from './StatusLine'
-import { AppWindow, ChevronDown, ChevronRight, ChevronsUpDown, CircleAlert, Ellipsis, Folder, FolderGit2, GitBranch, GitCompare, Info, List, Package, PanelLeft, Plus, Search, Settings, Star, X } from 'lucide-react'
+import { AppWindow, ChevronDown, ChevronRight, ChevronsUpDown, CircleAlert, Ellipsis, Folder, FolderGit2, GitBranch, GitCompare, Info, List, Package, PanelLeft, Plus, RotateCcw, Search, Settings, Star, X } from 'lucide-react'
 import { folderName } from '@shared/paths'
 
 type Props = {
@@ -75,6 +75,8 @@ type Props = {
   /** Collapses the sidebar to a rail. */
   onCollapse(): void
   onSettings(): void
+  /** The downloaded update's version, which a footer button restarts into (SPEC → Shipping). */
+  updateReady: string | null
 }
 
 /** "now", "5m", "3h", "2d", "3w", "4mo". */
@@ -97,13 +99,18 @@ const reviewIcon = <GitCompare className="review-icon" />
  * The collapsed sidebar, like the side panel's rail: a sessions button, the project's
  * session count in its tooltip. Running sessions show on their rows, the project and the taskbar, not here.
  */
-export function SidebarRail(props: { count: number; onExpand(): void }): React.JSX.Element {
+export function SidebarRail(props: { count: number; onExpand(): void; updateReady: string | null }): React.JSX.Element {
   const what = `${props.count} ${props.count === 1 ? 'session' : 'sessions'}`
   return (
     <div className="side-rail sidebar-rail">
       <button className="rail-button" onClick={props.onExpand} title={`Show sidebar (${what})`} aria-label={`Show sidebar, ${what}`}>
         <List />
       </button>
+      {props.updateReady && (
+        <button className="rail-button update-rail" onClick={() => void window.gloss.updates.restart()} title={`Restart to update to Gloss ${props.updateReady}`}>
+          <RotateCcw />
+        </button>
+      )}
     </div>
   )
 }
@@ -495,7 +502,8 @@ export function Sidebar(props: Props): React.JSX.Element {
                     onClick={() => setPickAgent(a.id)}
                   >
                     {a.name}
-                    {a.available === false && <small> (set up in Settings)</small>}
+                    {/* Claude Code and Codex are fixed by installing or updating their CLIs (SPEC → Shipping). */}
+                    {a.available === false && <small>{a.id === 'claude' || a.id === 'codex' ? ' (unavailable)' : ' (set up in Settings)'}</small>}
                     {limitNote(a.id)}
                   </button>
                   <button
@@ -575,6 +583,14 @@ export function Sidebar(props: Props): React.JSX.Element {
       </div>
 
       <div className="sidebar-foot">
+        {props.updateReady && (
+          <button className="ghost settings-button update-button" onClick={() => void window.gloss.updates.restart()}
+            title={`Gloss ${props.updateReady} is downloaded. Restart to install it.`}>
+            <RotateCcw />
+            Restart to update
+            <span className="update-version">{props.updateReady}</span>
+          </button>
+        )}
         <button className="ghost settings-button" onClick={props.onSearch} title={`Search conversations${commandHint('search')}`}>
           <Search />
           Search

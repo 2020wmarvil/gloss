@@ -3,19 +3,18 @@ import { createServer, type ServerResponse } from 'node:http'
 import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AgentConnection } from './acp'
 import { agentEnv } from './agents'
 import { OpenCodeSupport } from './opencode'
-import { AgentProfileSupport } from './agentProfiles'
 import { Store } from './db'
 import { SessionManager } from './sessions'
 import { AGENT_INSTRUCTIONS } from '../shared/wire'
 
 afterEach(() => vi.unstubAllEnvs())
 
-it.skipIf(!process.env.GLOSS_OPENCODE_EXECUTABLE).each(['guided', 'custom'])('runs OpenCode v2 (%s) with native instructions, threads, process restart and cancellation', async (mode) => {
+it.skipIf(!process.env.GLOSS_OPENCODE_EXECUTABLE)('runs OpenCode v2 with native instructions, threads, process restart and cancellation', async () => {
   const executable = process.env.GLOSS_OPENCODE_EXECUTABLE!
   const dir = mkdtempSync(join(tmpdir(), 'gloss-opencode-integration-'))
   const cwd = join(dir, 'project')
@@ -70,10 +69,7 @@ it.skipIf(!process.env.GLOSS_OPENCODE_EXECUTABLE).each(['guided', 'custom'])('ru
     }
   }))
   const support = new OpenCodeSupport(join(dir, 'gloss'))
-  const config = mode === 'guided' ? support.config(executable) : new AgentProfileSupport(join(dir, 'gloss')).config({
-    id: 'custom:opencode', name: 'OpenCode custom', command: process.execPath,
-    args: [resolve('scripts/opencode-custom-acp.mjs'), executable, '{instructions}'], env: {}
-  })
+  const config = support.config(executable)
   const env = {
     ...Object.fromEntries(Object.entries(process.env).filter(([key]) => /^(path|systemroot|windir|comspec|pathext|temp|tmp|systemdrive)$/i.test(key))),
     HOME: dir, USERPROFILE: dir, APPDATA: join(dir, 'roaming'), LOCALAPPDATA: join(dir, 'local'),

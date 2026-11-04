@@ -40,14 +40,8 @@ export function codexPlanUsage(response: CodexUsageResponse): PlanUsage {
 }
 
 /** Short-lived stdio app-server. Only initialization and account reads, never session writes. */
-export function fetchCodexUsage(cwd: string): Promise<PlanUsage> {
-  // Resolve relative to the adapter so we always use the Codex version it installed.
-  const cli = require.resolve('@openai/codex/bin/codex.js', {
-    paths: [require.resolve('@agentclientprotocol/codex-acp/dist/index.js')]
-  })
-  const child = spawn(process.execPath, [cli, 'app-server'], {
-    cwd, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true, stdio: 'pipe'
-  })
+export function fetchCodexUsage(cwd: string, codex: string): Promise<PlanUsage> {
+  const child = spawn(codex, ['app-server'], { cwd, env: process.env, windowsHide: true, stdio: 'pipe' })
   const lines = createInterface({ input: child.stdout })
   // Drain diagnostics, but don't expose account details or tokens in UI errors.
   child.stderr.resume()

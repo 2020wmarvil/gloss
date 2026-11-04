@@ -1,0 +1,53 @@
+appId: com.wyattmarvil.gloss
+productName: Gloss
+copyright: Copyright © 2026 Wyatt Marvil
+
+directories:
+  buildResources: build
+  output: dist
+
+# Claude Code and Codex are user-installed (SPEC → Shipping): the CLIs their packages
+# bring in as dependencies of the adapters stay out of the app.
+files:
+  - out/**
+  - package.json
+  - "!node_modules/@anthropic-ai/claude-agent-sdk-*{,/**}"
+  - "!node_modules/@openai/codex{,/**}"
+  - "!node_modules/@openai/codex-*{,/**}"
+
+win:
+  target:
+    - target: nsis
+      arch: x64
+  icon: build/icon.ico
+
+nsis:
+  artifactName: Gloss-Setup-${version}.${ext}
+  oneClick: true
+  perMachine: false
+  shortcutName: Gloss
+  uninstallDisplayName: Gloss
+
+mac:
+  target:
+    - dmg
+    - zip
+  icon: build/icon.icns
+  category: public.app-category.developer-tools
+  # Unsigned (see the release signing policy in the README).
+  identity: null
+
+dmg:
+  artifactName: Gloss-${version}-${arch}.${ext}
+
+linux:
+  target:
+    - AppImage
+  icon: build/icons
+  category: Development
+  artifactName: Gloss-${version}-${arch}.${ext}
+
+publish:
+  provider: github
+  owner: 2020wmarvil
+  repo: gloss

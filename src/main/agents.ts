@@ -1,4 +1,5 @@
 // Agent configurations. A small table so more ACP agents can be added later.
+import type { CliKind } from './agentCli'
 
 export type AgentConfig = {
   id: string
@@ -10,6 +11,11 @@ export type AgentConfig = {
   startupTimeoutMs?: number
   /** External profiles never expose arbitrary process or protocol diagnostics. */
   privateDiagnostics?: boolean
+  /**
+   * The user-installed CLI the adapter drives (SPEC → Shipping): Gloss finds it before
+   * starting the agent and passes its path in this environment variable.
+   */
+  cli?: { kind: CliKind; env: string }
   /**
    * The agent's session mode that skips permission prompts, if it has one.
    * Sessions start in it by default (SPEC → Permission modes).
@@ -45,6 +51,7 @@ function claudeAgent(): AgentConfig {
     command: process.execPath,
     args: [require.resolve('@agentclientprotocol/claude-agent-acp/dist/index.js')],
     env: { ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
+    cli: { kind: 'claude', env: 'CLAUDE_CODE_EXECUTABLE' },
     bypassModeId: 'bypassPermissions',
     sessionMeta: (instructions) => ({
       new: { systemPrompt: { append: instructions } },
@@ -67,6 +74,7 @@ function codexAgent(): AgentConfig {
     // Let explicit Gloss entries override same-named native entries. Otherwise
     // codex-acp filters them out and later edits in Gloss never take effect.
     env: { ELECTRON_RUN_AS_NODE: '1', DISABLE_MCP_CONFIG_FILTERING: 'true' },
+    cli: { kind: 'codex', env: 'CODEX_PATH' },
     bypassModeId: 'agent-full-access',
     sessionMeta: (instructions) => ({ new: { jetbrains: { air: { customInstructions: instructions } } } })
   }

@@ -24,6 +24,11 @@ export function makeApi(t: ApiTransport): GlossApi {
       openFolder: (id) => invoke(IPC.pluginsOpenFolder, id)
     },
     confirmClose: (requestId, close) => invoke(IPC.confirmClose, requestId, close),
+    updates: {
+      state: () => invoke(IPC.updatesState),
+      check: () => invoke(IPC.updatesCheck),
+      restart: () => invoke(IPC.updatesRestart)
+    },
     composer: {
       shell: (id, command) => invoke(IPC.composerShell, id, command),
       cancelShell: (id) => invoke(IPC.composerCancelShell, id),
