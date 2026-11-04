@@ -1,0 +1,13 @@
+diff --git a/node_modules/@agentclientprotocol/codex-acp/dist/index.js b/node_modules/@agentclientprotocol/codex-acp/dist/index.js
+index 3e92727..9af1e6c 100644
+--- a/node_modules/@agentclientprotocol/codex-acp/dist/index.js
++++ b/node_modules/@agentclientprotocol/codex-acp/dist/index.js
+@@ -27853,7 +27853,7 @@ function startCodexConnection(codexPath, env, appServerStartupArgs = ["app-serve
+   const spawnEnv = env ?? process.env;
+   let codex;
+   if (codexPath) {
+-    codex = process.platform === "win32" ? (0, import_cross_spawn.default)(codexPath, appServerStartupArgs, { env: spawnEnv }) : spawn(codexPath, appServerStartupArgs, { env: spawnEnv });
++    codex = process.platform === "win32" ? (0, import_cross_spawn.default)(codexPath, appServerStartupArgs, { env: spawnEnv, windowsHide: true }) : spawn(codexPath, appServerStartupArgs, { env: spawnEnv });
+   } else {
+     const bundledCodexPath = require2.resolve("@openai/codex/bin/codex.js");
+     codex = spawn(process.execPath, [bundledCodexPath, ...appServerStartupArgs], { env: spawnEnv });

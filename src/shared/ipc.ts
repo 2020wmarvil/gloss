@@ -137,12 +137,29 @@ export type PhoneStatus = {
  */
 export type ForkOf = { sessionId: string; threadId: string }
 
+/** Gloss's own updates (SPEC → Shipping). */
+export type UpdateState = {
+  /** The running version. */
+  version: string
+  /** `unsupported`: a development build, or macOS (unsigned builds can't update themselves). */
+  status: 'unsupported' | 'idle' | 'checking' | 'current' | 'downloading' | 'ready' | 'error'
+  reason?: 'dev' | 'mac'
+  /** The version being downloaded or ready to install. */
+  next?: string
+  percent?: number
+  /** When the last check finished (ms). */
+  checkedAt?: number
+  error?: string
+}
+
 export type GlossEvent =
   | { type: 'pluginsChanged' }
   | { type: 'agents'; agents: AgentInfo[] }
   /** An agent's plan limits changed (a report, or a window that reset). */
   | { type: 'rateLimits'; agentId: string; limits: RateLimit[] }
-  | { type: 'confirmClose'; requestId: string; working: number }
+  /** `restart`: restarting to install an update, rather than closing. */
+  | { type: 'confirmClose'; requestId: string; working: number; action?: 'restart' }
+  | { type: 'updates'; state: UpdateState }
   | { type: 'session'; session: Session }
   /** `deletedOutside`: the agent no longer had it, so Gloss deleted it too (SPEC → Shared sessions). */
   | { type: 'sessionDeleted'; sessionId: string; deletedOutside?: { title: string } }
@@ -236,6 +253,13 @@ export type MainAction =
 export type GlossApi = {
   plugins: import('./plugins').PluginApi
   confirmClose(requestId: string, close: boolean): Promise<void>
+  updates: {
+    state(): Promise<UpdateState>
+    /** Checks now, reporting a failure (unlike background checks). */
+    check(): Promise<UpdateState>
+    /** Restarts into the downloaded update, after the close warning if a session is working. */
+    restart(): Promise<void>
+  }
   composer: {
     shell(sessionId: string, command: string): Promise<ShellResult>
     cancelShell(sessionId: string): Promise<void>
@@ -548,6 +572,9 @@ export const IPC = {
   windowsInitial: 'gloss:windows:initial',
   windowsToMain: 'gloss:windows:toMain',
   confirmClose: 'gloss:confirmClose',
+  updatesState: 'gloss:updates:state',
+  updatesCheck: 'gloss:updates:check',
+  updatesRestart: 'gloss:updates:restart',
   phoneStatus: 'gloss:phone:status',
   phoneRetry: 'gloss:phone:retry',
   phonePair: 'gloss:phone:pair',

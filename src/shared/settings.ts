@@ -46,6 +46,12 @@ export type GlobalSettings = {
   agentProfiles?: import('./agentProfiles').AgentProfile[]
   /** Empty or omitted discovers an installed native OpenCode executable. */
   opencodeExecutable?: string
+  /** Check for and download Gloss updates in the background (SPEC → Shipping). Omitted means on. */
+  autoUpdate?: boolean
+  /** Empty or omitted finds an installed Claude Code (SPEC → Shipping). */
+  claudeExecutable?: string
+  /** Empty or omitted finds an installed Codex CLI or Codex app. */
+  codexExecutable?: string
   /** Light, dark, or whatever the system uses. */
   theme: ThemeSetting
   /** How the sidebar sorts a project's sessions. */
@@ -111,6 +117,21 @@ export const SETTING_FIELDS: readonly SettingField[] = [
   },
   {
     key: 'opencodeExecutable', scope: 'global', type: 'string', label: 'OpenCode executable',
+    description: 'Native executable path. Empty finds an installed copy.',
+    hidden: true
+  },
+  {
+    key: 'autoUpdate', scope: 'global', type: 'boolean', label: 'Automatic updates',
+    description: 'Check for updates and download them in the background.',
+    hidden: true
+  },
+  {
+    key: 'claudeExecutable', scope: 'global', type: 'string', label: 'Claude Code executable',
+    description: 'Native executable path. Empty finds an installed copy.',
+    hidden: true
+  },
+  {
+    key: 'codexExecutable', scope: 'global', type: 'string', label: 'Codex executable',
     description: 'Native executable path. Empty finds an installed copy.',
     hidden: true
   },

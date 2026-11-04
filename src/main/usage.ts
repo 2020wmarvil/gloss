@@ -1,6 +1,5 @@
 // Plan usage for the popup, read directly from each agent without sending a turn.
 import type { PlanUsage } from '../shared/types'
-import { fetchCodexUsage } from './codex-usage'
 
 /** A result this recent is answered again instead of asking the agent. */
 const FRESH_MS = 30_000
@@ -57,7 +56,7 @@ export function planUsage(response: UsageResponse): PlanUsage {
 }
 
 /** Asks Claude Code for the usage behind `/usage`, through the Agent SDK. */
-async function fetchClaudeUsage(cwd: string): Promise<PlanUsage> {
+export async function fetchClaudeUsage(cwd: string, claude: string): Promise<PlanUsage> {
   const { query } = await import('@anthropic-ai/claude-agent-sdk')
   const abort = new AbortController()
   // The request needs a running query; an input that never yields keeps it promptless.
@@ -65,7 +64,10 @@ async function fetchClaudeUsage(cwd: string): Promise<PlanUsage> {
   async function* noPrompt(): AsyncGenerator<never> {
     await new Promise((resolve) => abort.signal.addEventListener('abort', resolve))
   }
-  const q = query({ prompt: noPrompt(), options: { cwd, persistSession: false, abortController: abort } })
+  const q = query({
+    prompt: noPrompt(),
+    options: { cwd, persistSession: false, abortController: abort, pathToClaudeCodeExecutable: claude }
+  })
   const timer = setTimeout(() => abort.abort(), TIMEOUT_MS)
   try {
     const response = await Promise.race([
@@ -88,8 +90,8 @@ export class UsageSource {
   private pending = new Map<string, Promise<PlanUsage>>()
 
   constructor(
-    private readonly fetch: (cwd: string) => Promise<PlanUsage> = fetchClaudeUsage,
-    private readonly fetchCodex: (cwd: string) => Promise<PlanUsage> = fetchCodexUsage
+    private readonly fetch: (cwd: string) => Promise<PlanUsage>,
+    private readonly fetchCodex: (cwd: string) => Promise<PlanUsage>
   ) {}
 
   /** Null for agents Gloss can't ask. */

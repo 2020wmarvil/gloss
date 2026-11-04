@@ -1,7 +1,7 @@
 // What every Gloss window shows besides a session: settings and theme, the agents, the
 // message history, sign-in requests and the full-screen hint.
 import { useCallback, useEffect, useState } from 'react'
-import type { GlossEvent, SettingsPatch, SettingsState } from '@shared/ipc'
+import type { GlossEvent, SettingsPatch, SettingsState, UpdateState } from '@shared/ipc'
 import type { AgentInfo, AuthMethodInfo, RateLimit } from '@shared/types'
 import { CAPTURE } from './Composer'
 import { applyTheme } from './theme'
@@ -18,12 +18,15 @@ export function useAppData() {
   const [signIn, setSignIn] = useState<SignInRequest | null>(null)
   /** Counts entries into full screen; each shows the hint on how to leave again. */
   const [fullScreenHint, setFullScreenHint] = useState(0)
+  /** Gloss's own update (SPEC → Shipping). */
+  const [updates, setUpdates] = useState<UpdateState | null>(null)
 
   useEffect(() => {
     void window.gloss.settings.get().then(setSettings)
     void window.gloss.history().then(setSent)
     void window.gloss.agents.list().then(setAgents)
     void window.gloss.agents.rateLimits().then(setRateLimits)
+    void window.gloss.updates.state().then(setUpdates)
   }, [])
 
   useEffect(
@@ -41,6 +44,9 @@ export function useAppData() {
             if (role === 'user' && text) setSent((h) => (h[0] === text ? h : [text, ...h.filter((t) => t !== text)]))
             break
           }
+          case 'updates':
+            setUpdates(event.state)
+            break
           case 'fullScreen':
             setFullScreenHint((n) => n + 1)
             break
@@ -71,5 +77,5 @@ export function useAppData() {
     if (patch.global && ('opencodeExecutable' in patch.global || 'agentProfiles' in patch.global)) setAgents(await window.gloss.agents.list())
   }, [])
 
-  return { settings, agents, rateLimits, sent, signIn, fullScreenHint, updateSettings }
+  return { settings, agents, rateLimits, sent, signIn, fullScreenHint, updates, updateSettings }
 }

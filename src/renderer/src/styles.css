@@ -1178,6 +1178,64 @@ button.settings-button.on {
   color: var(--ink);
 }
 
+/* Restart into a downloaded update (docs/mocks/updates.html, variant A). */
+button.settings-button.update-button {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+button.settings-button.update-button:hover:not(:disabled) {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.update-version {
+  margin-left: auto;
+  font-size: var(--t-12);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.rail-button.update-rail,
+.rail-button.update-rail:hover {
+  color: var(--accent);
+}
+
+.settings-group-title {
+  margin: 0 0 8px 2px;
+  font-size: var(--t-13);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.update-control {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.update-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-12);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.update-bar {
+  width: 120px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--sunken);
+  overflow: hidden;
+}
+
+.update-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
 .settings-alert {
   display: inline-flex;
   align-items: center;

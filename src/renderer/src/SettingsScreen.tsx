@@ -3,7 +3,7 @@ import { COMMANDS, bindingFor, bindingProblem, defaultBinding, type Bindings } f
 // The settings screen (docs/mocks/target.html#settings): a list of sections on the left,
 // one section at a time on the right, each a card of rows with one control each.
 import { useEffect, useState } from 'react'
-import type { SettingsPatch, SettingsState } from '@shared/ipc'
+import type { SettingsPatch, SettingsState, UpdateState } from '@shared/ipc'
 import type { Project } from '@shared/types'
 import { folderName, sameFolder } from '@shared/paths'
 import { SETTING_FIELDS, projectSettings, type ProjectSettings, type GlobalSettings, type SettingField } from '@shared/settings'
@@ -15,6 +15,7 @@ import { Segmented, Select, Switch } from './Select'
 import { EditorSetting } from './EditorSetting'
 import { ShortcutSetting } from './ShortcutSetting'
 import { PhoneSettings } from './PhoneSettings'
+import { UpdateSettings } from './UpdateSettings'
 import { ExternalLink, Folder, Keyboard, Palette, Server, SlidersVertical, Smartphone, Terminal } from 'lucide-react'
 
 export type SettingsSection = 'general' | 'appearance' | 'mcp' | 'agents' | 'phone' | 'project' | 'shortcuts'
@@ -26,6 +27,8 @@ const SEGMENTED = new Set(['theme'])
 
 type Props = {
   state: SettingsState
+  /** Gloss's own update; General shows it (SPEC → Shipping). */
+  updates?: UpdateState | null
   /** The initially selected project folder, if any. */
   projectPath: string | null
   /** The section it opens on; General by default. */
@@ -36,7 +39,7 @@ type Props = {
   onClose(): void
 }
 
-export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenFile, onClose, initialSection }: Props): React.JSX.Element {
+export function SettingsScreen({ state, updates, projectPath, projects, onUpdate, onOpenFile, onClose, initialSection }: Props): React.JSX.Element {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
 
@@ -139,6 +142,8 @@ export function SettingsScreen({ state, projectPath, projects, onUpdate, onOpenF
         {section === 'general' && (
           <section aria-labelledby="settings-general">
             <h2 id="settings-general">General</h2>
+            {updates && <UpdateSettings state={updates} automatic={state.global.autoUpdate !== false}
+              onAutomatic={(autoUpdate) => void update({ global: { autoUpdate } })} />}
             <div className="settings-card">{globalFields(false)}</div>
           </section>
         )}

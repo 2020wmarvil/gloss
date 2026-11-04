@@ -51,6 +51,7 @@ function fakeGloss(extra: object = {}): {
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global, projects: {}, error: null, path: '/settings.json' }) },
+    updates: { state: async () => ({ version: '1.0.0', status: 'unsupported', reason: 'dev' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: { list: async () => [session('a', 3), session('b', 2), session('c', 1)], open: opened, refresh: async () => {} },

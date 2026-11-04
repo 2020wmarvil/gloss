@@ -27,6 +27,7 @@ it('focuses a new composer before the agent attaches and preserves typing when i
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    updates: { state: async () => ({ version: '1.0.0', status: 'unsupported', reason: 'dev' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'opencode', name: 'OpenCode', available: false }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: discovery },
     sessions: {
@@ -70,6 +71,7 @@ it("starts sessions with the default agent or one from the menu, and lists every
   window.gloss = {
     history: async () => [],
     settings: { get: async () => state, update },
+    updates: { state: async () => ({ version: '1.0.0', status: 'unsupported', reason: 'dev' }) },
     agents: {
       rateLimits: async () => ({ claude: [{ window: 'five_hour', status: 'rejected', resetsAt }, { window: 'seven_day', status: 'allowed' }] }),
       list: async () => [{ id: 'claude', name: 'Claude Code' }, { id: 'codex', name: 'Codex' }, { id: 'opencode', name: 'OpenCode', available: false, setupMessage: 'Install OpenCode' }]
@@ -147,6 +149,7 @@ it('goes back and forward through the sessions and settings visited with the mou
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    updates: { state: async () => ({ version: '1.0.0', status: 'unsupported', reason: 'dev' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: { list: async () => [session('a'), session('b')], open: opened, refresh: async () => {} },
@@ -197,6 +200,7 @@ it('shows where the agent works and what waits, jumps there, and lists the queue
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    updates: { state: async () => ({ version: '1.0.0', status: 'unsupported', reason: 'dev' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
@@ -303,6 +307,7 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    updates: { state: async () => ({ version: '1.0.0', status: 'unsupported', reason: 'dev' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
@@ -370,6 +375,7 @@ it('opens search anywhere and reveals matches in another session, its thread, or
   window.gloss = {
     search, history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    updates: { state: async () => ({ version: '1.0.0', status: 'unsupported', reason: 'dev' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: { list: async () => [session('a'), session('b')], open: opened, refresh: async () => {} },
@@ -403,6 +409,7 @@ it("finds a thread's anchor in the main conversation from the thread panel", asy
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    updates: { state: async () => ({ version: '1.0.0', status: 'unsupported', reason: 'dev' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
@@ -441,6 +448,7 @@ it("marks, badges and chimes a turn that finishes where the user isn't looking",
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global, projects: {}, error: null, path: '/settings.json' }) },
+    updates: { state: async () => ({ version: '1.0.0', status: 'unsupported', reason: 'dev' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {
@@ -527,6 +535,7 @@ it('keeps background completions and syncs from taking focus or closing settings
   window.gloss = {
     history: async () => [],
     settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', turnEndSound: false, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    updates: { state: async () => ({ version: '1.0.0', status: 'unsupported', reason: 'dev' }) },
     agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
     sessions: {

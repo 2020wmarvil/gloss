@@ -79,3 +79,11 @@ it('keeps the dialog available if sending an answer fails', async () => {
   expect(confirm).toHaveBeenCalledTimes(2)
   expect(document.querySelector('[role="alertdialog"]')).toBeNull()
 })
+
+it('words the warning as a restart when restarting into an update', async () => {
+  act(() => emit({ type: 'confirmClose', requestId: 'request', working: 1, action: 'restart' }))
+  expect(document.querySelector('#close-title')!.textContent).toBe('Restart Gloss?')
+  expect(document.querySelector('#close-description')!.textContent).toBe('A session is still working. Restarting Gloss will stop all running sessions.')
+  await act(async () => document.querySelector<HTMLButtonElement>('.close-dialog .danger')!.click())
+  expect(confirm).toHaveBeenCalledExactlyOnceWith('request', true)
+})

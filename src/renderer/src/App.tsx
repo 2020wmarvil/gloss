@@ -70,7 +70,7 @@ function byActivity(list: Session[]): Session[] {
 const FRESH_PANE: PaneState = { threadId: null, sideOpen: false, general: false, sideTab: 'threads', expandedFiles: [], drafts: {}, scroll: {} }
 
 export function App(): React.JSX.Element {
-  const { settings, agents, rateLimits, sent, signIn, fullScreenHint, updateSettings } = useAppData()
+  const { settings, agents, rateLimits, sent, signIn, fullScreenHint, updates, updateSettings } = useAppData()
   const s = useSession()
   const { load, close: closeSession, openId } = s
   const [showSettings, setShowSettings] = useState(false)
@@ -756,10 +756,12 @@ export function App(): React.JSX.Element {
         <SidebarRail
           count={project ? sessions.filter((x) => sameFolder(projectOf(x), project.path)).length : 0}
           onExpand={() => hideSidebar(false)}
+          updateReady={updates?.status === 'ready' ? updates.next ?? null : null}
         />
       ) : (
         <>
           <Sidebar
+            updateReady={updates?.status === 'ready' ? updates.next ?? null : null}
             agents={agents}
             defaultAgent={agent?.id ?? ''}
             rateLimits={rateLimits}
@@ -836,6 +838,7 @@ export function App(): React.JSX.Element {
           settings && (
             <SettingsScreen
               state={settings}
+              updates={updates}
               initialSection={settingsSection}
               projectPath={projectPath}
               projects={projects}
