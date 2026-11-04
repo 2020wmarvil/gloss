@@ -14,9 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:perforce": "node scripts/test-perforce.mjs",
     "postinstall": "patch-package",
-    "icons": "electron scripts/make-icons.mjs",
     "dist": "npm run build && electron-builder --publish never"
   },
   "dependencies": {

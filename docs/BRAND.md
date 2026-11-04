@@ -7,7 +7,7 @@ A glossy bead in the Sunset gradient, used on its own with no tile: the bead is 
 - **Master:** `build/icon.svg` (64-unit viewBox): the gradient fill, a radial shade (lit top left, darker underside), a white highlight arc at the top left and a faint reflected light at the bottom right.
 - **Small sizes (16 to 32 px):** `build/icon-small.svg`, with a bolder highlight, a lighter shade and no reflected light, so it stays a bead rather than a smudge.
 - **Phone icon** (the phone client's Home Screen and install icons, `src/renderer/public`): the one place the bead sits on a tile. iOS fills a Home Screen icon's transparency with black, so the bead (84% of the side) sits on an opaque sunset-tint square, `#FFF3F8` into `#FFF4EA` at 160°, which iOS rounds itself. Android's maskable icon, which it crops to its own shape, has the bead at 76% so it stays inside the safe zone.
-- **Icon files:** `npm run icons` renders both through Electron, along with the phone icons (180, 192, 512 and a maskable 512 in `src/renderer/public`), to `build/icon.ico` (16 to 256), `build/icon.icns` (16 to 1024, with @2x), `build/icon.png` (1024) and `build/icons/<n>x<n>.png` (Linux). Re-run it after editing either SVG.
+- **Icon files**, rendered from both SVGs and committed: `build/icon.ico` (16 to 256), `build/icon.icns` (16 to 1024, with @2x), `build/icon.png` (1024), `build/icons/<n>x<n>.png` (Linux), and the phone icons (180, 192, 512 and a maskable 512 in `src/renderer/public`). After editing an SVG, regenerate them at those sizes.
 
 ## Color
 - **Sunset gradient:** `#FF3DA6` (magenta) into `#FF9F3D` (orange). Used on the bead and on primary buttons (New session, Send) with dark text `#17040E`.
