@@ -6,22 +6,18 @@
 
 A desktop GUI for coding agents (using [Agent Client Protocol](https://agentclientprotocol.com)) that lets you reply to a single point in an agent's answer as its own thread.
 
-[Using Perforce projects and reviews](docs/PERFORCE.md)
-
 ## Install
 
 Download the installer from the [latest release](https://github.com/2020wmarvil/gloss/releases/latest):
 
-- **Windows:** `Gloss-Setup-<version>.exe`. It installs for your user only, without an admin prompt.
-- **macOS and Linux** (best effort): the `.dmg` or the `.AppImage`.
+- **Windows:** `Gloss-Setup-<version>.exe`.
+- **macOS and Linux**: the `.dmg` or the `.AppImage`.
 
 Gloss runs the coding agents you already have. Install at least one and sign in to it once:
 
-- **Claude Code** 2.1.233 or newer ([install](https://code.claude.com)). Update it with `claude update`.
-- **Codex** 0.160.1 or newer: the CLI (`npm install -g @openai/codex`) or the Codex app.
-- **OpenCode** v2 (set up in Settings > Agents).
-
-Gloss finds Claude Code and Codex on your PATH or where their installers put them. If it can't, set `claudeExecutable` or `codexExecutable` to the native executable in the settings file (Settings, then **Open in editor**).
+- **Claude Code** 2.1.233 or newer
+- **Codex** 0.160.1 or newer
+- **OpenCode** v2
 
 Gloss updates itself on Windows and Linux: it downloads new releases in the background and shows **Restart to update** in the sidebar when one is ready. Turn this off in Settings > General. On macOS, download new versions from the releases page.
 
