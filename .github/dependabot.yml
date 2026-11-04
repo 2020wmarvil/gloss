@@ -1,5 +1,6 @@
 # Pull requests for new versions of the agent adapters and the SDKs they share with Gloss.
-# Check a bump live before merging, and raise the CLI minimums in src/main/agentCli.ts with it.
+# Check a bump live before merging, including against the CLI minimums in src/main/agentCli.ts.
+# Raise a minimum only if the new adapter fails against it.
 # A codex-acp bump needs its patch in patches/ regenerated (npx patch-package @agentclientprotocol/codex-acp).
 version: 2
 updates:

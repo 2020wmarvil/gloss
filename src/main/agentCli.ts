@@ -12,7 +12,7 @@ export type CliStatus = OpenCodeStatus
 type CliInfo = {
   name: string
   command: string
-  /** The oldest CLI the bundled adapter was checked against. Raise it with the adapter. */
+  /** The oldest CLI the bundled adapter was checked against. Re-check it with each adapter bump; raise it only if that fails. */
   minVersion: string
   install: string
   update: string
