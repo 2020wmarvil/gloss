@@ -9,7 +9,7 @@ const SCENES = [
     caption: "Reply to any point in your agent's answer."
   },
   { id: 'linear', length: 5, caption: "To the agent, it's still one session." },
-  { id: 'steer', clip: 'steer', from: 0.9, caption: "Steer a turn while it's running." },
+  { id: 'steer', clip: 'steer', from: 0.9, caption: 'Redirect the agent mid-task.' },
   { id: 'pins', clip: 'pins', from: 1.4, caption: "Point at what's wrong, then discuss each pin." },
   { id: 'review', length: 2.8, caption: 'Review a diff, with threads on its lines.' },
   { id: 'phone', length: 3, caption: 'Drive your sessions from your phone.' },
