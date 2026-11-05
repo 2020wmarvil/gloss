@@ -39,4 +39,4 @@ A full capture takes a few minutes and a small amount of Haiku usage. Gloss's wi
 
 ## After changing the reel
 
-Upload the new `media/gloss-demo.mp4` by dragging it into any GitHub comment box, and put the URL it gives into the root `README.md`'s `<video>` tag. GitHub plays only those uploads inline. The social preview is uploaded by hand as well: Settings > General > Social preview.
+Upload the new `media/gloss-demo.mp4` by dragging it into any GitHub comment box, post the comment, and put the URL it gives into the root `README.md` in both places: its own line, which GitHub turns into a player, and the link under it. GitHub plays only those uploads inline. The social preview is uploaded by hand as well: Settings > General > Social preview.
