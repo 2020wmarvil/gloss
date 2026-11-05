@@ -22,6 +22,11 @@ html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; backgro
 
 #caption { position: absolute; z-index: 100; left: 0; right: 0; top: 34px; height: 76px; margin: 0; text-align: center; font-size: 50px; font-weight: 600; letter-spacing: -0.02em; line-height: 76px; }
 
+.title-row { position: absolute; left: 0; right: 0; top: 34px; height: 76px; display: flex; align-items: center; justify-content: center; gap: 16px; }
+.title-row img { width: 58px; height: 58px; }
+.title-mark { font-size: 56px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.title-line { margin-left: 24px; font-size: 40px; font-weight: 500; letter-spacing: -0.015em; color: #d4d1c8; }
+
 .frame { position: absolute; left: 232px; top: 132px; width: 1456px; height: 910px; border-radius: 16px; overflow: hidden; box-shadow: 0 0 0 1px #ffffff1f, 0 30px 90px #000000b0; background: #111; }
 .frame img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top left; transform-origin: 0 0; }
 

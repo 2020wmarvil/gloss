@@ -2,7 +2,8 @@
 /* The timeline. Times are seconds. A clip scene plays its footage frame for frame, from `from` seconds in to its
    end, so it takes as long as its clip (a fractional speed judders). Only one caption ever shows. */
 const SCENES = [
-  { id: 'intro', length: 2.8 },
+  // The first frame is the still GitHub's player shows before anyone presses play, so it starts complete.
+  { id: 'intro', length: 3, still: true },
   {
     id: 'threads', clip: 'threads', from: 0.6,
     caption: "Reply to any point in your agent's answer."
@@ -46,10 +47,6 @@ const span = (t, a, b) => ease((t - a) / (b - a))
 document.getElementById('wireTag').textContent = `[re: "${window.REEL_QUOTE}"]`
 
 const DRAW = {
-  intro(t) {
-    this.el.querySelector('.lockup').style.transform = `scale(${0.94 + 0.06 * span(t, 0, 0.9)})`
-    this.el.querySelector('.sub').style.opacity = span(t, 0.6, 1.2)
-  },
   linear(t) {
     const row = document.getElementById('wireThread')
     row.style.opacity = span(t, 0.3, 0.9)
@@ -91,7 +88,7 @@ window.seek = async function (t) {
     const visible = local >= 0 && local < s.length
     s.el.classList.toggle('on', visible)
     if (!visible) continue
-    s.el.style.opacity = span(local, 0, FADE_IN) * (1 - span(local, s.length - FADE_OUT, s.length))
+    s.el.style.opacity = (s.still ? 1 : span(local, 0, FADE_IN)) * (1 - span(local, s.length - FADE_OUT, s.length))
     drawCaption(s, local)
     DRAW[s.id]?.call(s, local)
     if (s.img) {
