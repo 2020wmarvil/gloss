@@ -18,7 +18,7 @@ A desktop GUI for Claude Code, Codex and other [ACP](https://agentclientprotocol
 
 https://github.com/user-attachments/assets/d124dda2-f862-4db9-81dd-cc54dfd42e86
 
-[Video not playing? Watch the demo here.](https://github.com/user-attachments/assets/d124dda2-f862-4db9-81dd-cc54dfd42e86)
+[Video not playing? Get the file.](marketing/media/gloss-demo.mp4)
 
 ## Core features
 
