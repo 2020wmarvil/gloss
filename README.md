@@ -14,9 +14,7 @@ A desktop GUI for Claude Code, Codex and other [ACP](https://agentclientprotocol
 
 </div>
 
-![Gloss in dark mode: an agent's numbered list in the main conversation, with a thread on one of its points open beside it](marketing/media/hero-dark.png)
-
-https://github.com/user-attachments/assets/d124dda2-f862-4db9-81dd-cc54dfd42e86
+https://github.com/user-attachments/assets/51df7862-2bb1-4581-ad6e-e2121b3b2d24
 
 [Video not playing? Get the file.](marketing/media/gloss-demo.mp4)
 
