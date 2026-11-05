@@ -6,6 +6,8 @@
 
 **Reply to any point in your coding agent's answer.**
 
+*Graphical Layer Over Shell Sessions. Goodbye, Long Off-topic Scrolling Sessions.*
+
 A desktop GUI for Claude Code, Codex and other [ACP](https://agentclientprotocol.com) agents, with threads.
 
 [**Download the latest release**](https://github.com/2020wmarvil/gloss/releases/latest) · Windows, macOS, Linux · MIT
@@ -13,14 +15,6 @@ A desktop GUI for Claude Code, Codex and other [ACP](https://agentclientprotocol
 </div>
 
 ![Gloss in dark mode: an agent's numbered list in the main conversation, with a thread on one of its points open beside it](marketing/media/hero-dark.png)
-
-## Why threads
-
-An agent gives you five findings. You ask about the first, and its answer pushes the other four out of view. By the time you get back to the third, you're scrolling to find it and retyping what it said.
-
-In Gloss you select the third finding and reply to it. The discussion opens beside the conversation, your place stays put, and the other findings wait where you left them.
-
-Threads live in the view. To the agent it's still one ordinary session that knows everything said in every thread, so you can pick it up in the agent's own CLI whenever you like. (*G*raphical *L*ayer *O*ver *S*hell *S*essions. Goodbye, Long Off-topic Scrolling Sessions.)
 
 <video src="https://github.com/user-attachments/assets/d124dda2-f862-4db9-81dd-cc54dfd42e86" controls width="100%"></video>
 
