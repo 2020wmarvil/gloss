@@ -25,7 +25,7 @@ In Gloss you select the third finding and reply to it. The discussion opens besi
 
 Threads live in the view. To the agent it's still one ordinary session that knows everything said in every thread, so you can pick it up in the agent's own CLI whenever you like. (*G*raphical *L*ayer *O*ver *S*hell *S*essions. Goodbye, Long Off-topic Scrolling Sessions.)
 
-<!-- REEL: <video> with the user-attachments URL goes here; see marketing/README.md. -->
+<video src="https://github.com/user-attachments/assets/d124dda2-f862-4db9-81dd-cc54dfd42e86" controls width="100%"></video>
 
 ## Core features
 
