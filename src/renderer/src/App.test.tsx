@@ -32,7 +32,7 @@ it('focuses a new composer before the agent attaches and preserves typing when i
     projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: discovery },
     sessions: {
       list: async () => [], create: async () => session, refresh: async () => {},
-      open: async () => ({ session, messages: [], toolCalls: [], plans: [], threads: [], turn: null, forks: [], live, queue: { items: [], paused: false }, requests: [] })
+      open: async () => ({ session, messages: [], toolCalls: [], plans: [], threads: [], turn: null, forks: [], background: [], live, queue: { items: [], paused: false }, requests: [] })
     },
     git: { status: async () => null, pullRequest: async () => null },
     onEvent: (listener: (event: GlossEvent) => void) => { listeners.push(listener); return () => {} }
@@ -142,7 +142,7 @@ it('goes back and forward through the sessions and settings visited with the mou
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
   const session = (id: string): object => ({ id, title: id, cwd: '/project', agentId: 'claude', createdAt: id === 'a' ? 2 : 1 })
   const opened = vi.fn(async (id: string) => ({
-    session: session(id), messages: [], toolCalls: [], plans: [], threads: [], turn: null, forks: [],
+    session: session(id), messages: [], toolCalls: [], plans: [], threads: [], turn: null, forks: [], background: [],
     live: { attached: false, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
     queue: { items: [], paused: false }
   }))
@@ -213,7 +213,7 @@ it('shows where the agent works and what waits, jumps there, and lists the queue
           { id: 'u2', sessionId: 's', seq: 2, role: 'user', text: 'in the thread', threadId: 't1' }
         ],
         threads: [thread('late', 'Second thread', 20), thread('t1', 'Make forward and backward buttons work in the app', 10)],
-        turn: { threadId: 't1' }, forks: [],
+        turn: { threadId: 't1' }, forks: [], background: [],
         live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [{ id: 'q1', threadId: 't1', text: 'then this', attachments: [] }, { id: 'q2', threadId: null, text: 'main next', attachments: [] }], paused: false }
       })
@@ -314,7 +314,7 @@ it('remembers each session\'s thread and jumps to where the agent last worked', 
       list: async () => [session('a', 3), session('b', 2), session('c', 1)],
       refresh: async () => {},
       open: async (id: string) => ({
-        session: session(id, { a: 3, b: 2, c: 1 }[id]!), toolCalls: [], plans: [], turn: null, forks: [], ...views[id],
+        session: session(id, { a: 3, b: 2, c: 1 }[id]!), toolCalls: [], plans: [], turn: null, forks: [], background: [], ...views[id],
         live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })
@@ -365,7 +365,7 @@ it('opens search anywhere and reveals matches in another session, its thread, or
       { id: 'reply', sessionId: id, seq: 1, role: 'agent', text: 'cache thread response', threadId: 't' }
     ],
     toolCalls: id === 'a' ? [] : [{ id: 'tool', sessionId: id, messageSeq: 2, threadId: 't', title: 'Read cache', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'cache tool output' } }] }],
-    plans: [], threads: id === 'a' ? [] : [thread], turn: null, forks: [],
+    plans: [], threads: id === 'a' ? [] : [thread], turn: null, forks: [], background: [],
     live: { attached: false, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
     queue: { items: [], paused: false }
   }))
@@ -419,7 +419,7 @@ it("finds a thread's anchor in the main conversation from the thread panel", asy
         session, toolCalls: [], plans: [],
         messages: [{ id: 'm', sessionId: 's', seq: 1, role: 'agent', text: 'Hello world', threadId: null }],
         threads: [{ id: 't1', sessionId: 's', anchorMessageId: 'm', anchor: { kind: 'selection', start: 6, end: 11, text: 'world' }, createdAt: 1 }],
-        turn: null, forks: [],
+        turn: null, forks: [], background: [],
         live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })
@@ -455,7 +455,7 @@ it("marks, badges and chimes a turn that finishes where the user isn't looking",
       list: async () => [session('a', 2), session('b', 1)],
       refresh: async () => {},
       open: async (id: string) => ({
-        session: session(id, id === 'a' ? 2 : 1), toolCalls: [], plans: [], turn: null, forks: [], messages: [], threads: [],
+        session: session(id, id === 'a' ? 2 : 1), toolCalls: [], plans: [], turn: null, forks: [], background: [], messages: [], threads: [],
         live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })
@@ -541,7 +541,7 @@ it('keeps background completions and syncs from taking focus or closing settings
     sessions: {
       list: async () => [session('a'), session('b')], refresh: async () => {},
       open: async (id: string) => ({
-        session: session(id), messages: [], toolCalls: [], plans: [], threads: [], turn: null, forks: [],
+        session: session(id), messages: [], toolCalls: [], plans: [], threads: [], turn: null, forks: [], background: [],
         live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
         queue: { items: [], paused: false }
       })

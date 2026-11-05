@@ -393,7 +393,10 @@ function handleShortcut(win: BrowserWindow, input: Electron.Input): boolean {
 }
 
 /** Sessions with a turn running, and the sleep blocker held while there are any. */
-const working = new Set<string>()
+/** Sessions with a turn running, and with background jobs. */
+const turning = new Set<string>()
+const withJobs = new Set<string>()
+const workingCount = (): number => new Set([...turning, ...withJobs]).size
 let awake: number | null = null
 
 let closeConfirmation: { requestId: string; sender: Electron.WebContents; finish(close: boolean): void } | undefined
@@ -402,7 +405,7 @@ let closeAction: 'close' | 'restart' = 'close'
 let updates: Updates | undefined
 
 const guardClose = createCloseGuard({
-  isWorking: () => working.size > 0,
+  isWorking: () => workingCount() > 0,
   confirm: () => new Promise<boolean>((resolve) => {
     const parent = lastFocused && !lastFocused.isDestroyed() ? lastFocused : mainWindow
     if (!parent || parent.isDestroyed()) { resolve(false); return }
@@ -422,17 +425,19 @@ const guardClose = createCloseGuard({
     sender.once('did-start-navigation', dismiss)
     parent.show()
     parent.focus()
-    sender.send(IPC.event, { type: 'confirmClose', requestId, working: working.size, ...(closeAction === 'restart' && { action: 'restart' }) } satisfies GlossEvent)
+    sender.send(IPC.event, { type: 'confirmClose', requestId, working: workingCount(), ...(closeAction === 'restart' && { action: 'restart' }) } satisfies GlossEvent)
   })
 })
 
 /** Keeps the computer and the display from sleeping while an agent works. */
 function keepAwake(event: GlossEvent): void {
-  if (event.type === 'turnStart') working.add(event.sessionId)
-  else if (event.type === 'turnEnd') working.delete(event.sessionId)
+  if (event.type === 'turnStart') turning.add(event.sessionId)
+  else if (event.type === 'turnEnd') turning.delete(event.sessionId)
+  else if (event.type === 'background' && event.threads.length > 0) withJobs.add(event.sessionId)
+  else if (event.type === 'background') withJobs.delete(event.sessionId)
   else return
-  if (working.size > 0 && awake === null) awake = powerSaveBlocker.start('prevent-display-sleep')
-  else if (working.size === 0 && awake !== null) {
+  if (workingCount() > 0 && awake === null) awake = powerSaveBlocker.start('prevent-display-sleep')
+  else if (workingCount() === 0 && awake !== null) {
     powerSaveBlocker.stop(awake)
     awake = null
   }
@@ -493,8 +498,8 @@ const notifications = new Set<Notification>()
 
 /** An OS notification when a turn ends or fails while Gloss isn't focused. Clicking it opens the session (and thread). */
 function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
-  // A queued message starting next isn't the end of the agent's work.
-  if (glossWindows().some((w) => w.isFocused()) || event.stopReason === 'cancelled' || event.continues) return
+  // A queued message starting next, or a job still running, isn't the end of the agent's work.
+  if (glossWindows().some((w) => w.isFocused()) || event.stopReason === 'cancelled' || event.continues || event.jobsRunning) return
   const shown = shownAs(event.sessionId, event.threadId)
   if (!shown) return
   const { session, threadId } = shown
@@ -991,6 +996,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.sessionsRename, (_e, id: unknown, title: unknown) =>
     manager.renameSession(str(id, 'id'), str(title, 'title'))
   )
+  ipcMain.handle(IPC.sessionsRestart, (_e, id: unknown) => manager.restartSession(str(id, 'id')))
   ipcMain.handle(IPC.sessionsDelete, (_e, id: unknown) => manager.deleteSession(str(id, 'id')))
   share(IPC.sessionsSetChoice, (id: unknown, kind: unknown, value: unknown) => {
     if (kind !== 'model' && kind !== 'effort') throw new Error('kind must be "model" or "effort"')

@@ -48,7 +48,7 @@ import {
 import type { McpServer } from '../shared/mcp'
 import type { PermissionModeSetting } from '../shared/settings'
 import { answerError, questionFields, type PermissionChoice, type RequestAnswer, type UserRequest } from '../shared/requests'
-import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, type AgentHandlers, type SteerOutcome } from './acp'
+import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, type AgentHandlers, type ClaudeMessageNotification, type SteerOutcome } from './acp'
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
 import { samePath } from './settings'
@@ -63,6 +63,8 @@ import { withoutWorktreeNote, worktreeNote } from '../shared/worktree'
 import { currentBranch, defaultBranch, mergeBase, pullRequestBase, readReviewDiff, readReviewFile, reviewCommits, workingFilePath } from './review'
 
 export type SessionManagerDeps = {
+  /** How often to check the history of a session with quiet jobs (tests). */
+  quietJobPollMs?: number
   store: Store
   emit(event: GlossEvent): void
   getAgentConfig(agentId: string): AgentConfig
@@ -156,6 +158,15 @@ type Turn = {
   messageIds: string[]
   /** The tool calls reported in it, closed when it ends if the agent left them running. */
   toolCallIds: Set<string>
+  /** The agent started it on its own (a background job finished), so no prompt is waiting on it. */
+  auto?: true
+}
+
+/** A job running in the background after its turn ended (SPEC → Background jobs). */
+type BackgroundJob = {
+  threadId: string | null
+  /** The turn that started a job its agent says nothing more about (`quietJobResult`). */
+  quietFrom?: Turn
 }
 
 type SessionRuntime = {
@@ -189,6 +200,14 @@ type SessionRuntime = {
   live: SessionLive
   /** Questions and approvals the agent is waiting on, by id (SPEC → Questions and approvals). */
   requests: Map<string, OpenRequest>
+  /** Running background jobs: by Claude Code's task id, or the tool call's id. */
+  jobs: Map<string, BackgroundJob>
+  /** The thread of the job that last started or ended: where the agent's follow-up goes. */
+  lastJobThread?: string | null
+  /** The last job ended: the agent's work is over unless it follows up. */
+  jobsSettling?: ReturnType<typeof setTimeout>
+  /** Checks the session's history for the end of its quiet jobs. */
+  quietJobsWatch?: ReturnType<typeof setInterval>
 }
 
 /** A request waiting on the user. `settle(null)`: withdrawn, or the turn was cancelled. */
@@ -221,6 +240,8 @@ type AgentSlot = {
   connection?: Promise<AgentConnection>
   /** The resolved connection, once `connection` has started. */
   current?: AgentConnection
+  /** What the connection was started from. */
+  config?: AgentConfig
   /** session/prompt requests in flight. */
   activePrompts: number
   signIn?: SignIn
@@ -231,6 +252,10 @@ type AgentSlot = {
 }
 
 const TITLE_LENGTH = 60
+/** How long after the last job ends the agent has to start its follow-up. It took about 0.1 s live. */
+const JOBS_SETTLE_MS = 1500
+/** How often to check the history of a session with quiet jobs. Listing took about 20 ms live. */
+const QUIET_JOB_POLL_MS = 3000
 
 export class SignInCancelledError extends Error {
   constructor() {
@@ -314,6 +339,7 @@ export class SessionManager {
       case 'live':
       case 'queue':
       case 'requests':
+      case 'background':
       case 'turnStart':
       case 'turnEnd': {
         const home = this.forkHome(event.sessionId)
@@ -337,7 +363,7 @@ export class SessionManager {
   private runtime(sessionId: string): SessionRuntime {
     let rt = this.runtimes.get(sessionId)
     if (!rt) {
-      rt = { loading: false, queue: { items: [], paused: false }, live: emptyLive(), requests: new Map() }
+      rt = { loading: false, queue: { items: [], paused: false }, live: emptyLive(), requests: new Map(), jobs: new Map() }
       const agentId = this.deps.store.getSession(sessionId)?.agentId
       if (agentId) rt.live.rateLimits = this.slot(agentId).rateLimits
       this.runtimes.set(sessionId, rt)
@@ -366,6 +392,7 @@ export class SessionManager {
     const slot = this.slot(agentId)
     if (!slot.connection) {
       const config = this.deps.getAgentConfig(agentId)
+      slot.config = config
       const handlers = this.handlers(agentId)
       const pending = this.deps.connect(config, this.deps.agentEnv(config), handlers).then(async (conn) => {
         // The agent's setup may need it started again from a new config, once (see AgentConfig.afterStart).
@@ -419,6 +446,7 @@ export class SessionManager {
       onUpdate: (n) => this.onUpdate(agentId, n),
       onPermission: (req, signal) => this.onPermission(req, signal),
       onElicitation: (req, signal) => this.onElicitation(req, signal),
+      onClaudeMessage: (n) => this.onClaudeMessage(n),
       onStderr: (line) => console.error(`[${agentId}]`, line),
       onClosed: () => this.onClosed(agentId)
     }
@@ -440,6 +468,9 @@ export class SessionManager {
         rt.attachedTo = undefined
         this.withdrawRequests(id)
         this.setLive(id, { attached: false })
+        // Its jobs ended with the process, and a turn it started on its own has no prompt to fail.
+        this.endJobs(id, rt)
+        if (rt.turn?.auto) void this.endAutoTurn(id, rt, { error: 'The agent process ended.' })
       }
     }
   }
@@ -484,10 +515,10 @@ export class SessionManager {
    * Where each session's turn runs (its thread, null for main) and how many questions and approvals
    * it waits on, for a phone that connects mid-turn (SPEC → Remote and mobile). Idle sessions are left out.
    */
-  activity(): Record<string, { turn: string | null | undefined; requests: number; queued: number; paused: boolean; forkOf?: Session['forkOf'] }> {
-    const out: Record<string, { turn: string | null | undefined; requests: number; queued: number; paused: boolean; forkOf?: Session['forkOf'] }> = {}
+  activity(): Record<string, { turn: string | null | undefined; requests: number; queued: number; paused: boolean; jobs: number; forkOf?: Session['forkOf'] }> {
+    const out: Record<string, { turn: string | null | undefined; requests: number; queued: number; paused: boolean; jobs: number; forkOf?: Session['forkOf'] }> = {}
     for (const [id, rt] of this.runtimes) {
-      if (!rt.turn && rt.requests.size === 0 && rt.queue.items.length === 0) continue
+      if (!rt.turn && rt.requests.size === 0 && rt.queue.items.length === 0 && rt.jobs.size === 0) continue
       // A fork thread's work shows in its parent session, in that thread (SPEC → Fork threads).
       const home = this.forkHome(id)
       out[id] = {
@@ -495,6 +526,7 @@ export class SessionManager {
         requests: rt.requests.size,
         queued: rt.queue.items.length,
         paused: rt.queue.paused,
+        jobs: rt.jobs.size,
         ...(home ? { forkOf: home } : {})
       }
     }
@@ -506,24 +538,29 @@ export class SessionManager {
     return Object.fromEntries([...this.agents].map(([id, slot]) => [id, slot.rateLimits]))
   }
 
-  /** Whether one of the agent's sessions has a prompt in flight or a turn running. */
+  /** Whether one of the agent's sessions has a prompt in flight, a turn running or a background job. */
   isAgentBusy(agentId: string): boolean {
-    return this.slot(agentId).activePrompts > 0 || this.hasTurn(agentId)
+    return this.slot(agentId).activePrompts > 0 || this.hasTurn(agentId) || this.hasBackgroundWork(agentId)
+  }
+
+  /** Work with no prompt in flight, which stopping the agent's process would kill. */
+  private hasBackgroundWork(agentId: string): boolean {
+    return [...this.runtimes].some(([id, rt]) => (rt.jobs.size > 0 || rt.turn?.auto) && this.deps.store.getSession(id)?.agentId === agentId)
   }
 
   private hasTurn(agentId: string): boolean {
     return [...this.runtimes].some(([id, rt]) => rt.turn !== undefined && this.deps.store.getSession(id)?.agentId === agentId)
   }
 
-  /** Stops the agent's process if no prompt is in flight. The next request starts a fresh one. */
+  /** Stops the agent's process if no prompt is in flight and no job runs. The next request starts a fresh one. */
   async restartIdleAgent(agentId: string, waitForResume = false): Promise<boolean> {
     const slot = this.slot(agentId)
     const turns = (): boolean => this.hasTurn(agentId)
-    if (slot.activePrompts > 0 || (waitForResume && turns())) return false
+    if (slot.activePrompts > 0 || this.hasBackgroundWork(agentId) || (waitForResume && turns())) return false
     // A background resume must finish before disposing the connection it is loading.
     if (waitForResume) await Promise.all([...this.runtimes].filter(([id]) => this.deps.store.getSession(id)?.agentId === agentId)
       .map(([, rt]) => rt.attaching?.promise.catch(() => {})))
-    if (slot.activePrompts > 0 || (waitForResume && turns())) return false
+    if (slot.activePrompts > 0 || this.hasBackgroundWork(agentId) || (waitForResume && turns())) return false
     if (!slot.connection) return true
     const pending = slot.connection
     slot.connection = undefined
@@ -540,6 +577,8 @@ export class SessionManager {
   async dispose(): Promise<void> {
     this.disposed = true
     for (const s of this.agents.values()) clearTimeout(s.rateLimitTimer)
+    // The agents' processes end with Gloss, and their jobs with them.
+    for (const [id, rt] of this.runtimes) if (this.deps.store.getSession(id)) this.endJobs(id, rt, false)
     const pending = [...this.agents.values()].map((s) => s.connection)
     this.agents.clear()
     for (const p of pending) {
@@ -997,11 +1036,13 @@ export class SessionManager {
       queue: rt.queue,
       live: rt.live,
       requests: [...rt.requests.values()].map((r) => r.request),
+      background: this.jobThreads(rt),
       forks: forks.map((f): ForkView => {
         const fork = this.runtimes.get(f.sessionId)
         return {
           ...f,
           running: !!fork?.turn,
+          background: (fork?.jobs.size ?? 0) > 0,
           queue: fork?.queue ?? { items: [], paused: false },
           live: fork?.live ?? emptyLive(),
           requests: fork ? [...fork.requests.values()].map((r) => r.request) : []
@@ -1057,6 +1098,28 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Closes the session on the agent and loads it again, which starts it afresh from its saved
+   * history and stops its background jobs. The conversation stays (SPEC → Projects and sessions).
+   */
+  async restartSession(id: string): Promise<void> {
+    const session = this.session(id)
+    if (session.forkOf) throw new Error("A fork thread's session can't be restarted on its own.")
+    const rt = this.runtime(id)
+    await rt.attaching?.promise.catch(() => {})
+    if (rt.turn || rt.rewinding || rt.resetting) throw new Error('The agent is working. Stop the turn before restarting the session.')
+    const conn = rt.attachedTo
+    if (!conn) {
+      // Not running on the agent, so there's nothing to close.
+      await this.resume(id)
+      return
+    }
+    if (!conn.canCloseSessions || !conn.canLoadSession) throw new Error("This agent can't restart a session.")
+    this.setLive(id, { attached: false })
+    await this.reattach(id, conn)
+    this.drain(id)
+  }
+
   renameSession(id: string, title: string): Session {
     this.session(id)
     const trimmed = title.replace(/\s+/g, ' ').trim()
@@ -1073,6 +1136,7 @@ export class SessionManager {
   async deleteSession(id: string, options: { keepWorktree?: boolean } = {}): Promise<string | null> {
     const session = this.session(id)
     if (session.forkOf) throw new Error("A fork thread's session goes with its thread.")
+    this.endJobs(id, this.runtime(id))
     const rt = this.runtime(id)
     if (rt.rewinding || rt.resetting) throw new Error('Wait for conversation reset or rewind to finish.')
     if (rt.turn) await this.cancel(id)
@@ -1233,6 +1297,7 @@ export class SessionManager {
       rt.failures?.clear()
       this.withdrawRequests(id)
       this.setLive(id, { usage: null, attached: false })
+      this.endJobs(id, rt)
       this.deps.emit({ type: 'session', session: this.session(id) })
       this.deps.emit({ type: 'sessionRewound', sessionId: id })
       if (conn?.canCloseSessions) void conn.closeSession(session.acpSessionId).catch(() => {})
@@ -1809,7 +1874,7 @@ export class SessionManager {
     if (rt.attachedTo === conn) {
       const session = this.session(sessionId)
       const servers = this.mcpServers(session.cwd)
-      if (rt.mcpFingerprint !== JSON.stringify(servers) && (!rt.turn || rt.turn.unsent)) {
+      if (rt.mcpFingerprint !== JSON.stringify(servers) && (!rt.turn || rt.turn.unsent) && rt.jobs.size === 0) {
         conn.validateMcp(servers)
         if (!conn.canCloseSessions || !conn.canLoadSession) {
           return Promise.reject(new Error('MCP settings changed. Restart Gloss to apply them for this agent.'))
@@ -1939,6 +2004,8 @@ export class SessionManager {
   private async ensureFresh(sessionId: string, conn: AgentConnection, canReload: () => boolean): Promise<void> {
     const rt = this.runtime(sessionId)
     if (!conn.canLoadSession || !conn.canListSessions || !conn.canCloseSessions) return
+    // Reloading closes the session, which would stop its jobs.
+    if (rt.jobs.size > 0) return
     // A load in progress replays the latest history anyway.
     const loading = (): Promise<unknown> | undefined => (rt.attaching?.conn === conn ? rt.attaching.promise : undefined)
     if (loading()) return void (await loading())
@@ -1960,6 +2027,7 @@ export class SessionManager {
     if (rt.attaching?.conn === conn) return rt.attaching.promise
     const acpSessionId = this.session(sessionId).acpSessionId
     rt.attachedTo = undefined
+    if (close) this.endJobs(sessionId, rt)
     const promise = (async () => {
       if (close) await conn.closeSession(acpSessionId)
       return this.doAttach(sessionId, conn)
@@ -2513,14 +2581,254 @@ export class SessionManager {
     // The queue moves on after a turn that ended normally or was cancelled (a cancel
     // stops only that turn). A failed or cut-short turn pauses it, so the user can
     // look before more is sent.
+    this.announceTurnEnd(sessionId, rt, threadId, result, recovery)
+    return result
+  }
+
+  /** Moves the queue on, or pauses it, and tells the windows the turn ended. */
+  private announceTurnEnd(
+    sessionId: string,
+    rt: SessionRuntime,
+    threadId: string | null,
+    result: TurnResult,
+    recovery?: Extract<GlossEvent, { type: 'turnEnd' }>['recovery']
+  ): void {
     let continues = false
     if (rt.queue.items.length > 0 && this.runtimes.get(sessionId) === rt) {
       continues = !result.error && (result.stopReason === 'end_turn' || result.stopReason === 'cancelled')
       if (rt.queue.paused !== !continues) this.setQueue(sessionId, { ...rt.queue, paused: !continues })
     }
-    this.deps.emit({ type: 'turnEnd', sessionId, threadId, ...result, ...(recovery ? { recovery } : {}), ...(continues ? { continues: true } : {}) })
+    this.deps.emit({
+      type: 'turnEnd', sessionId, threadId, ...result,
+      ...(recovery ? { recovery } : {}),
+      ...(continues ? { continues: true } : {}),
+      ...(rt.jobs.size > 0 ? { jobsRunning: true } : {})
+    })
     if (continues) this.drain(sessionId)
-    return result
+  }
+
+  // Background jobs (SPEC → Background jobs)
+
+  private jobThreads(rt: SessionRuntime): (string | null)[] {
+    return [...new Set([...rt.jobs.values()].map((job) => job.threadId))]
+  }
+
+  private jobsChanged(sessionId: string, rt: SessionRuntime): void {
+    clearTimeout(rt.jobsSettling)
+    rt.jobsSettling = undefined
+    if (rt.jobs.size > 0 || rt.turn) {
+      this.deps.emit({ type: 'background', sessionId, threads: this.jobThreads(rt) })
+      return
+    }
+    // Claude follows up right after a job ends, and its turn's end says the work is over.
+    // Otherwise (Codex doesn't follow up) this does. The dot stays on until then, with no gap.
+    rt.jobsSettling = setTimeout(() => {
+      rt.jobsSettling = undefined
+      if (this.disposed || this.runtimes.get(sessionId) !== rt) return
+      this.deps.emit({ type: 'background', sessionId, threads: this.jobThreads(rt) })
+      if (rt.turn || rt.jobs.size > 0) return
+      const threadId = rt.lastJobThread ?? null
+      rt.lastJobThread = undefined
+      // The job's end changed the agent's copy: that isn't a change made elsewhere.
+      if (rt.attachedTo) void this.recordSynced(sessionId, rt.attachedTo).catch(() => {})
+      this.deps.emit({ type: 'turnEnd', sessionId, threadId, stopReason: 'end_turn' })
+    }, JOBS_SETTLE_MS)
+    rt.jobsSettling.unref?.()
+  }
+
+  /**
+   * Forgets the session's jobs because they stopped with its process, without a word from the
+   * agent. A job's tool call ends too: its own end won't come. No "finished" follows.
+   */
+  private endJobs(sessionId: string, rt: SessionRuntime, tell = true): void {
+    clearInterval(rt.quietJobsWatch)
+    rt.quietJobsWatch = undefined
+    // With none running, a job that already ended may still be due its "finished".
+    if (rt.jobs.size === 0) return
+    clearTimeout(rt.jobsSettling)
+    rt.jobsSettling = undefined
+    rt.lastJobThread = undefined
+    for (const id of rt.jobs.keys()) {
+      const existing = this.deps.store.getToolCall(sessionId, id)
+      if (!existing || (existing.status !== 'pending' && existing.status !== 'in_progress')) continue
+      const toolCall = { ...existing, status: 'cancelled' }
+      this.deps.store.upsertToolCall(toolCall)
+      if (tell) this.deps.emit({ type: 'toolCall', toolCall })
+    }
+    rt.jobs.clear()
+    if (tell) this.deps.emit({ type: 'background', sessionId, threads: [] })
+  }
+
+  /** A job's tool call reached its final status. */
+  private jobToolCallChanged(sessionId: string, rt: SessionRuntime, toolCall: ToolCall): void {
+    const job = rt.jobs.get(toolCall.id)
+    if (!job || toolCall.status === 'pending' || toolCall.status === 'in_progress') return
+    rt.jobs.delete(toolCall.id)
+    rt.lastJobThread = job.threadId
+    this.jobsChanged(sessionId, rt)
+  }
+
+  private configOf(sessionId: string): AgentConfig | undefined {
+    const agentId = this.deps.store.getSession(sessionId)?.agentId
+    return agentId ? this.slot(agentId).config : undefined
+  }
+
+  /** A tool result saying a job went to the background, from an agent that says nothing more about it. */
+  private noticeQuietJob(sessionId: string, rt: SessionRuntime, turn: Turn, toolCall: ToolCall): void {
+    if (toolCall.status !== 'completed' || rt.jobs.has(toolCall.id)) return
+    const pattern = this.configOf(sessionId)?.quietJobResult
+    if (!pattern || !toolCallText(toolCall).some((text) => pattern.test(text))) return
+    rt.jobs.set(toolCall.id, { threadId: toolCall.threadId, quietFrom: turn })
+    rt.lastJobThread = toolCall.threadId
+    this.jobsChanged(sessionId, rt)
+  }
+
+  /** The agent was told in this turn that a job ended. Which one it doesn't say, so the oldest of the turn's. */
+  private quietJobEnded(sessionId: string, rt: SessionRuntime, turn: Turn): void {
+    for (const [id, job] of rt.jobs) {
+      if (job.quietFrom !== turn) continue
+      rt.jobs.delete(id)
+      this.jobsChanged(sessionId, rt)
+      return
+    }
+  }
+
+  /**
+   * A turn ended. Its agent reports nothing about quiet jobs, and whatever it was told about an
+   * earlier turn's during this one looks like this turn's work, so those are no longer known to run.
+   * This turn's are watched for.
+   */
+  private settleQuietJobs(sessionId: string, rt: SessionRuntime, turn: Turn): void {
+    let forgot = false
+    for (const [id, job] of rt.jobs) {
+      if (!job.quietFrom || job.quietFrom === turn) continue
+      rt.jobs.delete(id)
+      forgot = true
+    }
+    if (forgot) this.deps.emit({ type: 'background', sessionId, threads: this.jobThreads(rt) })
+    const quiet = [...rt.jobs.values()].some((job) => job.quietFrom)
+    if (!quiet) {
+      clearInterval(rt.quietJobsWatch)
+      rt.quietJobsWatch = undefined
+    } else if (!rt.quietJobsWatch) {
+      this.watchQuietJobs(sessionId, rt)
+    }
+  }
+
+  /**
+   * The agent's history changes when it is told a job ended and answers. Once that has settled,
+   * loading the session, without closing it, shows the answer.
+   */
+  private watchQuietJobs(sessionId: string, rt: SessionRuntime): void {
+    let last: string | undefined
+    let settled = 0
+    let checking = false
+    const stop = (): void => {
+      clearInterval(rt.quietJobsWatch)
+      rt.quietJobsWatch = undefined
+    }
+    const check = async (): Promise<void> => {
+      const conn = rt.attachedTo
+      const session = this.deps.store.getSession(sessionId)
+      if (this.disposed || !session || this.runtimes.get(sessionId) !== rt) return stop()
+      if (rt.turn || rt.attaching || !conn) return
+      const updatedAt = await this.agentUpdatedAt(conn, session).catch(() => undefined)
+      if (rt.turn || rt.attaching || !updatedAt || updatedAt === this.deps.store.getSession(sessionId)?.syncedAt) return
+      if (updatedAt !== last) {
+        last = updatedAt
+        settled = 0
+        return
+      }
+      if (++settled < 2) return
+      stop()
+      for (const [id, job] of rt.jobs) {
+        if (!job.quietFrom) continue
+        rt.jobs.delete(id)
+        rt.lastJobThread = job.threadId
+      }
+      await this.reattach(sessionId, conn, false).catch((err: unknown) => {
+        if (!this.disposed && this.deps.store.getSession(sessionId)) this.notice(sessionId, null, `Couldn't reload the session from the agent: ${errorMessage(err)}`)
+      })
+      this.jobsChanged(sessionId, rt)
+    }
+    rt.quietJobsWatch = setInterval(() => {
+      if (checking) return
+      checking = true
+      void check().finally(() => { checking = false })
+    }, this.deps.quietJobPollMs ?? QUIET_JOB_POLL_MS)
+    rt.quietJobsWatch.unref?.()
+  }
+
+  /** What Claude Code reports about the session, besides its log. */
+  private onClaudeMessage(notification: ClaudeMessageNotification): void {
+    if (this.disposed) return
+    const sessionId = this.byAcpId.get(notification.sessionId)
+    const rt = sessionId ? this.runtimes.get(sessionId) : undefined
+    if (!sessionId || !rt) return
+    const { message } = notification
+    if (message.subtype === 'background_tasks_changed') {
+      this.setClaudeJobs(sessionId, rt, liveTaskIds(message.tasks))
+    } else if (message.subtype === 'session_state_changed') {
+      // With a turn open, this is that turn's own state. A load's replay isn't work.
+      if (message.state === 'running' && !rt.turn && rt.attachedTo && !rt.attaching && !rt.loading && !rt.rewinding && !rt.resetting) {
+        this.startAutoTurn(sessionId, rt)
+      } else if (message.state === 'idle' && rt.turn?.auto) {
+        void this.endAutoTurn(sessionId, rt, { stopReason: 'end_turn' })
+      }
+    }
+  }
+
+  /** Claude Code's whole list of live tasks, sent each time it changes. */
+  private setClaudeJobs(sessionId: string, rt: SessionRuntime, taskIds: string[]): void {
+    const live = new Set(taskIds)
+    let changed = false
+    for (const [id, job] of rt.jobs) {
+      if (live.has(id)) continue
+      rt.jobs.delete(id)
+      rt.lastJobThread = job.threadId
+      changed = true
+    }
+    for (const id of live) {
+      if (rt.jobs.has(id)) continue
+      // A job started by a job's follow-up, or by a subagent, belongs where the last one did.
+      const threadId = rt.turn ? rt.turn.threadId : rt.lastJobThread ?? null
+      rt.jobs.set(id, { threadId })
+      rt.lastJobThread = threadId
+      changed = true
+    }
+    if (changed) this.jobsChanged(sessionId, rt)
+  }
+
+  /** The agent went back to work on its own, usually to report on a job that ended. */
+  private startAutoTurn(sessionId: string, rt: SessionRuntime): void {
+    const settling = rt.jobsSettling !== undefined
+    clearTimeout(rt.jobsSettling)
+    rt.jobsSettling = undefined
+    const threadId = this.followUpThread(sessionId, rt)
+    rt.turn = { threadId, cancelled: false, afterToolCall: false, messageIds: [], toolCallIds: new Set(), auto: true }
+    rt.editedPaths = new Set()
+    this.deps.emit({ type: 'turnStart', sessionId, threadId })
+    if (settling) this.deps.emit({ type: 'background', sessionId, threads: this.jobThreads(rt) })
+  }
+
+  /** The thread of the job the agent follows up on; the main conversation if that's gone or unknown. */
+  private followUpThread(sessionId: string, rt: SessionRuntime): string | null {
+    const home = this.forkHome(sessionId)
+    if (home) return home.threadId
+    const threadId = rt.lastJobThread ?? null
+    return threadId !== null && this.deps.store.listThreads(sessionId).some((t) => t.id === threadId) ? threadId : null
+  }
+
+  private async endAutoTurn(sessionId: string, rt: SessionRuntime, result: TurnResult): Promise<void> {
+    const turn = rt.turn
+    if (!turn?.auto) return
+    // Its message goes in the agent's history: remember that, so it isn't taken for a change made elsewhere.
+    if (rt.attachedTo && result.stopReason === 'end_turn') await this.recordSynced(sessionId, rt.attachedTo).catch(() => {})
+    if (rt.turn !== turn) return
+    rt.turn = undefined
+    rt.lastJobThread = rt.jobs.size > 0 ? rt.lastJobThread : undefined
+    this.closeToolCalls(sessionId, turn, result)
+    this.announceTurnEnd(sessionId, rt, turn.threadId, result)
   }
 
   /** Retry only a failed attempt recorded by this app run, preserving its thread and attachments. */
@@ -2569,13 +2877,25 @@ export class SessionManager {
   /** A tool call still running when its turn ends (the agent doesn't always report a cancelled one) stops showing as running. */
   private closeToolCalls(sessionId: string, turn: Turn, result: TurnResult): void {
     const status = result.stopReason === 'cancelled' ? 'cancelled' : 'failed'
+    const rt = this.runtime(sessionId)
+    const outlives = result.stopReason === 'end_turn' && !result.error
+    let started = false
     for (const id of turn.toolCallIds) {
       const existing = this.deps.store.getToolCall(sessionId, id)
       if (!existing || (existing.status !== 'pending' && existing.status !== 'in_progress')) continue
+      if (rt.jobs.has(id)) continue
+      if (outlives && existing.status === 'in_progress' && this.configOf(sessionId)?.toolCallsOutliveTurns) {
+        rt.jobs.set(id, { threadId: existing.threadId })
+        rt.lastJobThread = existing.threadId
+        started = true
+        continue
+      }
       const toolCall = { ...existing, status }
       this.deps.store.upsertToolCall(toolCall)
       this.deps.emit({ type: 'toolCall', toolCall })
     }
+    if (started) this.jobsChanged(sessionId, rt)
+    this.settleQuietJobs(sessionId, rt, turn)
   }
 
   private setQueue(sessionId: string, queue: MessageQueue): void {
@@ -2636,6 +2956,8 @@ export class SessionManager {
     if (rt.attachedTo && !rt.loading) await rt.attachedTo.cancel(session.acpSessionId)
     // And so does one waiting on the user: after session/cancel, ACP has the client answer `cancelled`.
     this.withdrawRequests(sessionId)
+    // No prompt will answer for a turn the agent started on its own.
+    if (rt.turn?.auto) await this.endAutoTurn(sessionId, rt, { stopReason: 'cancelled' })
   }
 
   // Agent → client
@@ -2680,7 +3002,11 @@ export class SessionManager {
     }
     // Conversation updates are recorded during a turn.
     const turn = rt.turn
-    if (!turn) return
+    if (!turn) {
+      // A background job's tool call goes on after its turn.
+      if (u.sessionUpdate === 'tool_call_update' && rt.jobs.has(u.toolCallId)) this.updateJobToolCall(sessionId, rt, u)
+      return
+    }
     const { store, emit } = this.deps
 
     switch (u.sessionUpdate) {
@@ -2690,6 +3016,8 @@ export class SessionManager {
         let m = turn.agentMessage
         const differentMessage =
           messageId !== undefined && m?.acpMessageId !== undefined && m.acpMessageId !== messageId
+        // Replying again with no tool between: the agent was told a job ended.
+        if (differentMessage && !turn.afterToolCall) this.quietJobEnded(sessionId, rt, turn)
         if (!m || turn.afterToolCall || differentMessage) {
           m = {
             id: randomUUID(),
@@ -2755,6 +3083,8 @@ export class SessionManager {
         if (!existing) turn.afterToolCall = true
         turn.toolCallIds.add(toolCall.id)
         emit({ type: 'toolCall', toolCall })
+        this.jobToolCallChanged(sessionId, rt, toolCall)
+        this.noticeQuietJob(sessionId, rt, turn, toolCall)
         return
       }
       case 'plan': {
@@ -2774,6 +3104,21 @@ export class SessionManager {
         // thoughts, etc.: not shown.
         return
     }
+  }
+
+  /** Records an update to a background job's tool call, with no turn running. */
+  private updateJobToolCall(sessionId: string, rt: SessionRuntime, u: acp.ToolCallUpdate): void {
+    const existing = this.deps.store.getToolCall(sessionId, u.toolCallId)
+    // Codex streams the command's output in `_meta`, which Gloss doesn't show.
+    if (!existing || (u.title == null && u.status == null && u.kind == null && u.content == null)) return
+    const toolCall = { ...existing }
+    if (u.title != null) toolCall.title = u.title
+    if (u.status != null) toolCall.status = u.status
+    if (u.kind != null) toolCall.kind = u.kind
+    if (u.content != null) toolCall.content = u.content
+    this.deps.store.upsertToolCall(toolCall)
+    this.deps.emit({ type: 'toolCall', toolCall })
+    this.jobToolCallChanged(sessionId, rt, toolCall)
   }
 
   // Questions and approvals (SPEC → Questions and approvals)
@@ -2970,6 +3315,22 @@ function toAuthMethodInfo(m: acp.AuthMethod): AuthMethodInfo {
     ...(m.description ? { description: m.description } : {}),
     kind: 'type' in m && m.type === 'terminal' ? 'terminal' : 'agent'
   }
+}
+
+/** A tool call's text content. */
+function toolCallText(toolCall: ToolCall): string[] {
+  if (!Array.isArray(toolCall.content)) return []
+  return (toolCall.content as { type?: unknown; content?: { type?: unknown; text?: unknown } }[]).flatMap((block) =>
+    block.type === 'content' && block.content?.type === 'text' && typeof block.content.text === 'string' ? [block.content.text] : []
+  )
+}
+
+/** The ids in a `background_tasks_changed` list, without the housekeeping Claude Code starts itself. */
+function liveTaskIds(tasks: unknown): string[] {
+  if (!Array.isArray(tasks)) return []
+  return tasks.flatMap((task: { task_id?: unknown; ambient?: unknown } | null) =>
+    typeof task?.task_id === 'string' && task.ambient !== true ? [task.task_id] : []
+  )
 }
 
 /**

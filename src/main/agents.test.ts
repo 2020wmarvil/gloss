@@ -34,7 +34,16 @@ describe('agentEnv', () => {
   })
 
   it("gives each agent Gloss's instructions in the form it takes them", () => {
-    const claude = { systemPrompt: { append: AGENT_INSTRUCTIONS } }
+    const claude = {
+      systemPrompt: { append: AGENT_INSTRUCTIONS },
+      // Claude Code's own messages say what runs in the background (SPEC → Background jobs).
+      claudeCode: {
+        emitRawSDKMessages: [
+          { type: 'system', subtype: 'background_tasks_changed' },
+          { type: 'system', subtype: 'session_state_changed' }
+        ]
+      }
+    }
     expect(getAgentConfig('claude').sessionMeta?.(AGENT_INSTRUCTIONS)).toEqual({ new: claude, load: claude })
     // Codex keeps them in the thread; its session/load ignores them.
     expect(getAgentConfig('codex').sessionMeta?.(AGENT_INSTRUCTIONS)).toEqual({

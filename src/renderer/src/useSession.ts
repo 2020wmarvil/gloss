@@ -114,6 +114,8 @@ export function useSession() {
   const [sideTab, setSideTab] = useState<SideTab>('threads')
   /** sessionId → threadId of its running turn. */
   const [running, setRunning] = useState<Record<string, string | null>>({})
+  /** sessionId → the thread of each job it runs in the background (SPEC → Background jobs). */
+  const [background, setBackground] = useState<Record<string, (string | null)[]>>({})
   const [notices, setNotices] = useState<Record<string, Notice[]>>({})
   const [lives, setLives] = useState<Record<string, SessionLive>>({})
   const [queues, setQueues] = useState<Record<string, MessageQueue>>({})
@@ -285,6 +287,16 @@ export function useSession() {
         }
         return next
       })
+      setBackground((b) => {
+        const next = { ...b }
+        if (view.background.length > 0) next[id] = view.background
+        else delete next[id]
+        for (const f of view.forks) {
+          if (f.background) next[f.sessionId] = [f.threadId]
+          else delete next[f.sessionId]
+        }
+        return next
+      })
       refreshGit(view.session.cwd, id)
       if (view.session.review) refreshDiff(id, true)
       const thread = threadId ? view.threads.find((t) => t.id === threadId) : undefined
@@ -438,6 +450,14 @@ export function useSession() {
         case 'thread':
           if (event.thread.sessionId !== openId.current) break
           setOpen((o) => (o ? { ...o, threads: upsert(o.threads, event.thread) } : o))
+          break
+        case 'background':
+          setBackground((b) => {
+            const next = { ...b }
+            if (event.threads.length > 0) next[event.sessionId] = event.threads
+            else delete next[event.sessionId]
+            return next
+          })
           break
         case 'turnStart':
           setRunning((r) => ({ ...r, [event.sessionId]: event.threadId }))
@@ -706,11 +726,12 @@ export function useSession() {
     (latest, m) => (m.role === 'user' && !forkThreads.has(m.threadId ?? '') && (!latest || m.seq > latest.seq) ? m : latest),
     undefined
   )
-  const stripThreadId = runningThread !== undefined ? runningThread : lastMessage?.threadId
+  const ownJobs = sessionId !== undefined ? background[sessionId] : undefined
+  const stripThreadId = runningThread !== undefined ? runningThread : ownJobs ? ownJobs[0] : lastMessage?.threadId
   const stripThreadRow = open?.threads.find((t) => t.id === stripThreadId)
   const stripState = runningThread !== undefined
     ? ((sessionId && requests[sessionId]?.length) ? 'waiting' : 'working')
-    : (lastMessage?.outcome ?? null)
+    : ownJobs ? 'working' : (lastMessage?.outcome ?? null)
   const lastThread: StripThread | null = stripThreadRow
     ? { id: stripThreadRow.id, name: threadName(stripThreadRow), state: stripState }
     : stripThreadId === null
@@ -741,11 +762,11 @@ export function useSession() {
     const forks = threads?.flatMap((t) => (t.fork ? (requests[t.fork.sessionId] ?? []) : [])) ?? []
     return forks.length > 0 ? [...ownRequests, ...forks] : ownRequests
   }, [ownRequests, threads, requests])
-  /** The threads with a running turn: the session's own, and its forks'. */
+  /** The threads with a running turn or background job: the session's own, and its forks'. */
   const busyThreads = useMemo(() => {
-    const own = runningThread ? [runningThread] : []
-    return [...own, ...(threads?.flatMap((t) => (t.fork && t.fork.sessionId in running ? [t.id] : [])) ?? [])]
-  }, [runningThread, threads, running])
+    const own = [...(runningThread ? [runningThread] : []), ...(ownJobs ?? []).flatMap((t) => (t !== null && t !== runningThread ? [t] : []))]
+    return [...own, ...(threads?.flatMap((t) => (t.fork && (t.fork.sessionId in running || t.fork.sessionId in background) ? [t.id] : [])) ?? [])]
+  }, [runningThread, ownJobs, threads, running, background])
   /** What runs, by listed session: a fork thread's turn is its parent's, in its thread. */
   const shownRunning = useMemo(() => {
     const out: Record<string, string | null> = {}
@@ -755,8 +776,20 @@ export function useSession() {
     }
     // The session's own turn, when it has one, names where it runs.
     for (const [id, thread] of Object.entries(running)) if (!forkHomes[id]) out[id] = thread
+    // Background jobs light the same dot as a turn.
+    for (const [id, jobs] of Object.entries(background)) {
+      const home = forkHomes[id]
+      const shown = home?.sessionId ?? id
+      if (!(shown in out)) out[shown] = home ? home.threadId : jobs[0] ?? null
+    }
     return out
-  }, [running, forkHomes])
+  }, [running, background, forkHomes])
+  /** The listed sessions with a background job, which restarting them stops. */
+  const jobSessions = useMemo(() => {
+    const out: Record<string, true> = {}
+    for (const id of Object.keys(background)) out[forkHomes[id]?.sessionId ?? id] = true
+    return out
+  }, [background, forkHomes])
   /** What each listed session's agent, and its forks', wait on. */
   const shownRequests = useMemo(() => {
     const out: Record<string, UserRequest[]> = {}
@@ -827,6 +860,8 @@ export function useSession() {
     shortcut,
     sessionId,
     runningThread,
+    turns: running,
+    jobSessions,
     busyThreads,
     forkLane,
     lastThread,
