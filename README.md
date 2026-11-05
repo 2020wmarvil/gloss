@@ -12,7 +12,7 @@ A desktop GUI for Claude Code, Codex and other [ACP](https://agentclientprotocol
 
 </div>
 
-https://github.com/user-attachments/assets/51df7862-2bb1-4581-ad6e-e2121b3b2d24
+https://github.com/user-attachments/assets/e380e565-b342-4c02-944e-17f0f5edee1f
 
 ## Core features
 
