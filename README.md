@@ -12,10 +12,7 @@ A desktop GUI for Claude Code, Codex and other [ACP](https://agentclientprotocol
 
 </div>
 
-<picture>
-  <source media="(prefers-color-scheme: light)" srcset="marketing/media/hero-light.png">
-  <img src="marketing/media/hero-dark.png" alt="Gloss: an agent's numbered list in the main conversation, with a thread on one of its points open beside it">
-</picture>
+![Gloss in dark mode: an agent's numbered list in the main conversation, with a thread on one of its points open beside it](marketing/media/hero-dark.png)
 
 ## Why threads
 
@@ -50,6 +47,10 @@ Threads live in the view. To the agent it's still one ordinary session that know
 - **Plugins:** one library of skills, subagents, hooks and MCP servers for all your agents.
 - **Git and Perforce:** reviews work with both.
 - **Search** across conversations, threads and tool output.
+
+Gloss follows your system theme, or you can choose light or dark in Settings.
+
+![Gloss in light mode, showing the same conversation and thread](marketing/media/hero-light.png)
 
 ## Install
 
