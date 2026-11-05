@@ -11,10 +11,28 @@ export type AgentHandlers = {
   onPermission(request: acp.RequestPermissionRequest, signal: AbortSignal): Promise<acp.RequestPermissionResponse>
   /** A form elicitation (SPEC → Questions and approvals). Absent: Gloss doesn't advertise elicitation. */
   onElicitation?(request: acp.CreateElicitationRequest, signal: AbortSignal): Promise<acp.CreateElicitationResponse>
+  /** A raw Claude Code message the session asked for (`emitRawSDKMessages`). */
+  onClaudeMessage?(notification: ClaudeMessageNotification): void
   /** A line the agent wrote to stderr. */
   onStderr(line: string): void
   /** The connection closed (agent exited, or dispose() was called). */
   onClosed(): void
+}
+
+/** The Claude adapter's notification for a raw Claude Code message. */
+const CLAUDE_MESSAGE_METHOD = '_claude/sdkMessage'
+
+export type ClaudeMessageNotification = {
+  sessionId: string
+  message: { subtype?: unknown; state?: unknown; tasks?: unknown }
+}
+
+function parseClaudeMessage(value: unknown): ClaudeMessageNotification {
+  const params = value as Partial<ClaudeMessageNotification> | null
+  if (typeof params?.sessionId !== 'string' || typeof params.message !== 'object' || params.message === null) {
+    throw new Error('Invalid raw Claude Code message')
+  }
+  return { sessionId: params.sessionId, message: params.message }
 }
 
 /** ACP's auth_required error code. */
@@ -116,6 +134,10 @@ export class AgentConnection {
       .onRequest(acp.methods.client.session.requestPermission, (ctx) =>
         handlers.onPermission(ctx.params, ctx.signal)
       )
+    const onClaudeMessage = handlers.onClaudeMessage
+    if (onClaudeMessage) {
+      app.onNotification(CLAUDE_MESSAGE_METHOD, { parse: parseClaudeMessage }, (ctx) => onClaudeMessage(ctx.params))
+    }
     const onElicitation = handlers.onElicitation
     if (onElicitation) {
       app.onRequest(acp.methods.client.elicitation.create, (ctx) => onElicitation(ctx.params, ctx.signal))

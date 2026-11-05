@@ -37,7 +37,7 @@ function fakeGloss(extra: object = {}): {
   const listeners = new Set<(event: object) => void>()
   const created = { a: 3, b: 2, c: 1 } as Record<string, number>
   const opened = vi.fn(async (id: string) => ({
-    session: session(id, created[id]), messages: [message(id)], toolCalls: [], plans: [], threads: [thread(id)], turn: null, forks: [], live,
+    session: session(id, created[id]), messages: [message(id)], toolCalls: [], plans: [], threads: [thread(id)], turn: null, forks: [], background: [], live,
     queue: { items: [], paused: false }, requests: []
   }))
   const windows = {
