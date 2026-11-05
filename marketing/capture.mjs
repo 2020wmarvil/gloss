@@ -243,7 +243,7 @@ const scenes = {
     await w.setSize(...CLIP)
   },
 
-  /** The hero, in both themes, and the small stills the reel's montage uses. */
+  /** The hero, and the small stills the reel's montage uses. */
   async stills(h, w) {
     await w.setSize(...STILL)
     await h.place(-40, -40)
@@ -265,13 +265,7 @@ const scenes = {
     await sleep(800)
     await w.eval(`document.querySelector('.log-scroll').scrollTop = 0`)
     await sleep(500)
-    for (const theme of ['dark', 'light']) {
-      await w.eval(`window.gloss.settings.update({ global: { theme: '${theme}' } })`)
-      await sleep(900)
-      await w.screenshot(join(MEDIA, `hero-${theme}.png`))
-    }
-    await w.eval(`window.gloss.settings.update({ global: { theme: 'dark' } })`)
-    await sleep(500)
+    await w.screenshot(join(MEDIA, 'hero-dark.png'))
 
     await w.eval(`(${button('New session with any agent')})?.click()`)
     await sleep(500)

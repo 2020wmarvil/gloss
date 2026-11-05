@@ -16,17 +16,15 @@ A desktop GUI for Claude Code, Codex and other [ACP](https://agentclientprotocol
 
 https://github.com/user-attachments/assets/51df7862-2bb1-4581-ad6e-e2121b3b2d24
 
-[Video not playing? Get the file.](marketing/media/gloss-demo.mp4)
-
 ## Core features
 
 **Reply to the exact point.** Select any text in an answer and reply. The agent is told what you're referring to.
 
 ![Selecting a point in an agent's list, replying, and the answer arriving in a thread beside the conversation](marketing/media/threads.gif)
 
-**Steer a running turn.** Send a correction while the agent works, and it picks it up without stopping.
+**Redirect the agent mid-task.** Send a correction while it works, and it picks it up without stopping.
 
-![A message sent while the agent is working, marked as steered, with the agent following it](marketing/media/steer.gif)
+![A message sent while the agent is working, with the agent following it](marketing/media/steer.gif)
 
 **Point at what's wrong.** Mark up a screenshot with numbered pins, send it, and discuss each pin in its own thread.
 
@@ -42,10 +40,6 @@ https://github.com/user-attachments/assets/51df7862-2bb1-4581-ad6e-e2121b3b2d24
 - **Git and Perforce:** reviews work with both.
 - **Search** across conversations, threads and tool output.
 
-Gloss follows your system theme, or you can choose light or dark in Settings.
-
-![Gloss in light mode, showing the same conversation and thread](marketing/media/hero-light.png)
-
 ## Install
 
 Download the installer from the [latest release](https://github.com/2020wmarvil/gloss/releases/latest):
@@ -54,9 +48,7 @@ Download the installer from the [latest release](https://github.com/2020wmarvil/
 - **macOS:** the `.dmg` (Apple silicon)
 - **Linux:** the `.AppImage`
 
-Releases are unsigned, so Windows shows a SmartScreen warning on first install, and macOS needs the app allowed in System Settings. Windows and Linux copies update themselves.
-
-Gloss runs the coding agents you already have. Install at least one and sign in to it once:
+Gloss runs the coding agents you already have:
 
 - **Claude Code** 2.1.233 or newer
 - **Codex** 0.160.1 or newer
@@ -69,8 +61,6 @@ Gloss runs the coding agents you already have. Install at least one and sign in 
 npm install
 npm run dev
 ```
-
-The design is in [docs/SPEC.md](docs/SPEC.md). The visuals on this page are generated: see [marketing/README.md](marketing/README.md).
 
 ### Cutting a release
 

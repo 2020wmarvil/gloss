@@ -2,7 +2,7 @@
 
 The source of the README's visuals, the demo reel and the social preview, so they can be redone after UI changes.
 
-- `media/`: what gets published: `hero-dark.png`, `hero-light.png`, `threads.gif`, `steer.gif`, `pins.gif`, `gloss-demo.mp4`, `social-preview.png`.
+- `media/`: what gets published: `hero-dark.png`, `threads.gif`, `steer.gif`, `pins.gif`, `gloss-demo.mp4`, `social-preview.png`.
 - `footage/`: the recorded clips and stills the reel is built from.
 - `capture.mjs`: records `footage/` and the screenshots and GIFs in `media/`.
 - `reel/`: the reel, an HTML timeline. Scene order, lengths, captions and zooms are at the top of `reel/reel.js`. `reel/music.m4a` is its backing track (see Music); any other track can replace that file.
