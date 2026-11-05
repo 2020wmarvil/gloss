@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="build/icon.svg" width="84" alt="">
-
-# Gloss
+<h1><img src="build/icon.svg" width="44" alt="" align="top"> Gloss</h1>
 
 **Reply to any point in your coding agent's answer.**
 
@@ -53,7 +51,7 @@ Gloss runs the coding agents you already have:
 - **Claude Code** 2.1.233 or newer
 - **Codex** 0.160.1 or newer
 - **OpenCode** v2
-- **Any other ACP agent**, added in Settings > Agents
+- **Any other ACP agent**
 
 ## Development
 
