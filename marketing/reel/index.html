@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- The demo reel. A timeline of scenes drawn by seek(t), so every frame renders exactly; see marketing/README.md. -->
+<meta charset="utf-8">
+<title>Gloss demo reel</title>
+<link rel="stylesheet" href="reel.css">
+<body>
+<div id="glow"></div>
+<h1 id="caption"></h1>
+
+<section id="intro" class="scene center">
+  <div class="lockup"><img class="bead" src="../../build/icon.svg" alt=""><span class="wordmark">gloss</span></div>
+  <p class="sub">A desktop GUI for coding agents, with threaded replies.</p>
+</section>
+
+<section id="threads" class="scene">
+  <div class="frame"><img class="clip" data-clip="threads" alt=""></div>
+</section>
+
+<section id="linear" class="scene">
+  <div class="wire">
+    <div class="wire-row"><span class="tag">main</span><span class="wire-text">Read this repo and list the 5 biggest problems.</span></div>
+    <div class="wire-row sent" id="wireThread"><span class="tag pink">thread</span><span class="wire-text"><b id="wireTag"></b> Why does this matter here?</span></div>
+    <div class="wire-row"><span class="tag">main</span><span class="wire-text">Fix the first two.</span></div>
+  </div>
+  <p class="note">Threads live in the view. Continue the session in the agent's CLI whenever you like.</p>
+</section>
+
+<section id="steer" class="scene">
+  <div class="frame"><img class="clip" data-clip="steer" alt=""></div>
+</section>
+
+<section id="pins" class="scene">
+  <div class="frame"><img class="clip" data-clip="pins" alt=""></div>
+</section>
+
+<section id="review" class="scene">
+  <div class="frame still"><img src="../footage/review.png" alt=""></div>
+</section>
+
+<section id="phone" class="scene">
+  <div class="phones">
+    <div class="phone-frame"><img src="../footage/phone-reply.png" alt=""></div>
+    <div class="phone-frame"><img src="../footage/phone-thread.png" alt=""></div>
+  </div>
+</section>
+
+<section id="overview" class="scene">
+  <div class="frame still"><img src="../footage/overview.png" alt=""></div>
+</section>
+
+<section id="agents" class="scene">
+  <div class="frame still"><img src="../footage/agents.png" alt=""></div>
+</section>
+
+<section id="outro" class="scene center">
+  <div class="lockup"><img class="bead" src="../../build/icon.svg" alt=""><span class="wordmark">gloss</span></div>
+  <p class="sub">Goodbye, Long Off-topic Scrolling Sessions.</p>
+  <p class="url">github.com/2020wmarvil/gloss</p>
+  <p class="platforms">Windows · macOS · Linux</p>
+</section>
+
+<script src="../footage/reel-data.js"></script>
+<script src="reel.js"></script>
+</body>

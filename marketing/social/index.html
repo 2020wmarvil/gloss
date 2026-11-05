@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- GitHub's social preview, 1280x640. GitHub crops close to the edges in places, so text keeps a 64 px margin. -->
+<meta charset="utf-8">
+<title>Gloss social preview</title>
+<style>
+  @font-face { font-family: 'Inter Gloss'; font-weight: 100 900; src: url('../../node_modules/@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2'); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1280px; height: 640px; overflow: hidden; background: #0d0c0c; color: #efeee9; font-family: 'Inter Gloss', sans-serif; font-optical-sizing: auto; }
+  .glow { position: absolute; inset: 0; background: radial-gradient(760px 440px at 8% 0%, #ff3da640, transparent 70%), radial-gradient(760px 440px at 92% 104%, #ff9f3d30, transparent 70%); }
+  .text { position: absolute; left: 64px; top: 0; bottom: 0; width: 480px; display: flex; flex-direction: column; justify-content: center; }
+  .lockup { display: flex; align-items: center; gap: 18px; }
+  .lockup img { width: 84px; height: 84px; }
+  .lockup span { font-size: 76px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+  h1 { margin: 34px 0 0; font-size: 42px; line-height: 1.16; font-weight: 600; letter-spacing: -0.02em; }
+  p { margin: 20px 0 0; font-size: 23px; line-height: 1.35; color: #d4d1c8; }
+  .shot { position: absolute; left: 584px; top: 72px; width: 1040px; height: 650px; border-radius: 14px; box-shadow: 0 0 0 1px #ffffff24, 0 24px 80px #000000c0; overflow: hidden; }
+  .shot img { display: block; width: 100%; }
+</style>
+<div class="glow"></div>
+<div class="text">
+  <div class="lockup"><img src="../../build/icon.svg" alt=""><span>gloss</span></div>
+  <h1>Reply to any point in your coding agent's answer.</h1>
+  <p>A desktop GUI with threads, for Claude Code, Codex and other ACP agents.</p>
+</div>
+<div class="shot"><img src="../media/hero-dark.png" alt=""></div>
