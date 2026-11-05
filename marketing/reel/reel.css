@@ -1,0 +1,42 @@
+/* Brand: docs/BRAND.md. Dark theme colors from the app's styles. */
+@font-face {
+  font-family: 'Inter Gloss';
+  font-weight: 100 900;
+  src: url('../../node_modules/@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2');
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #0d0c0c; color: #efeee9; font-family: 'Inter Gloss', sans-serif; font-optical-sizing: auto; }
+#glow { position: absolute; inset: 0; background: radial-gradient(1100px 620px at 15% -8%, #ff3da62e, transparent 70%), radial-gradient(1100px 620px at 88% 108%, #ff9f3d24, transparent 70%); }
+
+.scene { position: absolute; inset: 0; display: none; }
+.scene.center { display: none; flex-direction: column; align-items: center; justify-content: center; }
+.scene.on { display: block; }
+.scene.center.on { display: flex; }
+
+.lockup { display: flex; align-items: center; gap: 30px; }
+.bead { width: 148px; height: 148px; }
+.wordmark { font-size: 132px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.sub { margin: 36px 0 0; font-size: 38px; color: #d4d1c8; letter-spacing: -0.01em; }
+.url { margin: 44px 0 0; font-size: 42px; font-weight: 600; background: linear-gradient(100deg, #ff3da6, #ff9f3d); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.platforms { margin: 16px 0 0; font-size: 26px; color: #9d9a91; }
+
+#caption { position: absolute; z-index: 100; left: 0; right: 0; top: 34px; height: 76px; margin: 0; text-align: center; font-size: 50px; font-weight: 600; letter-spacing: -0.02em; line-height: 76px; }
+
+.title-row { position: absolute; left: 0; right: 0; top: 34px; height: 76px; display: flex; align-items: center; justify-content: center; gap: 16px; }
+.title-row img { width: 58px; height: 58px; }
+.title-mark { font-size: 56px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.title-line { margin-left: 24px; font-size: 40px; font-weight: 500; letter-spacing: -0.015em; color: #d4d1c8; }
+
+.frame { position: absolute; left: 232px; top: 132px; width: 1456px; height: 910px; border-radius: 16px; overflow: hidden; box-shadow: 0 0 0 1px #ffffff1f, 0 30px 90px #000000b0; background: #111; }
+.frame img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top left; transform-origin: 0 0; }
+
+.phones { position: absolute; left: 0; right: 0; top: 128px; display: flex; justify-content: center; gap: 72px; }
+.phone-frame { width: 416px; height: 902px; border-radius: 46px; overflow: hidden; background: #141312; box-shadow: 0 0 0 10px #232120, 0 0 0 11px #ffffff2e, 0 30px 90px #000000b0; }
+.phone-frame img { display: block; width: 100%; }
+
+.wire { position: absolute; left: 260px; right: 260px; top: 280px; display: flex; flex-direction: column; gap: 22px; }
+.wire-row { display: flex; align-items: center; gap: 26px; background: #1c1b19; padding: 28px 34px; border-radius: 16px; box-shadow: 0 0 0 1px #ffffff1a; font-size: 32px; }
+.wire-row b { color: #ff5c9e; font-weight: 600; }
+.tag { flex: none; width: 118px; text-align: center; font-size: 22px; font-weight: 600; padding: 7px 0; border-radius: 999px; background: #2b2a27; color: #b5b2a9; }
+.tag.pink { background: #3a1a2c; color: #ff5c9e; }
+.note { position: absolute; left: 0; right: 0; top: 720px; text-align: center; font-size: 34px; color: #d4d1c8; margin: 0; }
