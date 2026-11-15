@@ -165,6 +165,8 @@ export type GlossEvent =
   | { type: 'sessionDeleted'; sessionId: string; deletedOutside?: { title: string } }
   /** A project's worktrees changed (one was created or removed, or a session in one was deleted). */
   | { type: 'worktrees'; project: string }
+  /** The project list changed: one was added (from a window or a phone), or the second brain setting. */
+  | { type: 'projects' }
   /** `/clear` emptied the session: its messages, tool calls and threads are gone. */
   | { type: 'sessionCleared'; sessionId: string }
   | { type: 'sessionRewound'; sessionId: string }
@@ -290,6 +292,12 @@ export type GlossApi = {
     githubRepos(): Promise<import('./github').GithubRepo[]>
     /** Asks for a parent folder, clones the repository into it and adds it as a project. Resolves to null if cancelled. */
     clone(repo: string): Promise<Project | null>
+    /** Clones the repository into the projects folder (no picker, for phones) and adds it as a project. */
+    cloneToProjectsFolder(repo: string): Promise<Project>
+    /** Where New project and the phone's clones go (the `projectsFolder` setting, else the Desktop folder). */
+    folder(): Promise<string>
+    /** Makes `<projects folder>/<name>`, runs `git init` there and adds it as a project. Rejects for a bad or taken name. */
+    create(name: string): Promise<Project>
   }
   sessions: {
     list(): Promise<Session[]>
@@ -507,6 +515,9 @@ export const IPC = {
   projectsDelete: 'gloss:projects:delete',
   projectsGithubRepos: 'gloss:projects:githubRepos',
   projectsClone: 'gloss:projects:clone',
+  projectsCloneToProjectsFolder: 'gloss:projects:cloneToProjectsFolder',
+  projectsFolder: 'gloss:projects:folder',
+  projectsCreate: 'gloss:projects:create',
   sessionsList: 'gloss:sessions:list',
   sessionsCreate: 'gloss:sessions:create',
   sessionsCreateInWorktree: 'gloss:sessions:createInWorktree',

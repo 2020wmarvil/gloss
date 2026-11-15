@@ -51,7 +51,10 @@ export function makeApi(t: ApiTransport): GlossApi {
       agentSessions: (path, agentId) => invoke(IPC.projectsAgentSessions, path, agentId),
       delete: (path) => invoke(IPC.projectsDelete, path),
       githubRepos: () => invoke(IPC.projectsGithubRepos),
-      clone: (repo) => invoke(IPC.projectsClone, repo)
+      clone: (repo) => invoke(IPC.projectsClone, repo),
+      cloneToProjectsFolder: (repo) => invoke(IPC.projectsCloneToProjectsFolder, repo),
+      folder: () => invoke(IPC.projectsFolder),
+      create: (name) => invoke(IPC.projectsCreate, name)
     },
     history: () => invoke(IPC.history),
     sessions: {

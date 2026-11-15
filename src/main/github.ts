@@ -1,6 +1,6 @@
 // Opening a project from GitHub (SPEC → Projects and sessions): the user's repositories and cloning one, through `gh`.
 import { execFile } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { githubRepoUrl } from './git'
 import { parseGithubRepo, type GithubRepo } from '../shared/github'
@@ -75,6 +75,8 @@ export async function cloneRepo(repo: string, parent: string): Promise<string> {
     if (page?.toLowerCase() === `https://github.com/${fullName}`.toLowerCase()) return dest
     throw new Error(`${dest} already exists`)
   }
+  // The projects folder may not exist yet.
+  mkdirSync(parent, { recursive: true })
   await run('gh', ['repo', 'clone', fullName, dest], parent, 30 * 60 * 1000)
   return dest
 }

@@ -185,7 +185,8 @@ export type AgentInfo = { id: string; name: string; available?: boolean; setupMe
  * A folder Gloss groups sessions by: its name, and where it is (the parent folder, with
  * the home folder shortened to ~).
  */
-export type Project = { path: string; name: string; where: string }
+/** `chats`: the built-in Chats project (SPEC → Chats), whose sessions work in the second brain vault, null when none is set. */
+export type Project = { path: string; name: string; where: string; chats?: { vault: string | null } }
 
 /** A paired phone (SPEC → Remote and mobile). */
 export type Device = { id: string; name: string; createdAt: number; lastUsedAt: number | null; notifications: boolean }

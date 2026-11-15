@@ -1,12 +1,12 @@
 import { bindingFor, matchesBinding, isMac } from '../shared/commands'
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerSaveBlocker, screen, shell, type WebContents } from 'electron'
 import { IPC, type AppBadge, type GlossEvent, type MainAction, type OpenCodeStatus, type PaneState } from '../shared/ipc'
-import type { Anchor, Attachment, Pin, Session } from '../shared/types'
+import type { Anchor, Attachment, Pin, Project, Session } from '../shared/types'
 import type { AnswerValue, RequestAnswer } from '../shared/requests'
 import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, listAgents } from './agents'
@@ -17,6 +17,7 @@ import { gitStatus, pullRequest } from './git'
 import { perforceWorkspace, perforceStatus, PerforceError, hasPerforceConfig } from './perforce'
 import { perforceRange } from '../shared/perforce'
 import { cloneRepo, listRepos } from './github'
+import { createProject, projectsFolder } from './newProject'
 import { SessionManager } from './sessions'
 import { BADGE_LABEL, BADGE_SIZE, badgePixels } from './badge'
 import { patchArg, SettingsFile } from './settings'
@@ -38,6 +39,7 @@ import { autoUpdater } from 'electron-updater'
 import { Updates } from './updates'
 import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
+import { chatsFolder } from '../shared/chats'
 import { previewMcpImport } from './mcp-import'
 import { OpenCodeSupport } from './opencode'
 import { AgentProfileSupport } from './agentProfiles'
@@ -712,8 +714,16 @@ function exportLog(id: string, threadId: string | null): { title: string; markdo
   return { title: session.title, markdown }
 }
 
-async function pickFolder(title?: string): Promise<string | null> {
-  const options: Electron.OpenDialogOptions = { title, properties: ['openDirectory', 'createDirectory'] }
+function isFolder(path: string): boolean {
+  try {
+    return statSync(path).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+async function pickFolder(title?: string, defaultPath?: string): Promise<string | null> {
+  const options: Electron.OpenDialogOptions = { title, defaultPath, properties: ['openDirectory', 'createDirectory'] }
   const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
   return result.canceled ? null : (result.filePaths[0] ?? null)
 }
@@ -790,13 +800,19 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     return status
   })
   share(IPC.projectsList, () => manager.listProjects())
+  // Phones and other windows show it too.
+  const added = (path: string): Project => {
+    const project = manager.addProject(path)
+    emit({ type: 'projects' })
+    return project
+  }
   ipcMain.handle(IPC.projectsOpen, async () => {
     const path = await pickFolder()
     if (!path) return null
     const existingProvider = projectSettings(settingsFile.state().projects, path).versionControl
     if (existingProvider) {
       if (existingProvider === 'perforce') await perforceWorkspace(path)
-      return manager.addProject(path)
+      return added(path)
     }
     const [git, p4] = await Promise.all([gitStatus(path), perforceWorkspace(path).catch((error: unknown) => error)])
     const available = !(p4 instanceof Error)
@@ -808,18 +824,23 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
       provider = choice.response === 1 ? 'perforce' : 'git'
     } else if (!git && p4 instanceof PerforceError && (p4.kind === 'login' || p4.kind === 'expired')) throw p4
     settingsFile.update({ project: { path, values: { versionControl: provider } } })
-    return manager.addProject(path)
+    return added(path)
   })
   ipcMain.handle(IPC.projectsAgentSessions, (_e, path: unknown, agentId: unknown) =>
     manager.agentSessions(folderArg(path, 'path'), str(agentId, 'agentId'))
   )
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
-  ipcMain.handle(IPC.projectsGithubRepos, () => listRepos())
+  const projectsHome = (): string => projectsFolder(settingsFile.state().global.projectsFolder)
+  share(IPC.projectsGithubRepos, () => listRepos())
   ipcMain.handle(IPC.projectsClone, async (_e, repo: unknown) => {
     const name = str(repo, 'repo')
-    const parent = await pickFolder(`Clone ${name} into`)
-    return parent ? manager.addProject(await cloneRepo(name, parent)) : null
+    const parent = await pickFolder(`Clone ${name} into`, projectsHome())
+    return parent ? added(await cloneRepo(name, parent)) : null
   })
+  // A phone can't pick a folder, so it clones and creates only in the projects folder.
+  share(IPC.projectsCloneToProjectsFolder, async (repo: unknown) => added(await cloneRepo(str(repo, 'repo'), projectsHome())))
+  share(IPC.projectsFolder, () => projectsHome())
+  share(IPC.projectsCreate, async (name: unknown) => added(await createProject(projectsHome(), str(name, 'name'))))
   registerComposerIpc(store!, isGlossSender, () => settingsFile.state().global.externalEditor, (sender) => {
     const win = glossWindows().find((w) => w.webContents === sender)
     if (!win) return
@@ -1242,6 +1263,7 @@ app.whenReady().then(() => {
       shortcutBindings = next.global.shortcuts ?? {}
       updateCaptureBindings(shortcutBindings)
       if (next.global.captureShortcut !== previous.global.captureShortcut) setCaptureShortcut(next.global.captureShortcut)
+      if ((next.global.secondBrain ?? '') !== (previous.global.secondBrain ?? '')) emit({ type: 'projects' })
       void phone?.apply(next.global.phoneAccess ?? false, next.global.phonePort ?? 8443)
       for (const kind of ['claude', 'codex'] as const) {
         if (cliSetting(kind) === ((kind === 'claude' ? previous.global.claudeExecutable : previous.global.codexExecutable) ?? '')) continue
@@ -1310,6 +1332,14 @@ app.whenReady().then(() => {
     },
     placeRemoved: (project) => {
       settingsFile.update({ project: { path: project, values: { newSessionPlace: 'folder' } } })
+    },
+    // SPEC → Chats: the vault is used only while it's an existing folder.
+    chats: {
+      root: chatsFolder(settingsFile.state().path),
+      vault: () => {
+        const vault = settingsFile.state().global.secondBrain?.trim()
+        return vault && isAbsolute(vault) && isFolder(vault) ? vault : null
+      }
     }
   })
   registerIpc(sessions, settingsFile)

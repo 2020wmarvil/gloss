@@ -13,6 +13,7 @@ import type { UnfinishedWork, WorktreeEntry } from './worktrees'
 import { FORK_NOTE, FORK_SUMMARY_LABEL, FORK_SUMMARY_PROMPT, splitForkSummary, threadTag, toMainTag, wireTag, withForkSummary } from '../shared/wire'
 import { isFirstPass, REVIEW_INSTRUCTIONS, type ReviewDiff } from '../shared/review'
 import { perforceRef } from '../shared/perforce'
+import { CHAT_INSTRUCTIONS, NO_SECOND_BRAIN } from '../shared/chats'
 import type { Session } from '../shared/types'
 
 type Script = (ctx: {
@@ -2060,6 +2061,94 @@ describe('SessionManager', () => {
       await manager.deleteSession(session.id)
       await expect(turn).resolves.toEqual({ stopReason: 'cancelled' })
       expect(store.getSession(session.id)).toBeUndefined()
+    })
+  })
+
+  describe('chats', () => {
+    let vault: string | null
+    const ROOT = '/data/chats'
+
+    beforeEach(async () => {
+      await manager.dispose()
+      vault = '/notes/brain'
+      manager = new SessionManager({
+        store,
+        emit: (e) => events.push(e),
+        // The instructions themselves, so the test sees which were sent.
+        getAgentConfig: () => ({ ...config, sessionMeta: (i: string) => ({ new: { instructions: i }, load: { instructions: i } }) }),
+        agentEnv: () => ({}),
+        connect: (_c, _e, handlers) => AgentConnection.open(agentApp(state), handlers),
+        runInTerminal: runInTerminal as never,
+        now: () => 1000,
+        chats: { root: ROOT, vault: () => vault }
+      })
+    })
+
+    const instructions = (i: number): string => (state.metas[i].meta as { instructions: string }).instructions
+
+    it('lists Chats first, with its vault, whatever the other projects are called', async () => {
+      manager.addProject('/work/app')
+      expect(manager.listProjects()).toEqual([
+        { path: ROOT, name: 'Chats', where: 'brain', chats: { vault: '/notes/brain' } },
+        { path: '/work/app', name: 'app', where: '/work' }
+      ])
+      vault = null
+      expect(manager.listProjects()[0]).toEqual({ path: ROOT, name: 'Chats', where: 'No second brain set', chats: { vault: null } })
+    })
+
+    it('starts a chat in the vault, listed under Chats, with the chat instructions', async () => {
+      const chat = manager.startSession(ROOT, 'fake')
+      expect(chat).toMatchObject({ cwd: '/notes/brain', project: ROOT })
+      await manager.send(chat.id, 'What did I decide about the move?', null)
+      expect(state.cwds.get(store.getSession(chat.id)!.acpSessionId)).toBe('/notes/brain')
+      expect(instructions(0)).toContain(CHAT_INSTRUCTIONS)
+      // The vault doesn't become a project of its own.
+      expect(manager.listProjects().map((p) => p.path)).toEqual([ROOT])
+    })
+
+    it('keeps the chat instructions when a chat is resumed', async () => {
+      const chat = manager.startSession(ROOT, 'fake')
+      await manager.send(chat.id, 'hi', null)
+      await manager.dispose()
+      manager = new SessionManager({
+        store,
+        emit: (e) => events.push(e),
+        getAgentConfig: () => ({ ...config, sessionMeta: (i: string) => ({ new: { instructions: i }, load: { instructions: i } }) }),
+        agentEnv: () => ({}),
+        connect: (_c, _e, handlers) => AgentConnection.open(agentApp(state), handlers),
+        runInTerminal: runInTerminal as never,
+        now: () => 1000,
+        chats: { root: ROOT, vault: () => vault }
+      })
+      await manager.send(chat.id, 'again', null)
+      const load = state.metas.findIndex((m) => m.method === 'load')
+      expect(load).toBeGreaterThan(0)
+      expect(instructions(load)).toContain(CHAT_INSTRUCTIONS)
+    })
+
+    it('refuses a chat without a second brain, and what Chats have no use for', async () => {
+      vault = null
+      expect(() => manager.startSession(ROOT, 'fake')).toThrow(NO_SECOND_BRAIN)
+      vault = '/notes/brain'
+      await expect(manager.startWorktreeSession(ROOT, 'fake')).rejects.toThrow('Chats have no worktrees.')
+      await expect(manager.createReview(ROOT, 'fake')).rejects.toThrow('Chats have no reviews.')
+      await expect(manager.deleteProject(ROOT)).rejects.toThrow("Chats can't be deleted")
+      // A project's sessions still get Gloss's own instructions only.
+      await manager.createSession('/work/app', 'fake')
+      expect(instructions(0)).not.toContain(CHAT_INSTRUCTIONS)
+    })
+
+    it("lists the agent's own sessions in the vault under Chats", async () => {
+      state.canList = true
+      state.listed = [
+        { sessionId: 'cli-1', cwd: '/notes/brain', title: 'Weekly review', updatedAt: '2026-11-01T00:00:00Z' },
+        { sessionId: 'cli-2', cwd: '/work/app', title: 'elsewhere' }
+      ]
+      expect(await manager.agentSessions(ROOT, 'fake')).toEqual([
+        { acpSessionId: 'cli-1', title: 'Weekly review', updatedAt: '2026-11-01T00:00:00Z', cwd: '/notes/brain' }
+      ])
+      vault = null
+      expect(await manager.agentSessions(ROOT, 'fake')).toEqual([])
     })
   })
 

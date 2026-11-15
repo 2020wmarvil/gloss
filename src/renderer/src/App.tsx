@@ -2,6 +2,7 @@ import { commandMatches, commandHint } from './commandBindings'
 import type { SearchResult } from '@shared/search'
 import { SearchDialog } from './SearchDialog'
 import { CloneDialog } from './CloneDialog'
+import { NewProjectDialog } from './NewProjectDialog'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GlossEvent, PaneState } from '@shared/ipc'
 import { sameFolder } from '@shared/paths'
@@ -78,6 +79,7 @@ export function App(): React.JSX.Element {
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined)
   const [showSearch, setShowSearch] = useState(false)
   const [showClone, setShowClone] = useState(false)
+  const [showNewProject, setShowNewProject] = useState(false)
   /** The Worktrees screen (SPEC → Worktrees), in the center like Settings. */
   const [showWorktrees, setShowWorktrees] = useState(false)
   /** The Plugins screen (SPEC → Plugins), in the center like Worktrees. */
@@ -296,6 +298,9 @@ export function App(): React.JSX.Element {
       case 'mainAction':
         runMainAction(event.action)
         break
+      case 'projects':
+        void refreshProjects()
+        break
       case 'worktrees':
         if (projectPathRef.current && sameFolder(event.project, projectPathRef.current)) void loadWorktrees(projectPathRef.current)
         break
@@ -312,7 +317,8 @@ export function App(): React.JSX.Element {
       setProjects(ps)
       setSessions(list)
       if (list[0]) void selectSession(list[0].id)
-      else if (ps[0]) setProjectPath(ps[0].path)
+      // Chats is listed first, but a project is a better place to open on.
+      else if (ps[0]) setProjectPath((ps.find((p) => !p.chats) ?? ps[0]).path)
     })
   }, [selectSession, setPoppedList])
 
@@ -394,6 +400,8 @@ export function App(): React.JSX.Element {
     const cwd = from?.cwd ?? folder ?? projectPath
     if (!cwd || !agentId) return
     const project = from ? projectOf(from) : projectPath ?? cwd
+    // Chats have nothing to review (SPEC → Chats).
+    if (projects.some((p) => p.chats && sameFolder(p.path, project))) return
     setSidebarError(null)
     setCreating(true)
     try {
@@ -429,6 +437,7 @@ export function App(): React.JSX.Element {
 
   async function openClonedProject(p: Project): Promise<void> {
     setShowClone(false)
+    setShowNewProject(false)
     setSidebarError(null)
     await refreshProjects()
     selectProject(p.path, sessions)
@@ -787,6 +796,7 @@ export function App(): React.JSX.Element {
             onSelectProject={(path) => selectProject(path, sessions)}
             onOpenProject={() => void openProject()}
             onCloneProject={() => setShowClone(true)}
+            onNewProject={() => setShowNewProject(true)}
             onDeleteProject={(path) => void deleteProject(path)}
             onSelect={(id) => leavePlugins(() => void selectSession(id))}
             onNew={(agentId, where) => leavePlugins(() => void newSession(agentId, where))}
@@ -943,6 +953,7 @@ export function App(): React.JSX.Element {
         )}
       </div>
       {fullScreenHint > 0 && <FullScreenHint key={fullScreenHint} />}
+      {showNewProject && <NewProjectDialog onClose={() => setShowNewProject(false)} onCreated={(p) => void openClonedProject(p)} />}
       {showClone && <CloneDialog onClose={() => setShowClone(false)} onOpened={(p) => void openClonedProject(p)} />}
       {showSearch && <SearchDialog sessionId={sessionId ?? null} cwd={projectPath} onClose={() => setShowSearch(false)} onOpen={openSearchResult} />}
       {signIn && (

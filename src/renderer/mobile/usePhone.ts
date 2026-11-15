@@ -200,6 +200,9 @@ export function usePhone(link: PhoneLink) {
       case 'agents':
         setAgents(event.agents)
         return
+      case 'projects':
+        void window.gloss.projects.list().then(setProjects, () => {})
+        return
     }
   }), [loadOpen])
 

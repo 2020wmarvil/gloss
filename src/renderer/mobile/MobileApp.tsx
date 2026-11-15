@@ -2,15 +2,17 @@
 // threads full screen, the composer with queue and steer, questions and approvals, and the status sheet.
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft, ArrowUp, Check, ChevronDown, ChevronRight, CircleCheckBig, Clock, CornerDownRight, Folder, GitBranch, GitCompare, GitFork, Hand, Lock,
+  ArrowLeft, ArrowUp, Brain, Check, ChevronDown, ChevronRight, CircleCheckBig, Clock, CloudDownload, CornerDownRight, Folder, FolderPlus, GitBranch, GitCompare, GitFork, Hand, Lock,
   MessageSquare, MessageSquareReply, Pencil, Plus, ScanSearch, Shield, Square, Trash2, WifiOff, X
 } from 'lucide-react'
 import type { Anchor, Attachment, Message, Plan, PlanUsage, Session, Thread, ToolCall } from '@shared/types'
+import { cloneChoices, type GithubRepo } from '@shared/github'
 import { findingsBlocks, findingThread, isFirstPass, lineLabel, withoutFindings, type LineAnchor } from '@shared/review'
 import { canFork } from '@shared/composer'
 import type { ForkView } from '@shared/ipc'
 import { truncate } from '@shared/wire'
 import { projectOf } from '@shared/worktree'
+import { NO_SECOND_BRAIN } from '@shared/chats'
 import { errorText } from '../src/errors'
 import { ForkSummary, logItems, type LogItem, type Notice } from '../src/Log'
 import { Markdown } from '../src/Markdown'
@@ -360,7 +362,7 @@ function sameLines(a: LineAnchor, b: LineAnchor): boolean {
 function Sessions({ phone, project, setProject, onOpen }: {
   phone: Phone; project: string | null; setProject(path: string): void; onOpen(id: string): void
 }): React.JSX.Element {
-  const [picker, setPicker] = useState<'projects' | 'agents' | null>(null)
+  const [picker, setPicker] = useState<'projects' | 'agents' | 'newProject' | 'clone' | null>(null)
   const [error, setError] = useState<string | null>(null)
   /** A new session is being started on the desktop. */
   const [creating, setCreating] = useState(false)
@@ -372,6 +374,9 @@ function Sessions({ phone, project, setProject, onOpen }: {
     .filter((s) => current && projectOf(s).toLowerCase() === current.path.toLowerCase())
     .sort((a, b) => Number(needs(b)) - Number(needs(a)) || at(b) - at(a))
   const agentName = (id: string) => phone.agents.find((a) => a.id === id)?.name ?? id
+  /** The Chats project (SPEC → Chats): New chat, no worktrees. */
+  const chats = current?.chats
+  const noVault = !!chats && !chats.vault
   const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const held = useRef(false)
 
@@ -410,7 +415,8 @@ function Sessions({ phone, project, setProject, onOpen }: {
         {!current && phone.info && <p className="m-empty">Open a project in Gloss on the computer to start.</p>}
         {waiting.length > 0 && <div className="m-sec">Needs you</div>}
         {waiting.map((s) => <SessionRow key={s.id} s={s} phone={phone} agentName={agentName(s.agentId)} onOpen={onOpen} />)}
-        {rest.length > 0 && <div className="m-sec">Sessions</div>}
+        {noVault && <p className="m-empty">{NO_SECOND_BRAIN}</p>}
+        {rest.length > 0 && <div className="m-sec">{chats ? 'Chats' : 'Sessions'}</div>}
         {rest.map((s) => <SessionRow key={s.id} s={s} phone={phone} agentName={agentName(s.agentId)} onOpen={onOpen} />)}
         <div className="m-fab-space" />
       </div>
@@ -421,11 +427,11 @@ function Sessions({ phone, project, setProject, onOpen }: {
           onPointerUp={() => clearTimeout(hold.current)}
           onPointerLeave={() => clearTimeout(hold.current)}
           onContextMenu={(e) => e.preventDefault()}
-          disabled={creating}
+          disabled={creating || noVault}
           aria-busy={creating}
           onClick={() => { if (!held.current) void create(phone.info?.defaultAgent ?? 'claude') }}
         >
-          {creating ? <><span className="m-spinner" />Starting…</> : <><Plus size={18} />New session</>}
+          {creating ? <><span className="m-spinner" />Starting…</> : <><Plus size={18} />{chats ? 'New chat' : 'New session'}</>}
         </button>
       )}
       {picker === 'projects' && (
@@ -436,7 +442,7 @@ function Sessions({ phone, project, setProject, onOpen }: {
             const runs = here.some((s) => phone.activity[s.id]?.turn !== undefined)
             return (
               <button key={p.path} className="m-kv m-kv-btn" onClick={() => { setProject(p.path); setPicker(null) }}>
-                <Folder size={18} /><span className="m-k m-ink">{p.name}</span>
+                {p.chats ? <Brain size={18} /> : <Folder size={18} />}<span className="m-k m-ink">{p.name}</span>
                 <span className="m-v">
                   {waits > 0 && <span className="m-pill m-wait">{waits} waiting</span>}
                   {runs && <span className="m-dot m-pulse s-working" />}
@@ -445,24 +451,123 @@ function Sessions({ phone, project, setProject, onOpen }: {
               </button>
             )
           })}
+          <div className="m-sec">Add</div>
+          <button className="m-kv m-kv-btn" onClick={() => setPicker('newProject')}>
+            <FolderPlus size={18} /><span className="m-k m-ink">New project</span>
+          </button>
+          <button className="m-kv m-kv-btn" onClick={() => setPicker('clone')}>
+            <CloudDownload size={18} /><span className="m-k m-ink">Open from GitHub</span>
+          </button>
         </Sheet>
       )}
+      {picker === 'newProject' && <NewProjectSheet onClose={() => setPicker(null)} onOpened={(path) => { setProject(path); setPicker(null) }} />}
+      {picker === 'clone' && <CloneSheet onClose={() => setPicker(null)} onOpened={(path) => { setProject(path); setPicker(null) }} />}
       {picker === 'agents' && (
-        <Sheet title="New session with" onClose={() => setPicker(null)}>
+        <Sheet title={chats ? 'New chat with' : 'New session with'} onClose={() => setPicker(null)}>
           {phone.agents.filter((a) => a.available !== false).map((a) => (
             <button key={a.id} className="m-kv m-kv-btn" onClick={() => void create(a.id)}>
               <span className="m-k m-ink">{a.name}</span>
               {a.id === phone.info?.defaultAgent && <span className="m-v m-small">Default</span>}
             </button>
           ))}
-          <div className="m-sec">In a new worktree</div>
-          {phone.agents.filter((a) => a.available !== false).map((a) => (
-            <button key={`wt:${a.id}`} className="m-kv m-kv-btn" onClick={() => void create(a.id, true)}>
-              <GitBranch size={18} /><span className="m-k m-ink">{a.name}</span>
-            </button>
-          ))}
+          {!chats && <>
+            <div className="m-sec">In a new worktree</div>
+            {phone.agents.filter((a) => a.available !== false).map((a) => (
+              <button key={`wt:${a.id}`} className="m-kv m-kv-btn" onClick={() => void create(a.id, true)}>
+                <GitBranch size={18} /><span className="m-k m-ink">{a.name}</span>
+              </button>
+            ))}
+          </>}
         </Sheet>
       )}
+    </>
+  )
+}
+
+/** New project from the phone (SPEC → Remote and mobile): a name, made in the desktop's projects folder. */
+function NewProjectSheet({ onClose, onOpened }: { onClose(): void; onOpened(path: string): void }): React.JSX.Element {
+  const [name, setName] = useState('')
+  const [folder, setFolder] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { void window.gloss.projects.folder().then(setFolder, () => {}) }, [])
+  async function create(): Promise<void> {
+    if (busy || !name.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      onOpened((await window.gloss.projects.create(name.trim())).path)
+    } catch (err) {
+      setError(errorText(err))
+      setBusy(false)
+    }
+  }
+  return (
+    <Sheet title="New project" onClose={() => { if (!busy) onClose() }}>
+      <form className="m-sheet-form" onSubmit={(e) => { e.preventDefault(); void create() }}>
+        <p className="m-sheet-note m-small">A new Git repository in {folder ? <b>{folder}</b> : 'the projects folder'} on the computer.</p>
+        <input className="m-field" aria-label="Project name" placeholder="Project name" value={name} disabled={busy}
+          autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(e) => setName(e.target.value)} />
+        {error && <p className="m-error" role="alert">{error}</p>}
+        <button type="submit" className="m-btn m-pri" disabled={busy || !name.trim()} aria-busy={busy}>
+          {busy ? <><span className="m-spinner" />Creating…</> : 'Create'}
+        </button>
+      </form>
+    </Sheet>
+  )
+}
+
+/** Open from GitHub on the phone: the desktop's repository list, cloned into its projects folder. */
+function CloneSheet({ onClose, onOpened }: { onClose(): void; onOpened(path: string): void }): React.JSX.Element {
+  const [repos, setRepos] = useState<GithubRepo[] | null>(null)
+  const [query, setQuery] = useState('')
+  const [cloning, setCloning] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    window.gloss.projects.githubRepos().then((r) => live && setRepos(r), (err: unknown) => {
+      if (!live) return
+      setRepos([])
+      setError(errorText(err))
+    })
+    return () => { live = false }
+  }, [])
+  const byName = new Map((repos ?? []).map((r) => [r.fullName, r]))
+  const choices = cloneChoices(repos ?? [], query).slice(0, 50)
+  async function clone(name: string): Promise<void> {
+    if (cloning) return
+    setCloning(name)
+    setError(null)
+    try {
+      onOpened((await window.gloss.projects.cloneToProjectsFolder(name)).path)
+    } catch (err) {
+      setError(errorText(err))
+      setCloning(null)
+    }
+  }
+  return (
+    <>
+      <div className="m-dim" onClick={() => { if (!cloning) onClose() }} />
+      <div className="m-sheet m-sheet-tall" role="dialog" aria-label="Open from GitHub">
+        <div className="m-grab" />
+        <h4>Open from GitHub</h4>
+        <input className="m-field" aria-label="Repository" placeholder="Search, or paste owner/name or a URL" value={query} disabled={cloning !== null}
+          autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(e) => setQuery(e.target.value)} />
+        {error && <p className="m-error" role="alert">{error}</p>}
+        <div className="m-sheet-scroll">
+          {cloning && <p className="m-empty"><span className="m-spinner" /> Cloning {cloning}…</p>}
+          {!cloning && repos === null && <p className="m-empty"><span className="m-spinner" /> Loading repositories…</p>}
+          {!cloning && repos !== null && choices.length === 0 && !error && <p className="m-empty">{query.trim() ? 'No matching repositories.' : 'No repositories.'}</p>}
+          {!cloning && choices.map((name) => {
+            const r = byName.get(name)
+            return (
+              <button key={name} className="m-kv m-kv-btn" onClick={() => void clone(name)}>
+                <span className="m-k m-ink m-clone-name">{name}{r?.private && <Lock size={12} />}{r?.description && <small>{r.description}</small>}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
     </>
   )
 }
@@ -520,6 +625,8 @@ function SessionScreen(props: {
   const forkDisabled = canFork(open.session.agentId) ? undefined : `${agentName} can't fork sessions.`
   const visibleThreads = open.threads.filter((t) => t.anchor.kind !== 'line' && !t.finding)
   const review = props.review
+  /** A chat has no changes to review (SPEC → Chats). */
+  const isChat = phone.projects.some((p) => p.chats && p.path.toLowerCase() === projectOf(open.session).toLowerCase())
   const [agentsSheet, setAgentsSheet] = useState(false)
   const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const held = useRef(false)
@@ -577,7 +684,7 @@ function SessionScreen(props: {
             <CircleCheckBig size={14} />{thread.resolvedAt === undefined ? 'Resolve' : 'Reopen'}
           </button>
         )}
-        {!inThread && !review && (
+        {!inThread && !review && !isChat && (
           <button
             className="m-ib"
             aria-label="Changes"

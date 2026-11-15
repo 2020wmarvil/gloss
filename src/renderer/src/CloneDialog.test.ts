@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import type { GithubRepo } from '@shared/github'
-import { byOwner, cloneChoices } from './CloneDialog'
+import { byOwner } from './CloneDialog'
+import { cloneChoices } from '@shared/github'
 
 const repo = (fullName: string, description: string | null = null): GithubRepo => ({ fullName, description, private: false, fork: false, archived: false, pushedAt: 0 })
 const repos = [repo('me/gloss', 'Threads for agents'), repo('acme/widgets'), repo('me/notes')]

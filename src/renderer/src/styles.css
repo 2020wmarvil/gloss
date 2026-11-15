@@ -1633,6 +1633,27 @@ button.settings-button.update-button:hover:not(:disabled) {
   justify-self: stretch;
 }
 
+/* New project: one name field. */
+.new-project-dialog input.setting-text {
+  display: block;
+  width: 100%;
+  margin: 12px 0 16px;
+  height: var(--control);
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-13);
+}
+
+.new-project-folder {
+  font-family: var(--font-mono);
+  font-size: var(--t-13);
+  overflow-wrap: anywhere;
+}
+
 .setting .select-button {
   width: 100%;
 }

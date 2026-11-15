@@ -73,6 +73,10 @@ export type GlobalSettings = {
   phoneAccess?: boolean
   /** The port the phone bridge listens on. */
   phonePort?: number
+  /** Where new projects and GitHub clones go; empty or omitted for the Desktop folder. */
+  projectsFolder?: string
+  /** The Obsidian vault Chats work in (SPEC → Chats); empty or omitted turns Chats off. */
+  secondBrain?: string
 }
 
 /** Settings for one project folder, under `projects` keyed by its path. */
@@ -258,6 +262,16 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     description:
       'Open file links and review files in your editor. Custom commands replace {file} with the path and {line} with the line number. Use a command on PATH or a full executable path.',
     placeholder: DEFAULT_EXTERNAL_EDITOR,
+  },
+  {
+    key: 'projectsFolder', scope: 'global', type: 'string', label: 'Projects folder',
+    description: 'Where New project and Open from GitHub put projects. Empty uses your Desktop folder.',
+    placeholder: 'Desktop folder'
+  },
+  {
+    key: 'secondBrain', scope: 'global', type: 'string', label: 'Second brain',
+    description: 'The Obsidian vault folder Chats work in. Agents read and write its notes. Empty turns Chats off.',
+    placeholder: 'Vault folder'
   },
   {
     key: 'phoneAccess', scope: 'global', type: 'boolean', label: 'Allow phones to connect',

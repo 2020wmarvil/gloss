@@ -39,6 +39,9 @@ type Props = {
   onClose(): void
 }
 
+/** What applies to the Chats project (SPEC → Chats): no version control or worktrees. */
+const CHATS_FIELDS = new Set(['permissionMode', 'obsidianVault'])
+
 export function SettingsScreen({ state, updates, projectPath, projects, onUpdate, onOpenFile, onClose, initialSection }: Props): React.JSX.Element {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
@@ -186,10 +189,12 @@ export function SettingsScreen({ state, updates, projectPath, projects, onUpdate
             <h2 id="settings-project">{settingsProject?.name ?? 'Project'}</h2>
             {settingsProjectPath ? (
               <>
-                <p className="lede mono" title={settingsProjectPath}>{settingsProjectPath}</p>
+                {settingsProject?.chats
+                  ? <p className="lede">Chats work in your second brain{settingsProject.chats.vault ? <>, <span className="mono">{settingsProject.chats.vault}</span></> : ', set under General'}.</p>
+                  : <p className="lede mono" title={settingsProjectPath}>{settingsProjectPath}</p>}
                 <div className="settings-card">
                   {workspaceDetails && <p className="lede" style={{ whiteSpace: 'pre-line' }}>{workspaceDetails}</p>}
-                  {projectFields.map((f) => (
+                  {projectFields.filter((f) => !settingsProject?.chats || CHATS_FIELDS.has(f.key)).map((f) => (
                     <fieldset key={f.key} style={{ border: 0, padding: 0, margin: 0 }} disabled={f.key.startsWith('worktree') && projectSettings(state.projects, settingsProjectPath).versionControl === 'perforce'} title={f.key.startsWith('worktree') && projectSettings(state.projects, settingsProjectPath).versionControl === 'perforce' ? 'Worktrees require Git' : undefined}>
                     <Field key={`${settingsProjectPath}:${f.key}`} field={f}
                       value={projectSettings(state.projects, settingsProjectPath)[f.key as keyof ProjectSettings]}

@@ -375,3 +375,10 @@
 @media (prefers-reduced-motion: reduce) { .m-spinner { animation-duration: 2s; } }
 .m-image-wait { display: grid; place-items: center; width: 120px; height: 90px; border-radius: var(--r-md); background: var(--sunken); color: var(--faint); }
 .m-tool-wait { display: grid; place-items: center; padding: 12px; color: var(--faint); }
+
+/* New project and Open from GitHub sheets. */
+.m-sheet-form { display: flex; flex-direction: column; gap: 10px; }
+.m-sheet-tall > .m-field { margin-bottom: 8px; }
+.m-clone-name { display: flex; flex-direction: column; min-width: 0; }
+.m-clone-name small { color: var(--muted); font-size: var(--t-13); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-clone-name svg { display: inline; margin-left: 4px; vertical-align: -1px; }
