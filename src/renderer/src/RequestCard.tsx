@@ -28,6 +28,7 @@ export function RequestCard({ request }: { request: UserRequest }): React.JSX.El
     try {
       // The card goes away once the main process reports the request answered.
       await window.gloss.requests.answer(request.sessionId, request.id, a)
+      drafts.delete(draftKey(request))
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -173,6 +174,13 @@ function PermissionCard({ request, pending, error, onAnswer }: CardProps<Permiss
 
 type Values = Record<string, AnswerValue | undefined>
 
+/**
+ * A question's answers so far, by request, so leaving the session (the phone's swipe back to the
+ * list, or picking another session) and coming back keeps them. Dropped once the request is answered.
+ */
+const drafts = new Map<string, Values>()
+const draftKey = (r: UserRequest): string => `${r.sessionId}\0${r.id}`
+
 function initialValues(fields: QuestionField[]): Values {
   const values: Values = {}
   for (const f of fields) if ('default' in f && f.default !== undefined) values[f.key] = f.default
@@ -204,7 +212,7 @@ function toggled(field: Choice, value: AnswerValue | undefined, option: string):
 function QuestionCard({ request, pending, error, onAnswer }: CardProps<Question>): React.JSX.Element {
   const ref = useRef<HTMLFormElement>(null)
   useTakeFocus(ref)
-  const [values, setValues] = useState<Values>(() => initialValues(request.fields))
+  const [values, setValues] = useState<Values>(() => drafts.get(draftKey(request)) ?? initialValues(request.fields))
   const { fields } = request
   const choices = fields.filter((f): f is Choice => f.kind === 'choice')
   /** The choice number keys pick in: the one last focused, else the first. */
@@ -212,7 +220,12 @@ function QuestionCard({ request, pending, error, onAnswer }: CardProps<Question>
   const active = choices.find((f) => f.key === activeKey) ?? choices[0]
   const content = answerContent(values)
   const problem = answerError(fields, content)
-  const set = (key: string, value: AnswerValue | undefined): void => setValues((v) => ({ ...v, [key]: value }))
+  const set = (key: string, value: AnswerValue | undefined): void =>
+    setValues((v) => {
+      const next = { ...v, [key]: value }
+      drafts.set(draftKey(request), next)
+      return next
+    })
   const submit = (): void => {
     if (!problem) onAnswer({ kind: 'question', action: 'accept', content })
   }
