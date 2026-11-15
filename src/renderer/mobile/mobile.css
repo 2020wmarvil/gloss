@@ -1,6 +1,11 @@
 /* The phone client (docs/mocks/mobile.html). Tokens, markdown, code, tool details and request
    cards come from styles.css; these are the phone's own layout pieces, all prefixed m-. */
 
+/* The phone client never zooms (with mobile.html's viewport and main.tsx's gesture guard): no pinch,
+   and no double-tap zoom, which a second tap on a picked option (to unpick it) would trigger. In a
+   home-screen app a zoom stays until the app is closed, leaving every screen wider than the phone. */
+html { touch-action: pan-x pan-y; }
+
 .m-page {
   font-size: var(--t-16);
   -webkit-tap-highlight-color: transparent;
@@ -53,6 +58,13 @@
   padding: 0;
   cursor: pointer;
   text-align: inherit;
+}
+
+/* iOS zooms into any field under 16px when it takes focus, and a home-screen app never zooms back
+   out, so every later screen stays wider than the phone. Shared pieces (a question card's "Other"
+   box) bring the desktop's smaller sizes, so hold every field here to at least 16px. */
+.m-screen input:not([type='radio']):not([type='checkbox']):not([type='range']), .m-screen textarea, .m-screen select {
+  font-size: max(16px, 1em);
 }
 
 .m-center {
@@ -262,8 +274,9 @@
 /* Sent images; a tap shows one full screen. */
 .m-sent-images { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .m-sent-images img { display: block; max-width: 100%; max-height: 220px; border-radius: var(--r-md); }
-.m-screen .m-lightbox { position: fixed; inset: 0; z-index: 10; background: rgba(0, 0, 0, 0.9); display: grid; place-items: center; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
-.m-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+/* Lightbox.tsx zooms the image itself (the app can't zoom), so the browser handles no touches here. */
+.m-screen .m-lightbox { position: fixed; inset: 0; z-index: 10; background: rgba(0, 0, 0, 0.9); display: grid; place-items: center; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.m-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; transform-origin: 0 0; will-change: transform; }
 
 /* The notifications prompt is just its button, with room for the dismiss button. */
 .m-screen .m-notify-btn { width: calc(100% - 34px); }

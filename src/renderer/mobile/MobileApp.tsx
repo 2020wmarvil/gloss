@@ -17,6 +17,7 @@ import { errorText } from '../src/errors'
 import { ForkSummary, logItems, type LogItem, type Notice } from '../src/Log'
 import { Markdown } from '../src/Markdown'
 import { RequestCard } from '../src/RequestCard'
+import { Lightbox } from './Lightbox'
 import { forkUsage } from '../src/ThreadPanel'
 import { resetIn } from '../src/UsagePanel'
 import { hasDetails, ToolDetails } from '../src/ToolDetails'
@@ -1038,7 +1039,7 @@ function SentImages({ message }: { message: Message }): React.JSX.Element | null
         ))}
       </div>
       {shown && (
-        <button className="m-lightbox" onClick={() => setShown(null)} aria-label="Close image"><img src={shown} alt="" /></button>
+        <Lightbox src={shown} onClose={() => setShown(null)} />
       )}
     </>
   )
