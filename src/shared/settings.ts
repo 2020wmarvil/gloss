@@ -75,6 +75,12 @@ export type GlobalSettings = {
   phoneAccess?: boolean
   /** The port the phone bridge listens on. */
   phonePort?: number
+  /** Closing the main window leaves Gloss running in the tray (SPEC → Session windows); omitted means on. */
+  closeToTray?: boolean
+  /** Start Gloss, in the tray, when the user signs in to the computer. */
+  startAtLogin?: boolean
+  /** Keep the computer from sleeping (not the display) while Gloss runs. */
+  keepAwake?: boolean
   /** Where new projects and GitHub clones go; empty or omitted for the Desktop folder. */
   projectsFolder?: string
   /** The Obsidian vault Chats work in (SPEC → Chats); empty or omitted for Documents\Second Brain. */
@@ -261,6 +267,18 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     type: 'boolean',
     label: 'Open reviews in their own window',
     description: 'New reviews pop out instead of opening in the main window.'
+  },
+  {
+    key: 'closeToTray', scope: 'global', type: 'boolean', label: 'Keep running in the tray',
+    description: 'Closing the window leaves Gloss in the notification area, so agents and phones keep working. Quit from the tray icon.'
+  },
+  {
+    key: 'startAtLogin', scope: 'global', type: 'boolean', label: 'Start when you sign in',
+    description: 'Opens Gloss when you sign in to this computer, in the tray if it keeps running there.'
+  },
+  {
+    key: 'keepAwake', scope: 'global', type: 'boolean', label: 'Keep this computer awake',
+    description: 'Stops the computer sleeping while Gloss runs, so phones can reach it. The screen still turns off.'
   },
   {
     key: 'externalEditor',

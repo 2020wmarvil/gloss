@@ -37,7 +37,7 @@ import { fetchCodexUsage } from './codex-usage'
 import { AgentClis, type CliKind } from './agentCli'
 import { autoUpdater } from 'electron-updater'
 import { Updates } from './updates'
-import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
+import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings, type GlobalSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
 import { chatsFolder, DEFAULT_SECOND_BRAIN } from '../shared/chats'
 import { previewMcpImport } from './mcp-import'
@@ -49,6 +49,7 @@ import { AgentAvailability } from './agentAvailability'
 import { profileError, type AgentProfile } from '../shared/agentProfiles'
 import { boundsArg, placeSessionWindow, type Rect } from './windowPlacement'
 import { createCloseGuard } from './closeGuard'
+import { Background, startedAtLogin, type BackgroundSettings } from './background'
 import iconIco from '../../build/icon.ico?asset'
 import iconPng from '../../build/icons/256x256.png?asset'
 
@@ -156,7 +157,38 @@ function windowSession(sender: WebContents): string | undefined {
   return undefined
 }
 
+/** The windows closing the main window hid, while Gloss runs in the tray. */
+const trayHidden = new Set<BrowserWindow>()
+
+let background: Background | undefined
+
+function closesToTray(): boolean {
+  return settings?.state().global.closeToTray !== false
+}
+
+/** Closing the main window with closeToTray on: every Gloss window hides, and sessions keep running. */
+function hideToTray(): void {
+  for (const win of glossWindows()) {
+    if (!win.isVisible()) continue
+    trayHidden.add(win)
+    win.hide()
+  }
+}
+
+/** Shows the windows hiding in the tray again, `except` one about to come forward. */
+function leaveTray(except?: BrowserWindow): void {
+  for (const win of trayHidden) if (win !== except && !win.isDestroyed()) win.showInactive()
+  trayHidden.clear()
+}
+
+/** The tray icon, a second launch and the macOS dock: brings Gloss back. */
+function showGloss(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  else bringForward(mainWindow)
+}
+
 function bringForward(win: BrowserWindow): void {
+  leaveTray(win)
   if (win.isMinimized()) win.restore()
   win.show()
   win.focus()
@@ -167,7 +199,7 @@ function bringForward(win: BrowserWindow): void {
  * A frameless one (the annotation window) has no title bar or window controls: the page has its
  * own buttons and is its drag area, and the system still resizes it by its edges.
  */
-function newWindow(bounds: Partial<Rect> & { width: number; height: number }, frameless = false): BrowserWindow {
+function newWindow(bounds: Partial<Rect> & { width: number; height: number }, frameless = false, hidden = false): BrowserWindow {
   const win = new BrowserWindow({
     title: 'Gloss',
     ...(frameless
@@ -191,7 +223,7 @@ function newWindow(bounds: Partial<Rect> & { width: number; height: number }, fr
       sandbox: true
     }
   })
-  win.once('ready-to-show', () => win.show())
+  if (!hidden) win.once('ready-to-show', () => win.show())
   win.on('focus', () => {
     if (!annotateWindows.has(win.webContents.id)) lastFocused = win
   })
@@ -221,15 +253,24 @@ function newWindow(bounds: Partial<Rect> & { width: number; height: number }, fr
   return win
 }
 
-function createWindow(): void {
-  const win = newWindow({ width: 1280, height: 820 })
+/** The main window; `hidden` starts it in the tray (at sign-in). */
+function createWindow(hidden = false): void {
+  const win = newWindow({ width: 1280, height: 820 }, false, hidden)
   mainWindow = win
+  if (hidden) trayHidden.add(win)
   win.on('close', (event) => {
+    if (!quitting && closesToTray()) {
+      event.preventDefault()
+      hideToTray()
+      return
+    }
     guardClose(event, () => { if (!win.isDestroyed()) win.close() })
   })
+  // Windows is shutting down or signing out: let the window close.
+  win.on('session-end', () => { quitting = true })
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = undefined
-    // Closing the main window quits Gloss, session windows included.
+    // Closing the main window (without the tray) quits Gloss, session windows included.
     for (const w of sessionWindows.values()) if (!w.isDestroyed()) w.close()
     for (const { win: w } of annotateWindows.values()) if (!w.isDestroyed()) w.close()
   })
@@ -443,6 +484,10 @@ function keepAwake(event: GlossEvent): void {
     powerSaveBlocker.stop(awake)
     awake = null
   }
+}
+
+function backgroundSettings(g: GlobalSettings): BackgroundSettings {
+  return { closeToTray: g.closeToTray !== false, startAtLogin: g.startAtLogin === true, keepAwake: g.keepAwake === true }
 }
 
 function emit(event: GlossEvent): void {
@@ -1248,10 +1293,17 @@ function registerWindowsIpc(): void {
   })
 }
 
+// One Gloss per data folder: a second launch (the Start menu while Gloss sits in the tray)
+// brings the running one forward. Development copies skip it, to run beside an installed one.
+const primary = !app.isPackaged || app.requestSingleInstanceLock()
+if (!primary) app.quit()
+app.on('second-instance', () => { if (app.isReady()) showGloss() })
+
 // Windows shows notifications only for an app with an AppUserModelID.
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'app.gloss' : process.execPath)
 
 app.whenReady().then(() => {
+  if (!primary) return
   // No File/Edit/View/Window menu bar on Windows and Linux. macOS keeps its menu
   // (it lives in the system menu bar, and copy and paste need its Edit menu).
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
@@ -1261,7 +1313,7 @@ app.whenReady().then(() => {
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [], captureShortcut: DEFAULT_CAPTURE_SHORTCUT, reviewWindow: true, phoneAccess: false, phonePort: 8443 },
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [], captureShortcut: DEFAULT_CAPTURE_SHORTCUT, reviewWindow: true, phoneAccess: false, phonePort: 8443, closeToTray: true, startAtLogin: false, keepAwake: false },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
       // Fires nativeTheme's 'updated', which recolors the window controls.
@@ -1271,6 +1323,7 @@ app.whenReady().then(() => {
       if (next.global.captureShortcut !== previous.global.captureShortcut) setCaptureShortcut(next.global.captureShortcut)
       if ((next.global.secondBrain ?? '') !== (previous.global.secondBrain ?? '')) emit({ type: 'projects' })
       void phone?.apply(next.global.phoneAccess ?? false, next.global.phonePort ?? 8443)
+      background?.apply(backgroundSettings(next.global))
       for (const kind of ['claude', 'codex', 'antigravity'] as const) {
         const before = kind === 'claude' ? previous.global.claudeExecutable : kind === 'codex' ? previous.global.codexExecutable : previous.global.antigravityExecutable
         if (cliSetting(kind) === (before ?? '')) continue
@@ -1375,9 +1428,12 @@ app.whenReady().then(() => {
   })
   void phone.apply(settingsFile.state().global.phoneAccess ?? false, settingsFile.state().global.phonePort ?? 8443)
   nativeTheme.on('updated', updateTitleBar)
-  createWindow()
+  background = new Background({ icon: process.platform === 'win32' ? iconIco : iconPng, open: showGloss, quit: () => app.quit() })
+  background.apply(backgroundSettings(settingsFile.state().global))
+  createWindow(closesToTray() && startedAtLogin(process.argv))
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    else if (trayHidden.size > 0) showGloss()
   })
 })
 
@@ -1391,6 +1447,7 @@ app.on('before-quit', (event) => {
   if (!guardClose(event, () => app.quit())) return
   quitting = true
   void phone?.dispose()
+  background?.dispose()
   settings?.close()
   updates?.dispose()
   pluginLibrary?.close()
