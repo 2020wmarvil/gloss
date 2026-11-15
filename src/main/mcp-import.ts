@@ -27,12 +27,15 @@ function claudeValues(value: unknown, env: NodeJS.ProcessEnv): unknown {
   return value
 }
 
-function convert(name: string, raw: unknown, agent: 'claude' | 'codex', env: NodeJS.ProcessEnv): McpServer {
+type Agent = Exclude<McpImportSource, 'gloss'>
+
+function convert(name: string, raw: unknown, agent: Agent, env: NodeJS.ProcessEnv): McpServer {
   if (!object(raw)) throw new Error('Expected a server object')
   if (raw.enabled === false || raw.disabled === true) throw new Error('Disabled in the source configuration')
-  const config = (agent === 'claude' ? claudeValues(raw, env) : raw) as Raw
+  // Antigravity names a remote server's address `serverUrl` (or `url`); it only speaks streamable HTTP.
+  const config = (agent === 'claude' ? claudeValues(raw, env) : agent === 'antigravity' && raw.serverUrl !== undefined ? { ...raw, url: raw.serverUrl, serverUrl: undefined } : raw) as Raw
   // ACP cannot express these settings. Do not silently drop restrictions or change execution context.
-  const unsupported = ['cwd', 'enabled_tools', 'disabled_tools', 'tools', 'http_headers_helper', 'headersHelper', 'oauth', 'auth', 'experimental_environment']
+  const unsupported = ['cwd', 'enabled_tools', 'disabled_tools', 'tools', 'http_headers_helper', 'headersHelper', 'oauth', 'auth', 'experimental_environment', 'enabledTools', 'disabledTools', 'authProviderType']
     .filter((key) => config[key] !== undefined)
   if (unsupported.length) throw new Error(`Cannot preserve these settings: ${unsupported.join(', ')}`)
   let server: McpServer
@@ -89,7 +92,7 @@ export function previewMcpImport(agent: McpImportSource, options: Options = {}):
       const base = { id: String(result.entries.length), name, source }
       try {
         if (Array.isArray(disabled) && disabled.includes(name)) throw new Error('Disabled in the source project')
-        result.entries.push({ ...base, server: convert(name, config, agent as 'claude' | 'codex', env) })
+        result.entries.push({ ...base, server: convert(name, config, agent as Agent, env) })
       } catch (err) { result.entries.push({ ...base, problem: err instanceof Error ? err.message : 'Cannot import this server' }) }
     }
   }
@@ -117,6 +120,13 @@ export function previewMcpImport(agent: McpImportSource, options: Options = {}):
       if (seen.has(key)) continue
       seen.add(key)
       add(read(path)?.mcpServers, path, config.disabledMcpjsonServers)
+    }
+  } else if (agent === 'antigravity') {
+    const path = join(home, '.gemini', 'config', 'mcp_config.json')
+    add(read(path)?.mcpServers, path)
+    for (const project of new Set(options.projects)) {
+      const local = join(project, '.agents', 'mcp_config.json')
+      add(read(local)?.mcpServers, local)
     }
   } else {
     const path = join(env.CODEX_HOME ?? join(home, '.codex'), 'config.toml')

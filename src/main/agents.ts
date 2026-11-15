@@ -9,18 +9,25 @@ export type AgentConfig = {
   env?: Record<string, string>
   /** Bound initialization for external executables. */
   startupTimeoutMs?: number
+  /** The agent process's working folder; Gloss's own when unset. Antigravity makes it a workspace folder of every session. */
+  cwd?: string
   /** External profiles never expose arbitrary process or protocol diagnostics. */
   privateDiagnostics?: boolean
   /**
-   * The user-installed CLI the adapter drives (SPEC → Shipping): Gloss finds it before
-   * starting the agent and passes its path in this environment variable.
+   * The user-installed CLI (SPEC → Shipping): Gloss finds it before starting the agent and
+   * passes its path to the adapter in `env`, or, without `env`, runs it as the agent.
    */
-  cli?: { kind: CliKind; env: string }
+  cli?: { kind: CliKind; env?: string }
   /**
    * The agent's session mode that skips permission prompts, if it has one.
    * Sessions start in it by default (SPEC → Permission modes).
    */
   bypassModeId?: string
+  /**
+   * For an agent without a bypass mode: the mode sessions start in when the permission setting
+   * is bypass, instead of Gloss approving requests itself (SPEC → Permission modes).
+   */
+  startModeId?: string
   /**
    * `_meta` for session/new and session/load that gives the agent Gloss's
    * instructions (SPEC → Agent instructions), in whatever form it takes them.
@@ -36,6 +43,15 @@ export type AgentConfig = {
    * more about it over ACP. Its end is worked out from the session's history (SPEC → Background jobs).
    */
   quietJobResult?: RegExp
+  /** The title of a tool call that hands work to the background, for an agent that says nothing more about it. */
+  quietJobTitle?: RegExp
+  /**
+   * A tool call still `in_progress` when a turn ends normally is a job running in the background,
+   * and the agent says nothing more about it over ACP: its end comes from the session's history.
+   */
+  quietToolCallsOutliveTurns?: boolean
+  /** session/list answers with the agent's sessions in every folder, whatever `cwd` asks for. */
+  listsAllSessions?: boolean
   /**
    * Runs once the agent has started. A returned config replaces the running agent with one
    * started from it, once (Codex's plugin hooks: SPEC → Plugins → Subagents and hooks).
@@ -100,9 +116,34 @@ function codexAgent(): AgentConfig {
   }
 }
 
+/**
+ * Antigravity's CLI, which is its own ACP server (`agy acp`). It appends
+ * `_meta.antigravity.systemPrompt.append` to its system prompt. It has no bypass mode (only a
+ * launch flag), so sessions start in Auto. A long command it moves to the background stays
+ * `in_progress` when the turn ends, and a subagent runs on after `invoke_subagent` completes;
+ * neither reports more over ACP, so their end comes from `session/list`'s `updatedAt`.
+ */
+function antigravityAgent(): AgentConfig {
+  const meta = (instructions: string): Record<string, unknown> => ({ antigravity: { systemPrompt: { append: instructions } } })
+  return {
+    id: 'antigravity',
+    name: 'Antigravity',
+    command: 'agy',
+    args: ['acp'],
+    startupTimeoutMs: 15000,
+    cli: { kind: 'antigravity' },
+    startModeId: 'auto',
+    quietJobTitle: /^Run invoke_subagent$/,
+    quietToolCallsOutliveTurns: true,
+    listsAllSessions: true,
+    sessionMeta: (instructions) => ({ new: meta(instructions), load: meta(instructions) })
+  }
+}
+
 const AGENTS: Record<string, () => AgentConfig> = {
   claude: claudeAgent,
   codex: codexAgent,
+  antigravity: antigravityAgent,
   opencode: () => ({
     id: 'opencode',
     name: 'OpenCode',

@@ -16,7 +16,7 @@ import { EditorSetting } from './EditorSetting'
 import { ShortcutSetting } from './ShortcutSetting'
 import { PhoneSettings } from './PhoneSettings'
 import { UpdateSettings } from './UpdateSettings'
-import { ExternalLink, Folder, Keyboard, Palette, Server, SlidersVertical, Smartphone, Terminal } from 'lucide-react'
+import { ExternalLink, Folder, FolderOpen, Keyboard, Palette, Server, SlidersVertical, Smartphone, Terminal } from 'lucide-react'
 
 export type SettingsSection = 'general' | 'appearance' | 'mcp' | 'agents' | 'phone' | 'project' | 'shortcuts'
 
@@ -38,6 +38,9 @@ type Props = {
   onOpenFile(): Promise<string | null>
   onClose(): void
 }
+
+/** What applies to the Chats project (SPEC → Chats): no version control or worktrees. */
+const CHATS_FIELDS = new Set(['permissionMode', 'obsidianVault'])
 
 export function SettingsScreen({ state, updates, projectPath, projects, onUpdate, onOpenFile, onClose, initialSection }: Props): React.JSX.Element {
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -164,7 +167,7 @@ export function SettingsScreen({ state, updates, projectPath, projects, onUpdate
         {section === 'agents' && (
           <section className="agents-settings" aria-labelledby="settings-agents">
             <h2 id="settings-agents">Agents</h2>
-            <p className="lede">Claude Code and Codex are built in. Add other agents below.</p>
+            <p className="lede">Claude Code, Codex and Antigravity are built in. Add other agents below.</p>
             <OpenCodeSettings executable={state.global.opencodeExecutable ?? ''}
               onSave={async (opencodeExecutable) => { await onUpdate({ global: { opencodeExecutable } }) }} />
             <AgentProfileSettings profiles={state.global.agentProfiles ?? []} defaultAgent={state.global.defaultAgent}
@@ -186,10 +189,12 @@ export function SettingsScreen({ state, updates, projectPath, projects, onUpdate
             <h2 id="settings-project">{settingsProject?.name ?? 'Project'}</h2>
             {settingsProjectPath ? (
               <>
-                <p className="lede mono" title={settingsProjectPath}>{settingsProjectPath}</p>
+                {settingsProject?.chats
+                  ? <p className="lede">Chats work in your second brain{settingsProject.chats.vault ? <>, <span className="mono">{settingsProject.chats.vault}</span></> : ', set under General'}.</p>
+                  : <p className="lede mono" title={settingsProjectPath}>{settingsProjectPath}</p>}
                 <div className="settings-card">
                   {workspaceDetails && <p className="lede" style={{ whiteSpace: 'pre-line' }}>{workspaceDetails}</p>}
-                  {projectFields.map((f) => (
+                  {projectFields.filter((f) => !settingsProject?.chats || CHATS_FIELDS.has(f.key)).map((f) => (
                     <fieldset key={f.key} style={{ border: 0, padding: 0, margin: 0 }} disabled={f.key.startsWith('worktree') && projectSettings(state.projects, settingsProjectPath).versionControl === 'perforce'} title={f.key.startsWith('worktree') && projectSettings(state.projects, settingsProjectPath).versionControl === 'perforce' ? 'Worktrees require Git' : undefined}>
                     <Field key={`${settingsProjectPath}:${f.key}`} field={f}
                       value={projectSettings(state.projects, settingsProjectPath)[f.key as keyof ProjectSettings]}
@@ -292,6 +297,28 @@ function TextSetting(props: { id: string; field: SettingField; value: string; on
   )
 }
 
+/** A folder setting: the native folder picker, and Default to clear it. */
+function FolderSetting(props: { id: string; field: SettingField; value: string; onChange(value: string): void }): React.JSX.Element {
+  const { id, field, value } = props
+  const [error, setError] = useState<string | null>(null)
+  const pick = (): void => {
+    setError(null)
+    window.gloss.settings.pickFolder(field.key).catch((err: unknown) => setError(errorText(err)))
+  }
+  return (
+    <div className="folder-setting">
+      <div className="folder-setting-row">
+        <button id={id} type="button" className="folder-setting-pick" aria-describedby={`${id}-description`} title={value || field.placeholder} onClick={pick}>
+          <FolderOpen aria-hidden />
+          <span className={value ? 'folder-setting-path' : 'folder-setting-path muted'}>{value || field.placeholder}</span>
+        </button>
+        {value && <button type="button" className="ghost" title={`Use ${field.placeholder ?? 'the default'}`} onClick={() => props.onChange('')}>Default</button>}
+      </div>
+      {error && <p role="alert" className="dialog-error">{error}</p>}
+    </div>
+  )
+}
+
 function Field(props: { field: SettingField; value: unknown; onChange(value: unknown): void }): React.JSX.Element {
   const { field, value } = props
   const id = `setting-${field.key}`
@@ -309,6 +336,8 @@ function Field(props: { field: SettingField; value: unknown; onChange(value: unk
         <EditorSetting id={id} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'shortcut' ? (
         <ShortcutSetting id={id} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
+      ) : field.folder ? (
+        <FolderSetting id={id} field={field} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'string' ? (
         <TextSetting id={id} field={field} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'enum' && SEGMENTED.has(field.key) ? (

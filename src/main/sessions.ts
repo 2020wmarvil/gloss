@@ -31,6 +31,7 @@ import type {
   Worktree
 } from '../shared/types'
 import { canFork, canRewind, type RewindPoint } from '../shared/composer'
+import { CHAT_INSTRUCTIONS, CHATS_NAME, NO_SECOND_BRAIN } from '../shared/chats'
 import { AGENT_INSTRUCTIONS, FORK_NOTE, FORK_SUMMARY_LABEL, FORK_SUMMARY_PROMPT, forkWireText, pinAnchor, wireText, withForkSummary, withPins } from '../shared/wire'
 import {
   findingsBlocks,
@@ -62,6 +63,9 @@ import { runComposerShell } from './composerShell'
 import { withoutWorktreeNote, worktreeNote } from '../shared/worktree'
 import { currentBranch, defaultBranch, mergeBase, pullRequestBase, readReviewDiff, readReviewFile, reviewCommits, workingFilePath } from './review'
 
+/** Instructions added to Gloss's own for a kind of session (SPEC → Agent instructions). */
+type InstructionKind = 'review' | 'chat'
+
 export type SessionManagerDeps = {
   /** How often to check the history of a session with quiet jobs (tests). */
   quietJobPollMs?: number
@@ -91,6 +95,12 @@ export type SessionManagerDeps = {
   worktreeSettings?(project: string): { base?: string; setup?: string; place?: string; branchPrefix?: string }
   /** The worktree New session started in is gone: it goes back to the project folder. */
   placeRemoved?(project: string): void
+  /**
+   * The built-in Chats project (SPEC → Chats): `root`, a folder of Gloss's own that stands for it
+   * in the project list, and the second brain vault its chats work in (null when the chosen one
+   * is gone). `prepare` makes the vault before a chat starts in it (the default one may not exist yet).
+   */
+  chats?: { root: string; vault(): string | null; prepare?(vault: string): void }
 }
 
 /** What worktrees need from git and the shell (SPEC → Worktrees). */
@@ -419,16 +429,35 @@ export class SessionManager {
     return slot.connection
   }
 
-  /** The agent's `_meta` for session/new or session/load (SPEC → Agent instructions). Review sessions add theirs. */
-  private sessionMeta(agentId: string, request: 'new' | 'load', review = false): Record<string, unknown> | undefined {
-    const instructions = review ? `${AGENT_INSTRUCTIONS}\n${REVIEW_INSTRUCTIONS}` : AGENT_INSTRUCTIONS
+  /** The agent's `_meta` for session/new or session/load (SPEC → Agent instructions). Review sessions and chats add theirs. */
+  private sessionMeta(agentId: string, request: 'new' | 'load', kind?: InstructionKind): Record<string, unknown> | undefined {
+    const extra = kind === 'review' ? REVIEW_INSTRUCTIONS : kind === 'chat' ? CHAT_INSTRUCTIONS : null
+    const instructions = extra ? `${AGENT_INSTRUCTIONS}\n${extra}` : AGENT_INSTRUCTIONS
     return this.deps.getAgentConfig(agentId).sessionMeta?.(instructions)[request]
   }
 
-  /** A review session, or a fork of one: it keeps the review's instructions. */
-  private isReview(session: Session): boolean {
+  /** A review session or a chat, or a fork of one: it keeps their instructions. */
+  private instructionKind(session: Session): InstructionKind | undefined {
     const own = session.forkOf ? this.deps.store.getSession(session.forkOf.sessionId) : session
-    return !!own?.review
+    if (own?.review) return 'review'
+    return own?.project && this.isChats(own.project) ? 'chat' : undefined
+  }
+
+  /** Whether `path` is the Chats project (SPEC → Chats). */
+  isChats(path: string): boolean {
+    return !!this.deps.chats && samePath(path, this.deps.chats.root)
+  }
+
+  /** The vault a new chat works in, made if needed; rejects when the chosen one is gone. */
+  private chatVault(): string {
+    const vault = this.deps.chats?.vault()
+    if (!vault) throw new Error(NO_SECOND_BRAIN)
+    this.deps.chats?.prepare?.(vault)
+    return vault
+  }
+
+  private refuseChats(path: string, what: string): void {
+    if (this.isChats(path)) throw new Error(what)
   }
 
   private get p4(): ReviewPerforce { return this.deps.perforce ?? PERFORCE }
@@ -677,15 +706,21 @@ export class SessionManager {
 
   /** Opens a local conversation immediately; agent attachment runs while the user composes. */
   startSession(cwd: string, agentId: string, worktree?: { project: string; branch: string | null }): Session {
+    // A chat works in the vault and is listed under Chats.
+    if (!worktree && this.isChats(cwd)) return this.startSessionAt(this.chatVault(), agentId, cwd)
+    return this.startSessionAt(cwd, agentId, worktree?.project, worktree)
+  }
+
+  private startSessionAt(cwd: string, agentId: string, project?: string, worktree?: { project: string; branch: string | null }): Session {
     this.deps.getAgentConfig(agentId)
     const id = randomUUID()
     const session: Session = {
       id, agentId, acpSessionId: `gloss-new:${id}`, cwd,
       title: folderName(cwd), createdAt: this.now(),
-      ...(worktree ? { project: worktree.project } : {})
+      ...(project ? { project } : {})
     }
     this.deps.store.insertSession(session)
-    this.deps.store.addProject(worktree?.project ?? cwd, this.now())
+    this.deps.store.addProject(project ?? cwd, this.now())
     if (worktree) this.runtime(id).worktreeNote = worktreeNote(cwd, worktree.branch, worktree.project)
     this.deps.emit({ type: 'session', session })
     void this.resume(id)
@@ -699,7 +734,7 @@ export class SessionManager {
     let mode!: ModeState
     const res = await this.withAgent(agentId, async (c) => {
       conn = c
-      const created = await c.newSession(cwd, this.sessionMeta(agentId, 'new', review !== undefined), servers)
+      const created = await c.newSession(cwd, this.sessionMeta(agentId, 'new', review !== undefined ? 'review' : project && this.isChats(project) ? 'chat' : undefined), servers)
       mode = await this.applyMode(agentId, cwd, {}, c, created.sessionId, created.modes)
       return created
     })
@@ -738,6 +773,7 @@ export class SessionManager {
    */
   async createReview(cwd: string, agentId: string, range?: ReviewRange, project?: string): Promise<Session> {
     const home = project ?? cwd
+    this.refuseChats(home, 'Chats have no reviews.')
     const drafts = (): Session[] => this.deps.store.listSessions().filter((s) => s.draft && samePath(s.project ?? s.cwd, home))
     const kept = range === undefined ? drafts().find((s) => s.agentId === agentId && samePath(s.cwd, cwd)) : undefined
     if (kept && Boolean(perforceRange(kept.review!.baseRef)) === (this.deps.versionControl?.(home) === 'perforce')) {
@@ -1195,7 +1231,7 @@ export class SessionManager {
     let mode!: ModeState
     const res = await this.withAgent(session.agentId, async (c) => {
       conn = c
-      const created = await c.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', this.isReview(session)), servers)
+      const created = await c.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', this.instructionKind(session)), servers)
       // The fresh conversation keeps the session's mode.
       mode = await this.applyMode(session.agentId, session.cwd, session, c, created.sessionId, created.modes)
       return created
@@ -1327,7 +1363,7 @@ export class SessionManager {
       const prompt = before.findLastIndex((m) => m.role === 'user' && !m.steered)
       if (prompt < 0) return null
       const item = before.slice(prompt + 1).findLast((m) => m.role === 'agent' && m.acpMessageId)?.acpMessageId ?? before[prompt].acpMessageId
-      return item ? () => conn.forkSession(session.acpSessionId, session.cwd, item, this.mcpServers(session.cwd), this.sessionMeta(session.agentId, 'load', !!session.review)) : undefined
+      return item ? () => conn.forkSession(session.acpSessionId, session.cwd, item, this.mcpServers(session.cwd), this.sessionMeta(session.agentId, 'load', this.instructionKind(session))) : undefined
     }
     let point = forkPoint()
     if (point === undefined) {
@@ -1466,6 +1502,7 @@ export class SessionManager {
    * Rejects if git can't create it (nothing is created then).
    */
   async startWorktreeSession(project: string, agentId: string): Promise<Session> {
+    this.refuseChats(project, 'Chats have no worktrees.')
     if (this.deps.versionControl?.(project) === 'perforce') throw new Error('Worktrees require Git.')
     this.deps.getAgentConfig(agentId)
     const settings = this.deps.worktreeSettings?.(project) ?? {}
@@ -1507,6 +1544,7 @@ export class SessionManager {
 
   /** Starts a session in one of the project's existing worktrees (or the project folder itself). */
   async startSessionIn(project: string, path: string, agentId: string): Promise<Session> {
+    if (this.isChats(project)) return this.startSession(project, agentId)
     if (this.deps.versionControl?.(project) === 'perforce' && !samePath(project, path)) throw new Error('Worktrees require Git.')
     if (samePath(project, path)) return this.startSession(project, agentId)
     const entry = (await this.worktreeGit.list(project)).find((e) => !e.main && samePath(e.path, path))
@@ -1561,6 +1599,8 @@ export class SessionManager {
 
   /** The project folder and its worktrees, with what each holds (SPEC → Worktrees screen). */
   async listProjectWorktrees(project: string): Promise<Worktree[]> {
+    // Chats have no worktrees, and their folder isn't a repository (SPEC → Chats).
+    if (this.isChats(project)) return []
     if (this.deps.versionControl?.(project) === 'perforce') return [{ path: project, branch: null, main: true }]
     const entries = await this.worktreeGit.list(project)
     return Promise.all(entries.map(async (e): Promise<Worktree> => {
@@ -1644,16 +1684,24 @@ export class SessionManager {
     // The most recent spelling of a folder wins.
     const projects: Project[] = []
     for (const { path } of dated) {
-      if (!projects.some((p) => samePath(p.path, path))) projects.push(projectAt(path))
+      if (!this.isChats(path) && !projects.some((p) => samePath(p.path, path))) projects.push(projectAt(path))
     }
-    return projects.sort(
+    projects.sort(
       (a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }) ||
         a.path.localeCompare(b.path, undefined, { sensitivity: 'base', numeric: true })
     )
+    // Chats is always there, first.
+    const chats = this.deps.chats
+    if (chats) {
+      const vault = chats.vault()
+      projects.unshift({ path: chats.root, name: CHATS_NAME, where: vault ? folderName(vault) : 'Second brain missing', chats: { vault } })
+    }
+    return projects
   }
 
   addProject(path: string): Project {
+    if (this.isChats(path)) return this.listProjects()[0]
     const known = this.listProjects().find((p) => samePath(p.path, path))
     this.deps.store.addProject(known?.path ?? path, this.now())
     return known ?? projectAt(path)
@@ -1665,6 +1713,7 @@ export class SessionManager {
    * imported are left alone. Returns warnings for agent copies that couldn't be deleted.
    */
   async deleteProject(path: string): Promise<string | null> {
+    this.refuseChats(path, "Chats can't be deleted; delete chats one by one.")
     const warnings: string[] = []
     for (const s of this.deps.store.listSessions()) {
       if (!samePath(s.project ?? s.cwd, path)) continue
@@ -1682,15 +1731,23 @@ export class SessionManager {
    * advertised). Gloss's own sessions there take the agent's title unless renamed in Gloss.
    */
   async agentSessions(cwd: string, agentId: string): Promise<AgentSession[]> {
+    // Chats list the agent's sessions in the vault (SPEC → Chats), which has no worktrees.
+    const chats = this.isChats(cwd)
+    const folder = chats ? this.deps.chats?.vault() : cwd
+    if (!folder) return []
     const deleted = new Set(this.deps.store.listDeletedAgentSessions(agentId))
+    // Antigravity lists every folder's sessions whatever `cwd` asks for: keep that folder's.
+    const all = this.deps.getAgentConfig(agentId).listsAllSessions === true
+    const list = async (conn: AgentConnection, dir: string): Promise<acp.SessionInfo[]> =>
+      (await conn.listSessions(dir)).filter((s) => !all || (!!s.cwd && samePath(s.cwd, dir)))
     const listed = await this.withAgent(agentId, async (conn) => {
       if (!conn.canListSessions) return []
       // Claude lists a worktree's sessions under the project folder too (with their own
       // cwd); Codex only under the worktree's folder. Ask for each, once per session.
-      const sessions = await conn.listSessions(cwd)
-      const worktrees = (this.deps.versionControl?.(cwd) === 'perforce' ? [] : await this.worktreeGit.list(cwd).catch(() => [])).filter((e) => !e.main)
+      const sessions = (await list(conn, folder)).map((s) => (chats ? { ...s, cwd: s.cwd || folder } : s))
+      const worktrees = (chats || this.deps.versionControl?.(cwd) === 'perforce' ? [] : await this.worktreeGit.list(cwd).catch(() => [])).filter((e) => !e.main)
       for (const w of worktrees) {
-        const more = await conn.listSessions(w.path).catch(() => [])
+        const more = await list(conn, w.path).catch(() => [])
         for (const s of more) if (!sessions.some((x) => x.sessionId === s.sessionId)) sessions.push({ ...s, cwd: s.cwd || w.path })
       }
       // Claude Code's process can rewrite a transcript's metadata after its
@@ -1768,7 +1825,7 @@ export class SessionManager {
       if (rt.attachedTo !== conn) await this.attach(sessionId, conn)
       session = this.session(sessionId)
       if (session.acpSessionId.startsWith('gloss-')) throw new Error(`${name} has nothing to fork yet.`)
-      return conn.forkSession(session.acpSessionId, session.cwd, null, this.mcpServers(session.cwd), this.sessionMeta(session.agentId, 'load', this.isReview(session)))
+      return conn.forkSession(session.acpSessionId, session.cwd, null, this.mcpServers(session.cwd), this.sessionMeta(session.agentId, 'load', this.instructionKind(session)))
     })
     const again = this.threadOn(sessionId, anchorMessageId, anchor)
     if (!this.deps.store.getSession(sessionId) || again) {
@@ -1912,7 +1969,7 @@ export class SessionManager {
     let loaded: acp.LoadSessionResponse | undefined
     let replay: acp.SessionUpdate[]
     try {
-      loaded = await conn.loadSession(session.acpSessionId, session.cwd, this.sessionMeta(session.agentId, 'load', this.isReview(session)), servers)
+      loaded = await conn.loadSession(session.acpSessionId, session.cwd, this.sessionMeta(session.agentId, 'load', this.instructionKind(session)), servers)
     } catch (err) {
       if (isSessionInUse(err)) throw new Error('This session is open in Codex. Quit Codex to continue here.', { cause: err })
       if (isAuthRequired(err) || rt.importing) throw err
@@ -1949,7 +2006,7 @@ export class SessionManager {
     const rt = this.runtime(sessionId)
     let session = this.session(sessionId)
     const servers = this.mcpServers(session.cwd)
-    const res = await conn.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', this.isReview(session)), servers)
+    const res = await conn.newSession(session.cwd, this.sessionMeta(session.agentId, 'new', this.instructionKind(session)), servers)
     const mode = await this.applyMode(session.agentId, session.cwd, session, conn, res.sessionId, res.modes)
     // Deleting a conversation while startup is pending must not bring it back.
     if (this.disposed || !this.deps.store.getSession(sessionId)) {
@@ -2183,13 +2240,16 @@ export class SessionManager {
     modes: acp.SessionModeState | null | undefined
   ): Promise<ModeState> {
     const offered = (id: string | null | undefined): id is string => !!id && !!modes?.availableModes.some((m) => m.id === id)
-    const bypassId = this.deps.getAgentConfig(agentId).bypassModeId
+    const config = this.deps.getAgentConfig(agentId)
+    const bypassId = config.bypassModeId
     const bypass = offered(bypassId) ? bypassId : null
+    // Without a bypass mode, an agent may name the mode bypass means for it (Antigravity's Auto).
+    const start = !bypass && offered(config.startModeId) ? config.startModeId : null
     // A worktree session takes its project's setting.
     const project = this.deps.store.listSessions().find((s) => s.project && samePath(s.cwd, cwd))?.project ?? cwd
     const setting = this.deps.permissionMode?.(project) ?? 'bypass'
     let current = modes?.currentModeId ?? null
-    const wanted = saved.mode ?? (setting === 'bypass' ? bypass : null)
+    const wanted = saved.mode ?? (setting === 'bypass' ? bypass ?? start : null)
     if (wanted !== current && offered(wanted)) {
       try {
         await conn.setMode(acpSessionId, wanted)
@@ -2198,7 +2258,8 @@ export class SessionManager {
         console.warn(`[gloss] could not switch to mode "${wanted}":`, errorMessage(err))
       }
     }
-    const autoApprove = bypass ? undefined : (saved.autoApprove ?? setting === 'bypass')
+    // That mode decides what to ask, so Gloss doesn't approve on top of it.
+    const autoApprove = bypass ? undefined : (saved.autoApprove ?? (setting === 'bypass' && !start))
     return {
       live: {
         modes: modes && current !== null ? { current, options: modeOptions(modes), bypass } : null,
@@ -2676,8 +2737,9 @@ export class SessionManager {
   /** A tool result saying a job went to the background, from an agent that says nothing more about it. */
   private noticeQuietJob(sessionId: string, rt: SessionRuntime, turn: Turn, toolCall: ToolCall): void {
     if (toolCall.status !== 'completed' || rt.jobs.has(toolCall.id)) return
-    const pattern = this.configOf(sessionId)?.quietJobResult
-    if (!pattern || !toolCallText(toolCall).some((text) => pattern.test(text))) return
+    const config = this.configOf(sessionId)
+    const byResult = !!config?.quietJobResult && toolCallText(toolCall).some((text) => config.quietJobResult!.test(text))
+    if (!byResult && !config?.quietJobTitle?.test(toolCall.title)) return
     rt.jobs.set(toolCall.id, { threadId: toolCall.threadId, quietFrom: turn })
     rt.lastJobThread = toolCall.threadId
     this.jobsChanged(sessionId, rt)
@@ -2884,8 +2946,10 @@ export class SessionManager {
       const existing = this.deps.store.getToolCall(sessionId, id)
       if (!existing || (existing.status !== 'pending' && existing.status !== 'in_progress')) continue
       if (rt.jobs.has(id)) continue
-      if (outlives && existing.status === 'in_progress' && this.configOf(sessionId)?.toolCallsOutliveTurns) {
-        rt.jobs.set(id, { threadId: existing.threadId })
+      const config = this.configOf(sessionId)
+      if (outlives && existing.status === 'in_progress' && (config?.toolCallsOutliveTurns || config?.quietToolCallsOutliveTurns)) {
+        // Its end comes as a tool call update, or, for a quiet one, from the session's history.
+        rt.jobs.set(id, { threadId: existing.threadId, ...(config.quietToolCallsOutliveTurns ? { quietFrom: turn } : {}) })
         rt.lastJobThread = existing.threadId
         started = true
         continue

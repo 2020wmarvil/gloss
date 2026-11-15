@@ -72,6 +72,27 @@ cwd = "/project"
   expect(preview.entries[5].name).toBe('project')
 })
 
+it("reads Antigravity's global and project mcp_config.json", () => {
+  const project = join(home, 'project')
+  write(join(home, '.gemini', 'config', 'mcp_config.json'), JSON.stringify({ mcpServers: {
+    local: { command: 'local-mcp', args: ['--x'], env: { MODE: 'a' } },
+    remote: { serverUrl: 'https://example.com/mcp', headers: { Authorization: 'Bearer t' } },
+    off: { command: 'off', disabled: true },
+    picky: { command: 'picky', disabledTools: ['write'] },
+    google: { serverUrl: 'https://example.com/g', authProviderType: 'google_credentials' }
+  } }))
+  write(join(project, '.agents', 'mcp_config.json'), JSON.stringify({ mcpServers: { project: { url: 'http://127.0.0.1:9/mcp' } } }))
+  const preview = previewMcpImport('antigravity', { home, env: {}, projects: [project] })
+  expect(preview.problems).toEqual([])
+  expect(preview.entries.map((e) => e.name)).toEqual(['local', 'remote', 'off', 'picky', 'google', 'project'])
+  expect(preview.entries[0].server).toEqual({ name: 'local', command: 'local-mcp', args: ['--x'], env: [{ name: 'MODE', value: 'a' }] })
+  expect(preview.entries[1].server).toEqual({ name: 'remote', type: 'http', url: 'https://example.com/mcp', headers: [{ name: 'Authorization', value: 'Bearer t' }] })
+  expect(preview.entries[2].problem).toContain('Disabled')
+  expect(preview.entries[3].problem).toContain('disabledTools')
+  expect(preview.entries[4].problem).toContain('authProviderType')
+  expect(preview.entries[5].server).toMatchObject({ type: 'http', url: 'http://127.0.0.1:9/mcp' })
+})
+
 it('reports bad files without echoing their contents and continues discovering other sources', () => {
   const project = join(home, 'project')
   write(join(home, '.codex', 'config.toml'), 'SECRET_TOKEN = "do-not-print\n')

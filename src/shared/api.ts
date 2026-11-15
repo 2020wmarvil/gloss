@@ -51,7 +51,11 @@ export function makeApi(t: ApiTransport): GlossApi {
       agentSessions: (path, agentId) => invoke(IPC.projectsAgentSessions, path, agentId),
       delete: (path) => invoke(IPC.projectsDelete, path),
       githubRepos: () => invoke(IPC.projectsGithubRepos),
-      clone: (repo) => invoke(IPC.projectsClone, repo)
+      clone: (repo) => invoke(IPC.projectsClone, repo),
+      cloneToProjectsFolder: (repo) => invoke(IPC.projectsCloneToProjectsFolder, repo),
+      folder: () => invoke(IPC.projectsFolder),
+      create: (name) => invoke(IPC.projectsCreate, name),
+      createAt: () => invoke(IPC.projectsCreateAt)
     },
     history: () => invoke(IPC.history),
     sessions: {
@@ -80,6 +84,7 @@ export function makeApi(t: ApiTransport): GlossApi {
       setMode: (id, modeId) => invoke(IPC.sessionsSetMode, id, modeId),
       setAutoApprove: (id, on) => invoke(IPC.sessionsSetAutoApprove, id, on),
       copyMarkdown: (id, threadId) => invoke(IPC.sessionsCopyMarkdown, id, threadId),
+      markdown: (id, threadId) => invoke(IPC.sessionsMarkdown, id, threadId),
       saveMarkdown: (id, threadId) => invoke(IPC.sessionsSaveMarkdown, id, threadId),
       openFolder: (id) => invoke(IPC.sessionsOpenFolder, id),
       openObsidian: (id) => invoke(IPC.sessionsOpenObsidian, id),
@@ -138,7 +143,8 @@ export function makeApi(t: ApiTransport): GlossApi {
       previewMcpImport: (source) => invoke(IPC.settingsPreviewMcpImport, source),
       get: () => invoke(IPC.settingsGet),
       update: (patch) => invoke(IPC.settingsUpdate, patch),
-      openFile: () => invoke(IPC.settingsOpenFile)
+      openFile: () => invoke(IPC.settingsOpenFile),
+      pickFolder: (key) => invoke(IPC.settingsPickFolder, key)
     },
     windows: {
       popOut: (sessionId, state) => invoke(IPC.windowsPopOut, sessionId, state),

@@ -14,6 +14,7 @@ import { useReviewSources, type Sources } from '../src/reviewSources'
 import { inDiffOrder, isLineThread, KIND_NAMES, kindOf, locations as threadLocations, shownLine, titleOf, type LineThread, type ThreadKind } from '../src/reviewThreads'
 import { threadSummaries } from '../src/ThreadsOverview'
 import type { OpenView } from './usePhone'
+import { useSheetDrag } from './sheetDrag'
 
 /** How long the diff waits for an agent's edits to settle before it is read again. */
 const REFRESH_DELAY = 300
@@ -272,6 +273,7 @@ function RangeSheet(props: {
   onChange(range: ReviewRange): Promise<void>
 }): React.JSX.Element {
   const { range, choices } = props
+  const sheet = useSheetDrag<HTMLDivElement>(props.onClose)
   const [filter, setFilter] = useState('')
   const [error, setError] = useState<string | null>(null)
   const head = range.headRef ?? null
@@ -298,7 +300,7 @@ function RangeSheet(props: {
   return (
     <>
       <div className="m-dim" onClick={props.onClose} />
-      <div className="m-sheet m-sheet-tall" role="dialog" aria-label="Range">
+      <div ref={sheet} className="m-sheet m-sheet-tall" role="dialog" aria-label="Range">
         <div className="m-grab" />
         <div className="m-sheet-head">
           <h4>Range</h4>
@@ -353,6 +355,7 @@ export function ReviewFile(props: {
   const [comments, setComments] = useStoredFlag(COMMENTS_KEY, true)
   const [numbers, setNumbers] = useStoredFlag(NUMBERS_KEY, true)
   const [menu, setMenu] = useState(false)
+  const menuSheet = useSheetDrag<HTMLDivElement>(() => setMenu(false))
   const [picked, setPicked] = useState<{ side: Side; line: number } | null>(null)
   const [stepped, setStepped] = useState<string | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
@@ -443,7 +446,7 @@ export function ReviewFile(props: {
       {menu && (
         <>
           <div className="m-dim" onClick={() => setMenu(false)} />
-          <div className="m-sheet" role="dialog" aria-label="View options">
+          <div ref={menuSheet} className="m-sheet" role="dialog" aria-label="View options">
             <div className="m-grab" />
             <h4>{fileName(path)}</h4>
             <Toggle label="Wrap lines" on={wrap} onChange={setWrap} />

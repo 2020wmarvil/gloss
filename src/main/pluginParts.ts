@@ -9,7 +9,7 @@ import { PLUGIN_ID, type PluginHook, type PluginSubagent } from '../shared/plugi
  */
 
 /** The agents that take subagents and hooks. Custom profiles get skills only. */
-export const PART_AGENTS = ['claude', 'codex', 'opencode'] as const
+export const PART_AGENTS = ['claude', 'codex', 'antigravity', 'opencode'] as const
 export type PartAgent = (typeof PART_AGENTS)[number]
 export const isPartAgent = (id: string): id is PartAgent => (PART_AGENTS as readonly string[]).includes(id)
 
@@ -19,20 +19,21 @@ export type HookEvent = keyof typeof HOOK_EVENTS
 const isHookEvent = (event: string): event is HookEvent => Object.hasOwn(HOOK_EVENTS, event)
 /**
  * Native events per agent, usable by a hook that names its agents. Claude's is the Agent SDK's
- * `HOOK_EVENTS` (a test keeps them equal; the SDK is too large to load at startup), Codex's from
- * its hooks documentation. OpenCode's hooks are Gloss's own plugin, so it has none.
+ * `HOOK_EVENTS` (a test keeps them equal; the SDK is too large to load at startup), Codex's and
+ * Antigravity's from their hooks documentation. OpenCode's hooks are Gloss's own plugin, so it has none.
  */
 export const NATIVE_EVENTS: Record<PartAgent, string[]> = {
   claude: ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PostToolBatch', 'Notification', 'UserPromptSubmit', 'UserPromptExpansion', 'SessionStart', 'SessionEnd', 'Stop', 'StopFailure', 'SubagentStart', 'SubagentStop', 'PreCompact', 'PostCompact', 'PreModelSwitch', 'PostModelSwitch', 'PermissionRequest', 'PermissionDenied', 'Setup', 'TeammateIdle', 'TaskCreated', 'TaskCompleted', 'Elicitation', 'ElicitationResult', 'ConfigChange', 'WorktreeCreate', 'WorktreeRemove', 'InstructionsLoaded', 'CwdChanged', 'FileChanged', 'DirectoryAdded', 'MessageDisplay'],
   codex: ['PreToolUse', 'PermissionRequest', 'PostToolUse', 'PreCompact', 'PostCompact', 'UserPromptSubmit', 'SubagentStart', 'SubagentStop', 'Stop', 'Interrupt', 'SessionStart', 'SessionEnd'],
+  antigravity: ['SessionStart', 'PreToolUse', 'PostToolUse', 'PreInvocation', 'PostInvocation', 'Stop'],
   opencode: []
 }
 /** Tool categories and each agent's tool names for them (a regex, as matchers are). Undefined: the agent has no such tool. */
 const CATEGORIES: Record<string, Record<PartAgent, string | undefined>> = {
-  shell: { claude: 'Bash', codex: 'Bash', opencode: 'shell' },
-  edit: { claude: 'Edit|Write|MultiEdit|NotebookEdit', codex: 'apply_patch|Edit|Write', opencode: 'edit|write|patch' },
+  shell: { claude: 'Bash', codex: 'Bash', antigravity: 'run_command', opencode: 'shell' },
+  edit: { claude: 'Edit|Write|MultiEdit|NotebookEdit', codex: 'apply_patch|Edit|Write', antigravity: 'write_file|edit_file', opencode: 'edit|write|patch' },
   // Codex reads files through its shell.
-  read: { claude: 'Read', codex: undefined, opencode: 'read' }
+  read: { claude: 'Read', codex: undefined, antigravity: 'read_file', opencode: 'read' }
 }
 const TOOL_EVENTS = new Set(['beforeTool', 'afterTool'])
 const DEFAULT_TIMEOUT = 60
@@ -116,6 +117,8 @@ export type HookPlan = { delivered: true; event: string; matcher?: string; comma
 
 export function planHook(hook: PluginHook, agent: PartAgent): HookPlan {
   if (hook.agents && !hook.agents.includes(agent)) return { delivered: false, reason: `Only for ${hook.agents.join(', ')}.` }
+  // Antigravity's PreInvocation runs before every model call, not once per prompt.
+  if (agent === 'antigravity' && hook.event === 'userPrompt') return { delivered: false, reason: 'antigravity has no userPrompt event.' }
   const event = isHookEvent(hook.event) ? (agent === 'opencode' ? hook.event : HOOK_EVENTS[hook.event]) : hook.event
   let matcher: string | undefined
   if (hook.matcher && hook.matcher !== 'any') {
@@ -125,7 +128,7 @@ export function planHook(hook: PluginHook, agent: PartAgent): HookPlan {
     } else if (hook.matcher.startsWith('mcp:')) {
       // Agents replace characters a tool name can't hold; `.` stands for any of them.
       const server = mcpName(hook.matcher.slice(4)).split('').map(c => /[A-Za-z0-9_-]/.test(c) ? c : '.').join('')
-      matcher = agent === 'opencode' ? `${server}_.*` : `mcp__${server}__.*`
+      matcher = agent === 'opencode' ? `${server}_.*` : agent === 'antigravity' ? `mcp_${server}_.*` : `mcp__${server}__.*`
     } else matcher = hook.matcher
   }
   return { delivered: true, event, ...(matcher ? { matcher } : {}), command: hook.command, timeout: hook.timeout }
@@ -143,6 +146,24 @@ export function nativeHooks(hooks: PluginHook[], agent: 'claude' | 'codex'): Nat
   return out
 }
 
+type AntigravityHandler = { type: 'command'; command: string; timeout: number }
+type AntigravityEntry = AntigravityHandler | { matcher: string; hooks: AntigravityHandler[] }
+/**
+ * A plugin's hooks as one named definition in Antigravity's `hooks.json`. Tool events take groups
+ * with an anchored matcher (empty matches every tool); the others a plain list of handlers.
+ */
+export function antigravityHooks(hooks: PluginHook[]): Record<string, AntigravityEntry[]> {
+  const out: Record<string, AntigravityEntry[]> = {}
+  for (const hook of hooks) {
+    const plan = planHook(hook, 'antigravity')
+    if (!plan.delivered) continue
+    const handler: AntigravityHandler = { type: 'command', command: plan.command, timeout: plan.timeout }
+    const tool = plan.event === 'PreToolUse' || plan.event === 'PostToolUse'
+    ;(out[plan.event] ??= []).push(tool ? { matcher: plan.matcher ? `^(?:${plan.matcher})$` : '', hooks: [handler] } : handler)
+  }
+  return out
+}
+
 /** What Gloss's OpenCode hook plugin runs: Gloss event names and anchored tool-name regexes. */
 export function openCodeHooks(hooks: PluginHook[]): { event: HookEvent; matcher?: string; command: string; timeout: number }[] {
   return hooks.flatMap(hook => {
@@ -153,6 +174,22 @@ export function openCodeHooks(hooks: PluginHook[]): { event: HookEvent; matcher?
 }
 
 type Subagent = PluginSubagent & { instructions: string }
+/**
+ * Antigravity's tools for a subagent. It gets only the tools it lists (none by default; `*` isn't
+ * accepted), and an unknown name stops it from starting.
+ */
+const ANTIGRAVITY_READ_ONLY_TOOLS = ['read_file', 'grep_search', 'find_by_name', 'list_dir', 'search_web']
+const ANTIGRAVITY_TOOLS = ['read_file', 'write_file', 'edit_file', 'run_command', 'grep_search', 'find_by_name', 'list_dir', 'search_web']
+/** A subagent as an Antigravity agent file, named `name` like its file. */
+export function antigravitySubagent(agent: Subagent, name: string): string {
+  const lines = [
+    `name: ${name}`,
+    `description: ${JSON.stringify(agent.description)}`,
+    `tools: [${(agent.tools === 'read-only' ? ANTIGRAVITY_READ_ONLY_TOOLS : ANTIGRAVITY_TOOLS).join(', ')}]`
+  ]
+  if (agent.models.antigravity) lines.push(`model: ${JSON.stringify(agent.models.antigravity)}`)
+  return `---\n${lines.join('\n')}\n---\n\n${agent.instructions}\n`
+}
 /** A subagent as a Claude Code plugin agent file. */
 export function claudeSubagent(agent: Subagent): string {
   const lines = [`name: ${agent.id}`, `description: ${JSON.stringify(agent.description)}`]

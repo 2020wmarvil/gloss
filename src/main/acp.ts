@@ -75,6 +75,25 @@ const STEER_METHOD = '_session/steering'
  */
 export type SteerOutcome = 'injected' | 'promptRequired'
 
+/**
+ * A path as Windows writes it. Antigravity reports Windows paths as URL paths
+ * (`/C:/Users/...`) in tool calls and session/list.
+ */
+export function nativePath(path: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' && /^\/[A-Za-z]:[\\/]/.test(path) ? path.slice(1).replace(/\//g, '\\') : path
+}
+
+/** A session update with its tool call's paths made native (see nativePath). */
+export function nativePaths(n: acp.SessionNotification, platform: NodeJS.Platform = process.platform): acp.SessionNotification {
+  const u = n.update
+  if (platform !== 'win32' || (u.sessionUpdate !== 'tool_call' && u.sessionUpdate !== 'tool_call_update')) return n
+  const locations = u.locations?.map((l) => ({ ...l, path: nativePath(l.path, platform) }))
+  const content = u.content?.map((c) => (c.type === 'diff' ? { ...c, path: nativePath(c.path, platform) } : c))
+  // Its titles name them too ("File /C:/Users/..."): each such word.
+  const title = u.title?.replace(/(^|\s)(\/[A-Za-z]:\/\S*)/g, (_m, space: string, path: string) => space + nativePath(path, platform))
+  return { ...n, update: { ...u, ...(locations ? { locations } : {}), ...(content ? { content } : {}), ...(title != null ? { title } : {}) } }
+}
+
 export class AgentConnection {
   private closed = false
 
@@ -93,6 +112,7 @@ export class AgentConnection {
   ): Promise<AgentConnection> {
     const child = spawn(config.command, config.args, {
       env,
+      ...(config.cwd ? { cwd: config.cwd } : {}),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true
     })
@@ -130,7 +150,7 @@ export class AgentConnection {
   ): Promise<AgentConnection> {
     const app = acp
       .client({ name: 'gloss' })
-      .onNotification(acp.methods.client.session.update, (ctx) => handlers.onUpdate(ctx.params))
+      .onNotification(acp.methods.client.session.update, (ctx) => handlers.onUpdate(nativePaths(ctx.params)))
       .onRequest(acp.methods.client.session.requestPermission, (ctx) =>
         handlers.onPermission(ctx.params, ctx.signal)
       )
@@ -245,7 +265,7 @@ export class AgentConnection {
     let cursor: string | null | undefined
     for (let page = 0; page < maxPages; page++) {
       const res = await this.guard(this.conn.agent.request(acp.methods.agent.session.list, { cwd, cursor }))
-      sessions.push(...res.sessions)
+      sessions.push(...res.sessions.map((s) => (s.cwd ? { ...s, cwd: nativePath(s.cwd) } : s)))
       cursor = res.nextCursor
       if (!cursor) break
     }

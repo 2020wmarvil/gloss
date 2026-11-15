@@ -52,6 +52,8 @@ export type GlobalSettings = {
   claudeExecutable?: string
   /** Empty or omitted finds an installed Codex CLI or Codex app. */
   codexExecutable?: string
+  /** Empty or omitted finds an installed Antigravity CLI (`agy`). */
+  antigravityExecutable?: string
   /** Light, dark, or whatever the system uses. */
   theme: ThemeSetting
   /** How the sidebar sorts a project's sessions. */
@@ -73,6 +75,16 @@ export type GlobalSettings = {
   phoneAccess?: boolean
   /** The port the phone bridge listens on. */
   phonePort?: number
+  /** Closing the main window leaves Gloss running in the tray (SPEC → Session windows); omitted means on. */
+  closeToTray?: boolean
+  /** Start Gloss, in the tray, when the user signs in to the computer. */
+  startAtLogin?: boolean
+  /** Keep the computer from sleeping (not the display) while Gloss runs. */
+  keepAwake?: boolean
+  /** Where new projects and GitHub clones go; empty or omitted for the Desktop folder. */
+  projectsFolder?: string
+  /** The Obsidian vault Chats work in (SPEC → Chats); empty or omitted for Documents\Second Brain. */
+  secondBrain?: string
 }
 
 /** Settings for one project folder, under `projects` keyed by its path. */
@@ -106,6 +118,8 @@ export type SettingField = {
   suggestions?: readonly string[]
   /** Set elsewhere in the window, so the settings screen doesn't list it. */
   hidden?: boolean
+  /** For global string fields: a folder, chosen with the native folder picker. */
+  folder?: boolean
 }
 
 export const SETTING_FIELDS: readonly SettingField[] = [
@@ -132,6 +146,11 @@ export const SETTING_FIELDS: readonly SettingField[] = [
   },
   {
     key: 'codexExecutable', scope: 'global', type: 'string', label: 'Codex executable',
+    description: 'Native executable path. Empty finds an installed copy.',
+    hidden: true
+  },
+  {
+    key: 'antigravityExecutable', scope: 'global', type: 'string', label: 'Antigravity executable',
     description: 'Native executable path. Empty finds an installed copy.',
     hidden: true
   },
@@ -215,6 +234,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     options: [
       { value: 'claude', label: 'Claude Code' },
       { value: 'codex', label: 'Codex' },
+      { value: 'antigravity', label: 'Antigravity' },
       { value: 'opencode', label: 'OpenCode' }
     ],
     hidden: true
@@ -251,6 +271,18 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     description: 'New reviews pop out instead of opening in the main window.'
   },
   {
+    key: 'closeToTray', scope: 'global', type: 'boolean', label: 'Keep running in the tray',
+    description: 'Closing the window leaves Gloss in the notification area, so agents and phones keep working. Quit from the tray icon.'
+  },
+  {
+    key: 'startAtLogin', scope: 'global', type: 'boolean', label: 'Start when you sign in',
+    description: 'Opens Gloss when you sign in to this computer, in the tray if it keeps running there.'
+  },
+  {
+    key: 'keepAwake', scope: 'global', type: 'boolean', label: 'Keep this computer awake',
+    description: 'Stops the computer sleeping while Gloss runs, so phones can reach it. The screen still turns off.'
+  },
+  {
     key: 'externalEditor',
     scope: 'global',
     type: 'string',
@@ -258,6 +290,16 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     description:
       'Open file links and review files in your editor. Custom commands replace {file} with the path and {line} with the line number. Use a command on PATH or a full executable path.',
     placeholder: DEFAULT_EXTERNAL_EDITOR,
+  },
+  {
+    key: 'projectsFolder', scope: 'global', type: 'string', label: 'Projects folder',
+    description: 'Where New project and Open from GitHub put projects.',
+    placeholder: 'Desktop folder', folder: true
+  },
+  {
+    key: 'secondBrain', scope: 'global', type: 'string', label: 'Second brain',
+    description: 'The Obsidian vault folder Chats work in.',
+    placeholder: 'Documents\\Second Brain', folder: true
   },
   {
     key: 'phoneAccess', scope: 'global', type: 'boolean', label: 'Allow phones to connect',

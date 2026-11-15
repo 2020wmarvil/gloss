@@ -296,6 +296,9 @@ export function App(): React.JSX.Element {
       case 'mainAction':
         runMainAction(event.action)
         break
+      case 'projects':
+        void refreshProjects()
+        break
       case 'worktrees':
         if (projectPathRef.current && sameFolder(event.project, projectPathRef.current)) void loadWorktrees(projectPathRef.current)
         break
@@ -312,7 +315,8 @@ export function App(): React.JSX.Element {
       setProjects(ps)
       setSessions(list)
       if (list[0]) void selectSession(list[0].id)
-      else if (ps[0]) setProjectPath(ps[0].path)
+      // Chats is listed first, but a project is a better place to open on.
+      else if (ps[0]) setProjectPath((ps.find((p) => !p.chats) ?? ps[0]).path)
     })
   }, [selectSession, setPoppedList])
 
@@ -394,6 +398,8 @@ export function App(): React.JSX.Element {
     const cwd = from?.cwd ?? folder ?? projectPath
     if (!cwd || !agentId) return
     const project = from ? projectOf(from) : projectPath ?? cwd
+    // Chats have nothing to review (SPEC → Chats).
+    if (projects.some((p) => p.chats && sameFolder(p.path, project))) return
     setSidebarError(null)
     setCreating(true)
     try {
@@ -425,6 +431,19 @@ export function App(): React.JSX.Element {
     if (!p) return
     await refreshProjects()
     selectProject(p.path, sessions)
+  }
+
+  /** New project (SPEC → Projects and sessions): an empty folder from the picker, made a Git repository. */
+  async function newProject(): Promise<void> {
+    setSidebarError(null)
+    try {
+      const p = await window.gloss.projects.createAt()
+      if (!p) return
+      await refreshProjects()
+      selectProject(p.path, sessions)
+    } catch (err) {
+      setSidebarError(errorText(err))
+    }
   }
 
   async function openClonedProject(p: Project): Promise<void> {
@@ -787,6 +806,7 @@ export function App(): React.JSX.Element {
             onSelectProject={(path) => selectProject(path, sessions)}
             onOpenProject={() => void openProject()}
             onCloneProject={() => setShowClone(true)}
+            onNewProject={() => void newProject()}
             onDeleteProject={(path) => void deleteProject(path)}
             onSelect={(id) => leavePlugins(() => void selectSession(id))}
             onNew={(agentId, where) => leavePlugins(() => void newSession(agentId, where))}

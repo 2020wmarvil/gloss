@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from 'react'
 import type { SettingsState } from '@shared/ipc'
 import { projectSettings } from '@shared/settings'
 import { projectOf } from '@shared/worktree'
+import { sameFolder } from '@shared/paths'
+import { chatsFolder } from '@shared/chats'
 import type { AgentInfo, Session, Thread } from '@shared/types'
 import { canFork } from '@shared/composer'
 import { GitCompare, SquareArrowOutDownLeft, SquareArrowOutUpRight } from 'lucide-react'
@@ -112,7 +114,9 @@ export function SessionPane(props: Props): React.JSX.Element {
   const forkDisabled = canFork(open.session.agentId) ? undefined : `${agentName} can't fork sessions.`
   const obsidianVault = settings ? projectSettings(settings.projects, projectOf(open.session)).obsidianVault : undefined
   const windowButton = <WindowButton popped={props.popped} onClick={props.onWindow} />
-  const reviewButton = (
+  /** A chat has nothing to review (SPEC → Chats). */
+  const isChat = !!settings && sameFolder(projectOf(open.session), chatsFolder(settings.path))
+  const reviewButton = isChat ? null : (
     <button
       className="tool-button icon review-folder-button"
       title={`Review changes: this session's folder${commandHint('review')}`}

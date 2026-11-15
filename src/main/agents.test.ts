@@ -20,6 +20,7 @@ describe('agentEnv', () => {
     expect(listAgents()).toEqual([
       { id: 'claude', name: 'Claude Code' },
       { id: 'codex', name: 'Codex' },
+      { id: 'antigravity', name: 'Antigravity' },
       { id: 'opencode', name: 'OpenCode' }
     ])
   })
@@ -49,5 +50,16 @@ describe('agentEnv', () => {
     expect(getAgentConfig('codex').sessionMeta?.(AGENT_INSTRUCTIONS)).toEqual({
       new: { jetbrains: { air: { customInstructions: AGENT_INSTRUCTIONS } } }
     })
+    const antigravity = { antigravity: { systemPrompt: { append: AGENT_INSTRUCTIONS } } }
+    expect(getAgentConfig('antigravity').sessionMeta?.(AGENT_INSTRUCTIONS)).toEqual({ new: antigravity, load: antigravity })
+  })
+
+  it('runs the Antigravity CLI as its own ACP server, starting sessions in Auto', () => {
+    const agy = getAgentConfig('antigravity')
+    expect(agy.args).toEqual(['acp'])
+    expect(agy.cli).toEqual({ kind: 'antigravity' })
+    expect(agy.bypassModeId).toBeUndefined()
+    expect(agy.startModeId).toBe('auto')
+    expect(agy.listsAllSessions).toBe(true)
   })
 })

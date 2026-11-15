@@ -9,6 +9,7 @@ import type { AgentInfo, AgentSession, Project, RateLimit, Session } from '@shar
 import { formatReset } from './StatusLine'
 import { AppWindow, ChevronDown, ChevronRight, ChevronsUpDown, CircleAlert, Ellipsis, Folder, FolderGit2, GitBranch, GitCompare, Info, List, Package, PanelLeft, Plus, RotateCcw, Search, Settings, Star, X } from 'lucide-react'
 import { folderName } from '@shared/paths'
+import { NO_SECOND_BRAIN } from '@shared/chats'
 
 type Props = {
   agents: AgentInfo[]
@@ -52,6 +53,8 @@ type Props = {
   onSelectProject(path: string): void
   onOpenProject(): void
   onCloneProject(): void
+  /** New project…: an empty folder from the picker, made a Git repository. */
+  onNewProject(): void
   onDeleteProject(path: string): void
   onSelect(id: string): void
   /** Starts a session with the given agent and place, or the defaults (SPEC → Worktrees). */
@@ -212,6 +215,9 @@ export function Sidebar(props: Props): React.JSX.Element {
     )
   }
 
+  /** The Chats project (SPEC → Chats): New chat, agents only, no worktrees. */
+  const chats = project?.chats
+  const noVault = !!chats && !chats.vault
   const agentName = (id: string): string => props.agents.find((a) => a.id === id)?.name ?? id
   const defaultName = agentName(props.defaultAgent)
   const sessions = project ? props.sessions.filter((s) => sameFolder(projectOf(s), project.path)) : []
@@ -366,7 +372,7 @@ export function Sidebar(props: Props): React.JSX.Element {
           >
             <span className="switch-names">
               <b>{project?.name ?? 'No project'}</b>
-              <span className="switch-where">{project ? project.where : 'Open a folder to start'}</span>
+              {!project && <span className="switch-where">Open a folder to start</span>}
             </span>
             <ChevronsUpDown className="caret" />
           </button>
@@ -377,17 +383,15 @@ export function Sidebar(props: Props): React.JSX.Element {
                   <button
                     role="menuitem"
                     className={project && sameFolder(p.path, project.path) ? 'on' : undefined}
+                    title={p.path}
                     onClick={() => props.onSelectProject(p.path)}
                   >
                     <b>
                       {p.name}
                       {projectBadges(p)}
                     </b>
-                    <span className="project-where" title={p.path}>
-                      {p.where}
-                    </span>
                   </button>
-                  <button
+                  {!p.chats && <button
                     className="project-delete"
                     aria-label={`Delete ${p.name}`}
                     title="Delete project"
@@ -400,12 +404,15 @@ export function Sidebar(props: Props): React.JSX.Element {
                     }}
                   >
                     <X />
-                  </button>
+                  </button>}
                 </div>
               ))}
               {props.projects.length > 0 && <hr />}
               <button role="menuitem" onClick={props.onOpenProject}>
                 Open project…
+              </button>
+              <button role="menuitem" onClick={props.onNewProject}>
+                New project…
               </button>
               <button role="menuitem" onClick={props.onCloneProject}>
                 Open from GitHub…
@@ -423,27 +430,27 @@ export function Sidebar(props: Props): React.JSX.Element {
           <button
             className="secondary new-session"
             onClick={() => props.onNew()}
-            disabled={props.creating || props.agents.find((a) => a.id === props.defaultAgent)?.available === false}
-            title={`New session with ${defaultName} in ${placeName(props.place)} (Ctrl+N)`}
+            disabled={props.creating || noVault || props.agents.find((a) => a.id === props.defaultAgent)?.available === false}
+            title={noVault ? NO_SECOND_BRAIN : chats ? `New chat with ${defaultName} in your second brain (Ctrl+N)` : `New session with ${defaultName} in ${placeName(props.place)} (Ctrl+N)`}
           >
             {!props.creating && <Plus />}
-            <span className="new-session-label">{props.creating ? 'Starting agent…' : 'New session'}</span>
+            <span className="new-session-label">{props.creating ? 'Starting agent…' : chats ? 'New chat' : 'New session'}</span>
             {/* The agent's first word ("Claude" for Claude Code) keeps the button on one line. */}
             {!props.creating && (
               <span className="new-session-agent">
-                {props.place !== 'folder' && <GitBranch className="new-session-place" aria-label={placeName(props.place)} />}
-                {existing && `${(props.placeBranch ?? folderName(existing)).replace(/^gloss\//, '')} · `}
+                {!chats && props.place !== 'folder' && <GitBranch className="new-session-place" aria-label={placeName(props.place)} />}
+                {!chats && existing && `${(props.placeBranch ?? folderName(existing)).replace(/^gloss\//, '')} · `}
                 {defaultName.split(' ')[0]}
               </span>
             )}
           </button>
           <button
             className="secondary new-session-agents"
-            aria-label="New session with any agent, anywhere"
-            title="New session with any agent, in the project folder or a worktree"
+            aria-label={chats ? 'New chat with any agent' : 'New session with any agent, anywhere'}
+            title={noVault ? NO_SECOND_BRAIN : chats ? 'New chat with any agent' : 'New session with any agent, in the project folder or a worktree'}
             aria-haspopup="menu"
             aria-expanded={agentMenuOpen}
-            disabled={props.creating}
+            disabled={props.creating || noVault}
             onClick={(e) => {
               e.stopPropagation()
               // Opens on the defaults, set before it shows so its first frame isn't the last pick.
@@ -461,6 +468,7 @@ export function Sidebar(props: Props): React.JSX.Element {
           </button>
           {agentMenuOpen && (
             <div className="menu agent-menu" role="menu" ref={agentMenu} onClick={(e) => e.stopPropagation()} onKeyDown={onAgentMenuKey}>
+              {!chats && <>
               <div className="menu-label">Where</div>
               <div role="radiogroup" aria-label="Where">
                 {[
@@ -503,6 +511,7 @@ export function Sidebar(props: Props): React.JSX.Element {
                 <ChevronRight className="menu-link-end" />
               </button>
               <hr />
+              </>}
               <div className="menu-label">Agent</div>
               <div role="radiogroup" aria-label="Agent">
               {props.agents.map((a) => (
@@ -518,8 +527,8 @@ export function Sidebar(props: Props): React.JSX.Element {
                     onClick={() => setPickAgent(a.id)}
                   >
                     {a.name}
-                    {/* Claude Code and Codex are fixed by installing or updating their CLIs (SPEC → Shipping). */}
-                    {a.available === false && <small>{a.id === 'claude' || a.id === 'codex' ? ' (unavailable)' : ' (set up in Settings)'}</small>}
+                    {/* Claude Code, Codex and Antigravity are fixed by installing or updating their CLIs (SPEC → Shipping). */}
+                    {a.available === false && <small>{a.id === 'claude' || a.id === 'codex' || a.id === 'antigravity' ? ' (unavailable)' : ' (set up in Settings)'}</small>}
                     {limitNote(a.id)}
                   </button>
                   <button
@@ -539,7 +548,7 @@ export function Sidebar(props: Props): React.JSX.Element {
               </div>
               <div className="new-start">
                 <button className="primary" onClick={start} disabled={props.agents.find((a) => a.id === pickAgent)?.available === false}>
-                  Start in {placeName(pickPlace)}
+                  {chats ? 'Start chat' : `Start in ${placeName(pickPlace)}`}
                 </button>
               </div>
             </div>
@@ -564,9 +573,9 @@ export function Sidebar(props: Props): React.JSX.Element {
       <div className="sidebar-scroll">
         {project && (
           <>
-            <div className="label">Sessions</div>
+            <div className="label">{chats ? 'Chats' : 'Sessions'}</div>
             <ul className="session-list">
-              {rows.length === 0 && <li className="sidebar-empty">No sessions yet</li>}
+              {rows.length === 0 && <li className="sidebar-empty">{noVault ? NO_SECOND_BRAIN : chats ? 'No chats yet' : 'No sessions yet'}</li>}
               {rows.map((row) =>
                 row.kind === 'agent' ? (
                   <li key={`${row.agent.agentId}:${row.agent.acpSessionId}`}>
@@ -611,7 +620,7 @@ export function Sidebar(props: Props): React.JSX.Element {
           <Search />
           Search
         </button>
-        {project && (
+        {project && !chats && (
           <button className={props.worktreesOpen ? 'ghost settings-button on' : 'ghost settings-button'} onClick={props.onWorktrees} disabled={props.perforce} title={props.perforce ? 'Worktrees require Git' : 'Worktrees'}>
             <FolderGit2 />
             Worktrees

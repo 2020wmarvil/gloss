@@ -13,6 +13,9 @@ import './mobile.css'
 // over the bridge's WebSocket.
 window.gloss = makeApi(link)
 
+// iOS ignores `user-scalable=no` for pinches; its own gesture events are the way to stop them.
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, (e) => e.preventDefault(), { passive: false })
+
 // The service worker only shows pushes and opens their session; it caches nothing.
 if ('serviceWorker' in navigator) void navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {})
 

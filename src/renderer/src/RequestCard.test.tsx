@@ -97,6 +97,33 @@ describe('question', () => {
     })
   })
 
+  it('keeps the picks when the card is unmounted and shown again, until answered', async () => {
+    const asked: UserRequest = { ...question, id: 'r-keep' }
+    mount(asked)
+    await click(document.querySelectorAll('input[type="radio"]')[1])
+    await click(document.querySelectorAll('input[type="checkbox"]')[0])
+    const other = document.querySelector<HTMLInputElement>('.request-option.other input')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(other, 'Maybe')
+      other.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => root!.unmount())
+    const answer = mount(asked)
+    const radios = document.querySelectorAll<HTMLInputElement>('input[type="radio"]')
+    expect(radios[1].checked).toBe(true)
+    expect(document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[0].checked).toBe(true)
+    expect(document.querySelector<HTMLInputElement>('.request-option.other input')!.value).toBe('Maybe')
+    await click(document.querySelector('button[type="submit"]'))
+    expect(answer).toHaveBeenCalledWith('s1', 'r-keep', {
+      kind: 'question',
+      action: 'accept',
+      content: { question_0: 'SQLite', question_0_custom: 'Maybe', question_1: ['Cache'] }
+    })
+    act(() => root!.unmount())
+    mount(asked)
+    expect(document.querySelectorAll<HTMLInputElement>('input[type="radio"]')[1].checked).toBe(false)
+  })
+
   it('unpicks an optional single choice, and declines with one button', async () => {
     const answer = mount(question)
     const radio = document.querySelectorAll<HTMLInputElement>('input[type="radio"]')[0]

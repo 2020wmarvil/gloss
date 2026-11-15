@@ -169,6 +169,8 @@ export type GlossEvent =
   | { type: 'sessionDeleted'; sessionId: string; deletedOutside?: { title: string } }
   /** A project's worktrees changed (one was created or removed, or a session in one was deleted). */
   | { type: 'worktrees'; project: string }
+  /** The project list changed: one was added (from a window or a phone), or the second brain setting. */
+  | { type: 'projects' }
   /** `/clear` emptied the session: its messages, tool calls and threads are gone. */
   | { type: 'sessionCleared'; sessionId: string }
   | { type: 'sessionRewound'; sessionId: string }
@@ -298,6 +300,14 @@ export type GlossApi = {
     githubRepos(): Promise<import('./github').GithubRepo[]>
     /** Asks for a parent folder, clones the repository into it and adds it as a project. Resolves to null if cancelled. */
     clone(repo: string): Promise<Project | null>
+    /** Clones the repository into the projects folder (no picker, for phones) and adds it as a project. */
+    cloneToProjectsFolder(repo: string): Promise<Project>
+    /** Where New project and the phone's clones go (the `projectsFolder` setting, else the Desktop folder). */
+    folder(): Promise<string>
+    /** Makes `<projects folder>/<name>`, runs `git init` there and adds it as a project. Rejects for a bad or taken name. */
+    create(name: string): Promise<Project>
+    /** Asks for an empty folder (starting in the projects folder), runs `git init` there and adds it as a project. Resolves to null if cancelled. */
+    createAt(): Promise<Project | null>
   }
   sessions: {
     list(): Promise<Session[]>
@@ -353,6 +363,8 @@ export type GlossApi = {
     setAutoApprove(id: string, on: boolean): Promise<void>
     /** Copies the session (or one thread) as markdown to the clipboard. */
     copyMarkdown(id: string, threadId: string | null): Promise<void>
+    /** The session (or one thread) as markdown, for a phone to copy to its own clipboard. */
+    markdown(id: string, threadId: string | null): Promise<string>
     /** Saves the session (or one thread) as a markdown file. Resolves to false if cancelled. */
     saveMarkdown(id: string, threadId: string | null): Promise<boolean>
     /** Opens the session's folder in the system file manager. Resolves to an error message, or null. */
@@ -432,6 +444,8 @@ export type GlossApi = {
     update(patch: SettingsPatch): Promise<SettingsState>
     /** Opens settings.json in the system's editor for JSON. Resolves to an error message, or null. */
     openFile(): Promise<string | null>
+    /** Native folder picker for a folder setting (`folder` fields); saves the choice. Resolves to null if cancelled. */
+    pickFolder(key: string): Promise<SettingsState | null>
   }
   capture: {
     /**
@@ -516,6 +530,10 @@ export const IPC = {
   projectsDelete: 'gloss:projects:delete',
   projectsGithubRepos: 'gloss:projects:githubRepos',
   projectsClone: 'gloss:projects:clone',
+  projectsCloneToProjectsFolder: 'gloss:projects:cloneToProjectsFolder',
+  projectsFolder: 'gloss:projects:folder',
+  projectsCreate: 'gloss:projects:create',
+  projectsCreateAt: 'gloss:projects:createAt',
   sessionsList: 'gloss:sessions:list',
   sessionsCreate: 'gloss:sessions:create',
   sessionsCreateInWorktree: 'gloss:sessions:createInWorktree',
@@ -543,6 +561,7 @@ export const IPC = {
   sessionsSetAutoApprove: 'gloss:sessions:setAutoApprove',
   requestsAnswer: 'gloss:requests:answer',
   sessionsCopyMarkdown: 'gloss:sessions:copyMarkdown',
+  sessionsMarkdown: 'gloss:sessions:markdown',
   sessionsSaveMarkdown: 'gloss:sessions:saveMarkdown',
   sessionsOpenFolder: 'gloss:sessions:openFolder',
   sessionsOpenObsidian: 'gloss:sessions:openObsidian',
@@ -567,6 +586,7 @@ export const IPC = {
   settingsGet: 'gloss:settings:get',
   settingsUpdate: 'gloss:settings:update',
   settingsOpenFile: 'gloss:settings:openFile',
+  settingsPickFolder: 'gloss:settings:pickFolder',
   captureStart: 'gloss:capture:start',
   captureShortcutStatus: 'gloss:capture:shortcutStatus',
   capturePauseShortcut: 'gloss:capture:pauseShortcut',

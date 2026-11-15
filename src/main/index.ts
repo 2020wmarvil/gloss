@@ -1,12 +1,12 @@
 import { bindingFor, matchesBinding, isMac } from '../shared/commands'
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, statSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerSaveBlocker, screen, shell, type WebContents } from 'electron'
 import { IPC, type AppBadge, type GlossEvent, type MainAction, type OpenCodeStatus, type PaneState } from '../shared/ipc'
-import type { Anchor, Attachment, Pin, Session } from '../shared/types'
+import type { Anchor, Attachment, Pin, Project, Session } from '../shared/types'
 import type { AnswerValue, RequestAnswer } from '../shared/requests'
 import { AgentConnection } from './acp'
 import { agentEnv, getAgentConfig, listAgents } from './agents'
@@ -17,6 +17,7 @@ import { gitStatus, pullRequest } from './git'
 import { perforceWorkspace, perforceStatus, PerforceError, hasPerforceConfig } from './perforce'
 import { perforceRange } from '../shared/perforce'
 import { cloneRepo, listRepos } from './github'
+import { createProject, initProject, projectsFolder } from './newProject'
 import { SessionManager } from './sessions'
 import { BADGE_LABEL, BADGE_SIZE, badgePixels } from './badge'
 import { patchArg, SettingsFile } from './settings'
@@ -36,8 +37,9 @@ import { fetchCodexUsage } from './codex-usage'
 import { AgentClis, type CliKind } from './agentCli'
 import { autoUpdater } from 'electron-updater'
 import { Updates } from './updates'
-import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
+import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings, SETTING_FIELDS, type GlobalSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
+import { chatsFolder, DEFAULT_SECOND_BRAIN } from '../shared/chats'
 import { previewMcpImport } from './mcp-import'
 import { OpenCodeSupport } from './opencode'
 import { AgentProfileSupport } from './agentProfiles'
@@ -47,6 +49,7 @@ import { AgentAvailability } from './agentAvailability'
 import { profileError, type AgentProfile } from '../shared/agentProfiles'
 import { boundsArg, placeSessionWindow, type Rect } from './windowPlacement'
 import { createCloseGuard } from './closeGuard'
+import { Background, startedAtLogin, type BackgroundSettings } from './background'
 import iconIco from '../../build/icon.ico?asset'
 import iconPng from '../../build/icons/256x256.png?asset'
 
@@ -93,7 +96,7 @@ const agentClis = new AgentClis()
 /** The configured path of an agent's CLI; empty finds an installed copy (SPEC → Shipping). */
 function cliSetting(kind: CliKind): string {
   const global = settings?.state().global
-  return (kind === 'claude' ? global?.claudeExecutable : global?.codexExecutable) ?? ''
+  return (kind === 'claude' ? global?.claudeExecutable : kind === 'codex' ? global?.codexExecutable : global?.antigravityExecutable) ?? ''
 }
 const usage = new UsageSource(
   async (cwd) => fetchClaudeUsage(cwd, await agentClis.resolve('claude', cliSetting('claude'))),
@@ -154,7 +157,38 @@ function windowSession(sender: WebContents): string | undefined {
   return undefined
 }
 
+/** The windows closing the main window hid, while Gloss runs in the tray. */
+const trayHidden = new Set<BrowserWindow>()
+
+let background: Background | undefined
+
+function closesToTray(): boolean {
+  return settings?.state().global.closeToTray !== false
+}
+
+/** Closing the main window with closeToTray on: every Gloss window hides, and sessions keep running. */
+function hideToTray(): void {
+  for (const win of glossWindows()) {
+    if (!win.isVisible()) continue
+    trayHidden.add(win)
+    win.hide()
+  }
+}
+
+/** Shows the windows hiding in the tray again, `except` one about to come forward. */
+function leaveTray(except?: BrowserWindow): void {
+  for (const win of trayHidden) if (win !== except && !win.isDestroyed()) win.showInactive()
+  trayHidden.clear()
+}
+
+/** The tray icon, a second launch and the macOS dock: brings Gloss back. */
+function showGloss(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  else bringForward(mainWindow)
+}
+
 function bringForward(win: BrowserWindow): void {
+  leaveTray(win)
   if (win.isMinimized()) win.restore()
   win.show()
   win.focus()
@@ -165,7 +199,7 @@ function bringForward(win: BrowserWindow): void {
  * A frameless one (the annotation window) has no title bar or window controls: the page has its
  * own buttons and is its drag area, and the system still resizes it by its edges.
  */
-function newWindow(bounds: Partial<Rect> & { width: number; height: number }, frameless = false): BrowserWindow {
+function newWindow(bounds: Partial<Rect> & { width: number; height: number }, frameless = false, hidden = false): BrowserWindow {
   const win = new BrowserWindow({
     title: 'Gloss',
     ...(frameless
@@ -189,7 +223,7 @@ function newWindow(bounds: Partial<Rect> & { width: number; height: number }, fr
       sandbox: true
     }
   })
-  win.once('ready-to-show', () => win.show())
+  if (!hidden) win.once('ready-to-show', () => win.show())
   win.on('focus', () => {
     if (!annotateWindows.has(win.webContents.id)) lastFocused = win
   })
@@ -219,15 +253,24 @@ function newWindow(bounds: Partial<Rect> & { width: number; height: number }, fr
   return win
 }
 
-function createWindow(): void {
-  const win = newWindow({ width: 1280, height: 820 })
+/** The main window; `hidden` starts it in the tray (at sign-in). */
+function createWindow(hidden = false): void {
+  const win = newWindow({ width: 1280, height: 820 }, false, hidden)
   mainWindow = win
+  if (hidden) trayHidden.add(win)
   win.on('close', (event) => {
+    if (!quitting && closesToTray()) {
+      event.preventDefault()
+      hideToTray()
+      return
+    }
     guardClose(event, () => { if (!win.isDestroyed()) win.close() })
   })
+  // Windows is shutting down or signing out: let the window close.
+  win.on('session-end', () => { quitting = true })
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = undefined
-    // Closing the main window quits Gloss, session windows included.
+    // Closing the main window (without the tray) quits Gloss, session windows included.
     for (const w of sessionWindows.values()) if (!w.isDestroyed()) w.close()
     for (const { win: w } of annotateWindows.values()) if (!w.isDestroyed()) w.close()
   })
@@ -441,6 +484,10 @@ function keepAwake(event: GlossEvent): void {
     powerSaveBlocker.stop(awake)
     awake = null
   }
+}
+
+function backgroundSettings(g: GlobalSettings): BackgroundSettings {
+  return { closeToTray: g.closeToTray !== false, startAtLogin: g.startAtLogin === true, keepAwake: g.keepAwake === true }
 }
 
 function emit(event: GlossEvent): void {
@@ -717,8 +764,16 @@ function exportLog(id: string, threadId: string | null): { title: string; markdo
   return { title: session.title, markdown }
 }
 
-async function pickFolder(title?: string): Promise<string | null> {
-  const options: Electron.OpenDialogOptions = { title, properties: ['openDirectory', 'createDirectory'] }
+function isFolder(path: string): boolean {
+  try {
+    return statSync(path).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+async function pickFolder(title?: string, defaultPath?: string): Promise<string | null> {
+  const options: Electron.OpenDialogOptions = { title, defaultPath, properties: ['openDirectory', 'createDirectory'] }
   const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
   return result.canceled ? null : (result.filePaths[0] ?? null)
 }
@@ -764,7 +819,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   const agentEntries = (status?: OpenCodeStatus) => {
     const builtins = listAgents().map((agent) => {
       if (agent.id === 'opencode') return { ...agent, available: status?.available ?? false, setupMessage: status ? status.error ?? undefined : 'Checking OpenCode availability…' }
-      if (agent.id !== 'claude' && agent.id !== 'codex') return agent
+      if (agent.id !== 'claude' && agent.id !== 'codex' && agent.id !== 'antigravity') return agent
       // Available until a check says otherwise, so the default agent doesn't flicker at startup.
       const cli = agentClis.known(agent.id, cliSetting(agent.id))
       return cli && !cli.available ? { ...agent, available: false, setupMessage: cli.error ?? undefined } : agent
@@ -795,13 +850,19 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     return status
   })
   share(IPC.projectsList, () => manager.listProjects())
+  // Phones and other windows show it too.
+  const added = (path: string): Project => {
+    const project = manager.addProject(path)
+    emit({ type: 'projects' })
+    return project
+  }
   ipcMain.handle(IPC.projectsOpen, async () => {
     const path = await pickFolder()
     if (!path) return null
     const existingProvider = projectSettings(settingsFile.state().projects, path).versionControl
     if (existingProvider) {
       if (existingProvider === 'perforce') await perforceWorkspace(path)
-      return manager.addProject(path)
+      return added(path)
     }
     const [git, p4] = await Promise.all([gitStatus(path), perforceWorkspace(path).catch((error: unknown) => error)])
     const available = !(p4 instanceof Error)
@@ -813,17 +874,26 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
       provider = choice.response === 1 ? 'perforce' : 'git'
     } else if (!git && p4 instanceof PerforceError && (p4.kind === 'login' || p4.kind === 'expired')) throw p4
     settingsFile.update({ project: { path, values: { versionControl: provider } } })
-    return manager.addProject(path)
+    return added(path)
   })
   ipcMain.handle(IPC.projectsAgentSessions, (_e, path: unknown, agentId: unknown) =>
     manager.agentSessions(folderArg(path, 'path'), str(agentId, 'agentId'))
   )
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
-  ipcMain.handle(IPC.projectsGithubRepos, () => listRepos())
+  const projectsHome = (): string => projectsFolder(settingsFile.state().global.projectsFolder)
+  share(IPC.projectsGithubRepos, () => listRepos())
   ipcMain.handle(IPC.projectsClone, async (_e, repo: unknown) => {
     const name = str(repo, 'repo')
-    const parent = await pickFolder(`Clone ${name} into`)
-    return parent ? manager.addProject(await cloneRepo(name, parent)) : null
+    const parent = await pickFolder(`Clone ${name} into`, projectsHome())
+    return parent ? added(await cloneRepo(name, parent)) : null
+  })
+  // A phone can't pick a folder, so it clones and creates only in the projects folder.
+  share(IPC.projectsCloneToProjectsFolder, async (repo: unknown) => added(await cloneRepo(str(repo, 'repo'), projectsHome())))
+  share(IPC.projectsFolder, () => projectsHome())
+  share(IPC.projectsCreate, async (name: unknown) => added(await createProject(projectsHome(), str(name, 'name'))))
+  ipcMain.handle(IPC.projectsCreateAt, async () => {
+    const dir = await pickFolder('New project', projectsHome())
+    return dir ? added(await initProject(dir)) : null
   })
   registerComposerIpc(store!, isGlossSender, () => settingsFile.state().global.externalEditor, (sender) => {
     const win = glossWindows().find((w) => w.webContents === sender)
@@ -993,11 +1063,11 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.sessionsOpen, (_e, id: unknown) => manager.openSession(str(id, 'id'), { images: false }))
   ipcMain.handle(IPC.sessionsImage, (_e, messageId: unknown, index: unknown) => manager.imageData(str(messageId, 'message'), Number(index)))
   share(IPC.sessionsRefresh, (id: unknown) => manager.refreshSession(str(id, 'id')))
-  ipcMain.handle(IPC.sessionsRename, (_e, id: unknown, title: unknown) =>
-    manager.renameSession(str(id, 'id'), str(title, 'title'))
-  )
-  ipcMain.handle(IPC.sessionsRestart, (_e, id: unknown) => manager.restartSession(str(id, 'id')))
-  ipcMain.handle(IPC.sessionsDelete, (_e, id: unknown) => manager.deleteSession(str(id, 'id')))
+  // The phone's long-press menu on a session row offers these too.
+  share(IPC.sessionsRename, (id: unknown, title: unknown) => manager.renameSession(str(id, 'id'), str(title, 'title')))
+  share(IPC.sessionsRestart, (id: unknown) => manager.restartSession(str(id, 'id')))
+  share(IPC.sessionsDelete, (id: unknown) => manager.deleteSession(str(id, 'id')))
+  share(IPC.sessionsMarkdown, (id: unknown, threadId: unknown) => exportLog(str(id, 'id'), threadArg(threadId)).markdown)
   share(IPC.sessionsSetChoice, (id: unknown, kind: unknown, value: unknown) => {
     if (kind !== 'model' && kind !== 'effort') throw new Error('kind must be "model" or "effort"')
     return manager.setChoice(str(id, 'id'), kind, str(value, 'value'))
@@ -1125,13 +1195,25 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
 
   ipcMain.handle(IPC.settingsGet, () => settingsFile.state())
   ipcMain.handle(IPC.settingsPreviewMcpImport, (_e, source: unknown) => {
-    if (source !== 'claude' && source !== 'codex' && source !== 'gloss') throw new Error('Unknown MCP import source')
+    if (source !== 'claude' && source !== 'codex' && source !== 'antigravity' && source !== 'gloss') throw new Error('Unknown MCP import source')
     return previewMcpImport(source, { projects: manager.listProjects().map((p) => p.path), legacy: settingsFile.state().projects })
   })
   ipcMain.handle(IPC.settingsUpdate, (_e, patch: unknown) => settingsFile.update(patchArg(patch)))
   ipcMain.handle(IPC.settingsOpenFile, async () => {
     const error = await shell.openPath(settingsFile.path)
     return error === '' ? null : error
+  })
+  ipcMain.handle(IPC.settingsPickFolder, async (_e, key: unknown) => {
+    const field = SETTING_FIELDS.find((f) => f.scope === 'global' && f.folder && f.key === key)
+    if (!field) throw new Error('Not a folder setting.')
+    const global = settingsFile.state().global as unknown as Record<string, unknown>
+    const current = typeof global[field.key] === 'string' ? (global[field.key] as string).trim() : ''
+    const start = current && isFolder(current) ? current
+      : field.key === 'projectsFolder' ? projectsFolder(undefined)
+      : field.key === 'secondBrain' && isFolder(join(app.getPath('documents'), DEFAULT_SECOND_BRAIN)) ? join(app.getPath('documents'), DEFAULT_SECOND_BRAIN)
+      : app.getPath('documents')
+    const dir = await pickFolder(field.label, start)
+    return dir ? settingsFile.update({ global: { [field.key]: dir } }) : null
   })
 }
 
@@ -1227,10 +1309,17 @@ function registerWindowsIpc(): void {
   })
 }
 
+// One Gloss per data folder: a second launch (the Start menu while Gloss sits in the tray)
+// brings the running one forward. Development copies skip it, to run beside an installed one.
+const primary = !app.isPackaged || app.requestSingleInstanceLock()
+if (!primary) app.quit()
+app.on('second-instance', () => { if (app.isReady()) showGloss() })
+
 // Windows shows notifications only for an app with an AppUserModelID.
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'app.gloss' : process.execPath)
 
 app.whenReady().then(() => {
+  if (!primary) return
   // No File/Edit/View/Window menu bar on Windows and Linux. macOS keeps its menu
   // (it lives in the system menu bar, and copy and paste need its Edit menu).
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
@@ -1240,7 +1329,7 @@ app.whenReady().then(() => {
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [], captureShortcut: DEFAULT_CAPTURE_SHORTCUT, reviewWindow: true, phoneAccess: false, phonePort: 8443 },
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [], captureShortcut: DEFAULT_CAPTURE_SHORTCUT, reviewWindow: true, phoneAccess: false, phonePort: 8443, closeToTray: true, startAtLogin: false, keepAwake: false },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
       // Fires nativeTheme's 'updated', which recolors the window controls.
@@ -1248,9 +1337,12 @@ app.whenReady().then(() => {
       shortcutBindings = next.global.shortcuts ?? {}
       updateCaptureBindings(shortcutBindings)
       if (next.global.captureShortcut !== previous.global.captureShortcut) setCaptureShortcut(next.global.captureShortcut)
+      if ((next.global.secondBrain ?? '') !== (previous.global.secondBrain ?? '')) emit({ type: 'projects' })
       void phone?.apply(next.global.phoneAccess ?? false, next.global.phonePort ?? 8443)
-      for (const kind of ['claude', 'codex'] as const) {
-        if (cliSetting(kind) === ((kind === 'claude' ? previous.global.claudeExecutable : previous.global.codexExecutable) ?? '')) continue
+      background?.apply(backgroundSettings(next.global))
+      for (const kind of ['claude', 'codex', 'antigravity'] as const) {
+        const before = kind === 'claude' ? previous.global.claudeExecutable : kind === 'codex' ? previous.global.codexExecutable : previous.global.antigravityExecutable
+        if (cliSetting(kind) === (before ?? '')) continue
         void sessions?.restartIdleAgent(kind)
         void agentClis.check(kind, cliSetting(kind), true)
       }
@@ -1305,9 +1397,14 @@ app.whenReady().then(() => {
       return project && project !== 'inherit' ? project : state.global.permissionMode
     },
     agentEnv: (config) => agentEnv(config),
-    connect: async (config, env, handlers) => AgentConnection.start(config, config.cli
-      ? { ...env, [config.cli.env]: await agentClis.resolve(config.cli.kind, cliSetting(config.cli.kind)) }
-      : env, handlers),
+    connect: async (config, env, handlers) => {
+      if (!config.cli) return AgentConnection.start(config, env, handlers)
+      const cli = await agentClis.resolve(config.cli.kind, cliSetting(config.cli.kind))
+      // An adapter gets the CLI's path; a CLI that is its own ACP server (Antigravity) is run.
+      return config.cli.env
+        ? AgentConnection.start(config, { ...env, [config.cli.env]: cli }, handlers)
+        : AgentConnection.start({ ...config, command: cli }, env, handlers)
+    },
     runInTerminal,
     versionControl: (cwd) => projectSettings(settingsFile.state().projects, cwd).versionControl ?? 'git',
     worktreeSettings: (project) => {
@@ -1316,6 +1413,17 @@ app.whenReady().then(() => {
     },
     placeRemoved: (project) => {
       settingsFile.update({ project: { path: project, values: { newSessionPlace: 'folder' } } })
+    },
+    // SPEC → Chats: a chosen vault is used only while it's an existing folder; without one,
+    // Gloss's own in Documents, made when the first chat starts.
+    chats: {
+      root: chatsFolder(settingsFile.state().path),
+      vault: () => {
+        const vault = settingsFile.state().global.secondBrain?.trim()
+        if (!vault) return join(app.getPath('documents'), DEFAULT_SECOND_BRAIN)
+        return isAbsolute(vault) && isFolder(vault) ? vault : null
+      },
+      prepare: (vault) => mkdirSync(vault, { recursive: true })
     }
   })
   registerIpc(sessions, settingsFile)
@@ -1336,9 +1444,12 @@ app.whenReady().then(() => {
   })
   void phone.apply(settingsFile.state().global.phoneAccess ?? false, settingsFile.state().global.phonePort ?? 8443)
   nativeTheme.on('updated', updateTitleBar)
-  createWindow()
+  background = new Background({ icon: process.platform === 'win32' ? iconIco : iconPng, open: showGloss, quit: () => app.quit() })
+  background.apply(backgroundSettings(settingsFile.state().global))
+  createWindow(closesToTray() && startedAtLogin(process.argv))
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    else if (trayHidden.size > 0) showGloss()
   })
 })
 
@@ -1352,6 +1463,7 @@ app.on('before-quit', (event) => {
   if (!guardClose(event, () => app.quit())) return
   quitting = true
   void phone?.dispose()
+  background?.dispose()
   settings?.close()
   updates?.dispose()
   pluginLibrary?.close()

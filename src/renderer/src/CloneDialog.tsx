@@ -1,19 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Archive, GitFork, Lock, Search } from 'lucide-react'
 import type { Project } from '@shared/types'
-import { parseGithubRepo, type GithubRepo } from '@shared/github'
+import { cloneChoices, type GithubRepo } from '@shared/github'
 import { errorText } from './errors'
 import { ago } from './Sidebar'
-
-/** The rows the list shows for a query: a pasted repository first when it isn't one of the user's, then the matches. */
-export function cloneChoices(repos: GithubRepo[], query: string): string[] {
-  const q = query.trim().toLowerCase()
-  const matches = repos.filter((r) => !q || r.fullName.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q)).map((r) => r.fullName)
-  const pasted = parseGithubRepo(query)
-  const known = pasted && repos.find((r) => r.fullName.toLowerCase() === pasted.toLowerCase())?.fullName
-  if (known) return [known, ...matches.filter((m) => m !== known)]
-  return pasted ? [pasted, ...matches] : matches
-}
 
 /** Repositories grouped by owner, owners in the order they first appear (so by their latest push). */
 export function byOwner(names: string[]): { owner: string; names: string[] }[] {

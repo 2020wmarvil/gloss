@@ -64,7 +64,7 @@ function checkValue(field: SettingField, value: unknown): string | null {
   switch (field.type) {
     case 'bindings': return null // Per-command errors are resolved without rejecting unrelated settings.
     case 'profiles': return profilesError(value)
-    case 'agent': return typeof value === 'string' && (['claude', 'codex', 'opencode'].includes(value) || PROFILE_ID.test(value)) ? null : 'expected a built-in agent or custom profile ID'
+    case 'agent': return typeof value === 'string' && (['claude', 'codex', 'antigravity', 'opencode'].includes(value) || PROFILE_ID.test(value)) ? null : 'expected a built-in agent or custom profile ID'
     case 'mcp': return mcpError(value)
     case 'boolean':
       return typeof value === 'boolean' ? null : `expected true or false, got ${JSON.stringify(value)}`

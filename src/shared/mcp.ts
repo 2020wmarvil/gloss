@@ -42,6 +42,6 @@ export function projectMcp(projects: Record<string, { mcpServers?: McpServer[] }
   return key ? projects[key].mcpServers ?? [] : []
 }
 
-export type McpImportSource = 'claude' | 'codex' | 'gloss'
+export type McpImportSource = 'claude' | 'codex' | 'antigravity' | 'gloss'
 export type McpImportEntry = { id: string; name: string; source: string; server?: McpServer; problem?: string }
 export type McpImportPreview = { entries: McpImportEntry[]; problems: string[] }

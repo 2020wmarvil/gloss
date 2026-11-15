@@ -13,6 +13,7 @@ import type { UnfinishedWork, WorktreeEntry } from './worktrees'
 import { FORK_NOTE, FORK_SUMMARY_LABEL, FORK_SUMMARY_PROMPT, splitForkSummary, threadTag, toMainTag, wireTag, withForkSummary } from '../shared/wire'
 import { isFirstPass, REVIEW_INSTRUCTIONS, type ReviewDiff } from '../shared/review'
 import { perforceRef } from '../shared/perforce'
+import { CHAT_INSTRUCTIONS, NO_SECOND_BRAIN } from '../shared/chats'
 import type { Session } from '../shared/types'
 
 type Script = (ctx: {
@@ -74,6 +75,8 @@ type FakeAgent = {
   closes: string[]
   /** Sessions returned by session/list (filtered by cwd), besides those with a transcript. */
   listed: acp.SessionInfo[]
+  /** session/list ignores cwd, as Antigravity's does. */
+  listsAll?: boolean
   deleted: string[]
   /** session/delete fails. */
   refuseDelete: boolean
@@ -239,7 +242,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       const saved = [...state.transcripts.keys()]
         .filter((id) => state.sessions.has(id) && !state.listed.some((s) => s.sessionId === id))
         .map((id): acp.SessionInfo => ({ sessionId: id, cwd: state.cwds.get(id) ?? '', updatedAt: state.updatedAt.get(id) }))
-      return { sessions: [...state.listed, ...saved].filter((s) => s.cwd === ctx.params.cwd) }
+      return { sessions: [...state.listed, ...saved].filter((s) => state.listsAll || s.cwd === ctx.params.cwd) }
     })
     .onRequest(acp.methods.agent.session.fork, (ctx) => {
       // Codex's: everything up to the end of the turn of the item named.
@@ -1210,6 +1213,50 @@ describe('SessionManager', () => {
         await manager.send(session.id, 'next', null)
         expect(manager.openSession(session.id).background).toEqual([])
         expect(lastTurnEnd(session.id)).not.toHaveProperty('jobsRunning')
+      })
+
+      it("keeps a tool call left running as a quiet job (Antigravity's background command), and reloads once it ends", async () => {
+        config.quietToolCallsOutliveTurns = true
+        try {
+          const session = await manager.createSession('/w', 'fake')
+          let agent!: Parameters<Script>[0]
+          state.script = async (ctx) => {
+            agent = ctx
+            await ctx.update({ sessionUpdate: 'tool_call', toolCallId: 'job', title: 'ping', status: 'in_progress' })
+            await ctx.say('Started.', 'one')
+            return 'end_turn'
+          }
+          await manager.send(session.id, 'start it', null)
+          expect(store.listToolCalls(session.id)[0]?.status).toBe('in_progress')
+          expect(lastTurnEnd(session.id)).toMatchObject({ jobsRunning: true })
+          expect(manager.openSession(session.id).background).toEqual([null])
+
+          // Nothing comes over ACP; the history moves when the agent answers on its own.
+          await agent.update({ sessionUpdate: 'tool_call_update', toolCallId: 'job', status: 'completed' })
+          await agent.say('Average 1 ms.', 'two')
+          await vi.waitFor(() => expect(manager.openSession(session.id).background).toEqual([]))
+          await vi.waitFor(() => expect(store.listMessages(session.id).at(-1)).toMatchObject({ text: 'Average 1 ms.' }))
+          expect(store.listToolCalls(session.id)[0]?.status).toBe('completed')
+        } finally {
+          config.quietToolCallsOutliveTurns = undefined
+        }
+      })
+
+      it("takes a tool call by its title for a quiet job (Antigravity's subagents)", async () => {
+        config.quietJobTitle = /^Run invoke_subagent$/
+        try {
+          const session = await manager.createSession('/w', 'fake')
+          state.script = async ({ update, say }) => {
+            await update({ sessionUpdate: 'tool_call', toolCallId: 'sub', title: 'Run invoke_subagent', status: 'in_progress' })
+            await update({ sessionUpdate: 'tool_call_update', toolCallId: 'sub', status: 'completed' })
+            await say('Invoked.', 'one')
+            return 'end_turn'
+          }
+          await manager.send(session.id, 'delegate', null)
+          expect(manager.openSession(session.id).background).toEqual([null])
+        } finally {
+          config.quietJobTitle = undefined
+        }
       })
     })
 
@@ -2248,6 +2295,25 @@ describe('SessionManager', () => {
       const other = await manager.createSession('/w', 'fake')
       expect(() => manager.setAutoApprove(other.id, true)).toThrow(/bypass mode/)
     })
+
+    it("starts an agent without a bypass mode in its own stand-in (Antigravity's Auto), without approving on top", async () => {
+      const original = { bypass: config.bypassModeId, start: config.startModeId }
+      config.bypassModeId = undefined
+      config.startModeId = 'auto'
+      try {
+        state.modes = { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Default' }, { id: 'auto', name: 'Auto' }] }
+        const session = await manager.createSession('/w', 'fake')
+        expect(state.modeChanges).toEqual([`${session.acpSessionId}:auto`])
+        expect(manager.openSession(session.id).live).toMatchObject({ modes: { current: 'auto', bypass: null }, autoApprove: false })
+        // The agent's default setting leaves it in the agent's own default.
+        permissionMode = 'agent'
+        const other = await manager.createSession('/w', 'fake')
+        expect(manager.openSession(other.id).live).toMatchObject({ modes: { current: 'default' }, autoApprove: false })
+      } finally {
+        config.bypassModeId = original.bypass
+        config.startModeId = original.start
+      }
+    })
   })
 
   describe('questions', () => {
@@ -2440,6 +2506,98 @@ describe('SessionManager', () => {
     })
   })
 
+  describe('chats', () => {
+    let vault: string | null
+    let prepared: string[]
+    const ROOT = '/data/chats'
+
+    beforeEach(async () => {
+      await manager.dispose()
+      vault = '/notes/brain'
+      prepared = []
+      manager = new SessionManager({
+        store,
+        emit: (e) => events.push(e),
+        // The instructions themselves, so the test sees which were sent.
+        getAgentConfig: () => ({ ...config, sessionMeta: (i: string) => ({ new: { instructions: i }, load: { instructions: i } }) }),
+        agentEnv: () => ({}),
+        connect: (_c, _e, handlers) => AgentConnection.open(agentApp(state), handlers),
+        runInTerminal: runInTerminal as never,
+        now: () => 1000,
+        chats: { root: ROOT, vault: () => vault, prepare: (v) => prepared.push(v) }
+      })
+    })
+
+    const instructions = (i: number): string => (state.metas[i].meta as { instructions: string }).instructions
+
+    it('lists Chats first, with its vault, whatever the other projects are called', async () => {
+      manager.addProject('/work/app')
+      expect(manager.listProjects()).toEqual([
+        { path: ROOT, name: 'Chats', where: 'brain', chats: { vault: '/notes/brain' } },
+        { path: '/work/app', name: 'app', where: '/work' }
+      ])
+      vault = null
+      expect(manager.listProjects()[0]).toEqual({ path: ROOT, name: 'Chats', where: 'Second brain missing', chats: { vault: null } })
+    })
+
+    it('starts a chat in the vault, listed under Chats, with the chat instructions', async () => {
+      const chat = manager.startSession(ROOT, 'fake')
+      expect(chat).toMatchObject({ cwd: '/notes/brain', project: ROOT })
+      // The default vault may not exist yet.
+      expect(prepared).toEqual(['/notes/brain'])
+      await manager.send(chat.id, 'What did I decide about the move?', null)
+      expect(state.cwds.get(store.getSession(chat.id)!.acpSessionId)).toBe('/notes/brain')
+      expect(instructions(0)).toContain(CHAT_INSTRUCTIONS)
+      // The vault doesn't become a project of its own.
+      expect(manager.listProjects().map((p) => p.path)).toEqual([ROOT])
+    })
+
+    it('keeps the chat instructions when a chat is resumed', async () => {
+      const chat = manager.startSession(ROOT, 'fake')
+      await manager.send(chat.id, 'hi', null)
+      await manager.dispose()
+      manager = new SessionManager({
+        store,
+        emit: (e) => events.push(e),
+        getAgentConfig: () => ({ ...config, sessionMeta: (i: string) => ({ new: { instructions: i }, load: { instructions: i } }) }),
+        agentEnv: () => ({}),
+        connect: (_c, _e, handlers) => AgentConnection.open(agentApp(state), handlers),
+        runInTerminal: runInTerminal as never,
+        now: () => 1000,
+        chats: { root: ROOT, vault: () => vault }
+      })
+      await manager.send(chat.id, 'again', null)
+      const load = state.metas.findIndex((m) => m.method === 'load')
+      expect(load).toBeGreaterThan(0)
+      expect(instructions(load)).toContain(CHAT_INSTRUCTIONS)
+    })
+
+    it('refuses a chat without a second brain, and what Chats have no use for', async () => {
+      vault = null
+      expect(() => manager.startSession(ROOT, 'fake')).toThrow(NO_SECOND_BRAIN)
+      vault = '/notes/brain'
+      await expect(manager.startWorktreeSession(ROOT, 'fake')).rejects.toThrow('Chats have no worktrees.')
+      await expect(manager.createReview(ROOT, 'fake')).rejects.toThrow('Chats have no reviews.')
+      await expect(manager.deleteProject(ROOT)).rejects.toThrow("Chats can't be deleted")
+      // A project's sessions still get Gloss's own instructions only.
+      await manager.createSession('/work/app', 'fake')
+      expect(instructions(0)).not.toContain(CHAT_INSTRUCTIONS)
+    })
+
+    it("lists the agent's own sessions in the vault under Chats", async () => {
+      state.canList = true
+      state.listed = [
+        { sessionId: 'cli-1', cwd: '/notes/brain', title: 'Weekly review', updatedAt: '2026-11-01T00:00:00Z' },
+        { sessionId: 'cli-2', cwd: '/work/app', title: 'elsewhere' }
+      ]
+      expect(await manager.agentSessions(ROOT, 'fake')).toEqual([
+        { acpSessionId: 'cli-1', title: 'Weekly review', updatedAt: '2026-11-01T00:00:00Z', cwd: '/notes/brain' }
+      ])
+      vault = null
+      expect(await manager.agentSessions(ROOT, 'fake')).toEqual([])
+    })
+  })
+
   describe('projects and existing sessions', () => {
     it('lists folders of sessions and opened projects by name, without duplicates', async () => {
       let now = 1
@@ -2477,6 +2635,22 @@ describe('SessionManager', () => {
         { acpSessionId: 'cli-2', title: 'Untitled session', updatedAt: '2026-10-05T00:00:00Z' },
         { acpSessionId: 'cli-1', title: 'Old CLI work', updatedAt: '2026-10-01T00:00:00Z' }
       ])
+    })
+
+    it("keeps the folder's own sessions from an agent that lists every folder's (Antigravity)", async () => {
+      state.canList = true
+      state.listsAll = true
+      config.listsAllSessions = true
+      try {
+        state.listed = [
+          { sessionId: 'here', cwd: '/w', title: 'Here' },
+          { sessionId: 'there', cwd: '/elsewhere', title: 'There' },
+          { sessionId: 'unknown', cwd: '', title: 'No folder' }
+        ]
+        expect((await manager.agentSessions('/w', 'fake')).map((s) => s.acpSessionId)).toEqual(['here'])
+      } finally {
+        config.listsAllSessions = undefined
+      }
     })
 
     it('hides and deletes again an agent session Gloss deleted that the agent lists again', async () => {
