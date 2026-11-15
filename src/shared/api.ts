@@ -74,6 +74,7 @@ export function makeApi(t: ApiTransport): GlossApi {
       image: (messageId, index) => invoke(IPC.sessionsImage, messageId, index),
       refresh: (id) => invoke(IPC.sessionsRefresh, id),
       rename: (id, title) => invoke(IPC.sessionsRename, id, title),
+      restart: (id) => invoke(IPC.sessionsRestart, id),
       delete: (id) => invoke(IPC.sessionsDelete, id),
       setChoice: (id, kind, value) => invoke(IPC.sessionsSetChoice, id, kind, value),
       setMode: (id, modeId) => invoke(IPC.sessionsSetMode, id, modeId),

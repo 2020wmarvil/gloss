@@ -55,6 +55,8 @@ export type SessionView = {
   requests: UserRequest[]
   /** The fork threads' sessions, whose turns, queues and status are their own (SPEC → Fork threads). */
   forks: ForkView[]
+  /** The thread of each job running in the background, after its turn ended (SPEC → Background jobs). */
+  background: (string | null)[]
 }
 
 /** A fork thread's own session, as the session's view has it. Its log is in the session's. */
@@ -62,6 +64,8 @@ export type ForkView = {
   threadId: string
   sessionId: string
   running: boolean
+  /** It has a job running in the background. */
+  background: boolean
   queue: MessageQueue
   live: SessionLive
   requests: UserRequest[]
@@ -197,7 +201,11 @@ export type GlossEvent =
       recovery?: { messageId: string; action: 'signIn' | 'retry' }
       /** A queued message starts right away. */
       continues?: true
+      /** Background jobs are still running: the agent's work isn't over. */
+      jobsRunning?: true
     }
+  /** The session's background jobs changed: the thread of each one (SPEC → Background jobs). */
+  | { type: 'background'; sessionId: string; threads: (string | null)[]; forkOf?: ForkOf }
   | { type: 'queue'; sessionId: string; queue: MessageQueue; forkOf?: ForkOf }
   /** The questions and approvals the session's agent is waiting on changed. */
   | { type: 'requests'; sessionId: string; requests: UserRequest[]; forkOf?: ForkOf }
@@ -334,6 +342,7 @@ export type GlossApi = {
     /** Reloads the session if the agent's copy changed elsewhere (SPEC → Shared sessions). */
     refresh(id: string): Promise<void>
     rename(id: string, title: string): Promise<Session>
+    restart(id: string): Promise<void>
     /** Deletes it from Gloss and the agent. Resolves to a warning if the agent's copy couldn't be deleted. */
     delete(id: string): Promise<string | null>
     /** Picks the session's model or effort. */
@@ -527,6 +536,7 @@ export const IPC = {
   sessionsRewind: 'gloss:sessions:rewind',
   sessionsRefresh: 'gloss:sessions:refresh',
   sessionsRename: 'gloss:sessions:rename',
+  sessionsRestart: 'gloss:sessions:restart',
   sessionsDelete: 'gloss:sessions:delete',
   sessionsSetChoice: 'gloss:sessions:setChoice',
   sessionsSetMode: 'gloss:sessions:setMode',

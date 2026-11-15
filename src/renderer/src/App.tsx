@@ -269,11 +269,11 @@ export function App(): React.JSX.Element {
         break
       case 'turnEnd': {
         // Work the user isn't watching (another session, or Gloss in the background) is
-        // marked unseen and chimes. A cancel is the user's own; a queued follow-up isn't the end.
+        // marked unseen and chimes. A cancel is the user's own; a queued follow-up or a job still running isn't the end.
         // A session in its own focused window is being watched.
         const shownId = event.forkOf?.sessionId ?? event.sessionId
         const watched = (shownId === openId.current && document.hasFocus()) || shownId === focusedPopped.current
-        if (!event.continues && event.stopReason !== 'cancelled' && !watched) {
+        if (!event.continues && !event.jobsRunning && event.stopReason !== 'cancelled' && !watched) {
           const outcome = event.error ? 'failed' : 'completed'
           setUnseen((u) => ({ ...u, [shownId]: outcome }))
           if (chimeOn.current) playChime()
@@ -812,6 +812,11 @@ export function App(): React.JSX.Element {
               void window.gloss.sessions.rename(id, title).catch((err: unknown) => setSidebarError(errorText(err)))
             }
             onPopOut={(id) => void popOut(id)}
+            turns={s.turns}
+            jobs={s.jobSessions}
+            onRestart={(id) =>
+              void window.gloss.sessions.restart(id).catch((err: unknown) => setSidebarError(errorText(err)))
+            }
             onDelete={(id) => void deleteSession(id)}
             onCopyMarkdown={(id) => exportMarkdown(id, 'copy')}
             onSaveMarkdown={(id) => exportMarkdown(id, 'save')}

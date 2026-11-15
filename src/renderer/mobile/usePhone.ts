@@ -12,7 +12,7 @@ import type { Link, PhoneLink } from './transport'
 /** `sessionOrder`: the desktop sidebar's (Settings → General). */
 export type Info = { machine: string | null; defaultAgent: string; theme: 'system' | 'light' | 'dark'; sessionOrder?: SessionOrder }
 /** `forkOf`: a fork thread's session, whose work shows in its parent (SPEC → Fork threads). */
-export type Activity = { turn: string | null | undefined; requests: number; queued: number; paused: boolean; forkOf?: ForkOf }
+export type Activity = { turn: string | null | undefined; requests: number; queued: number; paused: boolean; jobs: number; forkOf?: ForkOf }
 export type OpenView = SessionView & { notices: Notice[] }
 
 export function upsert<T extends { id: string }>(list: T[], item: T): T[] {
@@ -84,13 +84,13 @@ export function usePhone(link: PhoneLink) {
       const lane = (change: (f: ForkView) => ForkView) => setOpen((o) => {
         if (!o || o.session.id !== forkOf.sessionId) return o
         const known = o.forks.find((f) => f.sessionId === sid)
-        const fork = known ?? { threadId: forkOf.threadId, sessionId: sid, running: false, queue: { items: [], paused: false }, live: o.live, requests: [] }
+        const fork = known ?? { threadId: forkOf.threadId, sessionId: sid, running: false, background: false, queue: { items: [], paused: false }, live: o.live, requests: [] }
         return { ...o, forks: [...o.forks.filter((f) => f !== known), change(fork)] }
       })
       const act = (change: (a: Activity) => Activity) => setActivity((all) => {
-        const next = change(all[sid] ?? { turn: undefined, requests: 0, queued: 0, paused: false, forkOf })
+        const next = change(all[sid] ?? { turn: undefined, requests: 0, queued: 0, paused: false, jobs: 0, forkOf })
         const copy = { ...all }
-        if (next.turn === undefined && next.requests === 0 && next.queued === 0) delete copy[sid]
+        if (next.turn === undefined && next.requests === 0 && next.queued === 0 && next.jobs === 0) delete copy[sid]
         else copy[sid] = next
         return copy
       })
@@ -102,6 +102,9 @@ export function usePhone(link: PhoneLink) {
         case 'requests':
           act((a) => ({ ...a, requests: event.requests.length }))
           return lane((f) => ({ ...f, requests: event.requests }))
+        case 'background':
+          act((a) => ({ ...a, jobs: event.threads.length }))
+          return lane((f) => ({ ...f, background: event.threads.length > 0 }))
         case 'turnStart':
           act((a) => ({ ...a, turn: event.threadId }))
           return lane((f) => ({ ...f, running: true }))
@@ -117,9 +120,9 @@ export function usePhone(link: PhoneLink) {
       }
     }
     const act = (id: string, change: (a: Activity) => Activity) => setActivity((all) => {
-      const next = change(all[id] ?? { turn: undefined, requests: 0, queued: 0, paused: false })
+      const next = change(all[id] ?? { turn: undefined, requests: 0, queued: 0, paused: false, jobs: 0 })
       const copy = { ...all }
-      if (next.turn === undefined && next.requests === 0 && next.queued === 0) delete copy[id]
+      if (next.turn === undefined && next.requests === 0 && next.queued === 0 && next.jobs === 0) delete copy[id]
       else copy[id] = next
       return copy
     })
@@ -178,6 +181,10 @@ export function usePhone(link: PhoneLink) {
         act(event.sessionId, (a) => ({ ...a, requests: event.requests.length }))
         setOpen((o) => mine(o) ? { ...o, requests: event.requests } : o)
         return
+      case 'background':
+        act(event.sessionId, (a) => ({ ...a, jobs: event.threads.length }))
+        setOpen((o) => mine(o) ? { ...o, background: event.threads } : o)
+        return
       case 'turnStart':
         act(event.sessionId, (a) => ({ ...a, turn: event.threadId }))
         setOpen((o) => mine(o) ? { ...o, turn: { threadId: event.threadId } } : o)
@@ -235,8 +242,8 @@ export function usePhone(link: PhoneLink) {
       const own = out[a.forkOf.sessionId]
       const turn = a.turn !== undefined ? a.forkOf.threadId : undefined
       out[a.forkOf.sessionId] = own
-        ? { ...own, turn: own.turn !== undefined ? own.turn : turn, requests: own.requests + a.requests, queued: own.queued + a.queued, paused: own.paused || a.paused }
-        : { turn, requests: a.requests, queued: a.queued, paused: a.paused }
+        ? { ...own, turn: own.turn !== undefined ? own.turn : turn, requests: own.requests + a.requests, queued: own.queued + a.queued, paused: own.paused || a.paused, jobs: own.jobs + a.jobs }
+        : { turn, requests: a.requests, queued: a.queued, paused: a.paused, jobs: a.jobs }
     }
     return out
   }, [activity])

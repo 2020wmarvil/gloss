@@ -26,6 +26,8 @@ type Script = (ctx: {
   cancelled: Promise<void>
   /** Resolves with the text of the next message steered into this turn. */
   nextSteer(): Promise<string>
+  /** Sends a raw Claude Code message, as the Claude adapter does. Works after the turn too. */
+  raw(message: Record<string, unknown>): Promise<void>
 }) => Promise<acp.StopReason>
 
 /** State shared by every connection to the fake agent, like a real agent's disk state. */
@@ -370,7 +372,8 @@ function agentApp(state: FakeAgent): acp.AgentApp {
         elicit: (params) =>
           ctx.client.request(acp.methods.client.elicitation.create, { mode: 'form', sessionId, ...params } as acp.CreateElicitationRequest),
         cancelled,
-        nextSteer
+        nextSteer,
+        raw: (message) => ctx.client.notify('_claude/sdkMessage', { sessionId, message })
       }).finally(() => steerTo.delete(sessionId))
       return { stopReason }
     })
@@ -412,7 +415,8 @@ describe('SessionManager', () => {
       now: () => 1000,
       mcpServers: () => servers,
       permissionMode: () => permissionMode,
-      forkClaude: (sessionId, _cwd, uuid) => forkClaude(state, sessionId, uuid)
+      forkClaude: (sessionId, _cwd, uuid) => forkClaude(state, sessionId, uuid),
+      quietJobPollMs: 10
     })
   }
 
@@ -922,6 +926,379 @@ describe('SessionManager', () => {
     await manager.send(session.id, 'resume', null)
     expect(store.listToolCalls(session.id).map((t) => t.id)).toEqual(['actual-mcp-call'])
     expect(manager.openSession(session.id).messages.some((m) => m.text === 'Still works')).toBe(true)
+  })
+
+  describe('background jobs', () => {
+    const tasks = (...ids: string[]): Record<string, unknown> => ({ subtype: 'background_tasks_changed', tasks: ids.map((task_id) => ({ task_id })) })
+    const state_ = (value: string): Record<string, unknown> => ({ subtype: 'session_state_changed', state: value })
+    const lastTurnEnd = (sessionId: string): Extract<GlossEvent, { type: 'turnEnd' }> | undefined =>
+      events.filter((e): e is Extract<GlossEvent, { type: 'turnEnd' }> => e.type === 'turnEnd' && e.sessionId === sessionId).at(-1)
+    const turnEnds = (sessionId: string): number => events.filter((e) => e.type === 'turnEnd' && e.sessionId === sessionId).length
+
+    /** Runs a turn that leaves `ids` running as Claude Code tasks, and hands back the agent's line. */
+    async function startClaudeJobs(sessionId: string, threadId: string | null, ...ids: string[]): Promise<Parameters<Script>[0]> {
+      let agent!: Parameters<Script>[0]
+      state.script = async (ctx) => {
+        agent = ctx
+        await ctx.raw(state_('running'))
+        await ctx.raw(tasks(...ids))
+        await ctx.say('Started.')
+        return 'end_turn'
+      }
+      await manager.send(sessionId, 'start it', threadId)
+      await agent.raw(state_('idle'))
+      return agent
+    }
+
+    it('keeps a session working while Claude Code runs a job, then shows its follow-up', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      const agent = await startClaudeJobs(session.id, null, 'job')
+      expect(lastTurnEnd(session.id)).toMatchObject({ stopReason: 'end_turn', jobsRunning: true })
+      await vi.waitFor(() => expect(manager.openSession(session.id).background).toEqual([null]))
+      expect(manager.openSession(session.id).turn).toBeNull()
+      expect(manager.activity()[session.id]).toMatchObject({ turn: undefined, jobs: 1 })
+      expect(manager.isAgentBusy('fake')).toBe(true)
+
+      await agent.raw(tasks())
+      await agent.raw(state_('running'))
+      await vi.waitFor(() => expect(manager.openSession(session.id).turn).toEqual({ threadId: null }))
+      expect(manager.openSession(session.id).background).toEqual([])
+      await agent.say('The job finished.', 'follow-up')
+      await agent.raw(state_('idle'))
+      await vi.waitFor(() => expect(manager.openSession(session.id).turn).toBeNull())
+      expect(store.listMessages(session.id).at(-1)).toMatchObject({ role: 'agent', text: 'The job finished.', threadId: null })
+      expect(lastTurnEnd(session.id)).toEqual({ type: 'turnEnd', sessionId: session.id, threadId: null, stopReason: 'end_turn' })
+      expect(manager.isAgentBusy('fake')).toBe(false)
+    })
+
+    it("ignores Claude Code's own housekeeping tasks", async () => {
+      const session = await manager.createSession('/w', 'fake')
+      state.script = async ({ raw }) => {
+        await raw({ subtype: 'background_tasks_changed', tasks: [{ task_id: 'chore', ambient: true }] })
+        return 'end_turn'
+      }
+      await manager.send(session.id, 'hi', null)
+      expect(manager.openSession(session.id).background).toEqual([])
+      expect(lastTurnEnd(session.id)).not.toHaveProperty('jobsRunning')
+    })
+
+    it('puts the follow-up in the thread that started the job', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      state.script = async ({ say }) => {
+        await say('Hello')
+        return 'end_turn'
+      }
+      await manager.send(session.id, 'hi', null)
+      const anchor = store.listMessages(session.id).at(-1)!
+      const thread = manager.createThread(session.id, anchor.id, { kind: 'selection', start: 0, end: 5, text: 'Hello' })
+      const agent = await startClaudeJobs(session.id, thread.id, 'job')
+      await vi.waitFor(() => expect(manager.openSession(session.id).background).toEqual([thread.id]))
+
+      await agent.raw(tasks())
+      await agent.raw(state_('running'))
+      await vi.waitFor(() => expect(manager.openSession(session.id).turn).toEqual({ threadId: thread.id }))
+      await agent.say('Done.', 'follow-up')
+      await agent.raw(state_('idle'))
+      await vi.waitFor(() => expect(manager.openSession(session.id).turn).toBeNull())
+      expect(store.listMessages(session.id).at(-1)).toMatchObject({ text: 'Done.', threadId: thread.id })
+    })
+
+    it('runs a message queued during a follow-up once it ends', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      const agent = await startClaudeJobs(session.id, null, 'job')
+      await agent.raw(tasks())
+      await agent.raw(state_('running'))
+      await vi.waitFor(() => expect(manager.openSession(session.id).turn).toEqual({ threadId: null }))
+      state.script = async () => 'end_turn'
+      await expect(manager.send(session.id, 'next', null)).resolves.toEqual({ queued: true })
+      await agent.raw(state_('idle'))
+      await vi.waitFor(() => expect(state.prompts.at(-1)).toBe('next'))
+    })
+
+    it('stops a follow-up at once, since no prompt answers for it', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      const agent = await startClaudeJobs(session.id, null, 'job')
+      await agent.raw(tasks())
+      await agent.raw(state_('running'))
+      await vi.waitFor(() => expect(manager.openSession(session.id).turn).toEqual({ threadId: null }))
+      await manager.cancel(session.id)
+      expect(manager.openSession(session.id).turn).toBeNull()
+      expect(lastTurnEnd(session.id)).toMatchObject({ stopReason: 'cancelled' })
+    })
+
+    it('says the work is over when a job ends and the agent has nothing to add', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      const agent = await startClaudeJobs(session.id, null, 'job')
+      const before = turnEnds(session.id)
+      await agent.raw(tasks())
+      await vi.waitFor(() => expect(turnEnds(session.id)).toBe(before + 1), { timeout: 3000 })
+      expect(lastTurnEnd(session.id)).toEqual({ type: 'turnEnd', sessionId: session.id, threadId: null, stopReason: 'end_turn' })
+    })
+
+    it('keeps the dot on between a job ending and its follow-up', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      const agent = await startClaudeJobs(session.id, null, 'job')
+      const seen = (): GlossEvent[] => events.filter((e) => (e.type === 'background' || e.type === 'turnStart') && e.sessionId === session.id)
+      const before = seen().length
+      await agent.raw(tasks())
+      await agent.raw(state_('running'))
+      await vi.waitFor(() => expect(manager.openSession(session.id).turn).toEqual({ threadId: null }))
+      // The turn starts before the job's dot goes.
+      expect(seen().slice(before).map((e) => e.type)).toEqual(['turnStart', 'background'])
+      await agent.raw(state_('idle'))
+    })
+
+    it('still says the work is over when a reload comes between a job ending and that', async () => {
+      state.canClose = true
+      const session = await manager.createSession('/w', 'fake')
+      const agent = await startClaudeJobs(session.id, null, 'job')
+      const before = turnEnds(session.id)
+      await agent.raw(tasks())
+      await vi.waitFor(() => expect(manager.openSession(session.id).background).toEqual([]))
+      await manager.restartSession(session.id)
+      await vi.waitFor(() => expect(turnEnds(session.id)).toBe(before + 1), { timeout: 3000 })
+    })
+
+    it("doesn't restart an agent that runs a job, or reload its session", async () => {
+      state.canList = true
+      state.canClose = true
+      const session = await manager.createSession('/w', 'fake')
+      const agent = await startClaudeJobs(session.id, null, 'job')
+      await vi.waitFor(() => expect(manager.openSession(session.id).background).toEqual([null]))
+      const connections = state.connections
+      await expect(manager.restartIdleAgent('fake')).resolves.toBe(false)
+      await expect(manager.restartIdleAgent('fake', true)).resolves.toBe(false)
+      expect(state.connections).toBe(connections)
+
+      state.updatedAt.set(store.getSession(session.id)!.acpSessionId, 'changed elsewhere')
+      await manager.refreshSession(session.id)
+      expect(state.closes).toEqual([])
+
+      await agent.raw(tasks())
+      await expect(manager.restartIdleAgent('fake')).resolves.toBe(true)
+    })
+
+    it('treats a tool call left running as a job when the agent says so, and records its end', async () => {
+      const original = config.toolCallsOutliveTurns
+      config.toolCallsOutliveTurns = true
+      try {
+        const session = await manager.createSession('/w', 'fake')
+        let update!: Parameters<Script>[0]['update']
+        state.script = async (ctx) => {
+          update = ctx.update
+          await ctx.update({ sessionUpdate: 'tool_call', toolCallId: 'job', title: 'npm start', status: 'in_progress' })
+          await ctx.update({ sessionUpdate: 'tool_call', toolCallId: 'cut', title: 'npm test', status: 'pending' })
+          return 'end_turn'
+        }
+        await manager.send(session.id, 'start it', null)
+        const statuses = (): Record<string, string> => Object.fromEntries(store.listToolCalls(session.id).map((t) => [t.id, t.status]))
+        expect(statuses()).toEqual({ job: 'in_progress', cut: 'failed' })
+        expect(lastTurnEnd(session.id)).toMatchObject({ jobsRunning: true })
+        await vi.waitFor(() => expect(manager.openSession(session.id).background).toEqual([null]))
+
+        // Output alone changes nothing Gloss shows.
+        const before = events.length
+        await update({ sessionUpdate: 'tool_call_update', toolCallId: 'job', _meta: { terminal_output_delta: {} } })
+        await vi.waitFor(() => expect(events.length).toBe(before))
+
+        const ends = turnEnds(session.id)
+        await update({ sessionUpdate: 'tool_call_update', toolCallId: 'job', status: 'completed' })
+        await vi.waitFor(() => expect(statuses().job).toBe('completed'))
+        expect(manager.openSession(session.id).background).toEqual([])
+        await vi.waitFor(() => expect(turnEnds(session.id)).toBe(ends + 1), { timeout: 3000 })
+      } finally {
+        config.toolCallsOutliveTurns = original
+      }
+    })
+
+    describe('from an agent that reports nothing more about them', () => {
+      const jobResult = (id: string): acp.SessionUpdate => ({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: id,
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text: 'Moved to the background.' } }]
+      })
+      let original: AgentConfig['quietJobResult']
+      beforeEach(() => {
+        original = config.quietJobResult
+        config.quietJobResult = /^Moved to the background/
+        state.canList = true
+      })
+      afterEach(() => {
+        config.quietJobResult = original
+      })
+
+      it('watches the history for its end, and shows the answer in the thread that started it', async () => {
+        const session = await manager.createSession('/w', 'fake')
+        let agent!: Parameters<Script>[0]
+        state.script = async (ctx) => {
+          agent = ctx
+          await ctx.say('Hello', 'first')
+          return 'end_turn'
+        }
+        await manager.send(session.id, 'hi', null)
+        const anchor = store.listMessages(session.id).at(-1)!
+        const thread = manager.createThread(session.id, anchor.id, { kind: 'selection', start: 0, end: 5, text: 'Hello' })
+        state.script = async (ctx) => {
+          agent = ctx
+          await ctx.update({ sessionUpdate: 'tool_call', toolCallId: 'job', title: 'npm start', status: 'in_progress' })
+          await ctx.update(jobResult('job'))
+          await ctx.say('Started.', 'second')
+          return 'end_turn'
+        }
+        await manager.send(session.id, 'start it', thread.id)
+        expect(lastTurnEnd(session.id)).toMatchObject({ jobsRunning: true })
+        await vi.waitFor(() => expect(manager.openSession(session.id).background).toEqual([thread.id]))
+        const ends = turnEnds(session.id)
+        const loads = state.loads.length
+
+        // Nothing changes: it keeps running.
+        await new Promise((r) => setTimeout(r, 100))
+        expect(manager.openSession(session.id).background).toEqual([thread.id])
+        expect(state.loads).toHaveLength(loads)
+
+        // The agent answers on its own. Gloss hears nothing, but the history moves.
+        await agent.say('The job finished.', 'third')
+        await vi.waitFor(() => expect(manager.openSession(session.id).background).toEqual([]))
+        await vi.waitFor(() => expect(store.listMessages(session.id).at(-1)).toMatchObject({ text: 'The job finished.', threadId: thread.id }))
+        expect(state.closes).toEqual([])
+        await vi.waitFor(() => expect(turnEnds(session.id)).toBe(ends + 1), { timeout: 3000 })
+        expect(lastTurnEnd(session.id)).toMatchObject({ threadId: thread.id, stopReason: 'end_turn' })
+      })
+
+      it('sees a job end during its own turn from a second reply with no tool between', async () => {
+        const session = await manager.createSession('/w', 'fake')
+        state.script = async ({ update, say }) => {
+          await update({ sessionUpdate: 'tool_call', toolCallId: 'job', title: 'npm start', status: 'in_progress' })
+          await update(jobResult('job'))
+          await say('Started.', 'one')
+          await say('It already finished.', 'two')
+          return 'end_turn'
+        }
+        await manager.send(session.id, 'start it', null)
+        expect(manager.openSession(session.id).background).toEqual([])
+        expect(lastTurnEnd(session.id)).not.toHaveProperty('jobsRunning')
+      })
+
+      it("doesn't take replies around another tool for a job's end", async () => {
+        const session = await manager.createSession('/w', 'fake')
+        state.script = async ({ update, say }) => {
+          await update({ sessionUpdate: 'tool_call', toolCallId: 'job', title: 'npm start', status: 'in_progress' })
+          await update(jobResult('job'))
+          await say('Started.', 'one')
+          await update({ sessionUpdate: 'tool_call', toolCallId: 'read', title: 'Read a.ts', status: 'completed' })
+          await say('And read a file.', 'two')
+          return 'end_turn'
+        }
+        await manager.send(session.id, 'start it', null)
+        expect(manager.openSession(session.id).background).toEqual([null])
+      })
+
+      it("stops tracking an earlier turn's job when another turn ends", async () => {
+        const session = await manager.createSession('/w', 'fake')
+        state.script = async ({ update }) => {
+          await update({ sessionUpdate: 'tool_call', toolCallId: 'job', title: 'npm start', status: 'in_progress' })
+          await update(jobResult('job'))
+          return 'end_turn'
+        }
+        await manager.send(session.id, 'start it', null)
+        expect(manager.openSession(session.id).background).toEqual([null])
+        state.script = async ({ say }) => {
+          await say('Something else.', 'other')
+          return 'end_turn'
+        }
+        await manager.send(session.id, 'next', null)
+        expect(manager.openSession(session.id).background).toEqual([])
+        expect(lastTurnEnd(session.id)).not.toHaveProperty('jobsRunning')
+      })
+    })
+
+    it('still fails a tool call left running by a turn that ended badly', async () => {
+      const original = config.toolCallsOutliveTurns
+      config.toolCallsOutliveTurns = true
+      try {
+        const session = await manager.createSession('/w', 'fake')
+        state.script = async ({ update }) => {
+          await update({ sessionUpdate: 'tool_call', toolCallId: 'cut', title: 'npm test', status: 'in_progress' })
+          return 'max_tokens'
+        }
+        await manager.send(session.id, 'test', null)
+        expect(store.listToolCalls(session.id)[0]?.status).toBe('failed')
+        expect(manager.openSession(session.id).background).toEqual([])
+      } finally {
+        config.toolCallsOutliveTurns = original
+      }
+    })
+
+    it('forgets a dead agent process\'s jobs and ends the turn it started on its own', async () => {
+      const session = await manager.createSession('/w', 'fake')
+      const agent = await startClaudeJobs(session.id, null, 'job')
+      await agent.raw(state_('running'))
+      await vi.waitFor(() => expect(manager.openSession(session.id).turn).toEqual({ threadId: null }))
+      await manager.dispose()
+      await vi.waitFor(() => expect(lastTurnEnd(session.id)).toMatchObject({ error: 'The agent process ended.' }))
+      expect(manager.activity()[session.id]?.jobs ?? 0).toBe(0)
+    })
+  })
+
+  describe('restarting a session', () => {
+    it('closes the session on the agent and loads it again, keeping the conversation', async () => {
+      state.canClose = true
+      state.script = async ({ say }) => {
+        await say('Hello')
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'hi', null)
+      const acpId = store.getSession(session.id)!.acpSessionId
+      const messages = store.listMessages(session.id).map((m) => m.text)
+
+      await manager.restartSession(session.id)
+      expect(state.closes).toEqual([acpId])
+      expect(state.loads).toEqual([acpId])
+      expect(store.getSession(session.id)!.acpSessionId).toBe(acpId)
+      expect(store.listMessages(session.id).map((m) => m.text)).toEqual(messages)
+      expect(manager.openSession(session.id).live.attached).toBe(true)
+    })
+
+    it('stops the session\'s jobs', async () => {
+      state.canClose = true
+      let raw!: Parameters<Script>[0]['raw']
+      state.script = async (ctx) => {
+        raw = ctx.raw
+        await raw({ subtype: 'background_tasks_changed', tasks: [{ task_id: 'job' }] })
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'start it', null)
+      await vi.waitFor(() => expect(manager.openSession(session.id).background).toEqual([null]))
+      const ends = events.filter((e) => e.type === 'turnEnd').length
+
+      await manager.restartSession(session.id)
+      expect(manager.openSession(session.id).background).toEqual([])
+      expect(events).toContainEqual({ type: 'background', sessionId: session.id, threads: [] })
+      // Stopping it isn't the agent finishing: no chime.
+      await new Promise((r) => setTimeout(r, 1700))
+      expect(events.filter((e) => e.type === 'turnEnd').length).toBe(ends)
+    })
+
+    it('waits for a running turn', async () => {
+      state.canClose = true
+      let finish!: () => void
+      state.script = () => new Promise((resolve) => (finish = () => resolve('end_turn')))
+      const session = await manager.createSession('/w', 'fake')
+      const turn = manager.send(session.id, 'long', null)
+      await vi.waitFor(() => expect(state.prompts).toEqual(['long']))
+      await expect(manager.restartSession(session.id)).rejects.toThrow('Stop the turn')
+      expect(state.closes).toEqual([])
+      finish()
+      await turn
+    })
+
+    it("says so when the agent can't close a session", async () => {
+      const session = await manager.createSession('/w', 'fake')
+      await expect(manager.restartSession(session.id)).rejects.toThrow("can't restart")
+    })
   })
 
   it('closes the tool calls a turn leaves running when it ends', async () => {

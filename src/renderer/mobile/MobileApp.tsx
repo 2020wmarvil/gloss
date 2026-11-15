@@ -39,9 +39,9 @@ function forkOf(open: OpenView, threadId: string | null): ForkView | undefined {
   return threadId === null ? undefined : open.forks.find((f) => f.threadId === threadId)
 }
 
-/** The threads with a running turn: the session's own, and its forks'. */
+/** The threads with a running turn or background job: the session's own, and its forks'. */
 function busyThreads(open: OpenView): string[] {
-  return [...(open.turn?.threadId ? [open.turn.threadId] : []), ...open.forks.filter((f) => f.running).map((f) => f.threadId)]
+  return [...new Set([...(open.turn?.threadId ? [open.turn.threadId] : []), ...open.background.flatMap((t) => (t !== null ? [t] : [])), ...open.forks.filter((f) => f.running || f.background).map((f) => f.threadId)])]
 }
 /** What the bottom bar offers to reply to: a tapped block or a selection in an agent message. */
 type Target = { message: Message; anchor: Anchor; selection: boolean }
@@ -433,7 +433,7 @@ function Sessions({ phone, project, setProject, onOpen }: {
           {phone.projects.map((p) => {
             const here = phone.sessions.filter((s) => projectOf(s).toLowerCase() === p.path.toLowerCase())
             const waits = here.filter((s) => (phone.activity[s.id]?.requests ?? 0) > 0).length
-            const runs = here.some((s) => phone.activity[s.id]?.turn !== undefined)
+            const runs = here.some((s) => phone.activity[s.id]?.turn !== undefined || (phone.activity[s.id]?.jobs ?? 0) > 0)
             return (
               <button key={p.path} className="m-kv m-kv-btn" onClick={() => { setProject(p.path); setPicker(null) }}>
                 <Folder size={18} /><span className="m-k m-ink">{p.name}</span>
@@ -472,13 +472,13 @@ function SessionRow({ s, phone, agentName, onOpen }: { s: Session; phone: Phone;
   return (
     <button className="m-row" onClick={() => onOpen(s.id)}>
       <span className="m-lead">
-        {a?.requests ? <span className="m-dot s-wait" /> : a?.turn !== undefined ? <span className="m-dot m-pulse s-working" /> : s.review ? <GitCompare size={14} className="m-faint" /> : null}
+        {a?.requests ? <span className="m-dot s-wait" /> : a?.turn !== undefined || a?.jobs ? <span className="m-dot m-pulse s-working" /> : s.review ? <GitCompare size={14} className="m-faint" /> : null}
       </span>
       <span className="m-row-main">
         <b>{s.title}</b>
         <small>
           {a?.requests ? <span className="m-pill m-wait"><Hand size={12} />Waiting for you</span>
-            : a?.turn !== undefined ? <span className="s-working">Working</span> : null}
+            : a?.turn !== undefined || a?.jobs ? <span className="s-working">Working</span> : null}
           <span>{agentName}</span>
           {s.review && (s.openThreads ?? 0) > 0 && <span>{s.openThreads} open {s.openThreads === 1 ? 'thread' : 'threads'}</span>}
           {a?.queued ? <span className={a.paused ? 's-paused' : 's-queued'}>{a.queued} queued{a.paused ? ', paused' : ''}</span> : null}

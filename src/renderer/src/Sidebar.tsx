@@ -26,7 +26,12 @@ type Props = {
   openId: string | null
   /** Sessions open in their own windows (SPEC → Session windows); clicking one brings its window forward. */
   popped?: string[]
+  /** Sessions with something running: a turn, a fork's turn or a background job. */
   running: Record<string, string | null>
+  /** Sessions with a turn of their own running, which Restart waits for. */
+  turns: Record<string, string | null>
+  /** Sessions with a background job, which Restart stops. */
+  jobs: Record<string, true>
   /** Sessions whose last turn finished or failed while the user wasn't looking. */
   unseen: Record<string, 'completed' | 'failed'>
   /** Sessions whose agent is waiting on the user (a question or an approval). */
@@ -66,6 +71,8 @@ type Props = {
   pluginsOpen: boolean
   onImport(session: ListedAgentSession): void
   onRename(id: string, title: string): void
+  /** Restarts the session on its agent: the conversation stays. */
+  onRestart(id: string): void
   onDelete(id: string): void
   onCopyMarkdown(id: string): void
   /** Opens a session in its own window. */
@@ -294,7 +301,7 @@ export function Sidebar(props: Props): React.JSX.Element {
         <button
           className="icon-button row-more"
           aria-label="Session actions"
-          title="Rename, export or delete"
+          title="Rename, restart, export or delete"
           onClick={(e) => {
             e.stopPropagation()
             setMenuFor(menuFor === s.id ? null : s.id)
@@ -314,6 +321,15 @@ export function Sidebar(props: Props): React.JSX.Element {
                 Open in new window
               </button>
             )}
+            <button
+              role="menuitem"
+              disabled={s.id in props.turns}
+              title={s.id in props.turns ? 'Stop the turn first' : 'Start this session afresh on its agent. The conversation stays.'}
+              onClick={() => (setMenuFor(null), props.onRestart(s.id))}
+            >
+              {/* OpenCode's jobs run in its own service and outlive the session (SPEC → Background jobs). */}
+              {s.id in props.jobs && s.agentId !== 'opencode' ? 'Restart (stops background jobs)' : 'Restart'}
+            </button>
             <button role="menuitem" onClick={() => (setMenuFor(null), props.onCopyMarkdown(s.id))}>
               Copy as markdown
             </button>
