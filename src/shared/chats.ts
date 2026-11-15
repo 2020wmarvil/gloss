@@ -10,7 +10,10 @@ export function chatsFolder(settingsPath: string): string {
 }
 
 /** Why New chat can't start. */
-export const NO_SECOND_BRAIN = 'Set a second brain folder in Settings to start a chat.'
+export const NO_SECOND_BRAIN = "The second brain folder in Settings doesn't exist. Fix it, or clear it to use Gloss's own."
+
+/** Gloss's own vault, in the user's Documents folder, when the setting is empty. */
+export const DEFAULT_SECOND_BRAIN = 'Second Brain'
 
 /** Added to the agent instructions of every chat (SPEC → Agent instructions). */
 export const CHAT_INSTRUCTIONS = `This is a general chat, not work on a project. The working folder is the user's second brain: an Obsidian vault of Markdown notes, linked with [[wikilinks]].

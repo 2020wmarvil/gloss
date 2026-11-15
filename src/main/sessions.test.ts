@@ -2066,11 +2066,13 @@ describe('SessionManager', () => {
 
   describe('chats', () => {
     let vault: string | null
+    let prepared: string[]
     const ROOT = '/data/chats'
 
     beforeEach(async () => {
       await manager.dispose()
       vault = '/notes/brain'
+      prepared = []
       manager = new SessionManager({
         store,
         emit: (e) => events.push(e),
@@ -2080,7 +2082,7 @@ describe('SessionManager', () => {
         connect: (_c, _e, handlers) => AgentConnection.open(agentApp(state), handlers),
         runInTerminal: runInTerminal as never,
         now: () => 1000,
-        chats: { root: ROOT, vault: () => vault }
+        chats: { root: ROOT, vault: () => vault, prepare: (v) => prepared.push(v) }
       })
     })
 
@@ -2093,12 +2095,14 @@ describe('SessionManager', () => {
         { path: '/work/app', name: 'app', where: '/work' }
       ])
       vault = null
-      expect(manager.listProjects()[0]).toEqual({ path: ROOT, name: 'Chats', where: 'No second brain set', chats: { vault: null } })
+      expect(manager.listProjects()[0]).toEqual({ path: ROOT, name: 'Chats', where: 'Second brain missing', chats: { vault: null } })
     })
 
     it('starts a chat in the vault, listed under Chats, with the chat instructions', async () => {
       const chat = manager.startSession(ROOT, 'fake')
       expect(chat).toMatchObject({ cwd: '/notes/brain', project: ROOT })
+      // The default vault may not exist yet.
+      expect(prepared).toEqual(['/notes/brain'])
       await manager.send(chat.id, 'What did I decide about the move?', null)
       expect(state.cwds.get(store.getSession(chat.id)!.acpSessionId)).toBe('/notes/brain')
       expect(instructions(0)).toContain(CHAT_INSTRUCTIONS)

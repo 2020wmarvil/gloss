@@ -1,6 +1,6 @@
 import { bindingFor, matchesBinding, isMac } from '../shared/commands'
 import { randomUUID } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
+import { mkdirSync, readFileSync, statSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -39,7 +39,7 @@ import { autoUpdater } from 'electron-updater'
 import { Updates } from './updates'
 import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
-import { chatsFolder } from '../shared/chats'
+import { chatsFolder, DEFAULT_SECOND_BRAIN } from '../shared/chats'
 import { previewMcpImport } from './mcp-import'
 import { OpenCodeSupport } from './opencode'
 import { AgentProfileSupport } from './agentProfiles'
@@ -1333,13 +1333,16 @@ app.whenReady().then(() => {
     placeRemoved: (project) => {
       settingsFile.update({ project: { path: project, values: { newSessionPlace: 'folder' } } })
     },
-    // SPEC → Chats: the vault is used only while it's an existing folder.
+    // SPEC → Chats: a chosen vault is used only while it's an existing folder; without one,
+    // Gloss's own in Documents, made when the first chat starts.
     chats: {
       root: chatsFolder(settingsFile.state().path),
       vault: () => {
         const vault = settingsFile.state().global.secondBrain?.trim()
-        return vault && isAbsolute(vault) && isFolder(vault) ? vault : null
-      }
+        if (!vault) return join(app.getPath('documents'), DEFAULT_SECOND_BRAIN)
+        return isAbsolute(vault) && isFolder(vault) ? vault : null
+      },
+      prepare: (vault) => mkdirSync(vault, { recursive: true })
     }
   })
   registerIpc(sessions, settingsFile)

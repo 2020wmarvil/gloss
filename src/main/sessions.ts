@@ -95,9 +95,10 @@ export type SessionManagerDeps = {
   placeRemoved?(project: string): void
   /**
    * The built-in Chats project (SPEC → Chats): `root`, a folder of Gloss's own that stands for it
-   * in the project list, and the second brain vault its chats work in (null when none is usable).
+   * in the project list, and the second brain vault its chats work in (null when the chosen one
+   * is gone). `prepare` makes the vault before a chat starts in it (the default one may not exist yet).
    */
-  chats?: { root: string; vault(): string | null }
+  chats?: { root: string; vault(): string | null; prepare?(vault: string): void }
 }
 
 /** What worktrees need from git and the shell (SPEC → Worktrees). */
@@ -420,10 +421,11 @@ export class SessionManager {
     return !!this.deps.chats && samePath(path, this.deps.chats.root)
   }
 
-  /** The vault a new chat works in; rejects when none is set or it's gone. */
+  /** The vault a new chat works in, made if needed; rejects when the chosen one is gone. */
   private chatVault(): string {
     const vault = this.deps.chats?.vault()
     if (!vault) throw new Error(NO_SECOND_BRAIN)
+    this.deps.chats?.prepare?.(vault)
     return vault
   }
 
@@ -1628,7 +1630,7 @@ export class SessionManager {
     const chats = this.deps.chats
     if (chats) {
       const vault = chats.vault()
-      projects.unshift({ path: chats.root, name: CHATS_NAME, where: vault ? folderName(vault) : 'No second brain set', chats: { vault } })
+      projects.unshift({ path: chats.root, name: CHATS_NAME, where: vault ? folderName(vault) : 'Second brain missing', chats: { vault } })
     }
     return projects
   }

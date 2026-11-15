@@ -75,7 +75,7 @@ export type GlobalSettings = {
   phonePort?: number
   /** Where new projects and GitHub clones go; empty or omitted for the Desktop folder. */
   projectsFolder?: string
-  /** The Obsidian vault Chats work in (SPEC → Chats); empty or omitted turns Chats off. */
+  /** The Obsidian vault Chats work in (SPEC → Chats); empty or omitted for Documents\Second Brain. */
   secondBrain?: string
 }
 
@@ -270,8 +270,8 @@ export const SETTING_FIELDS: readonly SettingField[] = [
   },
   {
     key: 'secondBrain', scope: 'global', type: 'string', label: 'Second brain',
-    description: 'The Obsidian vault folder Chats work in. Agents read and write its notes. Empty turns Chats off.',
-    placeholder: 'Vault folder'
+    description: 'The Obsidian vault folder Chats work in. Agents read and write its notes. Empty uses Second Brain in your Documents folder, made with the first chat.',
+    placeholder: 'Documents\\Second Brain'
   },
   {
     key: 'phoneAccess', scope: 'global', type: 'boolean', label: 'Allow phones to connect',
