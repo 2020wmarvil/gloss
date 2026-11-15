@@ -27,11 +27,30 @@ export type AgentConfig = {
    */
   sessionMeta?(instructions: string): { new?: Record<string, unknown>; load?: Record<string, unknown> }
   /**
+   * A tool call still `in_progress` when a turn ends normally is a job running in the
+   * background, and its end comes later (SPEC → Background jobs).
+   */
+  toolCallsOutliveTurns?: boolean
+  /**
+   * The tool result that says a job went to the background, for an agent that reports nothing
+   * more about it over ACP. Its end is worked out from the session's history (SPEC → Background jobs).
+   */
+  quietJobResult?: RegExp
+  /**
    * Runs once the agent has started. A returned config replaces the running agent with one
    * started from it, once (Codex's plugin hooks: SPEC → Plugins → Subagents and hooks).
    */
   afterStart?(conn: { extRequest(method: string, params: Record<string, unknown>): Promise<unknown> }): Promise<AgentConfig | undefined>
 }
+
+/**
+ * The Claude adapter answers session/prompt while background tasks run on and reports them
+ * to no ACP v1 client, so Gloss asks for Claude Code's own messages (SPEC → Background jobs).
+ */
+const CLAUDE_MESSAGES = [
+  { type: 'system', subtype: 'background_tasks_changed' },
+  { type: 'system', subtype: 'session_state_changed' }
+]
 
 /**
  * Claude Code through its ACP adapter (@agentclientprotocol/claude-agent-acp).
@@ -54,8 +73,8 @@ function claudeAgent(): AgentConfig {
     cli: { kind: 'claude', env: 'CLAUDE_CODE_EXECUTABLE' },
     bypassModeId: 'bypassPermissions',
     sessionMeta: (instructions) => ({
-      new: { systemPrompt: { append: instructions } },
-      load: { systemPrompt: { append: instructions } }
+      new: { systemPrompt: { append: instructions }, claudeCode: { emitRawSDKMessages: CLAUDE_MESSAGES } },
+      load: { systemPrompt: { append: instructions }, claudeCode: { emitRawSDKMessages: CLAUDE_MESSAGES } }
     })
   }
 }
@@ -76,6 +95,7 @@ function codexAgent(): AgentConfig {
     env: { ELECTRON_RUN_AS_NODE: '1', DISABLE_MCP_CONFIG_FILTERING: 'true' },
     cli: { kind: 'codex', env: 'CODEX_PATH' },
     bypassModeId: 'agent-full-access',
+    toolCallsOutliveTurns: true,
     sessionMeta: (instructions) => ({ new: { jetbrains: { air: { customInstructions: instructions } } } })
   }
 }
@@ -83,7 +103,14 @@ function codexAgent(): AgentConfig {
 const AGENTS: Record<string, () => AgentConfig> = {
   claude: claudeAgent,
   codex: codexAgent,
-  opencode: () => ({ id: 'opencode', name: 'OpenCode', command: 'opencode', args: ['acp'], startupTimeoutMs: 15000 })
+  opencode: () => ({
+    id: 'opencode',
+    name: 'OpenCode',
+    command: 'opencode',
+    args: ['acp'],
+    startupTimeoutMs: 15000,
+    quietJobResult: /^(?:Command moved to the background|The subagent is working in the background)/
+  })
 }
 
 export function getAgentConfig(id: string): AgentConfig {

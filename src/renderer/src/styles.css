@@ -1044,6 +1044,12 @@ button.new-session-agents {
   background: var(--hover);
 }
 
+.menu button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  background: none;
+}
+
 .menu .danger {
   color: var(--failed);
 }
