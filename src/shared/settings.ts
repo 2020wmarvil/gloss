@@ -118,6 +118,8 @@ export type SettingField = {
   suggestions?: readonly string[]
   /** Set elsewhere in the window, so the settings screen doesn't list it. */
   hidden?: boolean
+  /** For global string fields: a folder, chosen with the native folder picker. */
+  folder?: boolean
 }
 
 export const SETTING_FIELDS: readonly SettingField[] = [
@@ -291,13 +293,13 @@ export const SETTING_FIELDS: readonly SettingField[] = [
   },
   {
     key: 'projectsFolder', scope: 'global', type: 'string', label: 'Projects folder',
-    description: 'Where New project and Open from GitHub put projects. Empty uses your Desktop folder.',
-    placeholder: 'Desktop folder'
+    description: 'Where New project and Open from GitHub put projects.',
+    placeholder: 'Desktop folder', folder: true
   },
   {
     key: 'secondBrain', scope: 'global', type: 'string', label: 'Second brain',
-    description: 'The Obsidian vault folder Chats work in. Agents read and write its notes. Empty uses Second Brain in your Documents folder, made with the first chat.',
-    placeholder: 'Documents\\Second Brain'
+    description: 'The Obsidian vault folder Chats work in.',
+    placeholder: 'Documents\\Second Brain', folder: true
   },
   {
     key: 'phoneAccess', scope: 'global', type: 'boolean', label: 'Allow phones to connect',

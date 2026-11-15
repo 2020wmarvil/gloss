@@ -981,6 +981,7 @@ button.new-session-agents {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: var(--control);
   padding: 6px 8px 6px 10px;
   border: 0;
   border-radius: var(--r-md);
@@ -1005,8 +1006,7 @@ button.new-session-agents {
   white-space: nowrap;
 }
 
-.switch-where,
-.project-where {
+.switch-where {
   font-size: var(--t-12);
   color: var(--muted);
   overflow: hidden;
@@ -1452,6 +1452,17 @@ button.settings-button.update-button:hover:not(:disabled) {
 }
 
 .editor-setting { display: grid; gap: 8px; min-width: 0; }
+.setting:has(.folder-setting) { grid-template-columns: minmax(0, 1fr) 320px; }
+.folder-setting { display: grid; gap: 6px; min-width: 0; }
+.folder-setting-row { display: flex; gap: 6px; min-width: 0; }
+.folder-setting-pick {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  height: var(--control); padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-md);
+  background: var(--surface); color: var(--ink); font: inherit; font-size: var(--t-13); text-align: left; cursor: pointer;
+}
+.folder-setting-pick:hover { border-color: var(--faint); }
+.folder-setting-pick svg { width: 14px; height: 14px; flex: none; color: var(--muted); }
+.folder-setting-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .editor-setting .select, .editor-setting .select-button { width: 100%; }
 
 .agents-settings h3 {
@@ -1637,27 +1648,6 @@ button.settings-button.update-button:hover:not(:disabled) {
 
 .setting .select {
   justify-self: stretch;
-}
-
-/* New project: one name field. */
-.new-project-dialog input.setting-text {
-  display: block;
-  width: 100%;
-  margin: 12px 0 16px;
-  height: var(--control);
-  padding: 0 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  font-size: var(--t-13);
-}
-
-.new-project-folder {
-  font-family: var(--font-mono);
-  font-size: var(--t-13);
-  overflow-wrap: anywhere;
 }
 
 .setting .select-button {

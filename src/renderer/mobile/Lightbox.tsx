@@ -1,6 +1,6 @@
 // A sent image full screen. The phone app can't zoom (mobile.html, mobile.css), so the viewer
 // zooms the image itself: pinch, drag while zoomed, double tap to zoom in at a spot or back out.
-// A single tap closes it.
+// A single tap closes it, as does a swipe up or down while it isn't zoomed in.
 import { useEffect, useRef } from 'react'
 
 export type View = { s: number; x: number; y: number }
@@ -12,6 +12,9 @@ const DOUBLE_TAP_SCALE = 2.5
 const DOUBLE_TAP_MS = 250
 /** A touch that moves further than this is a drag, not a tap. */
 const TAP_SLOP = 8
+/** A swipe that closes the viewer: this far, or this fast (px/ms). */
+const DISMISS_DISTANCE = 100
+const DISMISS_SPEED = 0.5
 
 function axis(t: number, s: number, start: number, size: number, screen: number): number {
   const scaled = size * s
@@ -59,6 +62,15 @@ export function Lightbox({ src, onClose }: { src: string; onClose(): void }): Re
     // Set when a touch dragged or pinched, so the click that follows isn't a tap.
     let moved = false
     let tapTimer: ReturnType<typeof setTimeout> | undefined
+    // A swipe to close, while not zoomed: how far it has gone and how fast.
+    let swipe: { dy: number; y: number; t: number; speed: number } | null = null
+    const swipeTo = (dy: number, animate: boolean): void => {
+      const ease = animate ? 'transform 0.2s ease-out, opacity 0.2s ease-out' : ''
+      image.style.transition = ease
+      image.style.transform = dy ? `translate(0px, ${dy}px)` : ''
+      el.style.transition = animate ? 'background-color 0.2s ease-out' : ''
+      el.style.backgroundColor = dy ? `rgba(0, 0, 0, ${0.9 * Math.max(0, 1 - Math.abs(dy) / 400)})` : ''
+    }
 
     const frame = (): Frame => ({
       left: image.offsetLeft, top: image.offsetTop, w: image.offsetWidth, h: image.offsetHeight,
@@ -86,7 +98,10 @@ export function Lightbox({ src, onClose }: { src: string; onClose(): void }): Re
 
     const onStart = (e: TouchEvent): void => {
       if (e.touches.length === 1) moved = false
-      if (e.touches.length >= 2) moved = true
+      if (e.touches.length >= 2) {
+        moved = true
+        if (swipe) { swipe = null; swipeTo(0, true) }
+      }
       begin(e.touches)
     }
     const onMove = (e: TouchEvent): void => {
@@ -104,9 +119,29 @@ export function Lightbox({ src, onClose }: { src: string; onClose(): void }): Re
         const p = point(e.touches[0])
         if (Math.hypot(p.x - gesture.x, p.y - gesture.y) > TAP_SLOP) moved = true
         if (view.s > 1) show(clampView({ ...gesture.start, x: gesture.start.x + p.x - gesture.x, y: gesture.start.y + p.y - gesture.y }, f), false)
+        else if (swipe || (moved && Math.abs(p.y - gesture.y) > Math.abs(p.x - gesture.x))) {
+          const dy = p.y - gesture.y
+          const dt = swipe ? e.timeStamp - swipe.t : 0
+          swipe = { dy, y: p.y, t: e.timeStamp, speed: swipe && dt > 0 ? (p.y - swipe.y) / dt : 0 }
+          swipeTo(dy, false)
+        }
       }
     }
     const onEnd = (e: TouchEvent): void => {
+      if (swipe && e.touches.length === 0) {
+        const { dy, speed } = swipe
+        swipe = null
+        gesture = null
+        if (e.type !== 'touchcancel' && (Math.abs(dy) > DISMISS_DISTANCE || Math.abs(speed) > DISMISS_SPEED)) {
+          image.style.transition = 'transform 0.2s ease-out, opacity 0.2s ease-out'
+          image.style.transform = `translate(0px, ${Math.sign(dy || speed) * el.clientHeight}px)`
+          image.style.opacity = '0'
+          el.style.transition = 'background-color 0.2s ease-out'
+          el.style.backgroundColor = 'rgba(0, 0, 0, 0)'
+          setTimeout(() => close.current(), 200)
+        } else swipeTo(0, true)
+        return
+      }
       // One finger of a pinch lifting carries on as a drag from where the image is.
       begin(e.touches)
       if (e.touches.length === 0) show(clampView(view, frame()), true)

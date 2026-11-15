@@ -126,6 +126,8 @@ html { touch-action: pan-x pan-y; }
 .m-screen .m-pick { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; font-size: var(--t-24); letter-spacing: -0.02em; }
 .m-sec { padding: 14px 16px 6px; font: 600 var(--t-12)/1 var(--font-ui); letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); }
 .m-screen .m-row { width: 100%; display: flex; gap: 12px; align-items: flex-start; padding: 11px 16px; border-bottom: 1px solid var(--line-soft); }
+/* The session list and its sheets are for tapping and holding, not selecting text. */
+.m-proj, .m-list, .m-sheet .m-kv-btn { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .m-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .m-row-main b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-row-main small { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--t-13); color: var(--muted); }
@@ -266,6 +268,9 @@ html { touch-action: pan-x pan-y; }
 .m-screen .m-btn { width: 100%; height: 46px; border-radius: var(--r-md); display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; background: var(--selected); }
 .m-screen .m-btn.m-pri { background: var(--brand-gradient); color: var(--on-brand); }
 .m-screen .m-btn.m-ghost { background: transparent; font-weight: 500; }
+.m-screen .m-btn.m-danger { background: var(--failed); color: #fff; }
+.m-screen .m-danger-text, .m-screen .m-danger-text .m-k { color: var(--failed); }
+.m-screen .m-kv-btn:disabled { opacity: 0.5; }
 .m-screen .m-btn:disabled { opacity: 0.5; }
 .m-steps { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 10px; margin: 4px 0; }
 .m-steps > div { display: flex; gap: 10px; align-items: center; font-size: var(--t-14); color: var(--ink-2); }

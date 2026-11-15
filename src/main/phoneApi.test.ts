@@ -22,9 +22,15 @@ describe('PhoneApi', () => {
       IPC.openFileLink, IPC.sessionsOpenFolder, IPC.sessionsOpenObsidian, IPC.sessionsOpenReviewFile,
       IPC.sessionsSaveMarkdown, IPC.sessionsCopyMarkdown, IPC.composerShell, IPC.composerEditDraft,
       IPC.composerContexts, IPC.composerAttach, IPC.captureStart, IPC.annotateOpen, IPC.authSignIn,
-      IPC.projectsOpen, IPC.projectsDelete, IPC.projectsClone, IPC.sessionsDelete,
+      IPC.projectsOpen, IPC.projectsDelete, IPC.projectsClone, IPC.projectsCreateAt, IPC.settingsPickFolder,
       IPC.agentsTestOpenCode, IPC.agentsTestProfile, IPC.windowsPopOut, IPC.setBadge, IPC.confirmClose
     ]) expect(PHONE_CHANNELS.has(channel), channel).toBe(false)
+  })
+
+  it("lets phones rename, restart, delete and export a session (the session row's menu)", () => {
+    for (const channel of [IPC.sessionsRename, IPC.sessionsRestart, IPC.sessionsDelete, IPC.sessionsMarkdown]) {
+      expect(PHONE_CHANNELS.has(channel), channel).toBe(true)
+    }
   })
 
   it('lets phones clone and create projects, only in the projects folder', () => {

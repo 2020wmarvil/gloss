@@ -2,8 +2,8 @@
 // threads full screen, the composer with queue and steer, questions and approvals, and the status sheet.
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft, ArrowUp, Brain, Check, ChevronDown, ChevronRight, CircleCheckBig, Clock, CloudDownload, CornerDownRight, Folder, FolderPlus, GitBranch, GitCompare, GitFork, Hand, Lock,
-  MessageSquare, MessageSquareReply, Pencil, Plus, ScanSearch, Shield, Square, Trash2, WifiOff, X
+  ArrowLeft, ArrowUp, Brain, Check, ChevronDown, ChevronRight, CircleCheckBig, Clock, CloudDownload, Copy, CornerDownRight, Folder, FolderPlus, GitBranch, GitCompare, GitFork, Hand, Lock,
+  MessageSquare, MessageSquareReply, Pencil, Plus, RotateCcw, ScanSearch, Shield, Square, Trash2, WifiOff, X
 } from 'lucide-react'
 import type { Anchor, Attachment, Message, Plan, PlanUsage, Session, Thread, ToolCall } from '@shared/types'
 import { cloneChoices, type GithubRepo } from '@shared/github'
@@ -18,6 +18,7 @@ import { ForkSummary, logItems, type LogItem, type Notice } from '../src/Log'
 import { Markdown } from '../src/Markdown'
 import { RequestCard } from '../src/RequestCard'
 import { Lightbox } from './Lightbox'
+import { useSheetDrag } from './sheetDrag'
 import { forkUsage } from '../src/ThreadPanel'
 import { resetIn } from '../src/UsagePanel'
 import { hasDetails, ToolDetails } from '../src/ToolDetails'
@@ -365,6 +366,8 @@ function Sessions({ phone, project, setProject, onOpen }: {
 }): React.JSX.Element {
   const [picker, setPicker] = useState<'projects' | 'agents' | 'newProject' | 'clone' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** The session whose long-press menu is open. */
+  const [menuFor, setMenuFor] = useState<Session | null>(null)
   /** A new session is being started on the desktop. */
   const [creating, setCreating] = useState(false)
   const current = phone.projects.find((p) => p.path.toLowerCase() === project?.toLowerCase()) ?? phone.projects[0]
@@ -410,15 +413,15 @@ function Sessions({ phone, project, setProject, onOpen }: {
           {current?.name ?? 'Gloss'} <ChevronDown size={16} />
         </button>
       </div>
-      <div className="m-body m-scroll" ref={scroll.ref} onScroll={scroll.onScroll}>
+      <div className="m-body m-scroll m-list" ref={scroll.ref} onScroll={scroll.onScroll}>
         <NotifyCard />
         {error && <p className="m-error" role="alert">{error}</p>}
         {!current && phone.info && <p className="m-empty">Open a project in Gloss on the computer to start.</p>}
         {waiting.length > 0 && <div className="m-sec">Needs you</div>}
-        {waiting.map((s) => <SessionRow key={s.id} s={s} phone={phone} agentName={agentName(s.agentId)} onOpen={onOpen} />)}
+        {waiting.map((s) => <SessionRow key={s.id} s={s} phone={phone} agentName={agentName(s.agentId)} onOpen={onOpen} onMenu={setMenuFor} />)}
         {noVault && <p className="m-empty">{NO_SECOND_BRAIN}</p>}
         {rest.length > 0 && <div className="m-sec">{chats ? 'Chats' : 'Sessions'}</div>}
-        {rest.map((s) => <SessionRow key={s.id} s={s} phone={phone} agentName={agentName(s.agentId)} onOpen={onOpen} />)}
+        {rest.map((s) => <SessionRow key={s.id} s={s} phone={phone} agentName={agentName(s.agentId)} onOpen={onOpen} onMenu={setMenuFor} />)}
         <div className="m-fab-space" />
       </div>
       {current && (
@@ -452,7 +455,6 @@ function Sessions({ phone, project, setProject, onOpen }: {
               </button>
             )
           })}
-          <div className="m-sec">Add</div>
           <button className="m-kv m-kv-btn" onClick={() => setPicker('newProject')}>
             <FolderPlus size={18} /><span className="m-k m-ink">New project</span>
           </button>
@@ -461,6 +463,7 @@ function Sessions({ phone, project, setProject, onOpen }: {
           </button>
         </Sheet>
       )}
+      {menuFor && <SessionActions s={menuFor} running={phone.activity[menuFor.id]?.turn !== undefined} onError={setError} onClose={() => setMenuFor(null)} />}
       {picker === 'newProject' && <NewProjectSheet onClose={() => setPicker(null)} onOpened={(path) => { setProject(path); setPicker(null) }} />}
       {picker === 'clone' && <CloneSheet onClose={() => setPicker(null)} onOpened={(path) => { setProject(path); setPicker(null) }} />}
       {picker === 'agents' && (
@@ -488,10 +491,8 @@ function Sessions({ phone, project, setProject, onOpen }: {
 /** New project from the phone (SPEC → Remote and mobile): a name, made in the desktop's projects folder. */
 function NewProjectSheet({ onClose, onOpened }: { onClose(): void; onOpened(path: string): void }): React.JSX.Element {
   const [name, setName] = useState('')
-  const [folder, setFolder] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  useEffect(() => { void window.gloss.projects.folder().then(setFolder, () => {}) }, [])
   async function create(): Promise<void> {
     if (busy || !name.trim()) return
     setBusy(true)
@@ -504,9 +505,8 @@ function NewProjectSheet({ onClose, onOpened }: { onClose(): void; onOpened(path
     }
   }
   return (
-    <Sheet title="New project" onClose={() => { if (!busy) onClose() }}>
+    <Sheet title="New project" onClose={onClose} closable={!busy}>
       <form className="m-sheet-form" onSubmit={(e) => { e.preventDefault(); void create() }}>
-        <p className="m-sheet-note m-small">A new Git repository in {folder ? <b>{folder}</b> : 'the projects folder'} on the computer.</p>
         <input className="m-field" aria-label="Project name" placeholder="Project name" value={name} disabled={busy}
           autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(e) => setName(e.target.value)} />
         {error && <p className="m-error" role="alert">{error}</p>}
@@ -533,6 +533,7 @@ function CloneSheet({ onClose, onOpened }: { onClose(): void; onOpened(path: str
     })
     return () => { live = false }
   }, [])
+  const sheet = useSheetDrag<HTMLDivElement>(onClose, cloning === null)
   const byName = new Map((repos ?? []).map((r) => [r.fullName, r]))
   const choices = cloneChoices(repos ?? [], query).slice(0, 50)
   async function clone(name: string): Promise<void> {
@@ -549,7 +550,7 @@ function CloneSheet({ onClose, onOpened }: { onClose(): void; onOpened(path: str
   return (
     <>
       <div className="m-dim" onClick={() => { if (!cloning) onClose() }} />
-      <div className="m-sheet m-sheet-tall" role="dialog" aria-label="Open from GitHub">
+      <div ref={sheet} className="m-sheet m-sheet-tall" role="dialog" aria-label="Open from GitHub">
         <div className="m-grab" />
         <h4>Open from GitHub</h4>
         <input className="m-field" aria-label="Repository" placeholder="Search, or paste owner/name or a URL" value={query} disabled={cloning !== null}
@@ -573,10 +574,34 @@ function CloneSheet({ onClose, onOpened }: { onClose(): void; onOpened(path: str
   )
 }
 
-function SessionRow({ s, phone, agentName, onOpen }: { s: Session; phone: Phone; agentName: string; onOpen(id: string): void }): React.JSX.Element {
+function SessionRow({ s, phone, agentName, onOpen, onMenu }: {
+  s: Session; phone: Phone; agentName: string; onOpen(id: string): void
+  /** A long press: the session's actions. */
+  onMenu(s: Session): void
+}): React.JSX.Element {
   const a = phone.activity[s.id]
+  const hold = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null)
+  const held = useRef(false)
+  const release = (): void => {
+    if (hold.current) clearTimeout(hold.current.timer)
+    hold.current = null
+  }
   return (
-    <button className="m-row" onClick={() => onOpen(s.id)}>
+    <button
+      className="m-row"
+      onPointerDown={(e) => {
+        held.current = false
+        release()
+        hold.current = { x: e.clientX, y: e.clientY, timer: setTimeout(() => { held.current = true; hold.current = null; onMenu(s) }, 500) }
+      }}
+      // A scroll is a move, not a hold.
+      onPointerMove={(e) => { if (hold.current && Math.hypot(e.clientX - hold.current.x, e.clientY - hold.current.y) > 8) release() }}
+      onPointerUp={release}
+      onPointerCancel={release}
+      onPointerLeave={release}
+      onContextMenu={(e) => e.preventDefault()}
+      onClick={() => { if (!held.current) onOpen(s.id) }}
+    >
       <span className="m-lead">
         {a?.requests ? <span className="m-dot s-wait" /> : a?.turn !== undefined || a?.jobs ? <span className="m-dot m-pulse s-working" /> : s.review ? <GitCompare size={14} className="m-faint" /> : null}
       </span>
@@ -592,6 +617,84 @@ function SessionRow({ s, phone, agentName, onOpen }: { s: Session; phone: Phone;
       </span>
       <span className="m-when">{when(s.activeAt ?? s.createdAt)}</span>
     </button>
+  )
+}
+
+/** A session row's long-press menu: the desktop's session actions that make sense on a phone. */
+function SessionActions({ s, running, onError, onClose }: {
+  s: Session; running: boolean; onError(error: string): void; onClose(): void
+}): React.JSX.Element {
+  const [step, setStep] = useState<'menu' | 'rename' | 'delete'>('menu')
+  const [title, setTitle] = useState(s.title)
+  const [busy, setBusy] = useState(false)
+  /** Runs an action in the background once the sheet closes. */
+  const run = (action: () => Promise<unknown>): void => {
+    onClose()
+    action().catch((err: unknown) => onError(errorText(err)))
+  }
+  /** Runs an action with the sheet showing a spinner, then closes it. */
+  async function act(action: () => Promise<unknown>): Promise<void> {
+    setBusy(true)
+    try {
+      await action()
+    } catch (err) {
+      onError(errorText(err))
+    }
+    onClose()
+  }
+  function copy(): void {
+    const text = window.gloss.sessions.markdown(s.id, null)
+    // iOS allows a clipboard write only within the tap, so it's handed the text still on its way.
+    run(() => typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write
+      ? navigator.clipboard.write([new ClipboardItem({ 'text/plain': text.then((t) => new Blob([t], { type: 'text/plain' })) })])
+      : text.then((t) => navigator.clipboard.writeText(t)))
+  }
+  if (step === 'rename') {
+    return (
+      <Sheet title="Rename" onClose={onClose} closable={!busy}>
+        <form className="m-sheet-form" onSubmit={(e) => {
+          e.preventDefault()
+          const next = title.trim()
+          if (!next || next === s.title) onClose()
+          else void act(() => window.gloss.sessions.rename(s.id, next))
+        }}>
+          <input className="m-field" aria-label="Session title" value={title} disabled={busy} autoFocus onChange={(e) => setTitle(e.target.value)} />
+          <button type="submit" className="m-btn m-pri" disabled={busy || !title.trim()} aria-busy={busy}>
+            {busy ? <><span className="m-spinner" />Saving…</> : 'Save'}
+          </button>
+        </form>
+      </Sheet>
+    )
+  }
+  if (step === 'delete') {
+    return (
+      <Sheet title="Delete this session?" onClose={onClose} closable={!busy}>
+        <div className="m-sheet-form">
+          <p className="m-sheet-note m-small"><b>{s.title}</b> and its threads are deleted, with the agent's own copy where it keeps one. This can't be undone.</p>
+          <button className="m-btn m-danger" disabled={busy} aria-busy={busy} onClick={() => void act(() => window.gloss.sessions.delete(s.id))}>
+            {busy ? <><span className="m-spinner" />Deleting…</> : 'Delete'}
+          </button>
+          <button className="m-btn m-ghost" disabled={busy} onClick={onClose}>Cancel</button>
+        </div>
+      </Sheet>
+    )
+  }
+  return (
+    <Sheet title={s.title} onClose={onClose}>
+      <button className="m-kv m-kv-btn" onClick={() => setStep('rename')}>
+        <Pencil size={18} /><span className="m-k m-ink">Rename</span>
+      </button>
+      <button className="m-kv m-kv-btn" disabled={running} onClick={() => run(() => window.gloss.sessions.restart(s.id))}>
+        <RotateCcw size={18} /><span className="m-k m-ink">Restart</span>
+        {running && <span className="m-v m-small">Stop the turn first</span>}
+      </button>
+      <button className="m-kv m-kv-btn" onClick={copy}>
+        <Copy size={18} /><span className="m-k m-ink">Copy as markdown</span>
+      </button>
+      <button className="m-kv m-kv-btn m-danger-text" onClick={() => setStep('delete')}>
+        <Trash2 size={18} /><span className="m-k">Delete</span>
+      </button>
+    </Sheet>
   )
 }
 
@@ -1469,11 +1572,13 @@ function QueueList({ open }: { open: OpenView }): React.JSX.Element {
 
 // Bits
 
-function Sheet({ title, onClose, children }: { title: string; onClose(): void; children: React.ReactNode }): React.JSX.Element {
+/** A bottom sheet: a tap on the dim or a swipe down closes it, unless `closable` is false (busy). */
+function Sheet({ title, onClose, closable = true, children }: { title: string; onClose(): void; closable?: boolean; children: React.ReactNode }): React.JSX.Element {
+  const ref = useSheetDrag<HTMLDivElement>(onClose, closable)
   return (
     <>
-      <div className="m-dim" onClick={onClose} />
-      <div className="m-sheet" role="dialog" aria-label={title}>
+      <div className="m-dim" onClick={() => { if (closable) onClose() }} />
+      <div ref={ref} className="m-sheet" role="dialog" aria-label={title}>
         <div className="m-grab" />
         <h4>{title}</h4>
         {children}

@@ -16,7 +16,7 @@ import { EditorSetting } from './EditorSetting'
 import { ShortcutSetting } from './ShortcutSetting'
 import { PhoneSettings } from './PhoneSettings'
 import { UpdateSettings } from './UpdateSettings'
-import { ExternalLink, Folder, Keyboard, Palette, Server, SlidersVertical, Smartphone, Terminal } from 'lucide-react'
+import { ExternalLink, Folder, FolderOpen, Keyboard, Palette, Server, SlidersVertical, Smartphone, Terminal } from 'lucide-react'
 
 export type SettingsSection = 'general' | 'appearance' | 'mcp' | 'agents' | 'phone' | 'project' | 'shortcuts'
 
@@ -297,6 +297,28 @@ function TextSetting(props: { id: string; field: SettingField; value: string; on
   )
 }
 
+/** A folder setting: the native folder picker, and Default to clear it. */
+function FolderSetting(props: { id: string; field: SettingField; value: string; onChange(value: string): void }): React.JSX.Element {
+  const { id, field, value } = props
+  const [error, setError] = useState<string | null>(null)
+  const pick = (): void => {
+    setError(null)
+    window.gloss.settings.pickFolder(field.key).catch((err: unknown) => setError(errorText(err)))
+  }
+  return (
+    <div className="folder-setting">
+      <div className="folder-setting-row">
+        <button id={id} type="button" className="folder-setting-pick" aria-describedby={`${id}-description`} title={value || field.placeholder} onClick={pick}>
+          <FolderOpen aria-hidden />
+          <span className={value ? 'folder-setting-path' : 'folder-setting-path muted'}>{value || field.placeholder}</span>
+        </button>
+        {value && <button type="button" className="ghost" title={`Use ${field.placeholder ?? 'the default'}`} onClick={() => props.onChange('')}>Default</button>}
+      </div>
+      {error && <p role="alert" className="dialog-error">{error}</p>}
+    </div>
+  )
+}
+
 function Field(props: { field: SettingField; value: unknown; onChange(value: unknown): void }): React.JSX.Element {
   const { field, value } = props
   const id = `setting-${field.key}`
@@ -314,6 +336,8 @@ function Field(props: { field: SettingField; value: unknown; onChange(value: unk
         <EditorSetting id={id} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'shortcut' ? (
         <ShortcutSetting id={id} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
+      ) : field.folder ? (
+        <FolderSetting id={id} field={field} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'string' ? (
         <TextSetting id={id} field={field} value={typeof value === 'string' ? value : ''} onChange={props.onChange} />
       ) : field.type === 'enum' && SEGMENTED.has(field.key) ? (

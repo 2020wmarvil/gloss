@@ -1,8 +1,8 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createProject, projectNameError, projectsFolder } from './newProject'
+import { createProject, initProject, projectNameError, projectsFolder } from './newProject'
 
 describe('projectNameError', () => {
   it('accepts an ordinary folder name', () => {
@@ -42,5 +42,27 @@ describe('createProject', () => {
     dir = mkdtempSync(join(tmpdir(), 'gloss-new-'))
     await createProject(dir, 'app')
     await expect(createProject(dir, 'app')).rejects.toThrow(/already exists/)
+  })
+})
+
+describe('initProject', () => {
+  let dir: string
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  it('makes an empty picked folder, or one that does not exist yet, a git repository', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'gloss-init-'))
+    expect(await initProject(dir)).toBe(dir)
+    expect(existsSync(join(dir, '.git'))).toBe(true)
+    const fresh = join(dir, 'nested', 'app')
+    await initProject(fresh)
+    expect(existsSync(join(fresh, '.git'))).toBe(true)
+  })
+
+  it('refuses a folder with anything in it, and leaves it alone', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'gloss-init-'))
+    writeFileSync(join(dir, 'notes.txt'), 'keep')
+    await expect(initProject(dir)).rejects.toThrow(/isn't empty/)
+    expect(existsSync(join(dir, '.git'))).toBe(false)
+    expect(readdirSync(dir)).toEqual(['notes.txt'])
   })
 })

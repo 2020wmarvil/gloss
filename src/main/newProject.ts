@@ -1,6 +1,6 @@
 // New project and the projects folder (SPEC → Projects and sessions → New project).
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -50,4 +50,18 @@ export async function createProject(parent: string, name: string): Promise<strin
     throw err
   }
   return dest
+}
+
+/**
+ * The desktop's New project: runs `git init` in a folder the user picked (made if it doesn't exist).
+ * A folder with anything in it is refused, so an existing project isn't taken over.
+ */
+export async function initProject(dir: string): Promise<string> {
+  if (existsSync(dir)) {
+    if (readdirSync(dir).length > 0) throw new Error(`${dir} isn't empty. Pick an empty folder for a new project.`)
+  } else {
+    mkdirSync(dir, { recursive: true })
+  }
+  await gitInit(dir)
+  return dir
 }

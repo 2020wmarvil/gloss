@@ -53,7 +53,7 @@ type Props = {
   onSelectProject(path: string): void
   onOpenProject(): void
   onCloneProject(): void
-  /** New project…: a name, made in the projects folder. */
+  /** New project…: an empty folder from the picker, made a Git repository. */
   onNewProject(): void
   onDeleteProject(path: string): void
   onSelect(id: string): void
@@ -372,7 +372,7 @@ export function Sidebar(props: Props): React.JSX.Element {
           >
             <span className="switch-names">
               <b>{project?.name ?? 'No project'}</b>
-              <span className="switch-where">{project ? project.where : 'Open a folder to start'}</span>
+              {!project && <span className="switch-where">Open a folder to start</span>}
             </span>
             <ChevronsUpDown className="caret" />
           </button>
@@ -383,15 +383,13 @@ export function Sidebar(props: Props): React.JSX.Element {
                   <button
                     role="menuitem"
                     className={project && sameFolder(p.path, project.path) ? 'on' : undefined}
+                    title={p.path}
                     onClick={() => props.onSelectProject(p.path)}
                   >
                     <b>
                       {p.name}
                       {projectBadges(p)}
                     </b>
-                    <span className="project-where" title={p.path}>
-                      {p.where}
-                    </span>
                   </button>
                   {!p.chats && <button
                     className="project-delete"

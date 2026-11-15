@@ -17,7 +17,7 @@ import { gitStatus, pullRequest } from './git'
 import { perforceWorkspace, perforceStatus, PerforceError, hasPerforceConfig } from './perforce'
 import { perforceRange } from '../shared/perforce'
 import { cloneRepo, listRepos } from './github'
-import { createProject, projectsFolder } from './newProject'
+import { createProject, initProject, projectsFolder } from './newProject'
 import { SessionManager } from './sessions'
 import { BADGE_LABEL, BADGE_SIZE, badgePixels } from './badge'
 import { patchArg, SettingsFile } from './settings'
@@ -37,7 +37,7 @@ import { fetchCodexUsage } from './codex-usage'
 import { AgentClis, type CliKind } from './agentCli'
 import { autoUpdater } from 'electron-updater'
 import { Updates } from './updates'
-import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings, type GlobalSettings } from '../shared/settings'
+import { DEFAULT_CAPTURE_SHORTCUT, DEFAULT_EXTERNAL_EDITOR, projectSettings, SETTING_FIELDS, type GlobalSettings } from '../shared/settings'
 import { obsidianUri } from '../shared/obsidian'
 import { chatsFolder, DEFAULT_SECOND_BRAIN } from '../shared/chats'
 import { previewMcpImport } from './mcp-import'
@@ -891,6 +891,10 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   share(IPC.projectsCloneToProjectsFolder, async (repo: unknown) => added(await cloneRepo(str(repo, 'repo'), projectsHome())))
   share(IPC.projectsFolder, () => projectsHome())
   share(IPC.projectsCreate, async (name: unknown) => added(await createProject(projectsHome(), str(name, 'name'))))
+  ipcMain.handle(IPC.projectsCreateAt, async () => {
+    const dir = await pickFolder('New project', projectsHome())
+    return dir ? added(await initProject(dir)) : null
+  })
   registerComposerIpc(store!, isGlossSender, () => settingsFile.state().global.externalEditor, (sender) => {
     const win = glossWindows().find((w) => w.webContents === sender)
     if (!win) return
@@ -1059,11 +1063,11 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.sessionsOpen, (_e, id: unknown) => manager.openSession(str(id, 'id'), { images: false }))
   ipcMain.handle(IPC.sessionsImage, (_e, messageId: unknown, index: unknown) => manager.imageData(str(messageId, 'message'), Number(index)))
   share(IPC.sessionsRefresh, (id: unknown) => manager.refreshSession(str(id, 'id')))
-  ipcMain.handle(IPC.sessionsRename, (_e, id: unknown, title: unknown) =>
-    manager.renameSession(str(id, 'id'), str(title, 'title'))
-  )
-  ipcMain.handle(IPC.sessionsRestart, (_e, id: unknown) => manager.restartSession(str(id, 'id')))
-  ipcMain.handle(IPC.sessionsDelete, (_e, id: unknown) => manager.deleteSession(str(id, 'id')))
+  // The phone's long-press menu on a session row offers these too.
+  share(IPC.sessionsRename, (id: unknown, title: unknown) => manager.renameSession(str(id, 'id'), str(title, 'title')))
+  share(IPC.sessionsRestart, (id: unknown) => manager.restartSession(str(id, 'id')))
+  share(IPC.sessionsDelete, (id: unknown) => manager.deleteSession(str(id, 'id')))
+  share(IPC.sessionsMarkdown, (id: unknown, threadId: unknown) => exportLog(str(id, 'id'), threadArg(threadId)).markdown)
   share(IPC.sessionsSetChoice, (id: unknown, kind: unknown, value: unknown) => {
     if (kind !== 'model' && kind !== 'effort') throw new Error('kind must be "model" or "effort"')
     return manager.setChoice(str(id, 'id'), kind, str(value, 'value'))
@@ -1198,6 +1202,18 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   ipcMain.handle(IPC.settingsOpenFile, async () => {
     const error = await shell.openPath(settingsFile.path)
     return error === '' ? null : error
+  })
+  ipcMain.handle(IPC.settingsPickFolder, async (_e, key: unknown) => {
+    const field = SETTING_FIELDS.find((f) => f.scope === 'global' && f.folder && f.key === key)
+    if (!field) throw new Error('Not a folder setting.')
+    const global = settingsFile.state().global as unknown as Record<string, unknown>
+    const current = typeof global[field.key] === 'string' ? (global[field.key] as string).trim() : ''
+    const start = current && isFolder(current) ? current
+      : field.key === 'projectsFolder' ? projectsFolder(undefined)
+      : field.key === 'secondBrain' && isFolder(join(app.getPath('documents'), DEFAULT_SECOND_BRAIN)) ? join(app.getPath('documents'), DEFAULT_SECOND_BRAIN)
+      : app.getPath('documents')
+    const dir = await pickFolder(field.label, start)
+    return dir ? settingsFile.update({ global: { [field.key]: dir } }) : null
   })
 }
 
