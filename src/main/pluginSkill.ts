@@ -59,14 +59,14 @@ Gloss keeps a library of plugins that it delivers to the agents the user picks. 
   \`\`\`
   \`connections\` lists the names of MCP servers in settings this plugin needs. \`enabledAgents\` lists the agent ids that get the plugin. A new plugin is on by default: unless the user named other agents, set it to \`${JSON.stringify(defaultAgents)}\`.
 - \`SKILL.md\` starts with frontmatter whose \`name\` equals its folder name and whose \`description\` is a single line. Other frontmatter fields may stay.
-- A skill is automatic by default: an agent may use it when it's relevant. To make it direct only (used only when the user invokes it), set all three agents' fields, or they disagree: in the frontmatter \`disable-model-invocation: true\`, \`user-invocable: true\` and \`metadata:\` with \`opencode/autoinvoke: false\`, and in \`skills/<skill-name>/agents/openai.yaml\` (Codex) \`policy:\` with \`allow_implicit_invocation: false\`.
+- A skill is automatic by default: an agent may use it when it's relevant. To make it direct only (used only when the user invokes it), set all three agents' fields, or they disagree (Antigravity has no such field, so it may still use the skill on its own): in the frontmatter \`disable-model-invocation: true\`, \`user-invocable: true\` and \`metadata:\` with \`opencode/autoinvoke: false\`, and in \`skills/<skill-name>/agents/openai.yaml\` (Codex) \`policy:\` with \`allow_implicit_invocation: false\`.
 - Only ordinary files and folders: no links. At most 1,000 files and 64 MB per plugin, 12 folder levels.
 - Other files a skill, hook or server uses (scripts, server code) may sit anywhere in the plugin folder. Gloss refuses a plugin with \`commands\`, \`.mcp.json\`, \`mcp.json\`, \`index.js\`, \`index.ts\` or \`.claude-plugin\` there.
 - The plugin id \`gloss\` is reserved for this skill's plugin. Don't reuse a plugin name already in the library (compare names ignoring case).
 
 ## Subagents
 
-\`agents/<subagent-name>.md\`, one file per subagent, named like a skill. Claude Code, Codex and OpenCode get them; custom agents don't.
+\`agents/<subagent-name>.md\`, one file per subagent, named like a skill. Claude Code, Codex, Antigravity and OpenCode get them; custom agents don't.
 
 \`\`\`markdown
 ---
@@ -82,7 +82,7 @@ Review the current changes and list findings in severity order.
 
 - Only these frontmatter fields: \`name\` (the file name without \`.md\`), \`description\` (one line; agents use it to decide when to call the subagent), \`tools\` and \`model\`. The body is the subagent's instructions.
 - \`tools\`: \`read-only\` (it can't edit files or run shell commands) or \`inherit\` (the default: whatever the calling session may do). Don't list tool names: they differ between agents.
-- \`model\` (optional): a model per agent id (\`claude\`, \`codex\`, \`opencode\`), in that agent's own naming. Leave it out to use the session's model.
+- \`model\` (optional): a model per agent id (\`claude\`, \`codex\`, \`antigravity\`, \`opencode\`), in that agent's own naming (Antigravity takes \`flash\` or \`pro\`). Leave it out to use the session's model.
 - Agents see a subagent as \`<plugin-id>:<name>\` in Claude Code and \`<plugin-id>-<name>\` elsewhere.
 
 ## Hooks
@@ -97,11 +97,11 @@ Review the current changes and list findings in severity order.
 \`\`\`
 
 - \`event\`: one of Gloss's events, which every agent has: \`sessionStart\`, \`userPrompt\`, \`beforeTool\`, \`afterTool\`, \`stop\`. Or an agent's own event name (for example Claude Code's \`PreCompact\`), which needs \`agents\`.
-- \`matcher\` (only for \`beforeTool\` and \`afterTool\`; leave it out to match every tool): \`shell\`, \`edit\`, \`read\`, \`any\` or \`mcp:<server name>\`. An agent's own tool-name pattern (\`Write|Edit\`) needs \`agents\`. Codex has no \`read\` tool, so it skips a \`read\` hook.
-- \`agents\` (optional): the agent ids that get this hook (\`claude\`, \`codex\`, \`opencode\`). Without it, every one of them does.
+- \`matcher\` (only for \`beforeTool\` and \`afterTool\`; leave it out to match every tool): \`shell\`, \`edit\`, \`read\`, \`any\` or \`mcp:<server name>\`. An agent's own tool-name pattern (\`Write|Edit\`) needs \`agents\`. Codex has no \`read\` tool, so it skips a \`read\` hook. Antigravity has no \`userPrompt\` event, so it skips those hooks.
+- \`agents\` (optional): the agent ids that get this hook (\`claude\`, \`codex\`, \`antigravity\`, \`opencode\`). Without it, every one of them does.
 - \`timeout\`: seconds, 60 by default. No other fields.
-- The command gets the agent's own JSON on stdin: Claude Code's and Codex's hook input (very similar). OpenCode has no command hooks, so Gloss runs them from a plugin of its own and sends Claude Code's shape with OpenCode's tool names.
-- To block, print JSON on stdout: \`{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "..."}}\` for a tool call, \`{"decision": "block", "reason": "..."}\` for a prompt. Every agent understands these. Exit code 2 (with the reason on stderr) also blocks, except in Codex on Windows, whose PowerShell turns it into 1.
+- The command gets the agent's own JSON on stdin: Claude Code's and Codex's hook input (very similar). OpenCode has no command hooks, so Gloss runs them from a plugin of its own and sends Claude Code's shape with OpenCode's tool names. Antigravity sends its own camelCase JSON (\`hookEventName\`, \`toolCall.name\`, \`toolCall.args\`) with its tool names (\`run_command\`, \`read_file\`, \`write_file\`, \`edit_file\`, \`mcp_<server>_<tool>\`).
+- To block, print JSON on stdout: \`{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "..."}}\` for a tool call, \`{"decision": "block", "reason": "..."}\` for a prompt. Claude Code, Codex and OpenCode understand these. Antigravity reads \`{"decision": "deny", "reason": "..."}\` instead, and any output it can't read fails the tool call: Claude Code's deny still blocks there, but a hook that allows must print nothing (or Antigravity's \`{"decision": "allow"}\`). Exit code 2 (with the reason on stderr) also blocks, except in Codex on Windows, whose PowerShell turns it into 1.
 - Start a command with a program name and use absolute paths: \`node "C:/plugins/kit/check.js"\`. Codex runs hook commands in PowerShell on Windows, where a command starting with a quoted path is an error, and Gloss doesn't expand variables in commands.
 
 ## MCP servers
@@ -166,12 +166,13 @@ For the plugin formats (\`plugin.json\`, skills, subagents, hooks, MCP servers),
 4. **Look at what the agent got** when it was delivered but doesn't behave:
    - Claude Code: \`${join(runtime, 'claude', '<plugin id>')}\` (\`skills\`, \`agents\`, \`hooks/hooks.json\`), loaded as a local plugin named after the plugin id.
    - Codex: skills in \`${join(runtime, 'codex', '.agents', 'skills')}\`, subagent roles in \`${join(runtime, 'codex', 'agents')}\`. Hooks and subagents reach Codex through Gloss's \`CODEX_CONFIG\`, not its config files. Codex only runs trusted hooks: Gloss records the hash Codex reports for each of its hooks (\`codexHookTrust\` in the deployment state) and starts Codex once more to pass them back as trusted, so a new or edited hook runs from the start after that.
+   - Antigravity: skills in \`${join(runtime, 'antigravity', '.agents', 'skills')}\`, subagents in \`${join(runtime, 'antigravity', '.agents', 'agents')}\`, hooks in \`${join(runtime, 'antigravity', '.agents', 'hooks.json')}\` (one definition per plugin, \`gloss-<plugin id>\`). Gloss starts \`agy acp\` in that folder (the built-in skills come with \`--add-dir\`), so it is also one of the session's workspace folders. A subagent gets only the tools Gloss lists for it.
    - OpenCode: skills in \`${join(runtime, 'opencode', 'skills')}\`, subagents in Gloss's \`OPENCODE_CONFIG_CONTENT\`, hooks run by Gloss's OpenCode plugin in \`${join(runtime, 'opencode', 'hooks')}\` (its \`hooks.json\` lists them). OpenCode 1 gets skills only.
    - Custom agents get skills only, in the skill directory set for them.
 5. **Common causes.**
    - The change hasn't applied yet: Gloss applies it once the agent's turns finish. Skills, subagents and hooks reach new sessions, or a session after it's reopened. A conversation keeps instructions already in its history.
    - A hook names an agent's own event or tool pattern, or lists \`agents\`, so other agents skip it. Codex has no \`read\` tool.
-   - A hook's script expects one agent's input. Claude Code and Codex send similar JSON. OpenCode gets Claude Code's shape with its own tool names (\`shell\`, \`edit\`, \`write\`, \`read\`, \`<server>_<tool>\`).
+   - A hook's script expects one agent's input. Claude Code and Codex send similar JSON. OpenCode gets Claude Code's shape with its own tool names (\`shell\`, \`edit\`, \`write\`, \`read\`, \`<server>_<tool>\`). Antigravity sends its own camelCase JSON, and output it can't parse (such as Claude Code's \`hookSpecificOutput\`) fails the tool call, even when it means allow.
    - A hook command uses a relative path or a variable such as the Claude plugin root: Gloss passes commands as written, so they need absolute paths.
    - On Windows, Codex runs hook commands in Windows PowerShell: a command starting with a quoted path (\`"C:/x/node.exe" check.js\`) fails there, so start with a program name (\`node "C:/x/check.js"\`); and exit code 2 arrives as 1, so a hook that blocks by exit code doesn't block in Codex. Blocking with JSON on stdout works everywhere.
    - A subagent's model isn't one that agent knows.

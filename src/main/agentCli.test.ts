@@ -35,6 +35,19 @@ describe('findCli', () => {
     expect(await findCli('codex', '', win([newest, 'C:\\WindowsApps\\OpenAI.Codex_26.9.1.0_x64__x\\app\\resources\\codex.exe'], { codexApps: apps }))).toBe(newest)
   })
 
+  it("finds Antigravity where its installers put it", async () => {
+    const local = { Path: 'C:\\tools', LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' }
+    expect(await findCli('antigravity', '', win(['C:\\tools\\agy.exe']))).toBe('C:\\tools\\agy.exe')
+    expect(await findCli('antigravity', '', win(['C:\\Users\\u\\AppData\\Local\\agy\\bin\\agy.exe'], { env: local })))
+      .toBe('C:\\Users\\u\\AppData\\Local\\agy\\bin\\agy.exe')
+    const winget = 'C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Google.AntigravityCLI_Microsoft.Winget.Source_8wekyb3d8bbwe\\agy.exe'
+    const list = (dir: string) => dir.endsWith('Packages') ? ['Other.App_x', 'Google.AntigravityCLI_Microsoft.Winget.Source_8wekyb3d8bbwe'] : []
+    expect(await findCli('antigravity', '', win([winget], { env: local, list }))).toBe(winget)
+    expect(await findCli('antigravity', '', { platform: 'darwin', home: '/Users/u', env: { PATH: '/usr/bin' }, exists: (p) => p === '/Users/u/.local/bin/agy' }))
+      .toBe('/Users/u/.local/bin/agy')
+    await expect(findCli('antigravity', '', win([], { env: local, list: () => [] }))).rejects.toThrow(/set its path as antigravityExecutable/)
+  })
+
   it('says how to install a missing CLI', async () => {
     await expect(findCli('codex', '', win([]))).rejects.toThrow("Codex wasn't found. Install the Codex CLI")
     await expect(findCli('claude', '', { platform: 'linux', home: '/home/u', env: { PATH: '/usr/bin' }, exists: () => false }))

@@ -529,8 +529,8 @@ export function Sidebar(props: Props): React.JSX.Element {
                     onClick={() => setPickAgent(a.id)}
                   >
                     {a.name}
-                    {/* Claude Code and Codex are fixed by installing or updating their CLIs (SPEC → Shipping). */}
-                    {a.available === false && <small>{a.id === 'claude' || a.id === 'codex' ? ' (unavailable)' : ' (set up in Settings)'}</small>}
+                    {/* Claude Code, Codex and Antigravity are fixed by installing or updating their CLIs (SPEC → Shipping). */}
+                    {a.available === false && <small>{a.id === 'claude' || a.id === 'codex' || a.id === 'antigravity' ? ' (unavailable)' : ' (set up in Settings)'}</small>}
                     {limitNote(a.id)}
                   </button>
                   <button

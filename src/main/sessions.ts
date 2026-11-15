@@ -1736,14 +1736,18 @@ export class SessionManager {
     const folder = chats ? this.deps.chats?.vault() : cwd
     if (!folder) return []
     const deleted = new Set(this.deps.store.listDeletedAgentSessions(agentId))
+    // Antigravity lists every folder's sessions whatever `cwd` asks for: keep that folder's.
+    const all = this.deps.getAgentConfig(agentId).listsAllSessions === true
+    const list = async (conn: AgentConnection, dir: string): Promise<acp.SessionInfo[]> =>
+      (await conn.listSessions(dir)).filter((s) => !all || (!!s.cwd && samePath(s.cwd, dir)))
     const listed = await this.withAgent(agentId, async (conn) => {
       if (!conn.canListSessions) return []
       // Claude lists a worktree's sessions under the project folder too (with their own
       // cwd); Codex only under the worktree's folder. Ask for each, once per session.
-      const sessions = (await conn.listSessions(folder)).map((s) => (chats ? { ...s, cwd: s.cwd || folder } : s))
+      const sessions = (await list(conn, folder)).map((s) => (chats ? { ...s, cwd: s.cwd || folder } : s))
       const worktrees = (chats || this.deps.versionControl?.(cwd) === 'perforce' ? [] : await this.worktreeGit.list(cwd).catch(() => [])).filter((e) => !e.main)
       for (const w of worktrees) {
-        const more = await conn.listSessions(w.path).catch(() => [])
+        const more = await list(conn, w.path).catch(() => [])
         for (const s of more) if (!sessions.some((x) => x.sessionId === s.sessionId)) sessions.push({ ...s, cwd: s.cwd || w.path })
       }
       // Claude Code's process can rewrite a transcript's metadata after its
@@ -2236,13 +2240,16 @@ export class SessionManager {
     modes: acp.SessionModeState | null | undefined
   ): Promise<ModeState> {
     const offered = (id: string | null | undefined): id is string => !!id && !!modes?.availableModes.some((m) => m.id === id)
-    const bypassId = this.deps.getAgentConfig(agentId).bypassModeId
+    const config = this.deps.getAgentConfig(agentId)
+    const bypassId = config.bypassModeId
     const bypass = offered(bypassId) ? bypassId : null
+    // Without a bypass mode, an agent may name the mode bypass means for it (Antigravity's Auto).
+    const start = !bypass && offered(config.startModeId) ? config.startModeId : null
     // A worktree session takes its project's setting.
     const project = this.deps.store.listSessions().find((s) => s.project && samePath(s.cwd, cwd))?.project ?? cwd
     const setting = this.deps.permissionMode?.(project) ?? 'bypass'
     let current = modes?.currentModeId ?? null
-    const wanted = saved.mode ?? (setting === 'bypass' ? bypass : null)
+    const wanted = saved.mode ?? (setting === 'bypass' ? bypass ?? start : null)
     if (wanted !== current && offered(wanted)) {
       try {
         await conn.setMode(acpSessionId, wanted)
@@ -2251,7 +2258,8 @@ export class SessionManager {
         console.warn(`[gloss] could not switch to mode "${wanted}":`, errorMessage(err))
       }
     }
-    const autoApprove = bypass ? undefined : (saved.autoApprove ?? setting === 'bypass')
+    // That mode decides what to ask, so Gloss doesn't approve on top of it.
+    const autoApprove = bypass ? undefined : (saved.autoApprove ?? (setting === 'bypass' && !start))
     return {
       live: {
         modes: modes && current !== null ? { current, options: modeOptions(modes), bypass } : null,
@@ -2729,8 +2737,9 @@ export class SessionManager {
   /** A tool result saying a job went to the background, from an agent that says nothing more about it. */
   private noticeQuietJob(sessionId: string, rt: SessionRuntime, turn: Turn, toolCall: ToolCall): void {
     if (toolCall.status !== 'completed' || rt.jobs.has(toolCall.id)) return
-    const pattern = this.configOf(sessionId)?.quietJobResult
-    if (!pattern || !toolCallText(toolCall).some((text) => pattern.test(text))) return
+    const config = this.configOf(sessionId)
+    const byResult = !!config?.quietJobResult && toolCallText(toolCall).some((text) => config.quietJobResult!.test(text))
+    if (!byResult && !config?.quietJobTitle?.test(toolCall.title)) return
     rt.jobs.set(toolCall.id, { threadId: toolCall.threadId, quietFrom: turn })
     rt.lastJobThread = toolCall.threadId
     this.jobsChanged(sessionId, rt)
@@ -2937,8 +2946,10 @@ export class SessionManager {
       const existing = this.deps.store.getToolCall(sessionId, id)
       if (!existing || (existing.status !== 'pending' && existing.status !== 'in_progress')) continue
       if (rt.jobs.has(id)) continue
-      if (outlives && existing.status === 'in_progress' && this.configOf(sessionId)?.toolCallsOutliveTurns) {
-        rt.jobs.set(id, { threadId: existing.threadId })
+      const config = this.configOf(sessionId)
+      if (outlives && existing.status === 'in_progress' && (config?.toolCallsOutliveTurns || config?.quietToolCallsOutliveTurns)) {
+        // Its end comes as a tool call update, or, for a quiet one, from the session's history.
+        rt.jobs.set(id, { threadId: existing.threadId, ...(config.quietToolCallsOutliveTurns ? { quietFrom: turn } : {}) })
         rt.lastJobThread = existing.threadId
         started = true
         continue

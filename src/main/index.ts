@@ -95,7 +95,7 @@ const agentClis = new AgentClis()
 /** The configured path of an agent's CLI; empty finds an installed copy (SPEC → Shipping). */
 function cliSetting(kind: CliKind): string {
   const global = settings?.state().global
-  return (kind === 'claude' ? global?.claudeExecutable : global?.codexExecutable) ?? ''
+  return (kind === 'claude' ? global?.claudeExecutable : kind === 'codex' ? global?.codexExecutable : global?.antigravityExecutable) ?? ''
 }
 const usage = new UsageSource(
   async (cwd) => fetchClaudeUsage(cwd, await agentClis.resolve('claude', cliSetting('claude'))),
@@ -774,7 +774,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   const agentEntries = (status?: OpenCodeStatus) => {
     const builtins = listAgents().map((agent) => {
       if (agent.id === 'opencode') return { ...agent, available: status?.available ?? false, setupMessage: status ? status.error ?? undefined : 'Checking OpenCode availability…' }
-      if (agent.id !== 'claude' && agent.id !== 'codex') return agent
+      if (agent.id !== 'claude' && agent.id !== 'codex' && agent.id !== 'antigravity') return agent
       // Available until a check says otherwise, so the default agent doesn't flicker at startup.
       const cli = agentClis.known(agent.id, cliSetting(agent.id))
       return cli && !cli.available ? { ...agent, available: false, setupMessage: cli.error ?? undefined } : agent
@@ -1146,7 +1146,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
 
   ipcMain.handle(IPC.settingsGet, () => settingsFile.state())
   ipcMain.handle(IPC.settingsPreviewMcpImport, (_e, source: unknown) => {
-    if (source !== 'claude' && source !== 'codex' && source !== 'gloss') throw new Error('Unknown MCP import source')
+    if (source !== 'claude' && source !== 'codex' && source !== 'antigravity' && source !== 'gloss') throw new Error('Unknown MCP import source')
     return previewMcpImport(source, { projects: manager.listProjects().map((p) => p.path), legacy: settingsFile.state().projects })
   })
   ipcMain.handle(IPC.settingsUpdate, (_e, patch: unknown) => settingsFile.update(patchArg(patch)))
@@ -1271,8 +1271,9 @@ app.whenReady().then(() => {
       if (next.global.captureShortcut !== previous.global.captureShortcut) setCaptureShortcut(next.global.captureShortcut)
       if ((next.global.secondBrain ?? '') !== (previous.global.secondBrain ?? '')) emit({ type: 'projects' })
       void phone?.apply(next.global.phoneAccess ?? false, next.global.phonePort ?? 8443)
-      for (const kind of ['claude', 'codex'] as const) {
-        if (cliSetting(kind) === ((kind === 'claude' ? previous.global.claudeExecutable : previous.global.codexExecutable) ?? '')) continue
+      for (const kind of ['claude', 'codex', 'antigravity'] as const) {
+        const before = kind === 'claude' ? previous.global.claudeExecutable : kind === 'codex' ? previous.global.codexExecutable : previous.global.antigravityExecutable
+        if (cliSetting(kind) === (before ?? '')) continue
         void sessions?.restartIdleAgent(kind)
         void agentClis.check(kind, cliSetting(kind), true)
       }
@@ -1327,9 +1328,14 @@ app.whenReady().then(() => {
       return project && project !== 'inherit' ? project : state.global.permissionMode
     },
     agentEnv: (config) => agentEnv(config),
-    connect: async (config, env, handlers) => AgentConnection.start(config, config.cli
-      ? { ...env, [config.cli.env]: await agentClis.resolve(config.cli.kind, cliSetting(config.cli.kind)) }
-      : env, handlers),
+    connect: async (config, env, handlers) => {
+      if (!config.cli) return AgentConnection.start(config, env, handlers)
+      const cli = await agentClis.resolve(config.cli.kind, cliSetting(config.cli.kind))
+      // An adapter gets the CLI's path; a CLI that is its own ACP server (Antigravity) is run.
+      return config.cli.env
+        ? AgentConnection.start(config, { ...env, [config.cli.env]: cli }, handlers)
+        : AgentConnection.start({ ...config, command: cli }, env, handlers)
+    },
     runInTerminal,
     versionControl: (cwd) => projectSettings(settingsFile.state().projects, cwd).versionControl ?? 'git',
     worktreeSettings: (project) => {

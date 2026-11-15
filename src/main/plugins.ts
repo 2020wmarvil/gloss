@@ -8,7 +8,7 @@ import type { McpServer } from '../shared/mcp'
 import { skillInvocation } from './skillInvocation'
 import { BUILTIN_SKILLS, LEGACY_BUILTIN_SKILLS, type BuiltinSkill } from './pluginSkill'
 import { mcpName } from '../shared/mcp'
-import { OPENCODE_HOOK_PLUGIN, claudeSubagent, codexRole, flatName, isPartAgent, nativeHooks, openCodeHooks, openCodeSubagent, parseHooks, parseSubagent, planHook, type PartAgent } from './pluginParts'
+import { OPENCODE_HOOK_PLUGIN, antigravityHooks, antigravitySubagent, claudeSubagent, codexRole, flatName, isPartAgent, nativeHooks, openCodeHooks, openCodeSubagent, parseHooks, parseSubagent, planHook, type PartAgent } from './pluginParts'
 import { BUILTIN_PLUGIN_ID, PLUGIN_ID, type PersonalPlugin, type PluginAgentState, type PluginFile, type PluginLibraryState, type PluginHook, type PluginManifest, type PluginSkill, type PluginSubagent } from '../shared/plugins'
 
 type Agent = { id: string; name: string }
@@ -421,6 +421,7 @@ export class PluginLibrary {
   private target(agentId: string, pluginId: string, skillId: string): string {
     if (agentId === 'claude') return join(this.runtime, 'claude', pluginId, 'skills', skillId)
     if (agentId === 'codex') return join(this.runtime, 'codex', '.agents', 'skills', flatSkillName(pluginId, skillId))
+    if (agentId === 'antigravity') return join(this.runtime, 'antigravity', '.agents', 'skills', flatSkillName(pluginId, skillId))
     if (agentId === 'opencode') return join(this.runtime, 'opencode', 'skills', flatSkillName(pluginId, skillId))
     const dir = this.state.customDirectories[agentId]
     if (!dir) throw new Error('Configure the custom agent’s skill directory.')
@@ -441,6 +442,7 @@ export class PluginLibrary {
     const root = join(this.runtime, 'builtin')
     if (agentId === 'claude') return join(root, 'claude', 'skills', skill.claude)
     if (agentId === 'codex') return join(root, 'codex', '.agents', 'skills', skill.flat)
+    if (agentId === 'antigravity') return join(root, 'antigravity', '.agents', 'skills', skill.flat)
     if (agentId === 'opencode') return join(root, 'opencode', 'skills', skill.flat)
     const dir = this.state.customDirectories[agentId]
     return dir ? join(dir, skill.flat) : undefined
@@ -605,6 +607,13 @@ export class PluginLibrary {
       if (!exists(file) || readFileSync(file, 'utf8') !== files[name]) atomic(file, files[name])
     }
   }
+  /** Makes a generated runtime file hold `content`, writing only when it changed. No content: no file. */
+  private generateFile(agentId: string, file: string, content: string | undefined): void {
+    this.assertTargetParents(agentId, file)
+    if (exists(file) && (lstatSync(file).isSymbolicLink() || !lstatSync(file).isFile())) throw new Error(`Something other than Gloss’s generated file is at ${file}.`)
+    if (content === undefined) { if (exists(file)) rmSync(file); return }
+    if (!exists(file) || readFileSync(file, 'utf8') !== content) atomic(file, content)
+  }
   /**
    * Writes an agent's generated subagents and hooks (SPEC → Plugins → Subagents and hooks). Like the
    * built-in skill, rewritten on each start; a busy agent keeps what it has until it's idle.
@@ -616,6 +625,12 @@ export class PluginLibrary {
         const hooks = nativeHooks(p.hooks, 'claude')
         this.generate(agentId, join(this.runtime, 'claude', p.id, 'agents'), Object.fromEntries(p.subagents.map(s => [`${s.id}.md`, claudeSubagent(s)])))
         this.generate(agentId, join(this.runtime, 'claude', p.id, 'hooks'), Object.keys(hooks).length ? { 'hooks.json': JSON.stringify({ hooks }, null, 2) + '\n' } : {})
+      }
+      if (agentId === 'antigravity') {
+        const agents = join(this.runtime, 'antigravity', '.agents')
+        this.generate(agentId, join(agents, 'agents'), Object.fromEntries(plugins.flatMap(p => p.subagents.map(s => [`${flatName(p.id, s.id)}.md`, antigravitySubagent(s, flatName(p.id, s.id))]))))
+        const hooks = Object.fromEntries(plugins.map(p => [`gloss-${p.id}`, antigravityHooks(p.hooks)] as const).filter(([, events]) => Object.keys(events).length))
+        this.generateFile(agentId, join(agents, 'hooks.json'), Object.keys(hooks).length ? JSON.stringify(hooks, null, 2) + '\n' : undefined)
       }
       if (agentId === 'codex') this.generate(agentId, join(this.runtime, 'codex', 'agents'), Object.fromEntries(plugins.flatMap(p => p.subagents.map(s => [`${flatName(p.id, s.id)}.toml`, codexRole(s)]))))
       if (agentId === 'opencode') {
@@ -699,6 +714,14 @@ export class PluginLibrary {
         }
       }
       return { ...config, env: { ...config.env, OPENCODE_CONFIG_CONTENT: JSON.stringify(next) } }
+    }
+    if (config.id === 'antigravity') {
+      // Antigravity reads skills, subagents and hooks from each workspace folder's `.agents`, and its
+      // process's folder and `--add-dir` folders are workspace folders of every session. Starting it in
+      // Gloss's own folder keeps Gloss's working folder out of them, and the user's own folders untouched.
+      const cwd = join(this.runtime, 'antigravity')
+      try { this.assertTargetParents(config.id, cwd); mkdirSync(cwd, { recursive: true }) } catch (error) { console.warn('[plugins] Could not prepare Antigravity’s folder:', message(error)); return config }
+      return { ...config, cwd, args: [...config.args, ...(builtin ? ['--add-dir', join(this.runtime, 'builtin', 'antigravity')] : [])] }
     }
     if ((config.id !== 'claude' && config.id !== 'codex') || (!enabled.length && !builtin)) return config
     const codex = config.id === 'codex' ? this.codexConfig(config, enabled) : { hooks: false }

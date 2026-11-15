@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { NATIVE_EVENTS, OPENCODE_HOOK_PLUGIN, claudeSubagent, codexRole, nativeHooks, openCodeHooks, openCodeSubagent, parseHooks, parseSubagent, planHook } from './pluginParts'
+import { NATIVE_EVENTS, OPENCODE_HOOK_PLUGIN, antigravityHooks, antigravitySubagent, claudeSubagent, codexRole, nativeHooks, openCodeHooks, openCodeSubagent, parseHooks, parseSubagent, planHook } from './pluginParts'
 
 const agentFile = (front: string, body = 'Review the diff.'): string => `---\n${front}\n---\n\n${body}\n`
 
@@ -39,6 +39,13 @@ describe('parseSubagent', () => {
     expect(claudeSubagent(plain)).not.toMatch(/tools:|model:/)
     expect(codexRole(plain)).toBe('developer_instructions = "Review the diff."\n')
     expect(openCodeSubagent(plain)).toEqual({ description: 'Helps.', mode: 'subagent', system: 'Review the diff.' })
+  })
+
+  it('lists Antigravity a subagent’s tools by name, since it gets none otherwise', () => {
+    const reader = parseSubagent('kit', 'reviewer.md', agentFile('name: reviewer\ndescription: Reviews "changes".\ntools: read-only\nmodel:\n  antigravity: flash'))
+    expect(antigravitySubagent(reader, 'kit-reviewer')).toBe('---\nname: kit-reviewer\ndescription: "Reviews \\"changes\\"."\ntools: [read_file, grep_search, find_by_name, list_dir, search_web]\nmodel: "flash"\n---\n\nReview the diff.\n')
+    const plain = parseSubagent('kit', 'helper.md', agentFile('name: helper\ndescription: Helps.'))
+    expect(antigravitySubagent(plain, 'kit-helper')).toBe('---\nname: kit-helper\ndescription: "Helps."\ntools: [read_file, write_file, edit_file, run_command, grep_search, find_by_name, list_dir, search_web]\n---\n\nReview the diff.\n')
   })
 })
 
@@ -84,6 +91,15 @@ describe('planHook', () => {
     expect(planHook(mcp, 'codex')).toMatchObject({ matcher: 'mcp__My_docs__.*' })
     expect(planHook(mcp, 'opencode')).toMatchObject({ matcher: 'My_docs_.*' })
     expect(planHook(any, 'claude')).not.toHaveProperty('matcher')
+    expect(planHook(shell, 'antigravity')).toEqual({ delivered: true, event: 'PreToolUse', matcher: 'run_command', command: 'a', timeout: 60 })
+    expect(planHook(read, 'antigravity')).toMatchObject({ event: 'PostToolUse', matcher: 'read_file' })
+    expect(planHook(mcp, 'antigravity')).toMatchObject({ matcher: 'mcp_My_docs_.*' })
+  })
+
+  it('skips userPrompt for Antigravity, which has no such event', () => {
+    const [prompt] = parseHooks(JSON.stringify({ hooks: [{ event: 'userPrompt', command: 'x' }] }))
+    expect(planHook(prompt, 'antigravity')).toEqual({ delivered: false, reason: 'antigravity has no userPrompt event.' })
+    expect(parseHooks(JSON.stringify({ hooks: [{ event: 'PreInvocation', command: 'x', agents: ['antigravity'] }] }))).toHaveLength(1)
   })
 
   it('gives an agent-specific hook only to its agents, with its native event and matcher', () => {
@@ -109,6 +125,12 @@ describe('planHook', () => {
       { event: 'beforeTool', command: 'b', timeout: 60 },
       { event: 'afterTool', matcher: '^(?:read)$', command: 'c', timeout: 60 }
     ])
+    const stop = parseHooks(JSON.stringify({ hooks: [{ event: 'stop', command: 'e' }] }))
+    expect(antigravityHooks([...list, ...stop])).toEqual({
+      PreToolUse: [{ matcher: '^(?:write_file|edit_file)$', hooks: [{ type: 'command', command: 'a', timeout: 9 }] }, { matcher: '', hooks: [{ type: 'command', command: 'b', timeout: 60 }] }],
+      PostToolUse: [{ matcher: '^(?:read_file)$', hooks: [{ type: 'command', command: 'c', timeout: 60 }] }],
+      Stop: [{ type: 'command', command: 'e', timeout: 60 }]
+    })
   })
 })
 

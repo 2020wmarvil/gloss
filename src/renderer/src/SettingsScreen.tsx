@@ -167,7 +167,7 @@ export function SettingsScreen({ state, updates, projectPath, projects, onUpdate
         {section === 'agents' && (
           <section className="agents-settings" aria-labelledby="settings-agents">
             <h2 id="settings-agents">Agents</h2>
-            <p className="lede">Claude Code and Codex are built in. Add other agents below.</p>
+            <p className="lede">Claude Code, Codex and Antigravity are built in. Add other agents below.</p>
             <OpenCodeSettings executable={state.global.opencodeExecutable ?? ''}
               onSave={async (opencodeExecutable) => { await onUpdate({ global: { opencodeExecutable } }) }} />
             <AgentProfileSettings profiles={state.global.agentProfiles ?? []} defaultAgent={state.global.defaultAgent}

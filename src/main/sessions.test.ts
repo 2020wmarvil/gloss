@@ -75,6 +75,8 @@ type FakeAgent = {
   closes: string[]
   /** Sessions returned by session/list (filtered by cwd), besides those with a transcript. */
   listed: acp.SessionInfo[]
+  /** session/list ignores cwd, as Antigravity's does. */
+  listsAll?: boolean
   deleted: string[]
   /** session/delete fails. */
   refuseDelete: boolean
@@ -240,7 +242,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       const saved = [...state.transcripts.keys()]
         .filter((id) => state.sessions.has(id) && !state.listed.some((s) => s.sessionId === id))
         .map((id): acp.SessionInfo => ({ sessionId: id, cwd: state.cwds.get(id) ?? '', updatedAt: state.updatedAt.get(id) }))
-      return { sessions: [...state.listed, ...saved].filter((s) => s.cwd === ctx.params.cwd) }
+      return { sessions: [...state.listed, ...saved].filter((s) => state.listsAll || s.cwd === ctx.params.cwd) }
     })
     .onRequest(acp.methods.agent.session.fork, (ctx) => {
       // Codex's: everything up to the end of the turn of the item named.
@@ -1211,6 +1213,50 @@ describe('SessionManager', () => {
         await manager.send(session.id, 'next', null)
         expect(manager.openSession(session.id).background).toEqual([])
         expect(lastTurnEnd(session.id)).not.toHaveProperty('jobsRunning')
+      })
+
+      it("keeps a tool call left running as a quiet job (Antigravity's background command), and reloads once it ends", async () => {
+        config.quietToolCallsOutliveTurns = true
+        try {
+          const session = await manager.createSession('/w', 'fake')
+          let agent!: Parameters<Script>[0]
+          state.script = async (ctx) => {
+            agent = ctx
+            await ctx.update({ sessionUpdate: 'tool_call', toolCallId: 'job', title: 'ping', status: 'in_progress' })
+            await ctx.say('Started.', 'one')
+            return 'end_turn'
+          }
+          await manager.send(session.id, 'start it', null)
+          expect(store.listToolCalls(session.id)[0]?.status).toBe('in_progress')
+          expect(lastTurnEnd(session.id)).toMatchObject({ jobsRunning: true })
+          expect(manager.openSession(session.id).background).toEqual([null])
+
+          // Nothing comes over ACP; the history moves when the agent answers on its own.
+          await agent.update({ sessionUpdate: 'tool_call_update', toolCallId: 'job', status: 'completed' })
+          await agent.say('Average 1 ms.', 'two')
+          await vi.waitFor(() => expect(manager.openSession(session.id).background).toEqual([]))
+          await vi.waitFor(() => expect(store.listMessages(session.id).at(-1)).toMatchObject({ text: 'Average 1 ms.' }))
+          expect(store.listToolCalls(session.id)[0]?.status).toBe('completed')
+        } finally {
+          config.quietToolCallsOutliveTurns = undefined
+        }
+      })
+
+      it("takes a tool call by its title for a quiet job (Antigravity's subagents)", async () => {
+        config.quietJobTitle = /^Run invoke_subagent$/
+        try {
+          const session = await manager.createSession('/w', 'fake')
+          state.script = async ({ update, say }) => {
+            await update({ sessionUpdate: 'tool_call', toolCallId: 'sub', title: 'Run invoke_subagent', status: 'in_progress' })
+            await update({ sessionUpdate: 'tool_call_update', toolCallId: 'sub', status: 'completed' })
+            await say('Invoked.', 'one')
+            return 'end_turn'
+          }
+          await manager.send(session.id, 'delegate', null)
+          expect(manager.openSession(session.id).background).toEqual([null])
+        } finally {
+          config.quietJobTitle = undefined
+        }
       })
     })
 
@@ -2249,6 +2295,25 @@ describe('SessionManager', () => {
       const other = await manager.createSession('/w', 'fake')
       expect(() => manager.setAutoApprove(other.id, true)).toThrow(/bypass mode/)
     })
+
+    it("starts an agent without a bypass mode in its own stand-in (Antigravity's Auto), without approving on top", async () => {
+      const original = { bypass: config.bypassModeId, start: config.startModeId }
+      config.bypassModeId = undefined
+      config.startModeId = 'auto'
+      try {
+        state.modes = { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Default' }, { id: 'auto', name: 'Auto' }] }
+        const session = await manager.createSession('/w', 'fake')
+        expect(state.modeChanges).toEqual([`${session.acpSessionId}:auto`])
+        expect(manager.openSession(session.id).live).toMatchObject({ modes: { current: 'auto', bypass: null }, autoApprove: false })
+        // The agent's default setting leaves it in the agent's own default.
+        permissionMode = 'agent'
+        const other = await manager.createSession('/w', 'fake')
+        expect(manager.openSession(other.id).live).toMatchObject({ modes: { current: 'default' }, autoApprove: false })
+      } finally {
+        config.bypassModeId = original.bypass
+        config.startModeId = original.start
+      }
+    })
   })
 
   describe('questions', () => {
@@ -2570,6 +2635,22 @@ describe('SessionManager', () => {
         { acpSessionId: 'cli-2', title: 'Untitled session', updatedAt: '2026-10-05T00:00:00Z' },
         { acpSessionId: 'cli-1', title: 'Old CLI work', updatedAt: '2026-10-01T00:00:00Z' }
       ])
+    })
+
+    it("keeps the folder's own sessions from an agent that lists every folder's (Antigravity)", async () => {
+      state.canList = true
+      state.listsAll = true
+      config.listsAllSessions = true
+      try {
+        state.listed = [
+          { sessionId: 'here', cwd: '/w', title: 'Here' },
+          { sessionId: 'there', cwd: '/elsewhere', title: 'There' },
+          { sessionId: 'unknown', cwd: '', title: 'No folder' }
+        ]
+        expect((await manager.agentSessions('/w', 'fake')).map((s) => s.acpSessionId)).toEqual(['here'])
+      } finally {
+        config.listsAllSessions = undefined
+      }
     })
 
     it('hides and deletes again an agent session Gloss deleted that the agent lists again', async () => {

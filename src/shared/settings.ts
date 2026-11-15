@@ -52,6 +52,8 @@ export type GlobalSettings = {
   claudeExecutable?: string
   /** Empty or omitted finds an installed Codex CLI or Codex app. */
   codexExecutable?: string
+  /** Empty or omitted finds an installed Antigravity CLI (`agy`). */
+  antigravityExecutable?: string
   /** Light, dark, or whatever the system uses. */
   theme: ThemeSetting
   /** How the sidebar sorts a project's sessions. */
@@ -140,6 +142,11 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     hidden: true
   },
   {
+    key: 'antigravityExecutable', scope: 'global', type: 'string', label: 'Antigravity executable',
+    description: 'Native executable path. Empty finds an installed copy.',
+    hidden: true
+  },
+  {
     key: 'obsidianVault', scope: 'project', type: 'string', label: 'Obsidian vault',
     description: 'Vault name or ID. Empty hides its shortcut.',
     placeholder: 'Vault name or ID'
@@ -219,6 +226,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     options: [
       { value: 'claude', label: 'Claude Code' },
       { value: 'codex', label: 'Codex' },
+      { value: 'antigravity', label: 'Antigravity' },
       { value: 'opencode', label: 'OpenCode' }
     ],
     hidden: true

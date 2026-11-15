@@ -80,6 +80,7 @@ export function McpSettings({ servers, onSave, hasLegacy }: Props): React.JSX.El
       <button className="secondary" disabled={busy} onClick={() => edit(-1)}>Add server</button>
       <button className="secondary" disabled={busy} onClick={() => void discover('claude')}>Import from Claude</button>
       <button className="secondary" disabled={busy} onClick={() => void discover('codex')}>Import from Codex</button>
+      <button className="secondary" disabled={busy} onClick={() => void discover('antigravity')}>Import from Antigravity</button>
       {hasLegacy && <button className="secondary" disabled={busy} onClick={() => void discover('gloss')}>Import old project servers</button>}
     </div>
     {servers.length === 0 && <p className="muted">No shared MCP servers yet.</p>}

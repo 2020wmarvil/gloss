@@ -517,3 +517,45 @@ describe('subagents and hooks', () => {
     expect(readFileSync(file, 'utf8')).toContain('later')
   })
 })
+
+describe('Antigravity', () => {
+  const runtime = (...parts: string[]) => join(root, 'plugins/runtime', ...parts)
+  beforeEach(() => {
+    library.close()
+    library = new PluginLibrary({ directory: join(root, 'plugins'), agents: () => [...agents, { id: 'antigravity', name: 'Antigravity' }], connections: () => connections, busy: id => busy.has(id), changed, settings: join(root, 'settings.json') })
+  })
+
+  it('starts agy in Gloss’s folder and adds the built-in one: skills, subagents and hooks in their .agents', () => {
+    library.reconcile()
+    const builtin = runtime('builtin/antigravity')
+    expect(readFileSync(join(builtin, '.agents/skills/gloss-new-plugin/SKILL.md'), 'utf8')).toMatch(/^---\nname: gloss-new-plugin\n/)
+    expect(library.configureAgent(getAgentConfig('antigravity'))).toMatchObject({ cwd: runtime('antigravity'), args: ['acp', '--add-dir', builtin] })
+
+    const id = addPlugin('kit', { enabledAgents: ['antigravity'] })
+    put(id, 'agents/reviewer.md', '---\nname: reviewer\ndescription: Reviews changes.\ntools: read-only\n---\n\nReview the diff.\n')
+    put(id, 'hooks/hooks.json', JSON.stringify({ hooks: [
+      { event: 'beforeTool', matcher: 'shell', command: 'check-shell' },
+      { event: 'userPrompt', command: 'on-prompt' },
+      { event: 'stop', command: 'done', timeout: 5 }
+    ] }))
+    library.settingsChanged()
+    expect(library.configureAgent(getAgentConfig('antigravity'))).toMatchObject({ cwd: runtime('antigravity'), args: ['acp', '--add-dir', builtin] })
+    expect(readFileSync(runtime('antigravity/.agents/skills/kit-instructions/SKILL.md'), 'utf8')).toMatch(/^---\nname: kit-instructions\n/)
+    expect(readFileSync(runtime('antigravity/.agents/agents/kit-reviewer.md'), 'utf8')).toContain('name: kit-reviewer\n')
+    expect(JSON.parse(readFileSync(runtime('antigravity/.agents/hooks.json'), 'utf8'))).toEqual({
+      'gloss-kit': {
+        PreToolUse: [{ matcher: '^(?:run_command)$', hooks: [{ type: 'command', command: 'check-shell', timeout: 60 }] }],
+        Stop: [{ type: 'command', command: 'done', timeout: 5 }]
+      }
+    })
+    const report = JSON.parse(readFileSync(runtime('delivery.json'), 'utf8'))
+    expect(report.agents.antigravity.plugins[id].hooks[1]).toMatchObject({ delivered: false, reason: 'antigravity has no userPrompt event.' })
+
+    // Turned off: its generated subagents and hooks go too.
+    library.enable(id, 'antigravity', false)
+    library.configureAgent(getAgentConfig('antigravity'))
+    expect(existsSync(runtime('antigravity/.agents/hooks.json'))).toBe(false)
+    expect(existsSync(runtime('antigravity/.agents/agents'))).toBe(false)
+    expect(library.configureAgent(getAgentConfig('antigravity')).args).toEqual(['acp', '--add-dir', builtin])
+  })
+})

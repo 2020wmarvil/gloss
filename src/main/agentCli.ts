@@ -1,18 +1,19 @@
-// Claude Code and Codex are user-installed: Gloss finds their CLIs and runs its bundled
-// adapters against them (SPEC → Shipping). The adapters need a minimum CLI version.
+// Claude Code, Codex and Antigravity are user-installed: Gloss finds their CLIs and runs its
+// bundled adapters against them, or Antigravity's own ACP server (SPEC → Shipping). Each needs
+// a minimum CLI version.
 import { execFile } from 'node:child_process'
-import { accessSync, constants } from 'node:fs'
+import { accessSync, constants, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { OpenCodeStatus } from '../shared/ipc'
 
-export type CliKind = 'claude' | 'codex'
+export type CliKind = 'claude' | 'codex' | 'antigravity'
 export type CliStatus = OpenCodeStatus
 
 type CliInfo = {
   name: string
   command: string
-  /** The oldest CLI the bundled adapter was checked against. Re-check it with each adapter bump; raise it only if that fails. */
+  /** The oldest CLI the bundled adapter (or, for Antigravity, Gloss) was checked against. Re-check it with each adapter bump; raise it only if that fails. */
   minVersion: string
   install: string
   update: string
@@ -31,6 +32,12 @@ export const CLIS: Record<CliKind, CliInfo> = {
     install: 'Install the Codex CLI (`npm install -g @openai/codex`) or the Codex app',
     update: 'Run `npm install -g @openai/codex@latest`, or update the Codex app',
     setting: 'codexExecutable'
+  },
+  antigravity: {
+    name: 'Antigravity', command: 'agy', minVersion: '1.5.9',
+    install: 'Install the Antigravity CLI (https://antigravity.google/docs/cli)',
+    update: 'Run `agy update`',
+    setting: 'antigravityExecutable'
   }
 }
 
@@ -42,10 +49,16 @@ export type FindOptions = {
   exists?: (path: string) => boolean
   /** Install folders of the Codex app (Windows), newest last. */
   codexApps?: () => Promise<string[]>
+  /** A folder's entries; none when it can't be read. */
+  list?: (dir: string) => string[]
 }
 
 function executableFile(path: string): boolean {
   try { accessSync(path, constants.X_OK); return true } catch { return false }
+}
+
+function entries(dir: string): string[] {
+  try { return readdirSync(dir) } catch { return [] }
 }
 
 /** The Codex app's package folders, from the per-user package repository in the registry. */
@@ -84,7 +97,8 @@ export async function findCli(kind: CliKind, configured = '', options: FindOptio
     const found = path(dir, exe)
     if (exists(found)) return found
   }
-  if (platform === 'win32') {
+  // npm installs: Antigravity isn't published there.
+  if (platform === 'win32' && kind !== 'antigravity') {
     const triple = arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc'
     for (const dir of dirs) {
       if (!exists(path(dir, `${info.command}.cmd`))) continue
@@ -98,10 +112,23 @@ export async function findCli(kind: CliKind, configured = '', options: FindOptio
       if (found) return found
     }
   }
-  // Claude Code's native installer puts it in ~/.local/bin, which may not be on PATH.
-  if (kind === 'claude') {
+  // Claude Code's native installer, and Antigravity's on macOS and Linux, put them in
+  // ~/.local/bin, which may not be on PATH.
+  if (kind === 'claude' || (kind === 'antigravity' && platform !== 'win32')) {
     const found = path(home, '.local', 'bin', exe)
     if (exists(found)) return found
+  }
+  // Antigravity's Windows installer uses %LOCALAPPDATA%\agy\bin, and winget its package folder.
+  // Both add themselves to PATH, which a Gloss started before the install doesn't see yet.
+  const local = env.LOCALAPPDATA
+  if (kind === 'antigravity' && platform === 'win32' && local) {
+    const installed = path(local, 'agy', 'bin', exe)
+    if (exists(installed)) return installed
+    const packages = path(local, 'Microsoft', 'WinGet', 'Packages')
+    for (const name of (options.list ?? entries)(packages).filter((n) => n.startsWith('Google.AntigravityCLI_'))) {
+      const found = path(packages, name, exe)
+      if (exists(found)) return found
+    }
   }
   // The Codex desktop app ships the CLI in its versioned package folder, off PATH.
   if (kind === 'codex' && platform === 'win32') {
