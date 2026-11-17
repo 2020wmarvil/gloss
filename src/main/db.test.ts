@@ -244,6 +244,24 @@ describe('Store', () => {
     store.close()
   })
 
+  it('writes text streamed inside a transaction with it, and drops it on a rollback', () => {
+    const store = new Store(':memory:')
+    store.insertSession({ id: 's', agentId: 'claude', acpSessionId: 'a', cwd: '/w', title: 'w', createdAt: 1 })
+    store.insertMessage({ id: 'm0', sessionId: 's', seq: 0, role: 'agent', text: 'a', threadId: null })
+    // A sync updates a replayed answer's text, then runs more statements in the same transaction.
+    store.transaction(() => {
+      store.updateMessageText('m0', 'longer')
+      store.setMessageOutcome('m0', 'cancelled')
+    })
+    expect(store.listMessages('s')[0].text).toBe('longer')
+    expect(() => store.transaction(() => { store.updateMessageText('m0', 'gone'); throw new Error('boom') })).toThrow('boom')
+    expect(store.listMessages('s')[0].text).toBe('longer')
+    // Not left inside the failed transaction.
+    store.transaction(() => store.updateMessageText('m0', 'after'))
+    expect(store.listMessages('s')[0].text).toBe('after')
+    store.close()
+  })
+
   it('resequences the log, inserting new entries where they belong', () => {
     const store = new Store(':memory:')
     store.insertSession({ id: 's', agentId: 'claude', acpSessionId: 'a', cwd: '/w', title: 'w', createdAt: 1 })

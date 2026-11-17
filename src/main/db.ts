@@ -416,6 +416,11 @@ export class Store {
     const update = this.connection.prepare('UPDATE messages SET text = ? WHERE id = ?')
     const pending = [...this.pendingText]
     this.pendingText.clear()
+    // Inside `transaction`, the writes join it: a BEGIN here would fail.
+    if (this.connection.isTransaction) {
+      for (const [id, text] of pending) update.run(text, id)
+      return
+    }
     this.connection.exec('BEGIN')
     try {
       for (const [id, text] of pending) update.run(text, id)
@@ -452,13 +457,17 @@ export class Store {
 
   /** Runs `fn` in one transaction. */
   transaction<T>(fn: () => T): T {
+    // Text streamed before it is written outside; text queued by `fn` is written inside.
     this.db.exec('BEGIN')
     try {
       const result = fn()
-      this.db.exec('COMMIT')
+      this.flushText()
+      this.connection.exec('COMMIT')
       return result
     } catch (err) {
-      this.db.exec('ROLLBACK')
+      // Text queued by `fn` goes with the rest of it.
+      this.pendingText.clear()
+      if (this.connection.isTransaction) this.connection.exec('ROLLBACK')
       throw err
     }
   }
