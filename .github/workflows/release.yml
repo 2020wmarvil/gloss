@@ -60,6 +60,10 @@ jobs:
 
   publish:
     needs: build
+    # A best-effort build can also end cancelled (no macOS runner came), which `needs` alone
+    # counts against the release. Publish anyway unless the run itself was cancelled; the
+    # check below still holds it back without the Windows build.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
@@ -67,6 +71,13 @@ jobs:
           pattern: release-*
           path: artifacts
           merge-multiple: true
+      - name: Check the Windows build is there
+        shell: bash
+        run: |
+          if ! ls artifacts/*.exe artifacts/latest.yml > /dev/null 2>&1; then
+            echo "The Windows build is missing, so there is no release to publish." >&2
+            exit 1
+          fi
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
