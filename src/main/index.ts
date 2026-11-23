@@ -435,12 +435,14 @@ function handleShortcut(win: BrowserWindow, input: Electron.Input): boolean {
   return true
 }
 
-/** Sessions with a turn running, and the sleep blocker held while there are any. */
-/** Sessions with a turn running, and with background jobs. */
+/** Sessions with a turn running, background jobs, or waiting for a usage-limit reset. */
 const turning = new Set<string>()
 const withJobs = new Set<string>()
-const workingCount = (): number => new Set([...turning, ...withJobs]).size
+const waitingContinue = new Set<string>()
+const activeWorkingCount = (): number => new Set([...turning, ...withJobs]).size
+const workingCount = (): number => new Set([...turning, ...withJobs, ...waitingContinue]).size
 let awake: number | null = null
+let continueAwake: number | null = null
 
 let closeConfirmation: { requestId: string; sender: Electron.WebContents; finish(close: boolean): void } | undefined
 /** What the close warning is for: restarting into an update words it as a restart. */
@@ -472,17 +474,30 @@ const guardClose = createCloseGuard({
   })
 })
 
-/** Keeps the computer and the display from sleeping while an agent works. */
+/** Keeps the computer from sleeping while an agent works or waits for a usage-limit reset. */
 function keepAwake(event: GlossEvent): void {
   if (event.type === 'turnStart') turning.add(event.sessionId)
   else if (event.type === 'turnEnd') turning.delete(event.sessionId)
   else if (event.type === 'background' && event.threads.length > 0) withJobs.add(event.sessionId)
   else if (event.type === 'background') withJobs.delete(event.sessionId)
-  else return
-  if (workingCount() > 0 && awake === null) awake = powerSaveBlocker.start('prevent-display-sleep')
-  else if (workingCount() === 0 && awake !== null) {
+  else if (event.type === 'scheduledContinue') {
+    if (event.scheduled) waitingContinue.add(event.sessionId)
+    else waitingContinue.delete(event.sessionId)
+  } else if (event.type === 'sessionDeleted') {
+    turning.delete(event.sessionId)
+    withJobs.delete(event.sessionId)
+    waitingContinue.delete(event.sessionId)
+  } else return
+  if (activeWorkingCount() > 0 && awake === null) awake = powerSaveBlocker.start('prevent-display-sleep')
+  else if (activeWorkingCount() === 0 && awake !== null) {
     powerSaveBlocker.stop(awake)
     awake = null
+  }
+  // Scheduled overnight waits only need system-awake so the display can still turn off.
+  if (waitingContinue.size > 0 && continueAwake === null) continueAwake = powerSaveBlocker.start('prevent-app-suspension')
+  else if (waitingContinue.size === 0 && continueAwake !== null) {
+    powerSaveBlocker.stop(continueAwake)
+    continueAwake = null
   }
 }
 
@@ -543,6 +558,13 @@ function setCaptureShortcut(accelerator: string | undefined): void {
 /** Shown notifications, kept so their click handlers survive garbage collection. */
 const notifications = new Set<Notification>()
 
+function formatNotifyReset(ms: number): string {
+  const d = new Date(ms)
+  const sameDay = d.toDateString() === new Date().toDateString()
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return sameDay ? time : `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`
+}
+
 /** An OS notification when a turn ends or fails while Gloss isn't focused. Clicking it opens the session (and thread). */
 function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
   // A queued message starting next, or a job still running, isn't the end of the agent's work.
@@ -550,11 +572,14 @@ function notifyTurnEnd(event: Extract<GlossEvent, { type: 'turnEnd' }>): void {
   const shown = shownAs(event.sessionId, event.threadId)
   if (!shown) return
   const { session, threadId } = shown
-  const body = event.error
-    ? `The turn failed: ${event.error}`
-    : threadId
-      ? 'The agent replied in a thread.'
-      : 'The agent finished.'
+  const scheduledLimit = event.recovery?.usageLimit?.scheduled ? event.recovery.usageLimit.resetsAt : undefined
+  const body = scheduledLimit !== undefined
+    ? `Usage limit reached · continuing at ${formatNotifyReset(scheduledLimit)}.`
+    : event.error
+      ? `The turn failed: ${event.error}`
+      : threadId
+        ? 'The agent replied in a thread.'
+        : 'The agent finished.'
   phone?.notify({ title: session.title, body, sessionId: session.id, threadId })
   if (!Notification.isSupported()) return
   // Gloss plays its own chime (or none, if the user turned it off) instead of the system's sound.
@@ -1164,6 +1189,11 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   })
   registerWindowsIpc()
   share(IPC.retry, (sessionId: unknown, messageId: unknown) => manager.retry(str(sessionId, 'sessionId'), str(messageId, 'messageId')))
+  share(IPC.continueSchedule, (sessionId: unknown, threadId: unknown, resumeAt: unknown) => {
+    if (typeof resumeAt !== 'number' || !Number.isFinite(resumeAt)) throw new Error('resumeAt must be a timestamp')
+    manager.scheduleContinue(str(sessionId, 'sessionId'), threadArg(threadId), resumeAt)
+  })
+  share(IPC.continueCancel, (sessionId: unknown) => manager.cancelScheduledContinue(str(sessionId, 'sessionId')))
   share(IPC.cancel, (sessionId: unknown) => manager.cancel(str(sessionId, 'sessionId')))
   share(IPC.queueEdit, (sessionId: unknown, id: unknown, text: unknown) =>
     manager.editQueued(str(sessionId, 'sessionId'), str(id, 'id'), str(text, 'text'))
@@ -1329,7 +1359,7 @@ app.whenReady().then(() => {
   store = new Store(join(dataDir, 'gloss.db'))
   const settingsFile = new SettingsFile({
     dir: dataDir,
-    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [], captureShortcut: DEFAULT_CAPTURE_SHORTCUT, reviewWindow: true, phoneAccess: false, phonePort: 8443, closeToTray: true, startAtLogin: false, keepAwake: false },
+    defaults: { defaultAgent: 'claude', theme: 'system', sessionOrder: 'created', turnEndSound: true, permissionMode: 'bypass', externalEditor: DEFAULT_EXTERNAL_EDITOR, mcpServers: [], captureShortcut: DEFAULT_CAPTURE_SHORTCUT, reviewWindow: true, phoneAccess: false, phonePort: 8443, closeToTray: true, startAtLogin: false, keepAwake: false, autoContinueAtUsageLimit: false },
     onChange(next, previous) {
       emit({ type: 'settings', state: next })
       // Fires nativeTheme's 'updated', which recolors the window controls.
@@ -1391,6 +1421,8 @@ app.whenReady().then(() => {
         return profileSupport.config(profile)
       })() : getAgentConfig(id)),
     mcpServers: () => settingsFile.state().global.mcpServers,
+    autoContinueAtUsageLimit: () => settingsFile.state().global.autoContinueAtUsageLimit === true,
+    planUsage: (agentId, cwd) => usage.get(agentId, cwd),
     permissionMode: (cwd) => {
       const state = settingsFile.state()
       const project = projectSettings(state.projects, cwd).permissionMode

@@ -4048,3 +4048,206 @@ describe('SessionManager worktrees', () => {
     ])
   })
 })
+
+describe('Usage-limit auto-continue', () => {
+  let store: Store
+  let events: GlossEvent[]
+  let state: FakeAgent
+  let manager: SessionManager
+  let autoContinue: boolean
+  let planUsage: ReturnType<typeof vi.fn<(agentId: string, cwd: string) => Promise<import('../shared/types').PlanUsage | null>>>
+  let now: number
+
+  function makeManager(): SessionManager {
+    return new SessionManager({
+      store,
+      emit: (e) => events.push(e),
+      getAgentConfig: (id) => ({ ...config, id, name: id }),
+      agentEnv: () => ({}),
+      connect: (_c, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
+      runInTerminal: vi.fn(async () => 0) as never,
+      now: () => now,
+      autoContinueAtUsageLimit: () => autoContinue,
+      planUsage: (agentId, cwd) => planUsage(agentId, cwd),
+      resumeBufferMs: 0
+    })
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    now = Date.parse('2026-11-19T03:00:00Z')
+    store = new Store(':memory:')
+    events = []
+    state = fakeAgent()
+    autoContinue = true
+    planUsage = vi.fn(async () => null)
+    manager = makeManager()
+  })
+
+  afterEach(async () => {
+    await manager.dispose()
+    store.close()
+    vi.useRealTimers()
+  })
+
+  it('auto-continues Claude in the same thread using live rateLimit resetsAt and drains queued messages', async () => {
+    const resetsAt = now + 90_000
+    let turn = 0
+    state.script = async ({ say, update }) => {
+      turn++
+      if (turn === 1) {
+        await say('Initial answer')
+        return 'end_turn'
+      }
+      if (turn === 2) {
+        await update({
+          sessionUpdate: 'usage_update',
+          used: 100,
+          size: 1000,
+          _meta: { '_claude/rateLimit': { rateLimitType: 'five_hour', status: 'rejected', resetsAt: resetsAt / 1000 } }
+        })
+        throw new acp.RequestError(-32603, "You've hit your limit")
+      }
+      await say('Finished after reset')
+      return 'end_turn'
+    }
+
+    const session = await manager.startSession('/repo', 'claude')
+    await manager.send(session.id, 'Start', null)
+    const agentMsg = store.listMessages(session.id).find((m) => m.role === 'agent')!
+    const thread = manager.createThread(session.id, agentMsg.id, { kind: 'selection', start: 0, end: 7, text: 'Initial' })
+
+    const res = await manager.send(session.id, 'Do big work', thread.id)
+    expect(res.error).toContain("You've hit your limit")
+
+    const endEvent = events.filter((e) => e.type === 'turnEnd').at(-1)
+    expect(endEvent).toMatchObject({
+      type: 'turnEnd',
+      threadId: thread.id,
+      recovery: { action: 'retry', usageLimit: { resetsAt, scheduled: true } }
+    })
+    expect(manager.openSession(session.id).scheduledContinue).toEqual({
+      threadId: thread.id,
+      resumeAt: resetsAt,
+      automatic: true
+    })
+
+    // Advance wall clock and fake timers past the reset.
+    now = resetsAt
+    await vi.advanceTimersByTimeAsync(90_000)
+
+    expect(manager.openSession(session.id).scheduledContinue).toBeNull()
+    const threadUsers = store.listMessages(session.id).filter((m) => m.threadId === thread.id && m.role === 'user')
+    expect(threadUsers.map((m) => m.text)).toEqual(['Do big work', 'Continue where you left off.'])
+    expect(state.prompts.at(-1)).toContain('Continue where you left off.')
+  })
+
+  it('auto-continues Codex across multi-day weekly resets using promptless planUsage', async () => {
+    const weeklyReset = now + 5 * 86_400_000 // 5 days
+    planUsage.mockResolvedValue({
+      plan: 'Plus',
+      available: true,
+      limits: [{ label: 'Weekly limit', percent: 100, resetsAt: weeklyReset }],
+      extraUsage: null
+    })
+    let failedOnce = false
+    state.script = async ({ say }) => {
+      if (!failedOnce) {
+        failedOnce = true
+        throw new acp.RequestError(-32603, 'Usage limit exceeded', { codexErrorInfo: 'usageLimitExceeded' })
+      }
+      await say('Back online')
+      return 'end_turn'
+    }
+
+    const session = await manager.startSession('/repo', 'codex')
+    const res = await manager.send(session.id, 'Build feature', null)
+    expect(res.error).toContain('Usage limit exceeded')
+    expect(planUsage).toHaveBeenCalledWith('codex', '/repo')
+    expect(manager.openSession(session.id).scheduledContinue).toEqual({
+      threadId: null,
+      resumeAt: weeklyReset,
+      automatic: true
+    })
+
+    // Jump wall clock across 5 days and tick one minute interval.
+    now = weeklyReset
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(manager.openSession(session.id).scheduledContinue).toBeNull()
+    expect(store.listMessages(session.id).filter((m) => m.role === 'user').map((m) => m.text)).toEqual([
+      'Build feature',
+      'Continue where you left off.'
+    ])
+  })
+
+  it('parses Antigravity reset duration, respects setting off, and supports manual scheduling + cancel', async () => {
+    autoContinue = false
+    let failedOnce = false
+    state.script = async ({ say }) => {
+      if (!failedOnce) {
+        failedOnce = true
+        throw new acp.RequestError(-32603, 'Individual quota reached. Resets in 2h30m')
+      }
+      await say('Resumed')
+      return 'end_turn'
+    }
+
+    const session = await manager.startSession('/repo', 'antigravity')
+    await manager.send(session.id, 'Work', null)
+
+    const expectedReset = now + (2 * 3600 + 30 * 60) * 1000
+    const endEvent = events.filter((e) => e.type === 'turnEnd').at(-1)
+    expect(endEvent).toMatchObject({
+      type: 'turnEnd',
+      recovery: { action: 'retry', usageLimit: { resetsAt: expectedReset } }
+    })
+    // Setting is off, so nothing was auto-scheduled.
+    expect(manager.openSession(session.id).scheduledContinue).toBeNull()
+
+    // Schedule manually, then cancel it. It must NOT fire.
+    manager.scheduleContinue(session.id, null, expectedReset)
+    expect(manager.openSession(session.id).scheduledContinue).toEqual({
+      threadId: null,
+      resumeAt: expectedReset,
+      automatic: false
+    })
+    manager.cancelScheduledContinue(session.id)
+    expect(manager.openSession(session.id).scheduledContinue).toBeNull()
+
+    // Re-schedule manually and let it fire.
+    manager.scheduleContinue(session.id, null, now + 60_000)
+    now += 60_000
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(store.listMessages(session.id).filter((m) => m.role === 'user').map((m) => m.text)).toEqual([
+      'Work',
+      'Continue where you left off.'
+    ])
+  })
+
+  it('exposes usageLimit without resetsAt when Antigravity reports no reset time and cancels on manual send', async () => {
+    let calls = 0
+    state.script = async ({ say }) => {
+      calls++
+      if (calls === 1) throw new acp.RequestError(-32603, 'RESOURCE_EXHAUSTED: individual quota reached')
+      await say('OK')
+      return 'end_turn'
+    }
+
+    const session = await manager.startSession('/repo', 'antigravity')
+    await manager.send(session.id, 'Task', null)
+
+    const endEvent = events.filter((e) => e.type === 'turnEnd').at(-1)
+    expect(endEvent).toMatchObject({
+      type: 'turnEnd',
+      recovery: { action: 'retry', usageLimit: {} }
+    })
+    expect(manager.openSession(session.id).scheduledContinue).toBeNull()
+
+    // User picks a manual time, then sends a manual message before it fires -> cancels schedule.
+    manager.scheduleContinue(session.id, null, now + 300_000)
+    expect(manager.openSession(session.id).scheduledContinue).not.toBeNull()
+    await manager.send(session.id, 'Never mind, do something else', null)
+    expect(manager.openSession(session.id).scheduledContinue).toBeNull()
+  })
+})

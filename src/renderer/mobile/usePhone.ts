@@ -105,6 +105,8 @@ export function usePhone(link: PhoneLink) {
         case 'background':
           act((a) => ({ ...a, jobs: event.threads.length }))
           return lane((f) => ({ ...f, background: event.threads.length > 0 }))
+        case 'scheduledContinue':
+          return lane((f) => ({ ...f, scheduledContinue: event.scheduled }))
         case 'turnStart':
           act((a) => ({ ...a, turn: event.threadId }))
           return lane((f) => ({ ...f, running: true }))
@@ -114,7 +116,7 @@ export function usePhone(link: PhoneLink) {
           setOpen((o) => {
             if (!o || o.session.id !== forkOf.sessionId) return o
             if (event.stopReason === 'cancelled') return addNotice(o, forkOf.threadId, 'Cancelled.')
-            return event.error ? addNotice(o, forkOf.threadId, `The turn failed: ${event.error}`, 'failed') : o
+            return event.error ? addNotice(o, forkOf.threadId, `The turn failed: ${event.error}`, 'failed', scheduleFrom(event)) : o
           })
           return
       }
@@ -185,6 +187,9 @@ export function usePhone(link: PhoneLink) {
         act(event.sessionId, (a) => ({ ...a, jobs: event.threads.length }))
         setOpen((o) => mine(o) ? { ...o, background: event.threads } : o)
         return
+      case 'scheduledContinue':
+        setOpen((o) => mine(o) ? { ...o, scheduledContinue: event.scheduled } : o)
+        return
       case 'turnStart':
         act(event.sessionId, (a) => ({ ...a, turn: event.threadId }))
         setOpen((o) => mine(o) ? { ...o, turn: { threadId: event.threadId } } : o)
@@ -195,7 +200,7 @@ export function usePhone(link: PhoneLink) {
           if (!mine(o)) return o
           const next = { ...o, turn: null }
           if (event.stopReason === 'cancelled') return addNotice(next, event.threadId, 'Cancelled.')
-          return event.error ? addNotice(next, event.threadId, `The turn failed: ${event.error}`, 'failed') : next
+          return event.error ? addNotice(next, event.threadId, `The turn failed: ${event.error}`, 'failed', scheduleFrom(event)) : next
         })
         return
       case 'notice':
@@ -268,7 +273,22 @@ async function reloadIfStale(link: PhoneLink): Promise<void> {
   if (!typing) location.reload()
 }
 
-function addNotice(o: OpenView, threadId: string | null, text: string, tone?: 'failed'): OpenView {
+function scheduleFrom(event: Extract<GlossEvent, { type: 'turnEnd' }>): Notice['schedule'] {
+  const limit = event.recovery?.usageLimit
+  if (!limit || limit.scheduled) return undefined
+  return {
+    resetsAt: limit.resetsAt,
+    run: (resumeAt: number) => window.gloss.continueAtLimit.schedule(event.sessionId, event.threadId, resumeAt)
+  }
+}
+
+function addNotice(o: OpenView, threadId: string | null, text: string, tone?: 'failed', schedule?: Notice['schedule']): OpenView {
   const afterSeq = Math.max(-1, ...o.messages.map((m) => m.seq), ...o.toolCalls.map((t) => t.messageSeq))
-  return { ...o, notices: [...o.notices, { id: `${Date.now()}-${o.notices.length}`, threadId, text, afterSeq, ...(tone ? { tone } : {}) }] }
+  return {
+    ...o,
+    notices: [
+      ...o.notices,
+      { id: `${Date.now()}-${o.notices.length}`, threadId, text, afterSeq, ...(tone ? { tone } : {}), ...(schedule ? { schedule } : {}) }
+    ]
+  }
 }

@@ -19,8 +19,10 @@ import type {
   MessageQueue,
   Plan,
   PlanEntry,
+  PlanUsage,
   Project,
   RateLimit,
+  ScheduledContinue,
   Session,
   SessionLive,
   SessionModes,
@@ -62,6 +64,7 @@ import { branchPrefix, branchSlug, createWorktree, hasUnfinishedWork, listWorktr
 import { runComposerShell } from './composerShell'
 import { withoutWorktreeNote, worktreeNote } from '../shared/worktree'
 import { currentBranch, defaultBranch, mergeBase, pullRequestBase, readReviewDiff, readReviewFile, reviewCommits, workingFilePath } from './review'
+import { AUTO_CONTINUE_AGENTS, CONTINUE_AT_USAGE_LIMIT_PROMPT, DEFAULT_RESUME_BUFFER_MS, resolveUsageLimitFailure } from './usageLimit'
 
 /** Instructions added to Gloss's own for a kind of session (SPEC → Agent instructions). */
 type InstructionKind = 'review' | 'chat'
@@ -101,6 +104,12 @@ export type SessionManagerDeps = {
    * is gone). `prepare` makes the vault before a chat starts in it (the default one may not exist yet).
    */
   chats?: { root: string; vault(): string | null; prepare?(vault: string): void }
+  /** Whether to automatically wait and continue when a supported agent hits a usage limit with a known reset time. */
+  autoContinueAtUsageLimit?(): boolean
+  /** Promptless plan-usage lookup (Claude /usage or Codex rateLimits/read) to find reset timestamps. */
+  planUsage?(agentId: string, cwd: string): Promise<PlanUsage | null>
+  /** Buffer past a reported usage-limit reset timestamp before auto-continuing (tests may set 0). */
+  resumeBufferMs?: number
 }
 
 /** What worktrees need from git and the shell (SPEC → Worktrees). */
@@ -218,6 +227,15 @@ type SessionRuntime = {
   jobsSettling?: ReturnType<typeof setTimeout>
   /** Checks the session's history for the end of its quiet jobs. */
   quietJobsWatch?: ReturnType<typeof setInterval>
+  /** Waiting for a usage limit reset before sending "Continue where you left off.". */
+  scheduledContinue?: {
+    threadId: string | null
+    resumeAt: number
+    automatic: boolean
+    timer: ReturnType<typeof setTimeout>
+  }
+  /** Tracks consecutive auto-continue attempts against the same reset timestamp to avoid tight loops. */
+  autoContinueChain?: { lastResetsAt: number; attempts: number }
 }
 
 /** A request waiting on the user. `settle(null)`: withdrawn, or the turn was cancelled. */
@@ -350,6 +368,7 @@ export class SessionManager {
       case 'queue':
       case 'requests':
       case 'background':
+      case 'scheduledContinue':
       case 'turnStart':
       case 'turnEnd': {
         const home = this.forkHome(event.sessionId)
@@ -607,7 +626,13 @@ export class SessionManager {
     this.disposed = true
     for (const s of this.agents.values()) clearTimeout(s.rateLimitTimer)
     // The agents' processes end with Gloss, and their jobs with them.
-    for (const [id, rt] of this.runtimes) if (this.deps.store.getSession(id)) this.endJobs(id, rt, false)
+    for (const [id, rt] of this.runtimes) {
+      if (rt.scheduledContinue) {
+        clearTimeout(rt.scheduledContinue.timer)
+        rt.scheduledContinue = undefined
+      }
+      if (this.deps.store.getSession(id)) this.endJobs(id, rt, false)
+    }
     const pending = [...this.agents.values()].map((s) => s.connection)
     this.agents.clear()
     for (const p of pending) {
@@ -1073,6 +1098,7 @@ export class SessionManager {
       live: rt.live,
       requests: [...rt.requests.values()].map((r) => r.request),
       background: this.jobThreads(rt),
+      scheduledContinue: this.scheduledContinueView(rt),
       forks: forks.map((f): ForkView => {
         const fork = this.runtimes.get(f.sessionId)
         return {
@@ -1081,7 +1107,8 @@ export class SessionManager {
           background: (fork?.jobs.size ?? 0) > 0,
           queue: fork?.queue ?? { items: [], paused: false },
           live: fork?.live ?? emptyLive(),
-          requests: fork ? [...fork.requests.values()].map((r) => r.request) : []
+          requests: fork ? [...fork.requests.values()].map((r) => r.request) : [],
+          scheduledContinue: fork ? this.scheduledContinueView(fork) : null
         }
       })
     }
@@ -1144,6 +1171,7 @@ export class SessionManager {
     const rt = this.runtime(id)
     await rt.attaching?.promise.catch(() => {})
     if (rt.turn || rt.rewinding || rt.resetting) throw new Error('The agent is working. Stop the turn before restarting the session.')
+    this.clearScheduledContinue(id)
     const conn = rt.attachedTo
     if (!conn) {
       // Not running on the agent, so there's nothing to close.
@@ -1174,6 +1202,7 @@ export class SessionManager {
     if (session.forkOf) throw new Error("A fork thread's session goes with its thread.")
     this.endJobs(id, this.runtime(id))
     const rt = this.runtime(id)
+    this.clearScheduledContinue(id)
     if (rt.rewinding || rt.resetting) throw new Error('Wait for conversation reset or rewind to finish.')
     if (rt.turn) await this.cancel(id)
     let warning: string | null = null
@@ -1225,6 +1254,7 @@ export class SessionManager {
     const rt = this.runtime(id)
     if (rt.rewinding) throw new Error('Wait for conversation reset or rewind to finish.')
     if (rt.turn) throw new Error('Cancel the running turn before clearing the session.')
+    this.clearScheduledContinue(id)
     // A resume in progress would attach the old agent session after this.
     await rt.attaching?.promise.catch(() => {})
     let conn!: AgentConnection
@@ -1306,6 +1336,7 @@ export class SessionManager {
     const rt = this.runtime(id)
     if (!canRewind(original.agentId)) throw new Error(`${this.deps.getAgentConfig(original.agentId).name} doesn't support rewind.`)
     if (rt.rewinding || rt.resetting || rt.turn || rt.queue.items.length) throw new Error('Finish or cancel the running turn and clear queued messages before rewinding.')
+    this.clearScheduledContinue(id)
     rt.rewinding = true
     try {
       await rt.attaching?.promise.catch(() => {})
@@ -2071,6 +2102,7 @@ export class SessionManager {
     if (loading()) return void (await loading())
     if (!updatedAt || updatedAt === this.deps.store.getSession(sessionId)?.syncedAt) return
     if (rt.attachedTo !== conn || !canReload()) return
+    this.clearScheduledContinue(sessionId)
     await this.reattach(sessionId, conn)
   }
 
@@ -2098,6 +2130,7 @@ export class SessionManager {
   /** Deletes a session the agent no longer has from Gloss too. */
   private removeDeletedOutside(sessionId: string): void {
     const session = this.session(sessionId)
+    this.clearScheduledContinue(sessionId)
     this.withdrawRequests(sessionId)
     this.deps.store.deleteSession(sessionId)
     this.runtimes.delete(sessionId)
@@ -2367,6 +2400,9 @@ export class SessionManager {
     }
     const rt = this.runtime(sessionId)
     if (rt.rewinding || rt.resetting) throw new Error('Wait for conversation reset or rewind to finish.')
+    // Manual send cancels any pending wait-and-continue and resets the consecutive auto-continue counter.
+    this.clearScheduledContinue(sessionId)
+    rt.autoContinueChain = undefined
     if (rt.turn || rt.settingUp || rt.renamingBranch) {
       if (rt.turn && rt.turn.threadId === threadId && rt.live.steering) {
         return this.steer(sessionId, text, threadId, attachments, fromThread, forkSummary)
@@ -2553,7 +2589,8 @@ export class SessionManager {
     attachments: Attachment[],
     fromThread: string | null = null,
     originalWire?: string,
-    forkSummary?: string
+    forkSummary?: string,
+    fromAutoContinue = false
   ): Promise<TurnResult> {
     let session = this.session(sessionId)
     const rt = this.runtime(sessionId)
@@ -2591,6 +2628,7 @@ export class SessionManager {
 
     let result: TurnResult
     let recovery: Extract<GlossEvent, { type: 'turnEnd' }>['recovery']
+    let autoScheduleAt: number | undefined
     let attachedTo: AgentConnection | undefined
     try {
       const conn = await this.connection(session.agentId)
@@ -2623,12 +2661,44 @@ export class SessionManager {
         rt.failures ??= new Map()
         rt.failures.set(message.id, { signIn, fromThread })
         recovery = { messageId: message.id, action: signIn ? 'signIn' : 'retry' }
+        if (!signIn && result.error) {
+          const limit = await resolveUsageLimitFailure({
+            agentId: session.agentId,
+            cwd: session.cwd,
+            errorText: result.error,
+            cause,
+            rateLimits: this.slot(session.agentId).rateLimits,
+            now: this.now(),
+            fetchPlanUsage: this.deps.planUsage
+          })
+          if (limit.isLimit) {
+            let scheduled = false
+            if (limit.resetsAt !== undefined && this.deps.autoContinueAtUsageLimit?.() === true) {
+              const buffer = this.deps.resumeBufferMs ?? DEFAULT_RESUME_BUFFER_MS
+              const sameReset = fromAutoContinue && rt.autoContinueChain?.lastResetsAt === limit.resetsAt
+              const attempts = sameReset ? (rt.autoContinueChain!.attempts + 1) : 1
+              if (attempts <= 2) {
+                rt.autoContinueChain = { lastResetsAt: limit.resetsAt, attempts }
+                const extraGrace = sameReset ? 60_000 * (attempts - 1) : 0
+                autoScheduleAt = Math.max(limit.resetsAt + buffer + extraGrace, this.now() + (buffer > 0 ? 1_000 : 0))
+                scheduled = true
+              }
+            }
+            recovery.usageLimit = {
+              ...(limit.resetsAt !== undefined ? { resetsAt: limit.resetsAt } : {}),
+              ...(scheduled ? { scheduled: true } : {})
+            }
+          }
+        }
       }
     }
     if (!result.error && result.stopReason !== 'end_turn' && result.stopReason !== 'cancelled') {
       rt.failures ??= new Map()
       rt.failures.set(message.id, { signIn: false, fromThread })
       recovery = { messageId: message.id, action: 'retry' }
+    }
+    if (!result.error && result.stopReason === 'end_turn') {
+      rt.autoContinueChain = undefined
     }
     // The turn changed the agent's copy: remember its updatedAt so it isn't taken for a change made elsewhere.
     // Cancellation must reach the UI without waiting for session/list. A later
@@ -2639,6 +2709,9 @@ export class SessionManager {
     this.closeToolCalls(sessionId, turn, result)
     // A review's first pass (or a later review) lists findings: open their threads.
     if (threadId === null && session.review) await this.openFindings(sessionId, message.seq)
+    if (autoScheduleAt !== undefined && !this.disposed && this.runtimes.get(sessionId) === rt && this.deps.store.getSession(sessionId)) {
+      this.armScheduledContinue(sessionId, threadId, autoScheduleAt, true)
+    }
     // The queue moves on after a turn that ended normally or was cancelled (a cancel
     // stops only that turn). A failed or cut-short turn pauses it, so the user can
     // look before more is sent.
@@ -2911,6 +2984,8 @@ export class SessionManager {
       // Sign-in may have taken time. Recheck before sending into this session.
       if (this.runtimes.get(sessionId) !== rt || rt.failures?.get(messageId) !== failure) throw new Error('This failed turn is no longer available.')
       if (rt.turn) throw new Error('Wait for the running turn to finish before retrying.')
+      this.clearScheduledContinue(sessionId)
+      rt.autoContinueChain = undefined
       rt.failures!.delete(messageId)
       return await this.runTurn(sessionId, message.text, message.threadId, message.attachments ?? [], failure.fromThread, message.wireText)
     } finally {
@@ -3010,9 +3085,106 @@ export class SessionManager {
     this.drain(sessionId)
   }
 
+  /** Schedules "Continue where you left off." in `threadId` at `resumeAt` (ms since epoch). */
+  scheduleContinue(sessionId: string, threadId: string | null, resumeAt: number): void {
+    const session = this.session(sessionId)
+    if (!AUTO_CONTINUE_AGENTS.has(session.agentId)) throw new Error('Scheduled continuation is only supported for Claude Code, Codex and Antigravity.')
+    if (!Number.isFinite(resumeAt)) throw new Error('Invalid resume time.')
+    this.anchorOf(sessionId, threadId)
+    const fork = this.forkOfThread(sessionId, threadId)
+    const targetId = fork ?? sessionId
+    const rt = this.runtime(targetId)
+    if (rt.rewinding || rt.resetting) throw new Error('Wait for conversation reset or rewind to finish.')
+    if (rt.turn) throw new Error('A turn is already running in this session.')
+    rt.autoContinueChain = undefined
+    this.armScheduledContinue(targetId, threadId, Math.max(resumeAt, this.now()), false)
+  }
+
+  /** Cancels any pending usage-limit continuation on `sessionId`. */
+  cancelScheduledContinue(sessionId: string): void {
+    this.clearScheduledContinue(sessionId)
+  }
+
+  private scheduledContinueView(rt: SessionRuntime): ScheduledContinue | null {
+    return rt.scheduledContinue
+      ? { threadId: rt.scheduledContinue.threadId, resumeAt: rt.scheduledContinue.resumeAt, automatic: rt.scheduledContinue.automatic }
+      : null
+  }
+
+  private armScheduledContinue(sessionId: string, threadId: string | null, resumeAt: number, automatic: boolean): void {
+    const rt = this.runtime(sessionId)
+    if (rt.scheduledContinue) clearTimeout(rt.scheduledContinue.timer)
+    const entry: NonNullable<SessionRuntime['scheduledContinue']> = {
+      threadId,
+      resumeAt,
+      automatic,
+      timer: undefined as unknown as ReturnType<typeof setTimeout>
+    }
+    rt.scheduledContinue = entry
+    this.deps.emit({ type: 'scheduledContinue', sessionId, scheduled: this.scheduledContinueView(rt) })
+    this.tickScheduledContinue(sessionId, rt, entry)
+  }
+
+  /**
+   * Re-checks the wall clock at most once a minute so multi-day weekly resets never overflow
+   * Node's 32-bit timer limit and brief system sleep doesn't drift the wake time.
+   */
+  private tickScheduledContinue(
+    sessionId: string,
+    rt: SessionRuntime,
+    entry: NonNullable<SessionRuntime['scheduledContinue']>
+  ): void {
+    if (this.disposed || this.runtimes.get(sessionId) !== rt || rt.scheduledContinue !== entry) return
+    const remaining = entry.resumeAt - this.now()
+    if (remaining <= 0) {
+      void this.fireScheduledContinue(sessionId, rt, entry)
+      return
+    }
+    entry.timer = setTimeout(() => {
+      this.tickScheduledContinue(sessionId, rt, entry)
+    }, Math.min(remaining, 60_000))
+  }
+
+  private async fireScheduledContinue(
+    sessionId: string,
+    rt: SessionRuntime,
+    entry: NonNullable<SessionRuntime['scheduledContinue']>
+  ): Promise<void> {
+    if (this.disposed || this.runtimes.get(sessionId) !== rt || rt.scheduledContinue !== entry) return
+    clearTimeout(entry.timer)
+    rt.scheduledContinue = undefined
+    this.deps.emit({ type: 'scheduledContinue', sessionId, scheduled: null })
+    if (!this.deps.store.getSession(sessionId) || rt.turn || rt.rewinding || rt.resetting) return
+    let threadId = entry.threadId
+    if (threadId !== null) {
+      const thread = this.deps.store.getThread(threadId)
+      if (!thread || (thread.sessionId !== sessionId && this.forkHome(sessionId)?.threadId !== threadId)) threadId = null
+    }
+    try {
+      await this.runTurn(sessionId, CONTINUE_AT_USAGE_LIMIT_PROMPT, threadId, [], null, undefined, undefined, entry.automatic)
+    } catch (err) {
+      if (!this.disposed && this.deps.store.getSession(sessionId)) {
+        this.notice(sessionId, threadId, `Couldn't continue after usage limit: ${errorMessage(err)}`)
+      }
+    }
+  }
+
+  private clearScheduledContinue(sessionId: string, emit = true): void {
+    const rt = this.runtimes.get(sessionId)
+    if (!rt?.scheduledContinue) return
+    clearTimeout(rt.scheduledContinue.timer)
+    rt.scheduledContinue = undefined
+    if (emit && this.deps.store.getSession(sessionId)) {
+      this.deps.emit({ type: 'scheduledContinue', sessionId, scheduled: null })
+    }
+  }
+
   async cancel(sessionId: string): Promise<void> {
     const rt = this.runtimes.get(sessionId)
-    if (!rt?.turn) return
+    if (!rt?.turn) {
+      this.clearScheduledContinue(sessionId)
+      return
+    }
     rt.turn.cancelled = true
     const session = this.session(sessionId)
     // A turn waiting on sign-in stops waiting.

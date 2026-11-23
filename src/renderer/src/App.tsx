@@ -794,6 +794,7 @@ export function App(): React.JSX.Element {
             running={running}
             unseen={unseen}
             waiting={s.shownRequests}
+            scheduled={s.shownScheduled}
             agentSessions={listedAgentSessions}
             order={settings?.global.sessionOrder ?? 'created'}
             agentSessionsError={agentSessionsError}

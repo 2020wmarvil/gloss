@@ -3,7 +3,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { afterPaintIdle } from './idle'
 import { LogToBottom } from './logToBottom'
 import { hasPendingScroll, useScrollMemory, type ScrollAnchors } from './scrollMemory'
-import type { Message, Plan, ToolCall } from '@shared/types'
+import type { Message, Plan, ScheduledContinue, ToolCall } from '@shared/types'
 import { splitForkSummary, threadToMainTag } from '@shared/wire'
 import type { OpenSession } from './App'
 import { Markdown, MarkdownImageDirectory } from './Markdown'
@@ -11,10 +11,20 @@ import { RequestCard } from './RequestCard'
 import { CaptureFigure, type PinAnchors } from './CaptureFigure'
 import type { UserRequest } from '@shared/requests'
 import { hasDetails, ToolDetails } from './ToolDetails'
-import { ArrowDown, Brain, Check, ChevronDown, ChevronRight, CircleAlert, FilePen, FileText, GitFork, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
+import { formatReset } from './StatusLine'
+import { ArrowDown, Brain, Check, ChevronDown, ChevronRight, CircleAlert, Clock, FilePen, FileText, GitFork, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
 
 /** A transient, client-side note shown in a log (not part of the conversation). */
-export type Notice = { id: string; threadId: string | null; text: string; afterSeq: number; tone?: 'failed'; action?: { label: string; run(): Promise<unknown> } }
+export type Notice = {
+  id: string
+  threadId: string | null
+  text: string
+  afterSeq: number
+  tone?: 'failed'
+  action?: { label: string; run(): Promise<unknown> }
+  /** Usage-limit continuation: known reset time or manual time/delay picker when none was reported. */
+  schedule?: { resetsAt?: number; run(resumeAt: number): Promise<unknown> }
+}
 
 export type LogItem =
   | { kind: 'message'; seq: number; message: Message }
@@ -22,6 +32,8 @@ export type LogItem =
   | { kind: 'tool'; seq: number; toolCall: ToolCall }
   | { kind: 'plan'; seq: number; plan: Plan }
   | { kind: 'notice'; seq: number; notice: Notice }
+  /** Active countdown waiting for a usage-limit reset before sending "Continue where you left off.". */
+  | { kind: 'scheduledContinue'; seq: number; sessionId: string; scheduled: ScheduledContinue }
   /** What the agent waits on the user for: always last, below the turn that asked. */
   | { kind: 'request'; seq: number; request: UserRequest }
 
@@ -62,6 +74,9 @@ export function logItems(open: OpenSession, notices: Notice[], threadId: string 
     ...notices
       .filter((n) => n.threadId === threadId)
       .map((n): LogItem => ({ kind: 'notice', seq: n.afterSeq + 0.5, notice: n })),
+    ...(open.scheduledContinues ?? [])
+      .filter((s) => s.scheduled.threadId === threadId)
+      .map((s): LogItem => ({ kind: 'scheduledContinue', seq: Number.MAX_SAFE_INTEGER - 1, sessionId: s.sessionId, scheduled: s.scheduled })),
     ...(open.requests ?? [])
       .filter((r) => r.threadId === threadId)
       .map((r): LogItem => ({ kind: 'request', seq: Number.MAX_SAFE_INTEGER, request: r }))
@@ -334,9 +349,41 @@ export function TurnStatus({ open, threadId }: { open: OpenSession; threadId: st
   )
 }
 
+const SCHEDULE_PRESETS = [
+  { label: '30m', ms: 30 * 60_000 },
+  { label: '1h', ms: 60 * 60_000 },
+  { label: '2h', ms: 2 * 60 * 60_000 },
+  { label: '5h', ms: 5 * 60 * 60_000 }
+] as const
+
+const DETECTED_RESUME_BUFFER_MS = 15_000
+
+/** Formats a timestamp for `<input type="datetime-local">`. */
+function toDateTimeLocal(ms: number): string {
+  const d = new Date(ms)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** "in 4h 21m", "in 3d 4h", "in 12m", or "shortly". */
+export function formatCountdown(targetMs: number, nowMs: number): string {
+  const remaining = Math.max(0, targetMs - nowMs)
+  if (remaining < 60_000) return 'shortly'
+  const totalMins = Math.ceil(remaining / 60_000)
+  const days = Math.floor(totalMins / (60 * 24))
+  const hours = Math.floor((totalMins % (60 * 24)) / 60)
+  const mins = totalMins % 60
+  if (days > 0) return hours > 0 ? `in ${days}d ${hours}h` : `in ${days}d`
+  if (hours > 0) return mins > 0 ? `in ${hours}h ${mins}m` : `in ${hours}h`
+  return `in ${mins}m`
+}
+
 function FailedNotice({ notice }: { notice: Notice }): React.JSX.Element {
   const [pending, setPending] = useState(false)
   const [done, setDone] = useState(false)
+  const [scheduled, setScheduled] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [customTime, setCustomTime] = useState(() => toDateTimeLocal(Date.now() + 60 * 60_000))
   const [error, setError] = useState<string | null>(null)
   const inFlight = useRef(false)
   async function recover(): Promise<void> {
@@ -354,12 +401,158 @@ function FailedNotice({ notice }: { notice: Notice }): React.JSX.Element {
       setPending(false)
     }
   }
+  async function scheduleAt(resumeAt: number): Promise<void> {
+    if (!notice.schedule || inFlight.current) return
+    if (!Number.isFinite(resumeAt) || resumeAt <= Date.now()) {
+      setError('Pick a time in the future.')
+      return
+    }
+    inFlight.current = true
+    setPending(true)
+    setError(null)
+    try {
+      await notice.schedule.run(resumeAt)
+      setScheduled(true)
+      setPickerOpen(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      inFlight.current = false
+      setPending(false)
+    }
+  }
+  const hasSchedule = Boolean(notice.schedule && !scheduled && !done)
+  const knownReset = notice.schedule?.resetsAt
   return (
     <div className="notice failed" role="alert">
       <CircleAlert className="notice-icon" aria-hidden />
       <div className="notice-content">
         <span>{notice.text}</span>
-        {notice.action && !done && <button className="notice-action" disabled={pending} onClick={() => void recover()}>{pending ? 'Waiting?' : notice.action.label}</button>}
+        {(notice.action || hasSchedule) && !done && (
+          <div className="notice-actions">
+            {notice.action && (
+              <button className="notice-action" disabled={pending} onClick={() => void recover()}>
+                {pending ? 'Waiting…' : notice.action.label}
+              </button>
+            )}
+            {hasSchedule && knownReset !== undefined && (
+              <button
+                className="notice-action"
+                disabled={pending}
+                onClick={() => void scheduleAt(knownReset + DETECTED_RESUME_BUFFER_MS)}
+              >
+                Wait &amp; continue at {formatReset(knownReset)}
+              </button>
+            )}
+            {hasSchedule && knownReset === undefined && (
+              <button
+                className="notice-action"
+                disabled={pending}
+                aria-expanded={pickerOpen}
+                onClick={() => {
+                  if (!pickerOpen) setCustomTime(toDateTimeLocal(Date.now() + 60 * 60_000))
+                  setPickerOpen((o) => !o)
+                  setError(null)
+                }}
+              >
+                Schedule continue…
+              </button>
+            )}
+          </div>
+        )}
+        {hasSchedule && knownReset === undefined && pickerOpen && (
+          <div className="notice-schedule-picker">
+            <div className="notice-schedule-chips">
+              {SCHEDULE_PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  className="notice-action"
+                  disabled={pending}
+                  onClick={() => void scheduleAt(Date.now() + p.ms)}
+                >
+                  In {p.label}
+                </button>
+              ))}
+            </div>
+            <form
+              className="notice-schedule-custom"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void scheduleAt(new Date(customTime).getTime())
+              }}
+            >
+              <input
+                type="datetime-local"
+                aria-label="Resume time"
+                value={customTime}
+                min={toDateTimeLocal(Date.now() + 60_000)}
+                onChange={(e) => setCustomTime(e.target.value)}
+              />
+              <button type="submit" className="notice-action" disabled={pending || !customTime}>
+                Wait &amp; continue
+              </button>
+            </form>
+          </div>
+        )}
+        {error && <span className="notice-action-error">{error}</span>}
+      </div>
+    </div>
+  )
+}
+
+function ScheduledContinueCard({ sessionId, scheduled }: { sessionId: string; scheduled: ScheduledContinue }): React.JSX.Element {
+  const [now, setNow] = useState(() => Date.now())
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+  async function cancel(): Promise<void> {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await window.gloss.continueAtLimit.cancel(sessionId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function continueNow(): Promise<void> {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await window.gloss.continueAtLimit.cancel(sessionId)
+      await window.gloss.send(sessionId, 'Continue where you left off.', scheduled.threadId, [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="scheduled-continue" role="status">
+      <Clock className="scheduled-continue-icon" aria-hidden />
+      <div className="notice-content">
+        <div className="scheduled-continue-head">
+          <strong>Waiting for usage limit</strong>
+          {scheduled.automatic && <span className="scheduled-continue-badge">Auto</span>}
+        </div>
+        <span>
+          Will send &ldquo;Continue where you left off.&rdquo; at {formatReset(scheduled.resumeAt)} ({formatCountdown(scheduled.resumeAt, now)}).
+        </span>
+        <div className="notice-actions">
+          <button className="notice-action" disabled={busy} onClick={() => void continueNow()}>
+            Continue now
+          </button>
+          <button className="notice-action" disabled={busy} onClick={() => void cancel()}>
+            Cancel
+          </button>
+        </div>
         {error && <span className="notice-action-error">{error}</span>}
       </div>
     </div>
@@ -382,6 +575,8 @@ function rowKey(item: RowItem): string {
       return item.plan.id
     case 'request':
       return item.request.id
+    case 'scheduledContinue':
+      return `scheduled-continue:${item.sessionId}`
     case 'notice':
       return item.notice.id
     case 'tool':
@@ -414,6 +609,8 @@ function sameRow(a: RowProps, b: RowProps): boolean {
       return y.kind === 'plan' && y.plan === x.plan
     case 'request':
       return y.kind === 'request' && y.request === x.request
+    case 'scheduledContinue':
+      return y.kind === 'scheduledContinue' && y.sessionId === x.sessionId && y.scheduled === x.scheduled
     case 'notice':
       return y.kind === 'notice' && y.notice === x.notice
     default:
@@ -478,6 +675,8 @@ const LogRow = memo(function LogRow({ item, reveal, line, render }: RowProps): R
       return <PlanChecklist plan={item.plan} />
     case 'request':
       return <RequestCard request={item.request} />
+    case 'scheduledContinue':
+      return <ScheduledContinueCard sessionId={item.sessionId} scheduled={item.scheduled} />
     case 'notice':
       return item.notice.tone === 'failed' ? (
         <FailedNotice notice={item.notice} />

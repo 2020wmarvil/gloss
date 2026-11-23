@@ -5787,9 +5787,57 @@ html.autoscrolling * {
 }
 
 .notice-content { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+.notice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .notice-action { padding: 4px 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
 .notice-action:disabled { opacity: 0.6; cursor: wait; }
 .notice-action-error { color: var(--failed); font-size: var(--t-13); }
+.notice-schedule-picker { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+.notice-schedule-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.notice-schedule-custom { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.notice-schedule-custom input[type='datetime-local'] {
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-13);
+}
+
+/* Usage-limit wait-and-continue card: matches RequestCard's waiting accent. */
+.scheduled-continue {
+  align-self: stretch;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn-fill);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1);
+  padding: 12px 14px;
+  font-size: var(--t-14);
+}
+.scheduled-continue-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  color: var(--warn);
+}
+.scheduled-continue-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.scheduled-continue-badge {
+  font-size: var(--t-11);
+  font-weight: 600;
+  color: var(--warn);
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--warn-tint, rgba(217, 119, 6, 0.12));
+}
 
 /* Questions and approvals (SPEC → Questions and approvals): a card at the end of the
    asking thread's log, edged in the waiting color, with the agent's choices. */
@@ -5970,7 +6018,8 @@ html.autoscrolling * {
 }
 
 
-.state-dot[data-state='waiting'] {
+.state-dot[data-state='waiting'],
+.state-dot[data-state='scheduled'] {
   background: var(--warn-fill);
   animation: pulse 1.2s ease-in-out infinite;
 }

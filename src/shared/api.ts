@@ -110,6 +110,10 @@ export function makeApi(t: ApiTransport): GlossApi {
     steer: (sessionId, text, threadId, attachments) =>
       invoke(IPC.steer, sessionId, text, threadId, attachments),
     retry: (sessionId, messageId) => invoke(IPC.retry, sessionId, messageId),
+    continueAtLimit: {
+      schedule: (sessionId, threadId, resumeAt) => invoke(IPC.continueSchedule, sessionId, threadId, resumeAt),
+      cancel: (sessionId) => invoke(IPC.continueCancel, sessionId)
+    },
     cancel: (sessionId) => invoke(IPC.cancel, sessionId),
     setBadge: (badge) => send(IPC.setBadge, badge),
     capture: {

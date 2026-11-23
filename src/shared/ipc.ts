@@ -19,6 +19,7 @@ import type {
   PlanUsage,
   RateLimit,
   Project,
+  ScheduledContinue,
   Session,
   SessionLive,
   Thread,
@@ -57,6 +58,8 @@ export type SessionView = {
   forks: ForkView[]
   /** The thread of each job running in the background, after its turn ended (SPEC → Background jobs). */
   background: (string | null)[]
+  /** Active wait-and-continue countdown after a usage limit, if any. */
+  scheduledContinue?: ScheduledContinue | null
 }
 
 /** A fork thread's own session, as the session's view has it. Its log is in the session's. */
@@ -69,6 +72,7 @@ export type ForkView = {
   queue: MessageQueue
   live: SessionLive
   requests: UserRequest[]
+  scheduledContinue?: ScheduledContinue | null
 }
 
 export type GitStatus = {
@@ -200,12 +204,19 @@ export type GlossEvent =
       stopReason?: string
       error?: string
       /** Recovery offered on the failed-turn notice. */
-      recovery?: { messageId: string; action: 'signIn' | 'retry' }
+      recovery?: {
+        messageId: string
+        action: 'signIn' | 'retry'
+        /** Present when a supported agent failed due to a usage limit. */
+        usageLimit?: { resetsAt?: number; scheduled?: true }
+      }
       /** A queued message starts right away. */
       continues?: true
       /** Background jobs are still running: the agent's work isn't over. */
       jobsRunning?: true
     }
+  /** The session's scheduled continuation after a usage limit changed. */
+  | { type: 'scheduledContinue'; sessionId: string; scheduled: ScheduledContinue | null; forkOf?: ForkOf }
   /** The session's background jobs changed: the thread of each one (SPEC → Background jobs). */
   | { type: 'background'; sessionId: string; threads: (string | null)[]; forkOf?: ForkOf }
   | { type: 'queue'; sessionId: string; queue: MessageQueue; forkOf?: ForkOf }
@@ -415,6 +426,12 @@ export type GlossApi = {
    */
   steer(sessionId: string, text: string, threadId: string | null, attachments: Attachment[]): Promise<TurnResult>
   retry(sessionId: string, messageId: string): Promise<TurnResult>
+  continueAtLimit: {
+    /** Schedules "Continue where you left off." in `threadId` at `resumeAt` (ms since epoch). */
+    schedule(sessionId: string, threadId: string | null, resumeAt: number): Promise<void>
+    /** Cancels any pending scheduled continuation on `sessionId`. */
+    cancel(sessionId: string): Promise<void>
+  }
   cancel(sessionId: string): Promise<void>
   /** What the taskbar (or dock) badge shows (SPEC → Notifications). */
   setBadge(badge: AppBadge): void
@@ -576,6 +593,8 @@ export const IPC = {
   send: 'gloss:send',
   steer: 'gloss:steer',
   retry: 'gloss:retry',
+  continueSchedule: 'gloss:continue:schedule',
+  continueCancel: 'gloss:continue:cancel',
   cancel: 'gloss:cancel',
   setBadge: 'gloss:setBadge',
   queueEdit: 'gloss:queue:edit',

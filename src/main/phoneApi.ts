@@ -43,6 +43,8 @@ export const PHONE_CHANNELS: ReadonlySet<string> = new Set([
   IPC.send,
   IPC.steer,
   IPC.retry,
+  IPC.continueSchedule,
+  IPC.continueCancel,
   IPC.cancel,
   IPC.queueEdit,
   IPC.queueRemove,
