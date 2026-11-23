@@ -1078,7 +1078,7 @@ function LogView(props: {
           case 'plan':
             return <PlanView key={g.plan.id} plan={g.plan} />
           case 'notice':
-            return <NoticeView key={g.notice.id} notice={g.notice} />
+            return <NoticeView key={g.notice.id} notice={g.notice} waiting={g.waiting} />
           case 'scheduledContinue':
             return <MobileScheduledContinue key={`sc-${g.sessionId}`} sessionId={g.sessionId} scheduled={g.scheduled} />
           case 'request':
@@ -1218,16 +1218,19 @@ function toMobileDateTimeLocal(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-function NoticeView({ notice }: { notice: Notice }): React.JSX.Element {
+type Waiting = { sessionId: string; scheduled: NonNullable<OpenView['scheduledContinue']> }
+
+function NoticeView({ notice, waiting }: { notice: Notice; waiting?: Waiting }): React.JSX.Element {
   const [busy, setBusy] = useState(false)
-  const [scheduled, setScheduled] = useState(false)
+  const scheduled = waiting !== undefined
+  if (waiting) return <MobileScheduledContinue {...waiting} />
   const [pickerOpen, setPickerOpen] = useState(false)
   const [customTime, setCustomTime] = useState(() => toMobileDateTimeLocal(Date.now() + 60 * 60_000))
   const schedule = notice.schedule
   const runSchedule = (resumeAt: number): void => {
     if (!schedule || busy || !Number.isFinite(resumeAt) || resumeAt <= Date.now()) return
     setBusy(true)
-    void schedule.run(resumeAt).then(() => { setScheduled(true); setPickerOpen(false) }).finally(() => setBusy(false))
+    void schedule.run(resumeAt).then(() => setPickerOpen(false)).finally(() => setBusy(false))
   }
   return (
     <div className={notice.tone === 'failed' ? 'm-notice m-notice-failed' : 'm-notice'}>
@@ -1287,7 +1290,8 @@ function NoticeView({ notice }: { notice: Notice }): React.JSX.Element {
   )
 }
 
-function MobileScheduledContinue({ sessionId, scheduled }: { sessionId: string; scheduled: NonNullable<OpenView['scheduledContinue']> }): React.JSX.Element {
+/** A failed turn whose continue is scheduled: when it continues, and Cancel (no Retry). */
+function MobileScheduledContinue({ sessionId, scheduled }: Waiting): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   const [busy, setBusy] = useState(false)
   useEffect(() => {
@@ -1295,20 +1299,14 @@ function MobileScheduledContinue({ sessionId, scheduled }: { sessionId: string; 
     return () => clearInterval(id)
   }, [])
   return (
-    <div className="m-notice">
-      <strong>Waiting for usage limit.</strong> Will send &ldquo;Continue where you left off.&rdquo; at {formatReset(scheduled.resumeAt)} ({formatCountdown(scheduled.resumeAt, now)}).
-      <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-        <button className="m-dbtn" disabled={busy} onClick={() => {
-          setBusy(true)
-          void window.gloss.continueAtLimit.cancel(sessionId)
-            .then(() => window.gloss.send(sessionId, 'Continue where you left off.', scheduled.threadId, []))
-            .finally(() => setBusy(false))
-        }}>Continue now</button>
-        <button className="m-dbtn" disabled={busy} onClick={() => {
-          setBusy(true)
-          void window.gloss.continueAtLimit.cancel(sessionId).finally(() => setBusy(false))
-        }}>Cancel</button>
-      </div>
+    <div className="m-notice m-notice-failed">
+      <span style={{ flexBasis: '100%' }}>
+        Hit your usage limit. Continuing at {formatReset(scheduled.resumeAt)} ({formatCountdown(scheduled.resumeAt, now)}).
+      </span>
+      <button className="m-dbtn" disabled={busy} onClick={() => {
+        setBusy(true)
+        void window.gloss.continueAtLimit.cancel(sessionId).finally(() => setBusy(false))
+      }}>Cancel</button>
     </div>
   )
 }

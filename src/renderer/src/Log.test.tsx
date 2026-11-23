@@ -135,27 +135,35 @@ describe('Usage-limit continuation UI', () => {
     } finally { act(() => root.unmount()) }
   })
 
-  it('renders ScheduledContinueCard with Continue now and Cancel controls', async () => {
+  it('shows a scheduled continue inside the failed notice, with only Cancel', async () => {
     const el = document.createElement('div')
     document.body.replaceChildren(el)
     const root = createRoot(el)
     const cancel = vi.fn(async () => {})
-    const send = vi.fn(async () => ({}))
-    ;(window as unknown as { gloss: unknown }).gloss = { continueAtLimit: { cancel }, send }
+    ;(window as unknown as { gloss: unknown }).gloss = { continueAtLimit: { cancel } }
     const withSchedule: OpenSession = {
       ...open,
       scheduledContinues: [{ sessionId: 's', scheduled: { threadId: null, resumeAt: Date.now() + 90 * 60_000, automatic: true } }]
     }
+    const notice = {
+      id: 'n3',
+      threadId: null,
+      text: "The turn failed: You've hit your limit",
+      afterSeq: 1,
+      tone: 'failed' as const,
+      action: { label: 'Retry', run: vi.fn(async () => {}) },
+      schedule: { resetsAt: Date.now() + 90 * 60_000, run: vi.fn(async () => {}) }
+    }
     try {
-      act(() => root.render(<Log items={logItems(withSchedule, [], null)} className="log" empty={null} renderAgent={() => null} />))
-      const card = el.querySelector('.scheduled-continue')!
-      expect(card.textContent).toContain('Waiting for usage limit')
-      expect(card.textContent).toContain('Auto')
-      expect(card.textContent).toContain('Continue where you left off.')
-      const buttons = [...card.querySelectorAll<HTMLButtonElement>('button')]
-      await act(async () => { buttons.find((b) => b.textContent === 'Continue now')!.click() })
+      act(() => root.render(<Log items={logItems(withSchedule, [notice], null)} className="log" empty={null} renderAgent={() => null} />))
+      const boxes = el.querySelectorAll('.notice.failed')
+      expect(boxes).toHaveLength(1)
+      expect(boxes[0].textContent).toContain('Hit your usage limit. Continuing at')
+      expect(boxes[0].textContent).not.toContain('The turn failed')
+      const labels = [...boxes[0].querySelectorAll('button')].map((b) => b.textContent)
+      expect(labels).toEqual(['Cancel'])
+      await act(async () => { boxes[0].querySelector('button')!.click() })
       expect(cancel).toHaveBeenCalledWith('s')
-      expect(send).toHaveBeenCalledWith('s', 'Continue where you left off.', null, [])
     } finally { act(() => root.unmount()) }
   })
 })

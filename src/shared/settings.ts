@@ -285,8 +285,8 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     description: 'Stops the computer sleeping while Gloss runs, so phones can reach it. The screen still turns off.'
   },
   {
-    key: 'autoContinueAtUsageLimit', scope: 'global', type: 'boolean', label: 'Continue automatically at usage limit',
-    description: 'When Claude Code, Codex or Antigravity hits a usage limit with a known reset time, wait and send "Continue where you left off." automatically.'
+    key: 'autoContinueAtUsageLimit', scope: 'global', type: 'boolean', label: 'Continue automatically when usage limits reset',
+    description: 'When a session hits a usage limit with a known reset time, wait and continue automatically when the limit resets.'
   },
   {
     key: 'externalEditor',

@@ -12,7 +12,7 @@ import { CaptureFigure, type PinAnchors } from './CaptureFigure'
 import type { UserRequest } from '@shared/requests'
 import { hasDetails, ToolDetails } from './ToolDetails'
 import { formatReset } from './StatusLine'
-import { ArrowDown, Brain, Check, ChevronDown, ChevronRight, CircleAlert, Clock, FilePen, FileText, GitFork, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
+import { ArrowDown, Brain, Check, ChevronDown, ChevronRight, CircleAlert, FilePen, FileText, GitFork, Globe, Search, Terminal, Trash, Wrench, type LucideIcon } from 'lucide-react'
 
 /** A transient, client-side note shown in a log (not part of the conversation). */
 export type Notice = {
@@ -31,11 +31,14 @@ export type LogItem =
   | { kind: 'sentToMain'; seq: number; message: Message }
   | { kind: 'tool'; seq: number; toolCall: ToolCall }
   | { kind: 'plan'; seq: number; plan: Plan }
-  | { kind: 'notice'; seq: number; notice: Notice }
+  /** `waiting`: a continue scheduled after this failed turn, shown in the notice itself. */
+  | { kind: 'notice'; seq: number; notice: Notice; waiting?: Waiting }
   /** Active countdown waiting for a usage-limit reset before sending "Continue where you left off.". */
   | { kind: 'scheduledContinue'; seq: number; sessionId: string; scheduled: ScheduledContinue }
   /** What the agent waits on the user for: always last, below the turn that asked. */
   | { kind: 'request'; seq: number; request: UserRequest }
+
+type Waiting = { sessionId: string; scheduled: ScheduledContinue }
 
 /** Messages, tool calls, plans and notices of one thread (null = main), in seq order. */
 export function logItems(open: OpenSession, notices: Notice[], threadId: string | null): LogItem[] {
@@ -60,6 +63,17 @@ export function logItems(open: OpenSession, notices: Notice[], threadId: string 
       if (source?.id === threadId) continuations.push({ kind: 'sentToMain', seq: placed(m), message: m })
     }
   }
+  const noticeItems = notices
+    .filter((n) => n.threadId === threadId)
+    .map((n): Extract<LogItem, { kind: 'notice' }> => ({ kind: 'notice', seq: n.afterSeq + 0.5, notice: n }))
+  // A scheduled continue belongs to the thread's latest failed notice; without one it shows on its own.
+  const waitingAlone: LogItem[] = []
+  for (const s of open.scheduledContinues ?? []) {
+    if (s.scheduled.threadId !== threadId) continue
+    const failed = noticeItems.filter((n) => n.notice.tone === 'failed').at(-1)
+    if (failed) failed.waiting = s
+    else waitingAlone.push({ kind: 'scheduledContinue', seq: Number.MAX_SAFE_INTEGER - 1, sessionId: s.sessionId, scheduled: s.scheduled })
+  }
   return [
     ...continuations,
     ...open.messages
@@ -71,12 +85,8 @@ export function logItems(open: OpenSession, notices: Notice[], threadId: string 
     ...open.plans
       .filter((p) => p.threadId === threadId && p.entries.length > 0)
       .map((p): LogItem => ({ kind: 'plan', seq: p.seq, plan: p })),
-    ...notices
-      .filter((n) => n.threadId === threadId)
-      .map((n): LogItem => ({ kind: 'notice', seq: n.afterSeq + 0.5, notice: n })),
-    ...(open.scheduledContinues ?? [])
-      .filter((s) => s.scheduled.threadId === threadId)
-      .map((s): LogItem => ({ kind: 'scheduledContinue', seq: Number.MAX_SAFE_INTEGER - 1, sessionId: s.sessionId, scheduled: s.scheduled })),
+    ...noticeItems,
+    ...waitingAlone,
     ...(open.requests ?? [])
       .filter((r) => r.threadId === threadId)
       .map((r): LogItem => ({ kind: 'request', seq: Number.MAX_SAFE_INTEGER, request: r }))
@@ -378,10 +388,9 @@ export function formatCountdown(targetMs: number, nowMs: number): string {
   return `in ${mins}m`
 }
 
-function FailedNotice({ notice }: { notice: Notice }): React.JSX.Element {
+function FailedNotice({ notice, waiting }: { notice: Notice; waiting?: Waiting }): React.JSX.Element {
   const [pending, setPending] = useState(false)
   const [done, setDone] = useState(false)
-  const [scheduled, setScheduled] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [customTime, setCustomTime] = useState(() => toDateTimeLocal(Date.now() + 60 * 60_000))
   const [error, setError] = useState<string | null>(null)
@@ -412,7 +421,6 @@ function FailedNotice({ notice }: { notice: Notice }): React.JSX.Element {
     setError(null)
     try {
       await notice.schedule.run(resumeAt)
-      setScheduled(true)
       setPickerOpen(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -421,8 +429,9 @@ function FailedNotice({ notice }: { notice: Notice }): React.JSX.Element {
       setPending(false)
     }
   }
-  const hasSchedule = Boolean(notice.schedule && !scheduled && !done)
+  const hasSchedule = Boolean(notice.schedule && !waiting && !done)
   const knownReset = notice.schedule?.resetsAt
+  if (waiting) return <WaitingNotice sessionId={waiting.sessionId} scheduled={waiting.scheduled} />
   return (
     <div className="notice failed" role="alert">
       <CircleAlert className="notice-icon" aria-hidden />
@@ -501,7 +510,11 @@ function FailedNotice({ notice }: { notice: Notice }): React.JSX.Element {
   )
 }
 
-function ScheduledContinueCard({ sessionId, scheduled }: { sessionId: string; scheduled: ScheduledContinue }): React.JSX.Element {
+/**
+ * A failed turn whose continue is scheduled: when it continues, and Cancel below it.
+ * No Retry: retrying before the reset would only fail again.
+ */
+function WaitingNotice({ sessionId, scheduled }: Waiting): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -521,34 +534,14 @@ function ScheduledContinueCard({ sessionId, scheduled }: { sessionId: string; sc
       setBusy(false)
     }
   }
-  async function continueNow(): Promise<void> {
-    if (busy) return
-    setBusy(true)
-    setError(null)
-    try {
-      await window.gloss.continueAtLimit.cancel(sessionId)
-      await window.gloss.send(sessionId, 'Continue where you left off.', scheduled.threadId, [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
-  }
   return (
-    <div className="scheduled-continue" role="status">
-      <Clock className="scheduled-continue-icon" aria-hidden />
+    <div className="notice failed" role="alert">
+      <CircleAlert className="notice-icon" aria-hidden />
       <div className="notice-content">
-        <div className="scheduled-continue-head">
-          <strong>Waiting for usage limit</strong>
-          {scheduled.automatic && <span className="scheduled-continue-badge">Auto</span>}
-        </div>
         <span>
-          Will send &ldquo;Continue where you left off.&rdquo; at {formatReset(scheduled.resumeAt)} ({formatCountdown(scheduled.resumeAt, now)}).
+          Hit your usage limit. Continuing at {formatReset(scheduled.resumeAt)} ({formatCountdown(scheduled.resumeAt, now)}).
         </span>
         <div className="notice-actions">
-          <button className="notice-action" disabled={busy} onClick={() => void continueNow()}>
-            Continue now
-          </button>
           <button className="notice-action" disabled={busy} onClick={() => void cancel()}>
             Cancel
           </button>
@@ -612,7 +605,7 @@ function sameRow(a: RowProps, b: RowProps): boolean {
     case 'scheduledContinue':
       return y.kind === 'scheduledContinue' && y.sessionId === x.sessionId && y.scheduled === x.scheduled
     case 'notice':
-      return y.kind === 'notice' && y.notice === x.notice
+      return y.kind === 'notice' && y.notice === x.notice && y.waiting?.scheduled === x.waiting?.scheduled
     default:
       return false
   }
@@ -676,10 +669,10 @@ const LogRow = memo(function LogRow({ item, reveal, line, render }: RowProps): R
     case 'request':
       return <RequestCard request={item.request} />
     case 'scheduledContinue':
-      return <ScheduledContinueCard sessionId={item.sessionId} scheduled={item.scheduled} />
+      return <WaitingNotice sessionId={item.sessionId} scheduled={item.scheduled} />
     case 'notice':
       return item.notice.tone === 'failed' ? (
-        <FailedNotice notice={item.notice} />
+        <FailedNotice notice={item.notice} waiting={item.waiting} />
       ) : (
         <p className="notice">
           {item.notice.text}
