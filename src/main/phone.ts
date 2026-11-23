@@ -23,6 +23,13 @@ export type PhoneOptions = {
 const OFF = { state: 'off', error: null, origin: null, machine: null, ip: null, certExpiresAt: null, certWarning: null } as const satisfies Partial<PhoneStatus>
 /** How often the certificate is checked while the bridge is on. */
 const RENEW_EVERY = 24 * 60 * 60_000
+/**
+ * How often a bridge that should be on but isn't listening is started again: it listens on the Tailscale
+ * address, which is gone for a while after the computer wakes or before Tailscale connects at login.
+ */
+const HEAL_EVERY = 30_000
+/** How long after a wake to restart the bridge, giving Tailscale a moment to reconnect. */
+const WAKE_DELAY = 5_000
 
 export class PhoneService {
   private readonly bridge: Bridge
@@ -35,6 +42,10 @@ export class PhoneService {
   /** The tailnet name the certificate is for, while the bridge is on. */
   private host: string | null = null
   private renewTimer: ReturnType<typeof setInterval> | undefined
+  private readonly healTimer: ReturnType<typeof setInterval>
+  private wakeTimer: ReturnType<typeof setTimeout> | undefined
+  /** Starts and stops queued or running. */
+  private pending = 0
 
   constructor(private readonly opts: PhoneOptions) {
     this.push = new PushSender(opts.dataDir, opts.store)
@@ -48,6 +59,8 @@ export class PhoneService {
         this.changed()
       }
     })
+    this.healTimer = setInterval(() => this.heal(), HEAL_EVERY)
+    this.healTimer.unref?.()
   }
 
   status(): PhoneStatus {
@@ -65,6 +78,20 @@ export class PhoneService {
   /** Tries again after an error. */
   retry(): Promise<void> {
     return this.run()
+  }
+
+  /** The computer woke: its Tailscale address went away while asleep, so the server starts over once it's back. */
+  woke(): void {
+    clearTimeout(this.wakeTimer)
+    this.wakeTimer = setTimeout(() => {
+      if (this.wanted.on) void this.run()
+    }, WAKE_DELAY)
+    this.wakeTimer.unref?.()
+  }
+
+  /** Starts the bridge again if it should be on but isn't listening, unless a start is already under way. */
+  private heal(): void {
+    if (this.wanted.on && this.pending === 0 && !this.bridge.listening) void this.run()
   }
 
   async pair(): Promise<PhoneStatus> {
@@ -95,6 +122,8 @@ export class PhoneService {
   }
 
   dispose(): Promise<void> {
+    clearInterval(this.healTimer)
+    clearTimeout(this.wakeTimer)
     this.wanted = { ...this.wanted, on: false }
     return this.run()
   }
@@ -122,7 +151,8 @@ export class PhoneService {
   }
 
   private run(): Promise<void> {
-    this.queue = this.queue.then(() => this.sync()).catch(() => {})
+    this.pending++
+    this.queue = this.queue.then(() => this.sync()).catch(() => {}).finally(() => { this.pending-- })
     return this.queue
   }
 

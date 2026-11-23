@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, statSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerSaveBlocker, screen, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, powerSaveBlocker, screen, shell, type WebContents } from 'electron'
 import { IPC, type AppBadge, type GlossEvent, type MainAction, type OpenCodeStatus, type PaneState } from '../shared/ipc'
 import type { Anchor, Attachment, Pin, Project, Session } from '../shared/types'
 import type { AnswerValue, RequestAnswer } from '../shared/requests'
@@ -1443,6 +1443,7 @@ app.whenReady().then(() => {
     onStatus: (status) => emit({ type: 'phone', status })
   })
   void phone.apply(settingsFile.state().global.phoneAccess ?? false, settingsFile.state().global.phonePort ?? 8443)
+  powerMonitor.on('resume', () => phone?.woke())
   nativeTheme.on('updated', updateTitleBar)
   background = new Background({ icon: process.platform === 'win32' ? iconIco : iconPng, open: showGloss, quit: () => app.quit() })
   background.apply(backgroundSettings(settingsFile.state().global))
