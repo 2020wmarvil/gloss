@@ -14,12 +14,13 @@ import { truncate } from '@shared/wire'
 import { projectOf } from '@shared/worktree'
 import { NO_SECOND_BRAIN } from '@shared/chats'
 import { errorText } from '../src/errors'
-import { ForkSummary, logItems, type LogItem, type Notice } from '../src/Log'
+import { ForkSummary, formatCountdown, logItems, type LogItem, type Notice } from '../src/Log'
 import { Markdown } from '../src/Markdown'
 import { RequestCard } from '../src/RequestCard'
 import { Lightbox } from './Lightbox'
 import { useSheetDrag } from './sheetDrag'
 import { forkUsage } from '../src/ThreadPanel'
+import { formatReset } from '../src/StatusLine'
 import { resetIn } from '../src/UsagePanel'
 import { hasDetails, ToolDetails } from '../src/ToolDetails'
 import { rangeToSource } from '../src/selection'
@@ -910,8 +911,15 @@ function LogView(props: {
   const saved = scrolls.get(props.memory) ?? BOTTOM
   const pinned = useRef(saved === BOTTOM)
   const items = useMemo(
-    // A fork thread's questions and approvals come from its own session.
-    () => props.inThread && threadId === null ? [] : logItems({ ...open, requests: [...open.requests, ...open.forks.flatMap((f) => f.requests)] }, open.notices, threadId),
+    // A fork thread's questions, approvals and scheduled continuations come from its own session.
+    () => props.inThread && threadId === null ? [] : logItems({
+      ...open,
+      requests: [...open.requests, ...open.forks.flatMap((f) => f.requests)],
+      scheduledContinues: [
+        ...(open.scheduledContinue ? [{ sessionId: open.session.id, scheduled: open.scheduledContinue }] : []),
+        ...open.forks.flatMap((f) => (f.scheduledContinue ? [{ sessionId: f.sessionId, scheduled: f.scheduledContinue }] : []))
+      ]
+    }, open.notices, threadId),
     [open, threadId, props.inThread]
   )
   const replyCounts = useMemo(() => {
@@ -1070,7 +1078,9 @@ function LogView(props: {
           case 'plan':
             return <PlanView key={g.plan.id} plan={g.plan} />
           case 'notice':
-            return <NoticeView key={g.notice.id} notice={g.notice} />
+            return <NoticeView key={g.notice.id} notice={g.notice} waiting={g.waiting} />
+          case 'scheduledContinue':
+            return <MobileScheduledContinue key={`sc-${g.sessionId}`} sessionId={g.sessionId} scheduled={g.scheduled} />
           case 'request':
             return <RequestCard key={g.request.id} request={g.request} />
           default:
@@ -1202,14 +1212,101 @@ function PlanView({ plan }: { plan: Plan }): React.JSX.Element {
   )
 }
 
-function NoticeView({ notice }: { notice: Notice }): React.JSX.Element {
+function toMobileDateTimeLocal(ms: number): string {
+  const d = new Date(ms)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+type Waiting = { sessionId: string; scheduled: NonNullable<OpenView['scheduledContinue']> }
+
+function NoticeView({ notice, waiting }: { notice: Notice; waiting?: Waiting }): React.JSX.Element {
   const [busy, setBusy] = useState(false)
+  const scheduled = waiting !== undefined
+  if (waiting) return <MobileScheduledContinue {...waiting} />
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [customTime, setCustomTime] = useState(() => toMobileDateTimeLocal(Date.now() + 60 * 60_000))
+  const schedule = notice.schedule
+  const runSchedule = (resumeAt: number): void => {
+    if (!schedule || busy || !Number.isFinite(resumeAt) || resumeAt <= Date.now()) return
+    setBusy(true)
+    void schedule.run(resumeAt).then(() => setPickerOpen(false)).finally(() => setBusy(false))
+  }
   return (
     <div className={notice.tone === 'failed' ? 'm-notice m-notice-failed' : 'm-notice'}>
       {notice.text}
       {notice.action && (
         <button className="m-dbtn" disabled={busy} onClick={() => { setBusy(true); void notice.action!.run().finally(() => setBusy(false)) }}>{notice.action.label}</button>
       )}
+      {schedule && !scheduled && schedule.resetsAt !== undefined && (
+        <button className="m-dbtn" disabled={busy} onClick={() => runSchedule(schedule.resetsAt! + 15_000)}>
+          Wait &amp; continue at {formatReset(schedule.resetsAt)}
+        </button>
+      )}
+      {schedule && !scheduled && schedule.resetsAt === undefined && (
+        <>
+          <button
+            className="m-dbtn"
+            disabled={busy}
+            onClick={() => {
+              if (!pickerOpen) setCustomTime(toMobileDateTimeLocal(Date.now() + 60 * 60_000))
+              setPickerOpen((o) => !o)
+            }}
+          >
+            Schedule continue…
+          </button>
+          {pickerOpen && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {([['30m', 30], ['1h', 60], ['2h', 120], ['5h', 300]] as const).map(([label, mins]) => (
+                  <button key={label} className="m-dbtn" disabled={busy} onClick={() => runSchedule(Date.now() + mins * 60_000)}>
+                    In {label}
+                  </button>
+                ))}
+              </div>
+              <form
+                style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  runSchedule(new Date(customTime).getTime())
+                }}
+              >
+                <input
+                  type="datetime-local"
+                  aria-label="Resume time"
+                  value={customTime}
+                  min={toMobileDateTimeLocal(Date.now() + 60_000)}
+                  onChange={(e) => setCustomTime(e.target.value)}
+                />
+                <button type="submit" className="m-dbtn" disabled={busy || !customTime}>
+                  Wait &amp; continue
+                </button>
+              </form>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** A failed turn whose continue is scheduled: when it continues, and Cancel (no Retry). */
+function MobileScheduledContinue({ sessionId, scheduled }: Waiting): React.JSX.Element {
+  const [now, setNow] = useState(() => Date.now())
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <div className="m-notice m-notice-failed">
+      <span style={{ flexBasis: '100%' }}>
+        Hit your usage limit. Continuing at {formatReset(scheduled.resumeAt)} ({formatCountdown(scheduled.resumeAt, now)}).
+      </span>
+      <button className="m-dbtn" disabled={busy} onClick={() => {
+        setBusy(true)
+        void window.gloss.continueAtLimit.cancel(sessionId).finally(() => setBusy(false))
+      }}>Cancel</button>
     </div>
   )
 }

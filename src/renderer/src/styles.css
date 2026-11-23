@@ -5787,9 +5787,22 @@ html.autoscrolling * {
 }
 
 .notice-content { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+.notice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .notice-action { padding: 4px 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
 .notice-action:disabled { opacity: 0.6; cursor: wait; }
 .notice-action-error { color: var(--failed); font-size: var(--t-13); }
+.notice-schedule-picker { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+.notice-schedule-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.notice-schedule-custom { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.notice-schedule-custom input[type='datetime-local'] {
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-13);
+}
 
 /* Questions and approvals (SPEC → Questions and approvals): a card at the end of the
    asking thread's log, edged in the waiting color, with the agent's choices. */
@@ -5970,7 +5983,8 @@ html.autoscrolling * {
 }
 
 
-.state-dot[data-state='waiting'] {
+.state-dot[data-state='waiting'],
+.state-dot[data-state='scheduled'] {
   background: var(--warn-fill);
   animation: pulse 1.2s ease-in-out infinite;
 }

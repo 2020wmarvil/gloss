@@ -5,7 +5,7 @@ import { commandMatches } from './commandBindings'
 import type { SearchResult } from '@shared/search'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ForkOf, GitStatus, GlossEvent, PaneState, PullRequest, SessionView } from '@shared/ipc'
-import type { Anchor, Attachment, Message, MessageQueue, Plan, QueuedMessage, Session, SessionLive, Thread, ToolCall } from '@shared/types'
+import type { Anchor, Attachment, Message, MessageQueue, Plan, QueuedMessage, ScheduledContinue, Session, SessionLive, Thread, ToolCall } from '@shared/types'
 import { keepUnchanged, lineLabel, type LineAnchor, type ReviewDiff } from '@shared/review'
 import type { UserRequest } from '@shared/requests'
 import { pinAnchor, truncate } from '@shared/wire'
@@ -28,6 +28,8 @@ export type OpenSession = {
   threads: Thread[]
   /** Questions and approvals the agent is waiting on, shown in their threads' logs. */
   requests?: UserRequest[]
+  /** Active usage-limit continuation countdowns (the session's own and any fork threads'). */
+  scheduledContinues?: { sessionId: string; scheduled: ScheduledContinue }[]
 }
 
 /**
@@ -116,6 +118,8 @@ export function useSession() {
   const [running, setRunning] = useState<Record<string, string | null>>({})
   /** sessionId → the thread of each job it runs in the background (SPEC → Background jobs). */
   const [background, setBackground] = useState<Record<string, (string | null)[]>>({})
+  /** sessionId → active usage-limit continuation countdown. */
+  const [scheduled, setScheduled] = useState<Record<string, ScheduledContinue>>({})
   const [notices, setNotices] = useState<Record<string, Notice[]>>({})
   const [lives, setLives] = useState<Record<string, SessionLive>>({})
   const [queues, setQueues] = useState<Record<string, MessageQueue>>({})
@@ -169,7 +173,7 @@ export function useSession() {
     if (openId.current) panels.current.set(openId.current, panelRef.current)
   }, [])
 
-  const addNotice = useCallback((sessionId: string, threadId: string | null, text: string, tone?: Notice['tone'], action?: Notice['action']) => {
+  const addNotice = useCallback((sessionId: string, threadId: string | null, text: string, tone?: Notice['tone'], action?: Notice['action'], schedule?: Notice['schedule']) => {
     setNotices((all) => ({
       ...all,
       [sessionId]: [
@@ -180,6 +184,7 @@ export function useSession() {
           text,
           ...(tone ? { tone } : {}),
           ...(action ? { action } : {}),
+          ...(schedule ? { schedule } : {}),
           afterSeq: openId.current === sessionId ? lastSeq.current : Infinity
         }
       ]
@@ -297,6 +302,16 @@ export function useSession() {
         }
         return next
       })
+      setScheduled((s) => {
+        const next = { ...s }
+        if (view.scheduledContinue) next[id] = view.scheduledContinue
+        else delete next[id]
+        for (const f of view.forks) {
+          if (f.scheduledContinue) next[f.sessionId] = f.scheduledContinue
+          else delete next[f.sessionId]
+        }
+        return next
+      })
       refreshGit(view.session.cwd, id)
       if (view.session.review) refreshDiff(id, true)
       const thread = threadId ? view.threads.find((t) => t.id === threadId) : undefined
@@ -373,6 +388,12 @@ export function useSession() {
           panels.current.delete(event.sessionId)
           setRequests((r) => {
             const next = { ...r }
+            delete next[event.sessionId]
+            return next
+          })
+          setScheduled((s) => {
+            if (!(event.sessionId in s)) return s
+            const next = { ...s }
             delete next[event.sessionId]
             return next
           })
@@ -459,18 +480,36 @@ export function useSession() {
             return next
           })
           break
+        case 'scheduledContinue':
+          setScheduled((s) => {
+            const next = { ...s }
+            if (event.scheduled) next[event.sessionId] = event.scheduled
+            else delete next[event.sessionId]
+            return next
+          })
+          break
         case 'turnStart':
           setRunning((r) => ({ ...r, [event.sessionId]: event.threadId }))
           break
         case 'turnEnd': {
           const recovery = event.recovery
+          const shownId = event.forkOf?.sessionId ?? event.sessionId
+          const shownThread = event.forkOf?.threadId ?? event.threadId
           const action: Notice['action'] = recovery ? {
             label: recovery.action === 'signIn' ? 'Sign in' : 'Retry',
             run: async () => {
               await window.gloss.retry(event.sessionId, recovery.messageId)
-              const shown = event.forkOf?.sessionId ?? event.sessionId
               setNotices((all) => ({
-                ...all, [shown]: (all[shown] ?? []).map((n) => n.action === action ? { ...n, action: undefined } : n)
+                ...all, [shownId]: (all[shownId] ?? []).map((n) => n.action === action ? { ...n, action: undefined, schedule: undefined } : n)
+              }))
+            }
+          } : undefined
+          const schedule: Notice['schedule'] = recovery?.usageLimit && !recovery.usageLimit.scheduled ? {
+            resetsAt: recovery.usageLimit.resetsAt,
+            run: async (resumeAt: number) => {
+              await window.gloss.continueAtLimit.schedule(event.sessionId, event.threadId, resumeAt)
+              setNotices((all) => ({
+                ...all, [shownId]: (all[shownId] ?? []).map((n) => n.schedule === schedule ? { ...n, schedule: undefined } : n)
               }))
             }
           } : undefined
@@ -480,9 +519,7 @@ export function useSession() {
             return next
           })
           // A fork thread's turn ends in its thread of the parent (SPEC → Fork threads); Retry is the fork's.
-          const shownId = event.forkOf?.sessionId ?? event.sessionId
-          const shownThread = event.forkOf?.threadId ?? event.threadId
-          if (event.error) addNotice(shownId, shownThread, `The turn failed: ${event.error}`, 'failed', action)
+          if (event.error) addNotice(shownId, shownThread, `The turn failed: ${event.error}`, 'failed', action, schedule)
           else if (event.stopReason === 'cancelled') addNotice(shownId, shownThread, 'Cancelled.')
           else if (event.stopReason && event.stopReason !== 'end_turn')
             addNotice(shownId, shownThread, `The agent stopped: ${event.stopReason.replace(/_/g, ' ')}.`, 'failed', action)
@@ -727,11 +764,12 @@ export function useSession() {
     undefined
   )
   const ownJobs = sessionId !== undefined ? background[sessionId] : undefined
-  const stripThreadId = runningThread !== undefined ? runningThread : ownJobs ? ownJobs[0] : lastMessage?.threadId
+  const ownScheduled = sessionId ? scheduled[sessionId] : undefined
+  const stripThreadId = runningThread !== undefined ? runningThread : ownJobs ? ownJobs[0] : ownScheduled ? ownScheduled.threadId : lastMessage?.threadId
   const stripThreadRow = open?.threads.find((t) => t.id === stripThreadId)
   const stripState = runningThread !== undefined
     ? ((sessionId && requests[sessionId]?.length) ? 'waiting' : 'working')
-    : ownJobs ? 'working' : (lastMessage?.outcome ?? null)
+    : ownJobs ? 'working' : ownScheduled ? 'scheduled' : (lastMessage?.outcome ?? null)
   const lastThread: StripThread | null = stripThreadRow
     ? { id: stripThreadRow.id, name: threadName(stripThreadRow), state: stripState }
     : stripThreadId === null
@@ -799,8 +837,30 @@ export function useSession() {
     }
     return out
   }, [requests, forkHomes])
+  /** Active usage-limit continuations, by listed session (including fork threads). */
+  const shownScheduled = useMemo(() => {
+    const out: Record<string, ScheduledContinue> = {}
+    for (const [id, entry] of Object.entries(scheduled)) {
+      const key = forkHomes[id]?.sessionId ?? id
+      if (!out[key] || entry.resumeAt < out[key].resumeAt) out[key] = entry
+    }
+    return out
+  }, [scheduled, forkHomes])
+  /** Active usage-limit continuation countdowns on the open session and its forks. */
+  const sessionScheduled = useMemo(() => {
+    const list: { sessionId: string; scheduled: ScheduledContinue }[] = []
+    if (sessionId && scheduled[sessionId]) list.push({ sessionId, scheduled: scheduled[sessionId] })
+    for (const t of threads ?? []) {
+      const forkId = t.fork?.sessionId
+      if (forkId && scheduled[forkId]) list.push({ sessionId: forkId, scheduled: scheduled[forkId] })
+    }
+    return list
+  }, [sessionId, threads, scheduled])
   /** The open session with what its agent waits on, for the logs. */
-  const openShown = useMemo(() => (open ? { ...open, requests: sessionRequests } : null), [open, sessionRequests])
+  const openShown = useMemo(
+    () => (open ? { ...open, requests: sessionRequests, scheduledContinues: sessionScheduled } : null),
+    [open, sessionRequests, sessionScheduled]
+  )
   /** Part of a session's queue (one thread's messages) with the queue's actions, for a composer. `paused`: a fork's own queue's. */
   const composerQueue = (id: string, items: QueuedMessage[], paused = queue.paused): ComposerQueue => ({
     items,
@@ -830,6 +890,7 @@ export function useSession() {
     requests,
     shownRunning,
     shownRequests,
+    shownScheduled,
     forkHomes,
     git,
     pr,

@@ -67,7 +67,7 @@ export function Conversation(props: Props): React.JSX.Element {
   const { session } = open
   const running = runningThread !== undefined
   const mainRef = useRef<HTMLElement>(null)
-  const items = useMemo(() => logItems(open, notices, null), [open.messages, open.toolCalls, open.plans, open.threads, open.requests, notices])
+  const items = useMemo(() => logItems(open, notices, null), [open.messages, open.toolCalls, open.plans, open.threads, open.requests, open.scheduledContinues, notices])
 
   const replyCounts = new Map<string, number>()
   for (const m of open.messages) {
@@ -225,11 +225,12 @@ export function Conversation(props: Props): React.JSX.Element {
  * The strip's thread (id null: the main conversation), and the state of its latest turn
  * (null: Gloss didn't see it end).
  */
-export type StripThread = { id: string | null; name: string; state: 'working' | 'waiting' | TurnOutcome | null }
+export type StripThread = { id: string | null; name: string; state: 'working' | 'waiting' | 'scheduled' | TurnOutcome | null }
 
 const STRIP_VERB = {
   working: 'Working in',
   waiting: 'Waiting for you in',
+  scheduled: 'Waiting to continue in',
   completed: 'Done in',
   cancelled: 'Cancelled in',
   failed: 'Failed in',

@@ -78,3 +78,92 @@ describe('Fork threads', () => {
     } finally { act(() => root.unmount()) }
   })
 })
+
+describe('Usage-limit continuation UI', () => {
+  it('offers Wait & continue at <time> when resetsAt is known', async () => {
+    const el = document.createElement('div')
+    document.body.replaceChildren(el)
+    const root = createRoot(el)
+    const resetsAt = Date.now() + 2 * 3600_000
+    const runSchedule = vi.fn<(resumeAt: number) => Promise<void>>(async () => {})
+    const notice = {
+      id: 'n1',
+      threadId: null,
+      text: "The turn failed: You've hit your limit",
+      afterSeq: 1,
+      tone: 'failed' as const,
+      action: { label: 'Retry', run: vi.fn(async () => {}) },
+      schedule: { resetsAt, run: runSchedule }
+    }
+    try {
+      act(() => root.render(<Log items={logItems(open, [notice], null)} className="log" empty={null} renderAgent={() => null} />))
+      const buttons = [...el.querySelectorAll<HTMLButtonElement>('.notice-action')]
+      const waitBtn = buttons.find((b) => b.textContent?.startsWith('Wait & continue at'))
+      expect(waitBtn).toBeDefined()
+      await act(async () => { waitBtn!.click() })
+      expect(runSchedule).toHaveBeenCalledExactlyOnceWith(resetsAt + 15_000)
+    } finally { act(() => root.unmount()) }
+  })
+
+  it('offers manual delay presets and custom time picker when no reset time is reported', async () => {
+    const el = document.createElement('div')
+    document.body.replaceChildren(el)
+    const root = createRoot(el)
+    const runSchedule = vi.fn<(resumeAt: number) => Promise<void>>(async () => {})
+    const notice = {
+      id: 'n2',
+      threadId: null,
+      text: 'The turn failed: RESOURCE_EXHAUSTED',
+      afterSeq: 1,
+      tone: 'failed' as const,
+      action: { label: 'Retry', run: vi.fn(async () => {}) },
+      schedule: { run: runSchedule }
+    }
+    try {
+      act(() => root.render(<Log items={logItems(open, [notice], null)} className="log" empty={null} renderAgent={() => null} />))
+      const toggle = [...el.querySelectorAll<HTMLButtonElement>('.notice-action')].find((b) => b.textContent === 'Schedule continue…')
+      expect(toggle).toBeDefined()
+      act(() => { toggle!.click() })
+      expect(el.querySelector('input[type="datetime-local"]')).not.toBeNull()
+      const preset = [...el.querySelectorAll<HTMLButtonElement>('.notice-schedule-chips button')].find((b) => b.textContent === 'In 1h')
+      expect(preset).toBeDefined()
+      const before = Date.now()
+      await act(async () => { preset!.click() })
+      expect(runSchedule).toHaveBeenCalledTimes(1)
+      const scheduledMs = runSchedule.mock.calls[0][0]
+      expect(scheduledMs).toBeGreaterThanOrEqual(before + 60 * 60_000 - 1000)
+    } finally { act(() => root.unmount()) }
+  })
+
+  it('shows a scheduled continue inside the failed notice, with only Cancel', async () => {
+    const el = document.createElement('div')
+    document.body.replaceChildren(el)
+    const root = createRoot(el)
+    const cancel = vi.fn(async () => {})
+    ;(window as unknown as { gloss: unknown }).gloss = { continueAtLimit: { cancel } }
+    const withSchedule: OpenSession = {
+      ...open,
+      scheduledContinues: [{ sessionId: 's', scheduled: { threadId: null, resumeAt: Date.now() + 90 * 60_000, automatic: true } }]
+    }
+    const notice = {
+      id: 'n3',
+      threadId: null,
+      text: "The turn failed: You've hit your limit",
+      afterSeq: 1,
+      tone: 'failed' as const,
+      action: { label: 'Retry', run: vi.fn(async () => {}) },
+      schedule: { resetsAt: Date.now() + 90 * 60_000, run: vi.fn(async () => {}) }
+    }
+    try {
+      act(() => root.render(<Log items={logItems(withSchedule, [notice], null)} className="log" empty={null} renderAgent={() => null} />))
+      const boxes = el.querySelectorAll('.notice.failed')
+      expect(boxes).toHaveLength(1)
+      expect(boxes[0].textContent).toContain('Hit your usage limit. Continuing at')
+      expect(boxes[0].textContent).not.toContain('The turn failed')
+      const labels = [...boxes[0].querySelectorAll('button')].map((b) => b.textContent)
+      expect(labels).toEqual(['Cancel'])
+      await act(async () => { boxes[0].querySelector('button')!.click() })
+      expect(cancel).toHaveBeenCalledWith('s')
+    } finally { act(() => root.unmount()) }
+  })
+})

@@ -225,6 +225,15 @@ export type PlanUsage = {
   extraUsage: { percent: number | null } | null
 }
 
+/** A session waiting for a usage limit reset to send "Continue where you left off." (SPEC → Turn notes). */
+export type ScheduledContinue = {
+  threadId: string | null
+  /** When Gloss will send the continuation prompt, ms since the epoch. */
+  resumeAt: number
+  /** True when scheduled automatically by the global setting; false when scheduled manually by the user. */
+  automatic: boolean
+}
+
 /** What the agent reports about a session while it is attached: shown in the status line. */
 export type SessionLive = {
   /** The session's ACP session is live on a running agent. */

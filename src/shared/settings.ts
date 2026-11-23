@@ -81,6 +81,8 @@ export type GlobalSettings = {
   startAtLogin?: boolean
   /** Keep the computer from sleeping (not the display) while Gloss runs. */
   keepAwake?: boolean
+  /** Automatically wait for a known usage limit reset and continue the session for Claude Code, Codex and Antigravity. */
+  autoContinueAtUsageLimit?: boolean
   /** Where new projects and GitHub clones go; empty or omitted for the Desktop folder. */
   projectsFolder?: string
   /** The Obsidian vault Chats work in (SPEC → Chats); empty or omitted for Documents\Second Brain. */
@@ -281,6 +283,10 @@ export const SETTING_FIELDS: readonly SettingField[] = [
   {
     key: 'keepAwake', scope: 'global', type: 'boolean', label: 'Keep this computer awake',
     description: 'Stops the computer sleeping while Gloss runs, so phones can reach it. The screen still turns off.'
+  },
+  {
+    key: 'autoContinueAtUsageLimit', scope: 'global', type: 'boolean', label: 'Continue automatically when usage limits reset',
+    description: 'When a session hits a usage limit with a known reset time, wait and continue automatically when the limit resets.'
   },
   {
     key: 'externalEditor',

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { sameFolder } from '@shared/paths'
 import { projectOf } from '@shared/worktree'
 import type { SessionOrder } from '@shared/settings'
-import type { AgentInfo, AgentSession, Project, RateLimit, Session } from '@shared/types'
+import type { AgentInfo, AgentSession, Project, RateLimit, ScheduledContinue, Session } from '@shared/types'
 import { formatReset } from './StatusLine'
 import { AppWindow, ChevronDown, ChevronRight, ChevronsUpDown, CircleAlert, Ellipsis, Folder, FolderGit2, GitBranch, GitCompare, Info, List, Package, PanelLeft, Plus, RotateCcw, Search, Settings, Star, X } from 'lucide-react'
 import { folderName } from '@shared/paths'
@@ -37,6 +37,8 @@ type Props = {
   unseen: Record<string, 'completed' | 'failed'>
   /** Sessions whose agent is waiting on the user (a question or an approval). */
   waiting?: Record<string, unknown[]>
+  /** Sessions waiting for a usage-limit reset before continuing automatically. */
+  scheduled?: Record<string, ScheduledContinue>
   /** The agents' sessions in the project that Gloss has no record of; null while loading. */
   agentSessions: ListedAgentSession[] | null
   /** Newest first, or most recent activity first (the `sessionOrder` setting). */
@@ -285,6 +287,12 @@ export function Sidebar(props: Props): React.JSX.Element {
             <span className="waiting-dot" aria-label="Waiting for you" title="Waiting for you" />
           ) : s.id in running ? (
             <span className="running-dot" aria-label="Running" />
+          ) : props.scheduled?.[s.id] ? (
+            <span
+              className="waiting-dot"
+              aria-label="Waiting to continue"
+              title={`Waiting for usage limit · continues at ${formatReset(props.scheduled[s.id].resumeAt)}`}
+            />
           ) : props.unseen[s.id] === 'failed' ? (
             <span className="failed-dot" aria-label="The last turn failed" title="The last turn failed" />
           ) : props.unseen[s.id] === 'completed' ? (
@@ -301,6 +309,7 @@ export function Sidebar(props: Props): React.JSX.Element {
           <small className="session-agent">
             {agentName(s.agentId)}
             {s.review && (s.openThreads ?? 0) > 0 && ` · ${s.openThreads} open`}
+            {props.scheduled?.[s.id] && ` · continues ${formatReset(props.scheduled[s.id].resumeAt)}`}
           </small>
         </span>
         <span className="when">{ago(at)}</span>
