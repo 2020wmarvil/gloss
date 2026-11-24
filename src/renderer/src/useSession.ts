@@ -88,6 +88,11 @@ function maxSeq(view: { messages: Message[]; toolCalls: ToolCall[] }): number {
 
 export type SessionState = ReturnType<typeof useSession>
 
+/** Remembers `seq` as the session's latest if it is. */
+function see(seen: Map<string, number>, sessionId: string, seq: number): void {
+  seen.set(sessionId, Math.max(seen.get(sessionId) ?? -1, seq))
+}
+
 export function useSession() {
   const [open, setOpen] = useState<OpenSession | null>(null)
   /** The thread in the side panel; null shows the threads overview. Kept while the panel is collapsed. */
@@ -136,6 +141,8 @@ export function useSession() {
   /** The open session is a review: its diff follows the agent's edits. */
   const openReview = useRef(false)
   const lastSeq = useRef(-1)
+  /** Each session's latest seq seen, open or not: a notice for a session in the background goes after it, not at the end forever. */
+  const seenSeq = useRef(new Map<string, number>())
   /** "cwd\0branch" → its pull request, so switching sessions shows it straight away. */
   const prCache = useRef(new Map<string, PullRequest | null>())
   /** The open review's expanded files, as its view reports them, for moving it to another window. */
@@ -174,6 +181,8 @@ export function useSession() {
   }, [])
 
   const addNotice = useCallback((sessionId: string, threadId: string | null, text: string, tone?: Notice['tone'], action?: Notice['action'], schedule?: Notice['schedule']) => {
+    // Where the log is now: read here, as the updater may run after later messages arrive.
+    const afterSeq = openId.current === sessionId ? lastSeq.current : seenSeq.current.get(sessionId) ?? Infinity
     setNotices((all) => ({
       ...all,
       [sessionId]: [
@@ -185,7 +194,7 @@ export function useSession() {
           ...(tone ? { tone } : {}),
           ...(action ? { action } : {}),
           ...(schedule ? { schedule } : {}),
-          afterSeq: openId.current === sessionId ? lastSeq.current : Infinity
+          afterSeq
         }
       ]
     }))
@@ -423,6 +432,7 @@ export function useSession() {
           break
         case 'sessionCleared':
           panels.current.delete(event.sessionId)
+          seenSeq.current.delete(event.sessionId)
           setNotices((all) => ({ ...all, [event.sessionId]: [] }))
           if (openId.current === event.sessionId) {
             lastSeq.current = -1
@@ -440,6 +450,7 @@ export function useSession() {
           setRequests((r) => ({ ...r, [event.sessionId]: event.requests }))
           break
         case 'message':
+          see(seenSeq.current, event.message.sessionId, event.message.seq)
           if (event.message.sessionId !== openId.current) break
           lastSeq.current = Math.max(lastSeq.current, event.message.seq)
           setOpen((o) => (o ? { ...o, messages: upsert(o.messages, event.message) } : o))
@@ -457,6 +468,7 @@ export function useSession() {
           setOpen((o) => (o ? { ...o, messages: o.messages.filter((m) => m.id !== event.messageId) } : o))
           break
         case 'toolCall':
+          see(seenSeq.current, event.toolCall.sessionId, event.toolCall.messageSeq)
           if (event.toolCall.sessionId !== openId.current) break
           lastSeq.current = Math.max(lastSeq.current, event.toolCall.messageSeq)
           setOpen((o) => (o ? { ...o, toolCalls: upsert(o.toolCalls, event.toolCall) } : o))
@@ -464,6 +476,7 @@ export function useSession() {
           if (openReview.current && event.toolCall.status === 'completed') refreshDiff(event.toolCall.sessionId)
           break
         case 'plan':
+          see(seenSeq.current, event.plan.sessionId, event.plan.seq)
           if (event.plan.sessionId !== openId.current) break
           lastSeq.current = Math.max(lastSeq.current, event.plan.seq)
           setOpen((o) => (o ? { ...o, plans: upsert(o.plans, event.plan) } : o))
