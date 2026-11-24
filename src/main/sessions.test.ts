@@ -414,6 +414,7 @@ describe('SessionManager', () => {
       getAgentConfig: () => config,
       agentEnv: () => ({ FAKE: '1' }),
       connect: (_config, _env, handlers) => AgentConnection.open(agentApp(state), handlers),
+      withCli: async (c, env) => ({ config: c, env: { ...env, FAKE_CLI: '/installed/fake' } }),
       runInTerminal: runInTerminal as never,
       now: () => 1000,
       mcpServers: () => servers,
@@ -1759,9 +1760,11 @@ describe('SessionManager', () => {
     await expect(manager.signIn('fake', 'login')).resolves.toEqual({ ok: true })
     await expect(turn).resolves.toEqual({ stopReason: 'end_turn' })
 
+    // The terminal runs against the same installed CLI the agent's connection uses.
     expect(runInTerminal).toHaveBeenCalledWith('fake-agent', ['--acp', 'auth', 'login'], {
       FAKE: '1',
-      MODE: 'x'
+      MODE: 'x',
+      FAKE_CLI: '/installed/fake'
     })
     expect(state.connections).toBe(2)
     expect(state.loads).toEqual([session.acpSessionId])

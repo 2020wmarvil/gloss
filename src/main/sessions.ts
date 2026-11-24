@@ -79,6 +79,8 @@ export type SessionManagerDeps = {
   agentEnv(config: AgentConfig): NodeJS.ProcessEnv
   /** Opens an initialized connection to the agent. */
   connect(config: AgentConfig, env: NodeJS.ProcessEnv, handlers: AgentHandlers): Promise<AgentConnection>
+  /** Points a launch at the agent's installed CLI, as `connect` does; terminal sign-in needs the same CLI. */
+  withCli?(config: AgentConfig, env: NodeJS.ProcessEnv): Promise<{ config: AgentConfig; env: NodeJS.ProcessEnv }>
   runInTerminal: TerminalRunner
   now?(): number
   mcpServers?(cwd: string): McpServer[]
@@ -695,9 +697,11 @@ export class SessionManager {
       if (!method) return { ok: false, error: `Unknown sign-in method ${methodId}` }
 
       if ('type' in method && method.type === 'terminal') {
-        const config = this.deps.getAgentConfig(agentId)
-        const env = { ...this.deps.agentEnv(config), ...method.env }
-        const code = await this.deps.runInTerminal(config.command, [...config.args, ...(method.args ?? [])], env)
+        const base = this.deps.getAgentConfig(agentId)
+        const env = { ...this.deps.agentEnv(base), ...method.env }
+        // Without the installed CLI's path, an adapter falls back to a CLI Gloss doesn't bundle.
+        const launch = this.deps.withCli ? await this.deps.withCli(base, env) : { config: base, env }
+        const code = await this.deps.runInTerminal(launch.config.command, [...launch.config.args, ...(method.args ?? [])], launch.env)
         if (code !== 0) {
           return { ok: false, error: `Sign-in did not finish (exit code ${code ?? 'unknown'}).` }
         }
