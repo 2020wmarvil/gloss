@@ -9,7 +9,7 @@ import { IPC, type AppBadge, type GlossEvent, type MainAction, type OpenCodeStat
 import type { Anchor, Attachment, Pin, Project, Session } from '../shared/types'
 import type { AnswerValue, RequestAnswer } from '../shared/requests'
 import { AgentConnection } from './acp'
-import { agentEnv, getAgentConfig, listAgents } from './agents'
+import { agentEnv, getAgentConfig, listAgents, type AgentConfig } from './agents'
 import { Store } from './db'
 import type { SearchRequest } from '../shared/search'
 import { toMarkdown } from './export'
@@ -97,6 +97,12 @@ const agentClis = new AgentClis()
 function cliSetting(kind: CliKind): string {
   const global = settings?.state().global
   return (kind === 'claude' ? global?.claudeExecutable : kind === 'codex' ? global?.codexExecutable : global?.antigravityExecutable) ?? ''
+}
+/** Points an agent's launch at its installed CLI: an adapter gets the CLI's path, a CLI that is its own ACP server (Antigravity) is run. */
+async function withCli(config: AgentConfig, env: NodeJS.ProcessEnv): Promise<{ config: AgentConfig; env: NodeJS.ProcessEnv }> {
+  if (!config.cli) return { config, env }
+  const cli = await agentClis.resolve(config.cli.kind, cliSetting(config.cli.kind))
+  return config.cli.env ? { config, env: { ...env, [config.cli.env]: cli } } : { config: { ...config, command: cli }, env }
 }
 const usage = new UsageSource(
   async (cwd) => fetchClaudeUsage(cwd, await agentClis.resolve('claude', cliSetting('claude'))),
@@ -901,9 +907,17 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
     settingsFile.update({ project: { path, values: { versionControl: provider } } })
     return added(path)
   })
-  ipcMain.handle(IPC.projectsAgentSessions, (_e, path: unknown, agentId: unknown) =>
-    manager.agentSessions(folderArg(path, 'path'), str(agentId, 'agentId'))
-  )
+  ipcMain.handle(IPC.projectsAgentSessions, async (_e, path: unknown, agentId: unknown) => {
+    const folder = folderArg(path, 'path')
+    const id = str(agentId, 'agentId')
+    // An agent that isn't installed (and isn't configured) has no sessions to list, not an error.
+    if (id === 'claude' || id === 'codex' || id === 'antigravity') {
+      const configured = cliSetting(id)
+      const cli = await agentClis.check(id, configured)
+      if (!cli.available && cli.executable === null && !configured.trim()) return []
+    }
+    return manager.agentSessions(folder, id)
+  })
   ipcMain.handle(IPC.projectsDelete, (_e, path: unknown) => manager.deleteProject(folderArg(path, 'path')))
   const projectsHome = (): string => projectsFolder(settingsFile.state().global.projectsFolder)
   share(IPC.projectsGithubRepos, () => listRepos())
@@ -1429,13 +1443,10 @@ app.whenReady().then(() => {
       return project && project !== 'inherit' ? project : state.global.permissionMode
     },
     agentEnv: (config) => agentEnv(config),
+    withCli,
     connect: async (config, env, handlers) => {
-      if (!config.cli) return AgentConnection.start(config, env, handlers)
-      const cli = await agentClis.resolve(config.cli.kind, cliSetting(config.cli.kind))
-      // An adapter gets the CLI's path; a CLI that is its own ACP server (Antigravity) is run.
-      return config.cli.env
-        ? AgentConnection.start(config, { ...env, [config.cli.env]: cli }, handlers)
-        : AgentConnection.start({ ...config, command: cli }, env, handlers)
+      const launch = await withCli(config, env)
+      return AgentConnection.start(launch.config, launch.env, handlers)
     },
     runInTerminal,
     versionControl: (cwd) => projectSettings(settingsFile.state().projects, cwd).versionControl ?? 'git',

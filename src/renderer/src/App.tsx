@@ -182,7 +182,7 @@ export function App(): React.JSX.Element {
             const list = await window.gloss.projects.agentSessions(path, a.id)
             setAgentSessions((all) => ({ ...all, [key]: list }))
           } catch (err) {
-            setAgentSessionErrors((all) => ({ ...all, [key]: `Couldn't list ${a.name} sessions: ${errorText(err)}` }))
+            setAgentSessionErrors((all) => ({ ...all, [key]: errorText(err) }))
             setAgentSessions((all) => ({ ...all, [key]: [] }))
           } finally {
             pendingDiscovery.current.delete(key)
@@ -722,14 +722,16 @@ export function App(): React.JSX.Element {
   const closeSettings = useCallback(() => setShowSettings(false), [])
 
   /** The agents' own sessions in the shown project; null until each agent has listed them. */
-  const listedAgentSessions: ListedAgentSession[] | null = !projectPath
+  // Each agent's sessions show as soon as it answers, not when the slowest one does.
+  const listedAgentSessions: ListedAgentSession[] = !projectPath
     ? []
-    : agents.some((a) => a.available !== false && !(agentSessionsKey(projectPath, a.id) in agentSessions))
-      ? null
-      : agents.filter((a) => a.available !== false).flatMap((a) => (agentSessions[agentSessionsKey(projectPath, a.id)] ?? []).map((x) => ({ ...x, agentId: a.id })))
-  const agentSessionsError = projectPath
-    ? agents.map((a) => agentSessionErrors[agentSessionsKey(projectPath, a.id)]).filter(Boolean).join(' ') || null
-    : null
+    : agents.filter((a) => a.available !== false).flatMap((a) => (agentSessions[agentSessionsKey(projectPath, a.id)] ?? []).map((x) => ({ ...x, agentId: a.id })))
+  const agentSessionsErrors = projectPath
+    ? agents.flatMap((a) => {
+      const message = agentSessionErrors[agentSessionsKey(projectPath, a.id)]
+      return message ? [{ agentId: a.id, name: a.name, message }] : []
+    })
+    : []
 
   const open = s.open
   // The widths the panes want (dragged or default), fitted to what the window has room for now.
@@ -797,7 +799,8 @@ export function App(): React.JSX.Element {
             scheduled={s.shownScheduled}
             agentSessions={listedAgentSessions}
             order={settings?.global.sessionOrder ?? 'created'}
-            agentSessionsError={agentSessionsError}
+            agentSessionsErrors={agentSessionsErrors}
+            onRetryAgentSessions={(agentId) => { if (projectPath) void loadAgentSessions(projectPath, new Set([agentId])) }}
             importing={importing}
             creating={creating}
             note={sidebarNote}

@@ -780,11 +780,34 @@ button.new-session-agents {
   color: var(--ink);
 }
 
-.sidebar-error {
-  margin: 0;
-  font-size: var(--t-13);
-  color: var(--failed);
-  overflow-wrap: anywhere;
+/* An agent whose sessions couldn't be listed: quiet, with the full message on hover. */
+.agent-unavailable {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.agent-unavailable svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--warn);
+}
+
+.agent-unavailable span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-unavailable .link-button {
+  flex: none;
+  color: var(--ink-2);
 }
 
 /* A message over the session list, dismissed with its ×. */

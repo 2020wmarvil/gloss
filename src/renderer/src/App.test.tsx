@@ -526,6 +526,47 @@ it("marks, badges and chimes a turn that finishes where the user isn't looking",
 })
 
 
+it("keeps a background session's failure where it happened, above what the agent writes after resuming", async () => {
+  const session = (id: string): object => ({ id, title: id, cwd: '/project', agentId: 'claude', createdAt: id === 'a' ? 2 : 1 })
+  const asked = { id: 'b1', sessionId: 'b', seq: 1, role: 'user', text: 'do the thing', threadId: null }
+  const resumed = { id: 'b2', sessionId: 'b', seq: 2, role: 'agent', text: 'Picking up where I left off', threadId: null }
+  const listeners = new Set<(event: object) => void>()
+  const emit = (event: object): void => listeners.forEach((l) => l(event))
+  window.gloss = {
+    history: async () => [],
+    settings: { get: async () => ({ global: { defaultAgent: 'claude', theme: 'light', sessionOrder: 'created', turnEndSound: false, permissionMode: 'bypass' as const, externalEditor: '', mcpServers: [] }, projects: {}, error: null, path: '/settings.json' }) },
+    updates: { state: async () => ({ version: '1.0.0', status: 'unsupported', reason: 'dev' }) },
+    agents: { rateLimits: async () => ({}), list: async () => [{ id: 'claude', name: 'Claude Code' }] },
+    projects: { list: async () => [{ path: '/project', name: 'project' }], agentSessions: async () => [] },
+    sessions: {
+      list: async () => [session('a'), session('b')], refresh: async () => {},
+      open: async (id: string) => ({
+        session: session(id), messages: id === 'b' ? [asked, resumed] : [], toolCalls: [], plans: [], threads: [], turn: null, forks: [], background: [],
+        live: { attached: true, model: null, effort: null, commands: [], usage: null, rateLimits: [], modes: null, autoApprove: false, accepts: { image: false, file: false }, steering: false },
+        queue: { items: [], paused: false }
+      })
+    },
+    git: { status: async () => null, pullRequest: async () => null },
+    onEvent: (handler: (event: object) => void) => { listeners.add(handler); return () => listeners.delete(handler) }
+  } as unknown as typeof window.gloss
+  const el = document.createElement('div')
+  document.body.replaceChildren(el)
+  root = createRoot(el)
+  await act(async () => root!.render(<App />))
+  expect(el.querySelector('.session-row.on')!.getAttribute('title')).toBe('a')
+  // b fails at its usage limit while a is open, then continues later.
+  await act(async () => {
+    emit({ type: 'message', message: asked })
+    emit({ type: 'turnEnd', sessionId: 'b', threadId: null, error: "You've hit your limit", recovery: { messageId: 'b1', action: 'retry' } })
+    emit({ type: 'message', message: resumed })
+  })
+  await act(async () => [...el.querySelectorAll<HTMLElement>('.session-row')].find((r) => r.title === 'b')!.click())
+  const notice = el.querySelector('.notice.failed')!
+  const reply = el.querySelector('.log .agent')!
+  expect(reply.textContent).toContain('Picking up')
+  expect(notice.compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
 it('keeps background completions and syncs from taking focus or closing settings, and retries the original failed session', async () => {
   const session = (id: string): object => ({ id, title: id, cwd: '/project', agentId: 'claude', createdAt: id === 'a' ? 2 : 1 })
   const listeners = new Set<(event: object) => void>()

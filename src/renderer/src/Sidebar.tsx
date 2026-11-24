@@ -39,11 +39,13 @@ type Props = {
   waiting?: Record<string, unknown[]>
   /** Sessions waiting for a usage-limit reset before continuing automatically. */
   scheduled?: Record<string, ScheduledContinue>
-  /** The agents' sessions in the project that Gloss has no record of; null while loading. */
-  agentSessions: ListedAgentSession[] | null
+  /** The agents' sessions in the project that Gloss has no record of, as far as each agent has answered. */
+  agentSessions: ListedAgentSession[]
   /** Newest first, or most recent activity first (the `sessionOrder` setting). */
   order: SessionOrder
-  agentSessionsError: string | null
+  /** Agents whose sessions couldn't be listed: one quiet line each, the full message on hover. */
+  agentSessionsErrors: { agentId: string; name: string; message: string }[]
+  onRetryAgentSessions(agentId: string): void
   /** The agent session being imported. */
   importing: string | null
   creating: boolean
@@ -246,7 +248,7 @@ export function Sidebar(props: Props): React.JSX.Element {
         at: props.order === 'activity' ? (session.activeAt ?? session.createdAt) : session.createdAt
       })
     ),
-    ...(agentSessions ?? []).map((agent): Row => ({
+    ...agentSessions.map((agent): Row => ({
       kind: 'agent',
       agent,
       at: agent.updatedAt ? Date.parse(agent.updatedAt) || 0 : 0
@@ -610,7 +612,13 @@ export function Sidebar(props: Props): React.JSX.Element {
                   <li key={row.session.id}>{sessionRow(row.session, row.at)}</li>
                 )
               )}
-              {props.agentSessionsError && <li className="sidebar-error">{props.agentSessionsError}</li>}
+              {props.agentSessionsErrors.map((e) => (
+                <li key={e.agentId} className="agent-unavailable" title={e.message}>
+                  <CircleAlert aria-hidden />
+                  <span>{e.name} sessions unavailable</span>
+                  <button className="link-button" onClick={() => props.onRetryAgentSessions(e.agentId)}>Retry</button>
+                </li>
+              ))}
             </ul>
           </>
         )}
