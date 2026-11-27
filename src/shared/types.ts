@@ -125,6 +125,34 @@ export type ToolCall = {
   deferred?: true
 }
 
+/**
+ * A sub-agent the agent launched (SPEC → Sub-agents). It is a tool call of kind `subagent` in
+ * the log, whose `content` is `{ subagent: Subagent }`; its id is the launching call's id.
+ */
+export type Subagent = {
+  /** The agent's session id for the sub-agent (a child session). */
+  acpSessionId: string
+  /** Its role, the sub-agent type ("Explore", "general-purpose"). */
+  role?: string
+  /** What it was asked to do. */
+  prompt?: string
+  /** What it answered, once done. */
+  reply?: string
+  state: 'running' | 'idle' | 'requires_action' | 'unknown'
+  /** Why it went idle: `end_turn`, `cancelled`, `error`… */
+  stopReason?: string
+  error?: string
+  /** Seen live: when it started and ended (unknown for history Gloss didn't see). */
+  startedAt?: number
+  endedAt?: number
+  /** What it said and did, in order. */
+  feed: SubagentFeedItem[]
+}
+
+export type SubagentFeedItem =
+  | { type: 'text'; id: string; text: string }
+  | { type: 'tool'; id: string; title: string; kind?: string; status: string; content?: unknown }
+
 export type PlanEntry = {
   content: string
   status: 'pending' | 'in_progress' | 'completed'

@@ -115,6 +115,7 @@ export function makeApi(t: ApiTransport): GlossApi {
       cancel: (sessionId) => invoke(IPC.continueCancel, sessionId)
     },
     cancel: (sessionId) => invoke(IPC.cancel, sessionId),
+    stopSubagent: (sessionId, launchId) => invoke(IPC.stopSubagent, sessionId, launchId),
     setBadge: (badge) => send(IPC.setBadge, badge),
     capture: {
       start: () => invoke(IPC.captureStart),

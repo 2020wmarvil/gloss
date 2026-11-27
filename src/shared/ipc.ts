@@ -249,7 +249,7 @@ export type PaneState = {
   sideOpen: boolean
   /** A review's side panel shows its general conversation. */
   general: boolean
-  sideTab: 'threads' | 'queue'
+  sideTab: 'threads' | 'queue' | 'subagents'
   /** A review's expanded files. */
   expandedFiles: string[]
   /** The session's unsent composer drafts, by draft key. */
@@ -433,6 +433,8 @@ export type GlossApi = {
     cancel(sessionId: string): Promise<void>
   }
   cancel(sessionId: string): Promise<void>
+  /** Stops one sub-agent, by its card's id (SPEC → Sub-agents). */
+  stopSubagent(sessionId: string, launchId: string): Promise<void>
   /** What the taskbar (or dock) badge shows (SPEC → Notifications). */
   setBadge(badge: AppBadge): void
   requests: {
@@ -596,6 +598,7 @@ export const IPC = {
   continueSchedule: 'gloss:continue:schedule',
   continueCancel: 'gloss:continue:cancel',
   cancel: 'gloss:cancel',
+  stopSubagent: 'gloss:stopSubagent',
   setBadge: 'gloss:setBadge',
   queueEdit: 'gloss:queue:edit',
   queueRemove: 'gloss:queue:remove',

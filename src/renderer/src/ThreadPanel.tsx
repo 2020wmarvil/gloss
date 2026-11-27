@@ -21,7 +21,7 @@ type Props = {
   panel: Panel
   reveal: Reveal | null
   /** The overview tab ← goes back to. */
-  backTo: 'threads' | 'queue'
+  backTo: 'threads' | 'queue' | 'subagents'
   /** threadId of the running turn; undefined when idle. A fork thread's: its own session's. */
   runningThread: string | null | undefined
   /** The threads with a running turn: the session's, and its fork threads'. */
@@ -88,7 +88,7 @@ export function ThreadPanel(props: Props): React.JSX.Element {
       <header>
         <button className="back" onClick={props.onBack}>
           <ArrowLeft />
-          {props.backTo === 'queue' ? 'Queue' : 'All threads'}
+          {props.backTo === 'queue' ? 'Queue' : props.backTo === 'subagents' ? 'Sub-agents' : 'All threads'}
         </button>
         {props.fork && <ForkTag />}
         {threadId === null && <h2 className="thread-label">{props.fork ? 'New fork thread' : 'New thread'}</h2>}
@@ -205,7 +205,7 @@ function LineThreadPanel(
       <header>
         <button className="back" onClick={props.onBack}>
           <ArrowLeft />
-          {props.backTo === 'queue' ? 'Queue' : 'All threads'}
+          {props.backTo === 'queue' ? 'Queue' : props.backTo === 'subagents' ? 'Sub-agents' : 'All threads'}
         </button>
         <span className={`kind-chip kind-${kind}`}>{KIND_NAMES[kind]}</span>
         <span className="thread-lines" title={lineLabel(anchor)}>

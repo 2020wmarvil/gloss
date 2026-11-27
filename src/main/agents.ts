@@ -39,6 +39,11 @@ export type AgentConfig = {
    */
   toolCallsOutliveTurns?: boolean
   /**
+   * The agent runs sub-agents in child sessions of their own when the client declares the
+   * draft ACP `subagents` capability (SPEC → Sub-agents). Declared only for agents that do.
+   */
+  subagents?: boolean
+  /**
    * The tool result that says a job went to the background, for an agent that reports nothing
    * more about it over ACP. Its end is worked out from the session's history (SPEC → Background jobs).
    */
@@ -88,6 +93,7 @@ function claudeAgent(): AgentConfig {
     env: { ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
     cli: { kind: 'claude', env: 'CLAUDE_CODE_EXECUTABLE' },
     bypassModeId: 'bypassPermissions',
+    subagents: true,
     sessionMeta: (instructions) => ({
       new: { systemPrompt: { append: instructions }, claudeCode: { emitRawSDKMessages: CLAUDE_MESSAGES } },
       load: { systemPrompt: { append: instructions }, claudeCode: { emitRawSDKMessages: CLAUDE_MESSAGES } }

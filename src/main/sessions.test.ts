@@ -15,6 +15,7 @@ import { isFirstPass, REVIEW_INSTRUCTIONS, type ReviewDiff } from '../shared/rev
 import { perforceRef } from '../shared/perforce'
 import { CHAT_INSTRUCTIONS, NO_SECOND_BRAIN } from '../shared/chats'
 import type { Session } from '../shared/types'
+import { subagentOf } from '../shared/subagents'
 
 type Script = (ctx: {
   sessionId: string
@@ -29,6 +30,10 @@ type Script = (ctx: {
   nextSteer(): Promise<string>
   /** Sends a raw Claude Code message, as the Claude adapter does. Works after the turn too. */
   raw(message: Record<string, unknown>): Promise<void>
+  /** Sends an update for another session, a sub-agent's (not saved). */
+  updateAs(sessionId: string, update: acp.SessionUpdate): Promise<void>
+  /** Asks permission for another session's tool call, a sub-agent's. */
+  requestPermissionAs(sessionId: string, title: string): Promise<acp.RequestPermissionResponse>
 }) => Promise<acp.StopReason>
 
 /** State shared by every connection to the fake agent, like a real agent's disk state. */
@@ -104,6 +109,10 @@ type FakeAgent = {
   /** session/fork's `_meta`, each time. */
   forkMeta: Record<string, unknown>[]
   script: Script
+  /** session/cancel's session ids. */
+  cancelled: string[]
+  /** What session/load replays, other sessions' updates included, instead of the history. */
+  replays: Map<string, acp.SessionNotification[]>
 }
 
 function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
@@ -146,6 +155,8 @@ function fakeAgent(overrides: Partial<FakeAgent> = {}): FakeAgent {
     turnEnding: false,
     forks: [],
     forkMeta: [],
+    cancelled: [],
+    replays: new Map(),
     script: async ({ say }) => {
       await say('Hello')
       await say(' world')
@@ -319,7 +330,8 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       }
       if (!state.sessions.has(sessionId)) throw acp.RequestError.resourceNotFound(sessionId)
       // Replay history, as the Claude adapter does.
-      const history = state.history.get(sessionId) ?? state.transcripts.get(sessionId) ?? []
+      for (const n of state.replays.get(sessionId) ?? []) await ctx.client.notify(acp.methods.client.session.update, n)
+      const history = state.replays.has(sessionId) ? [] : state.history.get(sessionId) ?? state.transcripts.get(sessionId) ?? []
       for (const update of history) {
         await ctx.client.notify(acp.methods.client.session.update, { sessionId, update })
       }
@@ -328,6 +340,7 @@ function agentApp(state: FakeAgent): acp.AgentApp {
       return { modes: state.modes, configOptions: state.configOptions }
     })
     .onNotification(acp.methods.agent.session.cancel, (ctx) => {
+      state.cancelled.push(ctx.params.sessionId)
       cancels.get(ctx.params.sessionId)?.()
     })
     .onRequest(acp.methods.agent.session.prompt, async (ctx) => {
@@ -376,7 +389,17 @@ function agentApp(state: FakeAgent): acp.AgentApp {
           ctx.client.request(acp.methods.client.elicitation.create, { mode: 'form', sessionId, ...params } as acp.CreateElicitationRequest),
         cancelled,
         nextSteer,
-        raw: (message) => ctx.client.notify('_claude/sdkMessage', { sessionId, message })
+        raw: (message) => ctx.client.notify('_claude/sdkMessage', { sessionId, message }),
+        updateAs: (child, u) => ctx.client.notify(acp.methods.client.session.update, { sessionId: child, update: u }),
+        requestPermissionAs: (child, title) =>
+          ctx.client.request(acp.methods.client.session.requestPermission, {
+            sessionId: child,
+            toolCall: { toolCallId: 'child-perm', title },
+            options: [
+              { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+              { optionId: 'deny', name: 'Deny', kind: 'reject_once' }
+            ]
+          })
       }).finally(() => steerTo.delete(sessionId))
       return { stopReason }
     })
@@ -3837,6 +3860,130 @@ describe('SessionManager', () => {
       await manager.send(sessionId, 'do it', threadId)
       const found = store.search({ query: 'says', scope: 'session', sessionId, kind: 'agent' }).results
       expect(found.map((r) => [r.sessionId, r.threadId]).sort()).toEqual([[sessionId, null], [sessionId, threadId]].sort())
+    })
+  })
+  describe('sub-agents', () => {
+    const launch = (root: string, child: string, title = 'Read a.txt'): acp.SessionUpdate[] => [
+      { sessionUpdate: 'subagent_update', sessionId: child, title, description: 'Explore', state: { state: 'running' } } as acp.SessionUpdate,
+      {
+        sessionUpdate: 'session_message',
+        messageId: `launch-${child}`,
+        senderSessionId: root,
+        recipientSessionId: child,
+        content: [{ type: 'text', text: `Do ${title}` }]
+      } as acp.SessionUpdate
+    ]
+    const finish = (root: string, child: string, answer: string): acp.SessionUpdate[] => [
+      { sessionUpdate: 'subagent_update', sessionId: child, state: { state: 'idle', stopReason: 'end_turn' } } as acp.SessionUpdate,
+      {
+        sessionUpdate: 'session_message',
+        messageId: `launch-${child}:reply`,
+        senderSessionId: child,
+        recipientSessionId: root,
+        content: [{ type: 'text', text: '<tools-used-before-summary>Read</tools-used-before-summary>\n' }, { type: 'text', text: answer }]
+      } as acp.SessionUpdate
+    ]
+    const read = (id: string, status: acp.ToolCallStatus): acp.SessionUpdate => ({ sessionUpdate: 'tool_call', toolCallId: id, title: 'Read a.txt', kind: 'read', status })
+
+    it('declares the draft subagents capability only when asked to', async () => {
+      const handlers = { onUpdate: () => {}, onPermission: async () => ({ outcome: { outcome: 'cancelled' as const } }), onStderr: () => {}, onClosed: () => {} }
+      const plain = await AgentConnection.open(agentApp(state), handlers)
+      expect(state.clientCapabilities?.subagents).toBeUndefined()
+      const withSubagents = await AgentConnection.open(agentApp(state), handlers, undefined, undefined, false, true)
+      expect(state.clientCapabilities?.subagents).toEqual({})
+      plain.dispose()
+      withSubagents.dispose()
+    })
+
+    it("keeps a sub-agent's work out of the main text, in a card where it was launched", async () => {
+      state.script = async ({ sessionId, say, update, updateAs }) => {
+        await say('Starting the review')
+        for (const u of launch(sessionId, 'child-1')) await update(u)
+        await updateAs('child-1', read('r1', 'pending'))
+        await updateAs('child-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'alp' }, messageId: 'm1' })
+        await updateAs('child-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ha' }, messageId: 'm1' })
+        await updateAs('child-1', { sessionUpdate: 'tool_call_update', toolCallId: 'r1', status: 'completed' })
+        for (const u of finish(sessionId, 'child-1', 'alpha')) await update(u)
+        await say(' and it said alpha.')
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'review it', null)
+      const view = manager.openSession(session.id)
+      expect(view.messages.map((m) => [m.seq, m.role, m.text])).toEqual([
+        [0, 'user', 'review it'],
+        [1, 'agent', 'Starting the review'],
+        [3, 'agent', ' and it said alpha.']
+      ])
+      expect(view.toolCalls).toHaveLength(1)
+      const card = view.toolCalls[0]
+      expect(card).toMatchObject({ id: 'launch-child-1', messageSeq: 2, kind: 'subagent', title: 'Read a.txt', status: 'completed', threadId: null })
+      expect(subagentOf(card)).toEqual({
+        acpSessionId: 'child-1',
+        role: 'Explore',
+        prompt: 'Do Read a.txt',
+        reply: 'alpha',
+        state: 'idle',
+        stopReason: 'end_turn',
+        startedAt: 1000,
+        endedAt: 1000,
+        feed: [
+          { type: 'tool', id: 'r1', title: 'Read a.txt', kind: 'read', status: 'completed' },
+          { type: 'text', id: 'm1', text: 'alpha' }
+        ]
+      })
+    })
+
+    it("asks a sub-agent's permission in its card's thread, and stops one sub-agent alone", async () => {
+      let outcome: acp.RequestPermissionResponse | undefined
+      let stop: (() => void) | undefined
+      const stopped = new Promise<void>((resolve) => (stop = resolve))
+      state.script = async ({ sessionId, update, requestPermissionAs }) => {
+        for (const u of launch(sessionId, 'child-1')) await update(u)
+        outcome = await requestPermissionAs('child-1', 'Edit a.txt')
+        stop!()
+        // Waits for Gloss to stop it.
+        await vi.waitFor(() => expect(state.cancelled).toContain('child-1'))
+        await update({ sessionUpdate: 'subagent_update', sessionId: 'child-1', state: { state: 'idle', stopReason: 'cancelled' } } as acp.SessionUpdate)
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      const turn = manager.send(session.id, 'go', null)
+      await stopped
+      // Approved for the session, like the parent's own requests: not dropped as unknown.
+      expect(outcome).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } })
+      await manager.stopSubagent(session.id, 'launch-child-1')
+      await turn
+      expect(state.cancelled).toEqual(['child-1'])
+      expect(manager.openSession(session.id).toolCalls[0]).toMatchObject({ status: 'cancelled' })
+    })
+
+    it('rebuilds a card and its feed from a load, keeping when Gloss saw it run', async () => {
+      state.canClose = true
+      state.script = async ({ sessionId, update, updateAs }) => {
+        for (const u of launch(sessionId, 'child-1')) await update(u)
+        await updateAs('child-1', read('r1', 'completed'))
+        for (const u of finish(sessionId, 'child-1', 'alpha')) await update(u)
+        return 'end_turn'
+      }
+      const session = await manager.createSession('/w', 'fake')
+      await manager.send(session.id, 'review it', null)
+      const root = session.acpSessionId
+      const as = (sessionId: string, updates: acp.SessionUpdate[]): acp.SessionNotification[] => updates.map((update) => ({ sessionId, update }))
+      state.replays.set(root, [
+        ...as(root, [{ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'review it' }, messageId: 'u-1-0' }]),
+        ...as(root, launch(root, 'child-1')),
+        ...as('child-1', [read('r1', 'completed'), read('r2', 'completed')]),
+        ...as(root, finish(root, 'child-1', 'alpha'))
+      ])
+      await manager.restartSession(session.id)
+      expect(state.loads).toEqual([root])
+      const view = manager.openSession(session.id)
+      expect(view.toolCalls).toHaveLength(1)
+      const s = subagentOf(view.toolCalls[0])!
+      expect(s.feed.map((i) => i.id)).toEqual(['r1', 'r2'])
+      expect(s).toMatchObject({ acpSessionId: 'child-1', reply: 'alpha', startedAt: 1000, endedAt: 1000 })
+      expect(view.messages.map((m) => m.text)).toEqual(['review it'])
     })
   })
 })

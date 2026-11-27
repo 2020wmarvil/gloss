@@ -16,6 +16,7 @@ import { SelectionMenu, type SourceSelection } from './SelectionMenu'
 import { resolveSelection } from './source'
 import type { Mark } from './sourceSpans'
 import { StatusLine } from './StatusLine'
+import { SubagentChip } from './Subagents'
 
 type Props = {
   open: OpenSession
@@ -208,6 +209,7 @@ export function Conversation(props: Props): React.JSX.Element {
             pr={props.pr}
             running={running}
             waiting={open.requests?.length}
+            subagents={<SubagentChip messages={open.messages} toolCalls={open.toolCalls} />}
             queue={props.queue}
             queueShownAbove
             onResumeQueue={() => void props.composerQueue.onResume()}

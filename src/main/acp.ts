@@ -137,7 +137,7 @@ export class AgentConnection {
       if (config.privateDiagnostics) throw new Error('Could not start the custom agent. Check that its executable is installed and accessible.')
       throw err
     }
-    return AgentConnection.open(stream, handlers, child, config.startupTimeoutMs, config.privateDiagnostics)
+    return AgentConnection.open(stream, handlers, child, config.startupTimeoutMs, config.privateDiagnostics, config.subagents === true)
   }
 
   /** Connects to an ACP stream or an in-process agent app and initializes. */
@@ -146,7 +146,8 @@ export class AgentConnection {
     handlers: AgentHandlers,
     child?: ChildProcess,
     timeoutMs?: number,
-    privateDiagnostics = false
+    privateDiagnostics = false,
+    subagents = false
   ): Promise<AgentConnection> {
     const app = acp
       .client({ name: 'gloss' })
@@ -171,9 +172,14 @@ export class AgentConnection {
       // No fs or terminal client capabilities in v1: the agent uses its own tools.
       // auth.terminal: we can run terminal sign-in methods (SPEC → Authentication).
       // elicitation.form: we show the agent's questions (SPEC → Questions and approvals).
+      // subagents: the draft RFD's child sessions, one per sub-agent (SPEC → Sub-agents).
       const request = conn.agent.request(acp.methods.agent.initialize, {
         protocolVersion: acp.PROTOCOL_VERSION,
-        clientCapabilities: { auth: { terminal: true }, ...(onElicitation ? { elicitation: { form: {} } } : {}) },
+        clientCapabilities: {
+          auth: { terminal: true },
+          ...(onElicitation ? { elicitation: { form: {} } } : {}),
+          ...(subagents ? { subagents: {} } : {})
+        },
         clientInfo: { name: 'gloss', title: 'Gloss', version: '0.1.0' }
       })
       const init = timeoutMs ? await Promise.race([

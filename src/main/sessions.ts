@@ -27,6 +27,7 @@ import type {
   SessionLive,
   SessionModes,
   SlashCommand,
+  Subagent,
   Thread,
   ToolCall,
   TurnOutcome,
@@ -55,6 +56,7 @@ import { AgentConnection, isAuthRequired, isResourceNotFound, isSessionInUse, ty
 import type { AgentConfig } from './agents'
 import type { Store } from './db'
 import { samePath } from './settings'
+import { applyFeedUpdate, applyState, cleanReply, messageText, subagentOf, subagentStatus, SUBAGENT_KIND } from '../shared/subagents'
 import { isLogUpdate, matchReplay, parseReplay, placeUserMessage, type CachedEntry, type ReplayEntry } from './sync'
 import type { TerminalRunner } from './terminal'
 import { originRepoUrl, pullRequest } from './git'
@@ -190,6 +192,27 @@ type BackgroundJob = {
   quietFrom?: Turn
 }
 
+/** A sub-agent's session (SPEC → Sub-agents): what its parent said of it, and the card it shows in. */
+type SubagentSession = {
+  /** The Gloss session it works for. */
+  sessionId: string
+  title?: string
+  role?: string
+  state?: acp.StateUpdate
+  /** The card: the launching call's id. A sub-agent's own sub-agent shows in its parent's card. */
+  launchId?: string
+  /** Launched by another sub-agent: a step in that one's feed, with this id. */
+  nested: boolean
+  nestedLaunchId?: string
+}
+
+type SubagentEntry = { title: string; subagent: Subagent }
+
+/** A card's feed is written at most this often while it streams. */
+const SUBAGENT_FLUSH_MS = 250
+const SUBAGENT_KEY_SEP = '\0'
+const subagentKey = (sessionId: string, launchId: string): string => `${sessionId}${SUBAGENT_KEY_SEP}${launchId}`
+
 type SessionRuntime = {
   editedPaths?: Set<string>
   rewinding?: boolean
@@ -212,6 +235,8 @@ type SessionRuntime = {
   /** session/load is replaying history, collected in `replay` and then synced. */
   loading: boolean
   replay?: acp.SessionUpdate[]
+  /** The sub-agents the replay tells, by their launching call's id (SPEC → Sub-agents). */
+  replaySubagents?: Map<string, SubagentEntry>
   /** The session is being imported: a failed load removes it instead of starting a new agent session. */
   importing?: boolean
   turn?: Turn
@@ -304,6 +329,12 @@ export class SessionManager {
   private readonly runtimes = new Map<string, SessionRuntime>()
   /** ACP session id → Gloss session id. */
   private readonly byAcpId = new Map<string, string>()
+  /** A sub-agent's ACP session id → where its updates go (SPEC → Sub-agents). */
+  private readonly subagentSessions = new Map<string, SubagentSession>()
+  /** Sub-agents being updated, by `subagentKey`: their cards are written at most every SUBAGENT_FLUSH_MS. */
+  private readonly subagents = new Map<string, SubagentEntry>()
+  private readonly dirtySubagents = new Set<string>()
+  private subagentFlush?: ReturnType<typeof setTimeout>
   /** Session state the agent reported for an ACP session before Gloss registered it (during session/new). */
   private readonly pendingLive = new Map<string, Partial<SessionLive>>()
   private readonly agents = new Map<string, AgentSlot>()
@@ -625,6 +656,7 @@ export class SessionManager {
   }
 
   async dispose(): Promise<void> {
+    this.flushSubagents()
     this.disposed = true
     for (const s of this.agents.values()) clearTimeout(s.rateLimitTimer)
     // The agents' processes end with Gloss, and their jobs with them.
@@ -2000,9 +2032,11 @@ export class SessionManager {
     const before = await this.agentUpdatedAt(conn, session).catch(() => undefined)
     rt.loading = true
     rt.replay = []
+    rt.replaySubagents = new Map()
     this.byAcpId.set(session.acpSessionId, session.id)
     let loaded: acp.LoadSessionResponse | undefined
     let replay: acp.SessionUpdate[]
+    let replayedSubagents: Map<string, SubagentEntry>
     try {
       loaded = await conn.loadSession(session.acpSessionId, session.cwd, this.sessionMeta(session.agentId, 'load', this.instructionKind(session)), servers)
     } catch (err) {
@@ -2022,11 +2056,14 @@ export class SessionManager {
       rt.loading = false
       replay = rt.replay ?? []
       rt.replay = undefined
+      replayedSubagents = rt.replaySubagents ?? new Map()
+      rt.replaySubagents = undefined
     }
     if (!loaded) return this.replaceAgentSession(sessionId, conn, false)
 
     const at = before ? Date.parse(before) : NaN
     this.sync(sessionId, replay, Number.isFinite(at) ? at : this.now())
+    this.syncSubagents(sessionId, replayedSubagents)
     const mode = await this.applyMode(session.agentId, session.cwd, session, conn, session.acpSessionId, loaded.modes)
     rt.attachedTo = conn
     rt.mcpFingerprint = JSON.stringify(servers)
@@ -3208,6 +3245,7 @@ export class SessionManager {
     // codex-acp emits connection diagnostics as synthetic tools on every resume.
     // Keep these out of both live turns and history replay; /mcp exposes status.
     if (agentId === 'codex' && (u.sessionUpdate === 'tool_call' || u.sessionUpdate === 'tool_call_update') && u.toolCallId.startsWith('mcp_startup.')) return
+    if (this.onSubagentUpdate(n)) return
     const sessionId = this.byAcpId.get(n.sessionId)
 
     const limit = u.sessionUpdate === 'usage_update' ? claudeRateLimit(u._meta) : null
@@ -3346,6 +3384,215 @@ export class SessionManager {
     }
   }
 
+  // Sub-agents (SPEC → Sub-agents)
+
+  /**
+   * Takes an update about a sub-agent, or from its own session, into its card. Returns
+   * false for the parent's other updates, which take the usual path.
+   */
+  private onSubagentUpdate(n: acp.SessionNotification): boolean {
+    const u = n.update
+    const owner = this.subagentSessions.get(n.sessionId)
+    const sessionId = owner?.sessionId ?? this.byAcpId.get(n.sessionId)
+    const rt = sessionId ? this.runtimes.get(sessionId) : undefined
+    if (!sessionId || !rt) return false
+    switch (u.sessionUpdate) {
+      case 'subagent_update': {
+        let child = this.subagentSessions.get(u.sessionId)
+        if (!child) {
+          child = { sessionId, nested: !!owner }
+          this.subagentSessions.set(u.sessionId, child)
+        }
+        if (u.title !== undefined) child.title = u.title ?? undefined
+        if (u.description !== undefined) child.role = u.description ?? undefined
+        if (u.state) child.state = u.state
+        const launchId = child.launchId
+        if (!launchId) return true
+        const entry = this.subagentEntry(rt, sessionId, launchId)
+        if (!entry) return true
+        if (child.nested) {
+          // A sub-agent's own sub-agent is a step in its parent's feed.
+          const step = entry.subagent.feed.find((i) => i.type === 'tool' && i.id === child.nestedLaunchId)
+          if (step?.type === 'tool' && u.state) {
+            const state = u.state as { state: string; stopReason?: string }
+            step.status = subagentStatus({ state: state.state as Subagent['state'], stopReason: state.stopReason })
+            this.subagentChanged(rt, sessionId, launchId, false)
+          }
+          return true
+        }
+        if (child.title) entry.title = child.title
+        if (child.role) entry.subagent.role = child.role
+        if (u.state) applyState(entry.subagent, u.state, rt.loading ? undefined : this.now())
+        this.subagentChanged(rt, sessionId, launchId, true)
+        return true
+      }
+      case 'session_message': {
+        const sender = u.senderSessionId ?? undefined
+        const recipient = u.recipientSessionId ?? undefined
+        if (owner) {
+          // In a sub-agent's session: its copy of its prompt, or its launch of a sub-agent of its own.
+          const nested = recipient && sender === n.sessionId && recipient !== n.sessionId ? this.subagentSessions.get(recipient) : undefined
+          const launchId = owner.launchId
+          if (nested && launchId) {
+            nested.launchId = launchId
+            nested.nestedLaunchId = u.messageId
+            const entry = this.subagentEntry(rt, sessionId, launchId)
+            if (entry && !entry.subagent.feed.some((i) => i.id === u.messageId)) {
+              entry.subagent.feed.push({ type: 'tool', id: u.messageId, title: `Sub-agent: ${nested.title ?? 'task'}`, kind: SUBAGENT_KIND, status: 'in_progress' })
+              this.subagentChanged(rt, sessionId, launchId, false)
+            }
+          }
+          return true
+        }
+        if (recipient && sender === n.sessionId && recipient !== n.sessionId) {
+          this.subagentLaunched(rt, sessionId, recipient, u.messageId, messageText(u.content))
+        } else if (sender && recipient === n.sessionId) {
+          const child = this.subagentSessions.get(sender)
+          const launchId = child && !child.nested ? child.launchId : undefined
+          const entry = launchId ? this.subagentEntry(rt, sessionId, launchId) : undefined
+          const reply = cleanReply(messageText(u.content))
+          if (entry && launchId && reply) {
+            entry.subagent.reply = reply
+            this.subagentChanged(rt, sessionId, launchId, true)
+          }
+        }
+        return true
+      }
+    }
+    if (!owner) return false
+    // The sub-agent's own session: what it says and does goes to its feed.
+    if (u.sessionUpdate === 'tool_call' || u.sessionUpdate === 'tool_call_update') this.recordEditedPaths(sessionId, u)
+    const launchId = owner.launchId
+    const entry = launchId ? this.subagentEntry(rt, sessionId, launchId) : undefined
+    if (entry && launchId && applyFeedUpdate(entry.subagent, u)) this.subagentChanged(rt, sessionId, launchId, false)
+    return true
+  }
+
+  /** The parent sent a sub-agent its task: its card goes in the log, where the launch was. */
+  private subagentLaunched(rt: SessionRuntime, sessionId: string, acpSessionId: string, launchId: string, prompt: string): void {
+    let child = this.subagentSessions.get(acpSessionId)
+    if (!child) {
+      child = { sessionId, nested: false }
+      this.subagentSessions.set(acpSessionId, child)
+    }
+    child.launchId = launchId
+    const subagent: Subagent = { acpSessionId, ...(child.role ? { role: child.role } : {}), ...(prompt ? { prompt } : {}), state: 'running', feed: [] }
+    if (!rt.loading) subagent.startedAt = this.now()
+    if (child.state) applyState(subagent, child.state, rt.loading ? undefined : this.now())
+    const title = child.title ?? child.role ?? 'Sub-agent'
+    if (rt.loading) {
+      // Synced with the rest of the replay, then given its feed (`syncSubagents`).
+      rt.replay?.push({
+        sessionUpdate: 'tool_call',
+        toolCallId: launchId,
+        title,
+        kind: SUBAGENT_KIND as acp.ToolKind,
+        status: subagentStatus(subagent) as acp.ToolCallStatus
+      })
+      rt.replaySubagents?.set(launchId, { title, subagent })
+      return
+    }
+    const existing = this.deps.store.getToolCall(sessionId, launchId)
+    const known = existing ? subagentOf(existing) : null
+    if (known) {
+      // Launched again (resumed): its card keeps its place and what it did before.
+      subagent.feed = known.feed
+      if (known.startedAt !== undefined) subagent.startedAt = known.startedAt
+    }
+    this.subagents.set(subagentKey(sessionId, launchId), { title, subagent })
+    const toolCall: ToolCall = {
+      id: launchId,
+      sessionId,
+      messageSeq: existing?.messageSeq ?? this.deps.store.nextSeq(sessionId),
+      threadId: existing ? existing.threadId : (rt.turn?.threadId ?? rt.lastJobThread ?? null),
+      title,
+      kind: SUBAGENT_KIND,
+      status: subagentStatus(subagent),
+      content: { subagent }
+    }
+    this.deps.store.upsertToolCall(toolCall)
+    this.deps.emit({ type: 'toolCall', toolCall })
+    // The parent's next words start a message of their own, after the card.
+    if (rt.turn) rt.turn.afterToolCall = true
+  }
+
+  /** The sub-agent of the card `launchId`, kept in memory while it's updated. */
+  private subagentEntry(rt: SessionRuntime, sessionId: string, launchId: string): SubagentEntry | undefined {
+    if (rt.loading) return rt.replaySubagents?.get(launchId)
+    const key = subagentKey(sessionId, launchId)
+    let entry = this.subagents.get(key)
+    if (!entry) {
+      const toolCall = this.deps.store.getToolCall(sessionId, launchId)
+      const subagent = toolCall ? subagentOf(toolCall) : null
+      if (!toolCall || !subagent) return undefined
+      entry = { title: toolCall.title, subagent }
+      this.subagents.set(key, entry)
+    }
+    return entry
+  }
+
+  /** Writes the card: now for a change of state, else with the next batch. */
+  private subagentChanged(rt: SessionRuntime, sessionId: string, launchId: string, now: boolean): void {
+    if (rt.loading) return
+    this.dirtySubagents.add(subagentKey(sessionId, launchId))
+    if (now) this.flushSubagents()
+    else this.subagentFlush ??= setTimeout(() => this.flushSubagents(), SUBAGENT_FLUSH_MS)
+  }
+
+  private flushSubagents(): void {
+    if (this.subagentFlush) clearTimeout(this.subagentFlush)
+    this.subagentFlush = undefined
+    if (this.disposed) return
+    for (const key of this.dirtySubagents) {
+      const [sessionId, launchId] = key.split(SUBAGENT_KEY_SEP)
+      const entry = this.subagents.get(key)
+      this.writeSubagent(sessionId, launchId, entry)
+    }
+    this.dirtySubagents.clear()
+  }
+
+  /** Writes a sub-agent to its card, which keeps its place and thread. */
+  private writeSubagent(sessionId: string, launchId: string, entry: SubagentEntry | undefined): void {
+    const existing = this.deps.store.getToolCall(sessionId, launchId)
+    if (!entry || !existing) return
+    const toolCall: ToolCall = {
+      ...existing,
+      title: entry.title,
+      kind: SUBAGENT_KIND,
+      status: subagentStatus(entry.subagent),
+      content: { subagent: entry.subagent }
+    }
+    this.deps.store.upsertToolCall(toolCall)
+    this.deps.emit({ type: 'toolCall', toolCall })
+  }
+
+  /** After a load's sync: the replayed sub-agents' cards get what the replay told of them. */
+  private syncSubagents(sessionId: string, replayed: Map<string, SubagentEntry>): void {
+    for (const [launchId, entry] of replayed) {
+      const existing = this.deps.store.getToolCall(sessionId, launchId)
+      const cached = existing ? subagentOf(existing) : null
+      // The replay doesn't say when it ran; Gloss remembers what it saw.
+      if (cached?.startedAt !== undefined) entry.subagent.startedAt = cached.startedAt
+      if (cached?.endedAt !== undefined && entry.subagent.state !== 'running') entry.subagent.endedAt = cached.endedAt
+      this.subagents.set(subagentKey(sessionId, launchId), entry)
+      this.writeSubagent(sessionId, launchId, entry)
+    }
+  }
+
+  /** The thread a sub-agent's card is in, where its questions go. */
+  private subagentThread(sessionId: string, sub: SubagentSession | undefined): string | null | undefined {
+    return sub?.launchId ? this.deps.store.getToolCall(sessionId, sub.launchId)?.threadId : undefined
+  }
+
+  /** Stops one sub-agent: session/cancel on its own session (SPEC → Sub-agents). */
+  async stopSubagent(sessionId: string, launchId: string): Promise<void> {
+    const rt = this.runtimes.get(sessionId)
+    const toolCall = this.deps.store.getToolCall(sessionId, launchId)
+    const subagent = toolCall ? subagentOf(toolCall) : null
+    if (!rt?.attachedTo || !subagent) return
+    await rt.attachedTo.cancel(subagent.acpSessionId)
+  }
+
   /** Records an update to a background job's tool call, with no turn running. */
   private updateJobToolCall(sessionId: string, rt: SessionRuntime, u: acp.ToolCallUpdate): void {
     const existing = this.deps.store.getToolCall(sessionId, u.toolCallId)
@@ -3368,7 +3615,8 @@ export class SessionManager {
    * the user's pick, or approves it right away when Gloss auto-approves for the session.
    */
   private async onPermission(req: acp.RequestPermissionRequest, signal: AbortSignal): Promise<acp.RequestPermissionResponse> {
-    const sessionId = this.byAcpId.get(req.sessionId)
+    const sub = this.subagentSessions.get(req.sessionId)
+    const sessionId = sub?.sessionId ?? this.byAcpId.get(req.sessionId)
     const rt = sessionId ? this.runtimes.get(sessionId) : undefined
     if (!sessionId || !rt) {
       console.warn(`[gloss] permission request for an unknown session ${req.sessionId}`)
@@ -3388,7 +3636,7 @@ export class SessionManager {
       ...(content != null ? { content } : {}),
       ...(command ? { command } : {}),
       options: req.options.map((o): PermissionChoice => ({ id: o.optionId, name: o.name, kind: o.kind }))
-    }, known?.threadId)
+    }, known?.threadId ?? this.subagentThread(sessionId, sub))
     return answer?.kind === 'permission' && 'optionId' in answer
       ? { outcome: { outcome: 'selected', optionId: answer.optionId } }
       : { outcome: { outcome: 'cancelled' } }
@@ -3397,7 +3645,8 @@ export class SessionManager {
   /** Shows the agent's question (a form elicitation) and waits for the user's answer. URL elicitations aren't supported. */
   private async onElicitation(req: acp.CreateElicitationRequest, signal: AbortSignal): Promise<acp.CreateElicitationResponse> {
     const acpSessionId = 'sessionId' in req && typeof req.sessionId === 'string' ? req.sessionId : undefined
-    const sessionId = acpSessionId ? this.byAcpId.get(acpSessionId) : undefined
+    const sub = acpSessionId ? this.subagentSessions.get(acpSessionId) : undefined
+    const sessionId = sub?.sessionId ?? (acpSessionId ? this.byAcpId.get(acpSessionId) : undefined)
     if (req.mode !== 'form' || !sessionId || !this.runtimes.has(sessionId) || !('requestedSchema' in req)) {
       console.warn(`[gloss] declined an elicitation Gloss can't show (mode ${String(req.mode)})`)
       return { action: 'decline' }
@@ -3408,7 +3657,7 @@ export class SessionManager {
       kind: 'question',
       message: req.message,
       fields: questionFields(req.requestedSchema)
-    }, known?.threadId)
+    }, known?.threadId ?? this.subagentThread(sessionId, sub))
     if (answer?.kind !== 'question') return { action: 'cancel' }
     return answer.action === 'accept' ? { action: 'accept', content: answer.content } : { action: answer.action }
   }

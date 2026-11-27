@@ -4,6 +4,8 @@ import { afterPaintIdle } from './idle'
 import { LogToBottom } from './logToBottom'
 import { hasPendingScroll, useScrollMemory, type ScrollAnchors } from './scrollMemory'
 import type { Message, Plan, ScheduledContinue, ToolCall } from '@shared/types'
+import { SUBAGENT_KIND } from '@shared/subagents'
+import { SubagentCard } from './Subagents'
 import { splitForkSummary, threadToMainTag } from '@shared/wire'
 import type { OpenSession } from './App'
 import { Markdown, MarkdownImageDirectory } from './Markdown'
@@ -606,6 +608,8 @@ function sameRow(a: RowProps, b: RowProps): boolean {
       return y.kind === 'scheduledContinue' && y.sessionId === x.sessionId && y.scheduled === x.scheduled
     case 'notice':
       return y.kind === 'notice' && y.notice === x.notice && y.waiting?.scheduled === x.waiting?.scheduled
+    case 'tool':
+      return y.kind === 'tool' && y.toolCall === x.toolCall
     default:
       return false
   }
@@ -678,6 +682,8 @@ const LogRow = memo(function LogRow({ item, reveal, line, render }: RowProps): R
           {item.notice.text}
         </p>
       )
+    case 'tool':
+      return <SubagentCard toolCall={item.toolCall} />
     default:
       return null
   }
@@ -690,8 +696,10 @@ function groupTools(items: LogItem[]): (LogItem | ToolItem[])[] {
   const out: (LogItem | ToolItem[])[] = []
   for (const item of items) {
     const last = out.at(-1)
-    if (item.kind === 'tool' && Array.isArray(last)) last.push(item)
-    else out.push(item.kind === 'tool' ? [item] : item)
+    // A sub-agent is a card of its own (SPEC → Sub-agents).
+    const grouped = item.kind === 'tool' && item.toolCall.kind !== SUBAGENT_KIND
+    if (grouped && Array.isArray(last)) last.push(item)
+    else out.push(grouped ? [item] : item)
   }
   return out
 }
@@ -730,7 +738,7 @@ const ToolGroup = memo(function ToolGroup({ tools, reveal }: { tools: ToolItem[]
 }, (a, b) => a.reveal === b.reveal && a.tools.length === b.tools.length && a.tools.every((t, i) => t.toolCall === b.tools[i].toolCall))
 
 /** A tool call: one line, expanding to what it did. Collapsed by default. */
-const ToolRow = memo(function ToolRow({ toolCall, revealed }: { toolCall: ToolCall; revealed: boolean }): React.JSX.Element {
+export const ToolRow = memo(function ToolRow({ toolCall, revealed }: { toolCall: ToolCall; revealed: boolean }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   useLayoutEffect(() => { if (revealed) setOpen(true) }, [revealed])
   const expandable = hasDetails(toolCall)

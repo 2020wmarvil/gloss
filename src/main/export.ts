@@ -1,4 +1,5 @@
 // A session or one thread as markdown, for pasting into a PR description, chat or a doc.
+import { SUBAGENT_KIND } from '../shared/subagents'
 import type { Message, Session, Thread, ToolCall } from '../shared/types'
 import type { Anchor } from '../shared/types'
 import { lineLabel } from '../shared/review'
@@ -15,7 +16,7 @@ function blocks(log: Log, threadId: string | null): string[] {
   const out: string[] = []
   for (const item of items) {
     if ('toolCall' in item) {
-      out.push(`_Tool: ${item.toolCall.title} (${item.toolCall.status.replace('_', ' ')})_`)
+      out.push(`_${item.toolCall.kind === SUBAGENT_KIND ? 'Sub-agent' : 'Tool'}: ${item.toolCall.title} (${item.toolCall.status.replace('_', ' ')})_`)
       continue
     }
     const m = item.message

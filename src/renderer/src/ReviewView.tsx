@@ -16,6 +16,7 @@ import type { Sources } from './reviewSources'
 import { RangePicker } from './RangePicker'
 import { inDiffOrder, isLineThread, kindOf, titleOf } from './reviewThreads'
 import { StatusLine } from './StatusLine'
+import { SubagentChip } from './Subagents'
 import { threadSummaries } from './ThreadsOverview'
 import { modKey } from './shortcuts'
 import { useRightButtonLines, type LineBounds } from './lineSelect'
@@ -569,6 +570,7 @@ export function ReviewView(props: Props): React.JSX.Element {
         pr={props.pr}
         running={props.runningThread !== undefined}
         waiting={open.requests?.length}
+        subagents={<SubagentChip messages={open.messages} toolCalls={open.toolCalls} />}
         queue={props.queue}
         onResumeQueue={props.onResumeQueue}
         onSetChoice={props.onSetChoice}

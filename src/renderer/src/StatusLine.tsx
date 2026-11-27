@@ -20,6 +20,8 @@ type Props = {
   running: boolean
   /** Questions and approvals the agent is waiting on the user for. */
   waiting?: number
+  /** The latest turn's sub-agents (SPEC → Sub-agents). */
+  subagents?: React.ReactNode
   queue: MessageQueue
   /** An activity strip above already counts the queued messages. */
   queueShownAbove?: boolean
@@ -344,6 +346,7 @@ export function StatusLine(props: Props): React.JSX.Element {
             Waiting for you
           </span>
         )}
+        {props.subagents}
         {props.queue.items.length > 0 &&
           (props.queue.paused ? (
             <button className="status-item paused" onClick={props.onResumeQueue} title="Send the next queued message">

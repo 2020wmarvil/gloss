@@ -1209,6 +1209,7 @@ function registerIpc(manager: SessionManager, settingsFile: SettingsFile): void 
   })
   share(IPC.continueCancel, (sessionId: unknown) => manager.cancelScheduledContinue(str(sessionId, 'sessionId')))
   share(IPC.cancel, (sessionId: unknown) => manager.cancel(str(sessionId, 'sessionId')))
+  share(IPC.stopSubagent, (sessionId: unknown, launchId: unknown) => manager.stopSubagent(str(sessionId, 'sessionId'), str(launchId, 'launchId')))
   share(IPC.queueEdit, (sessionId: unknown, id: unknown, text: unknown) =>
     manager.editQueued(str(sessionId, 'sessionId'), str(id, 'id'), str(text, 'text'))
   )
@@ -1289,7 +1290,7 @@ function paneStateArg(value: unknown, sessionId: string): PaneState {
     threadId: typeof v.threadId === 'string' ? v.threadId : null,
     sideOpen: v.sideOpen === true,
     general: v.general === true,
-    sideTab: v.sideTab === 'queue' ? 'queue' : 'threads',
+    sideTab: v.sideTab === 'queue' || v.sideTab === 'subagents' ? v.sideTab : 'threads',
     expandedFiles: Array.isArray(v.expandedFiles) ? v.expandedFiles.filter((f): f is string => typeof f === 'string') : [],
     drafts,
     scroll
