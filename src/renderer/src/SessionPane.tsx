@@ -17,6 +17,7 @@ import { useReviewSources } from './reviewSources'
 import { ReviewView } from './ReviewView'
 import { ResizeHandle, type WidthLimits } from './resize'
 import { ThreadPanel } from './ThreadPanel'
+import { SubagentContext, SubagentPanel, type SubagentActions } from './Subagents'
 import { SideRail, ThreadsOverview } from './ThreadsOverview'
 import { errorText } from './errors'
 import { threadName, type OpenSession, type SessionState } from './useSession'
@@ -131,8 +132,19 @@ export function SessionPane(props: Props): React.JSX.Element {
     done.catch((err: unknown) => s.addNotice(id, threadId, `Couldn't export: ${errorText(err)}`))
   }
 
+  const subagentCall = s.subagent !== null ? shown.toolCalls.find((t) => t.id === s.subagent) : undefined
+  const findSubagent = (toolCall: { id: string; threadId: string | null }): void => {
+    if (toolCall.threadId !== null) s.openThread(toolCall.threadId)
+    s.setReveal({ messageId: `tool:${toolCall.id}`, threadId: toolCall.threadId, key: Date.now() })
+  }
+  const subagentActions: SubagentActions = {
+    open: s.openSubagent,
+    find: findSubagent,
+    stop: (launchId) => void window.gloss.stopSubagent(id, launchId).catch((err: unknown) => s.addNotice(id, null, `Couldn't stop the sub-agent: ${errorText(err)}`))
+  }
+
   return (
-    <>
+    <SubagentContext.Provider value={subagentActions}>
       {isReview ? (
         <ReviewView
           obsidianVault={obsidianVault}
@@ -218,7 +230,16 @@ export function SessionPane(props: Props): React.JSX.Element {
             onResize={props.onResizeThread}
             onReset={() => props.onResizeThread(null)}
           />
-          {isReview && s.general && !panel ? (
+          {subagentCall ? (
+            <SubagentPanel
+              toolCall={subagentCall}
+              width={threadWidth}
+              backLabel={panel ? 'Thread' : isReview && s.general ? 'General' : s.sideTab === 'subagents' ? 'Sub-agents' : s.sideTab === 'queue' ? 'Queue' : 'All threads'}
+              onBack={() => s.setSubagent(null)}
+              onClose={s.collapseSide}
+              onFindInMain={() => findSubagent(subagentCall)}
+            />
+          ) : isReview && s.general && !panel ? (
             <GeneralPanel
               agentName={agentName}
               width={threadWidth}
@@ -319,6 +340,6 @@ export function SessionPane(props: Props): React.JSX.Element {
           )}
         </>
       )}
-    </>
+    </SubagentContext.Provider>
   )
 }

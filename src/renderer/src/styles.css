@@ -7839,3 +7839,208 @@ button.danger-text {
   font-size: var(--t-12);
   color: var(--muted);
 }
+
+/* Sub-agents (SPEC → Sub-agents): a card in the log, its feed in the side panel, a status line chip. */
+.subagent-card {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 var(--edge), var(--lift-1);
+  overflow: hidden;
+}
+
+.subagent-card.running {
+  border-color: color-mix(in srgb, var(--working) 35%, var(--line));
+}
+
+.subagent-open {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  font-size: var(--t-13);
+}
+
+.subagent-open:hover {
+  background: var(--hover-soft);
+}
+
+.subagent-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.subagent-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.subagent-stats {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--t-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-line {
+  padding-left: 26px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--t-12);
+}
+
+.subagent-card .subagent-title {
+  flex: 1;
+}
+
+.subagent-card .subagent-line {
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-failed {
+  flex: none;
+  color: var(--failed);
+}
+
+.subagent-panel .thread-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 18px 0;
+  color: var(--muted);
+  font-size: var(--t-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-ended {
+  color: var(--failed);
+}
+
+.subagent-feed {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.subagent-reply {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.subagent-reply h3 {
+  margin: 0 0 4px;
+  font-size: var(--t-12);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.subagent-chip.running {
+  color: var(--working);
+}
+
+.subagent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 320px;
+}
+
+.subagent-list-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.subagent-list-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  text-align: left;
+  font-size: var(--t-13);
+}
+
+.subagent-list-open:hover {
+  background: var(--hover);
+}
+
+.side-tabs .count.running {
+  background: var(--working-tint);
+  color: var(--working);
+}
+
+.subagent-row .thread-open {
+  gap: 3px;
+}
+
+.subagent-row-actions {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  display: none;
+  gap: 4px;
+}
+
+.subagent-row:hover .subagent-row-actions,
+.subagent-row:focus-within .subagent-row-actions {
+  display: flex;
+}
+
+.subagent-row-actions button {
+  background: var(--surface);
+}
+
+.subagent-row-actions button.thread-find {
+  position: static;
+  display: inline-flex;
+}
+
+.subagent-row-actions .subagent-stop,
+.subagent-row-actions .subagent-find {
+  width: var(--control-sm);
+  padding: 0;
+  justify-content: center;
+}
+
+.subagent-row-actions .subagent-stop svg,
+.subagent-row-actions .subagent-find svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Find in main, Stop and Hide panel sit together at the right, as a thread's header buttons do. */
+.subagent-panel header .subagent-stop {
+  flex: none;
+}
+
+.subagent-panel header .find-in-main + .close,
+.subagent-panel header .subagent-stop + .close {
+  margin-left: 4px;
+}

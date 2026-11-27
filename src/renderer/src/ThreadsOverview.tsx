@@ -9,6 +9,8 @@ import { ForkTag, forkUsage } from './ThreadPanel'
 import type { ForkLane } from './useSession'
 import { ago } from './Sidebar'
 import { Locate, MessageSquare, PanelRight } from 'lucide-react'
+import { isSubagentRunning } from '@shared/subagents'
+import { sessionSubagents, SubagentList } from './Subagents'
 
 export type ThreadSummary = {
   thread: Thread
@@ -67,7 +69,7 @@ export function SideRail(props: { count: number; label?: string; onExpand(): voi
   )
 }
 
-export type SideTab = 'threads' | 'queue'
+export type SideTab = 'threads' | 'queue' | 'subagents'
 
 type Props = {
   /** Width the user dragged the panel to; null = the CSS default. */
@@ -101,6 +103,8 @@ type Props = {
 export function ThreadsOverview(props: Props): React.JSX.Element {
   const { onCollapse, queue } = props
   const summaries = threadSummaries(props.open)
+  const subagents = sessionSubagents(props.open.toolCalls)
+  const subagentsRunning = subagents.filter((x) => isSubagentRunning(x.subagent)).length
   const anchorText = (thread: Thread): string => {
     const message = props.open.messages.find((m) => m.id === thread.anchorMessageId)
     return message ? messageStart(message.text) : ''
@@ -136,6 +140,12 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
             title="Queue (Ctrl+Shift+Q)"
           >
             Queue <span className="count">{queue.items.length}</span>
+          </button>
+          <button role="tab" aria-selected={props.tab === 'subagents'} onClick={() => props.onTab('subagents')} title="Sub-agents the agent launched">
+            Sub-agents{' '}
+            <span className={subagentsRunning > 0 ? 'count running' : 'count'} title={subagentsRunning > 0 ? `${subagentsRunning} running` : undefined}>
+              {subagentsRunning > 0 ? subagentsRunning : subagents.length}
+            </span>
           </button>
         </div>
         <button className="close" onClick={onCollapse} aria-label="Hide panel" title="Hide panel (Ctrl+Shift+T)">
@@ -198,6 +208,8 @@ export function ThreadsOverview(props: Props): React.JSX.Element {
             )
           })}
         </div>
+      ) : props.tab === 'subagents' ? (
+        <SubagentList toolCalls={props.open.toolCalls} />
       ) : (
         <QueueTimeline {...props} queueAction={queueAction} error={error} />
       )}

@@ -99,9 +99,12 @@ export function useSession() {
   const [panel, setPanelState] = useState<Panel | null>(null)
   /** A review session's side panel shows its general conversation (when no thread is open). */
   const [general, setGeneral] = useState(false)
+  /** A sub-agent's feed in the side panel, by its card's id (SPEC → Sub-agents); it covers `panel` while set. */
+  const [subagent, setSubagent] = useState<string | null>(null)
   /** A thread, or the overview: either way not the general conversation. */
   const setPanel = useCallback((p: Panel | null | ((old: Panel | null) => Panel | null)) => {
     setGeneral(false)
+    setSubagent(null)
     setPanelState(p)
   }, [])
   /** The open review session's diff (SPEC → Review sessions). */
@@ -163,6 +166,15 @@ export function useSession() {
       openSide()
     },
     [setPanel, openSide]
+  )
+
+  /** Opens a sub-agent's feed in the side panel; Back returns to what it covered. */
+  const openSubagent = useCallback(
+    (launchId: string) => {
+      setSubagent(launchId)
+      openSide()
+    },
+    [openSide]
   )
 
   /** Opens the side panel on its Queue tab. */
@@ -657,6 +669,7 @@ export function useSession() {
   /** A review's general conversation in the side panel. */
   function openGeneral(): void {
     setPanelState(null)
+    setSubagent(null)
     setGeneral(true)
     openSide()
   }
@@ -889,6 +902,9 @@ export function useSession() {
     openReview,
     panel,
     setPanel,
+    subagent,
+    setSubagent,
+    openSubagent,
     general,
     setGeneral,
     reveal,

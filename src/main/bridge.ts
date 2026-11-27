@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { SUBAGENT_KIND } from '../shared/subagents'
 import { readFile } from 'node:fs/promises'
 import type { IncomingMessage, RequestListener, Server, ServerResponse } from 'node:http'
 import type { SecureContextOptions } from 'node:tls'
@@ -185,6 +186,8 @@ export class Bridge {
   /** Sends an event to every connected phone, unless only windows act on it. */
   broadcast(event: GlossEvent): void {
     if (DESKTOP_ONLY.has(event.type)) return
+    // A phone shows a sub-agent as a tool call's line, without its feed (SPEC → Sub-agents).
+    if (event.type === 'toolCall' && event.toolCall.kind === SUBAGENT_KIND) event = { ...event, toolCall: phoneSubagent(event.toolCall) }
     const data = JSON.stringify({ event })
     for (const set of this.sockets.values()) for (const ws of set) if (ws.readyState === ws.OPEN) ws.send(data)
   }
@@ -396,6 +399,12 @@ function readBody(req: IncomingMessage, limit: number): Promise<string> {
   })
 }
 
+/** A sub-agent as a phone shows it: its title and status, without its feed. */
+function phoneSubagent(t: ToolCall): ToolCall {
+  const { content: _content, ...rest } = t
+  return rest
+}
+
 /** Tool output up to this size (as JSON) stays in a phone's session view; larger output waits until it is expanded. */
 const INLINE_TOOL_OUTPUT = 2048
 
@@ -417,6 +426,7 @@ export function deferImages(view: SessionView): SessionView {
  */
 export function slimView(view: SessionView): SessionView {
   const slimTool = (t: ToolCall): ToolCall => {
+    if (t.kind === SUBAGENT_KIND) return phoneSubagent(t)
     if (t.content === undefined || JSON.stringify(t.content).length <= INLINE_TOOL_OUTPUT) return t
     const { content: _content, ...rest } = t
     return { ...rest, deferred: true }

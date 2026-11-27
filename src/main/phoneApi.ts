@@ -46,6 +46,7 @@ export const PHONE_CHANNELS: ReadonlySet<string> = new Set([
   IPC.continueSchedule,
   IPC.continueCancel,
   IPC.cancel,
+  IPC.stopSubagent,
   IPC.queueEdit,
   IPC.queueRemove,
   IPC.queueResume,
